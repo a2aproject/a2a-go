@@ -53,3 +53,7 @@ Temporary Items
 ### macOS Patch ###
 # iCloud generated files
 *.icloud
+
+*.code-workspace
+go.work
+go.work.sum
