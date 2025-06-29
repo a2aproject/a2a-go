@@ -1,7 +1,20 @@
 version: "2"
+run:
+  timeout: 5m
+  issues-exit-code: 1
 linters:
   enable:
     - govet
     - errcheck
     - staticcheck
     - unused
+      - govet
+      - errcheck
+      - staticcheck
+      - unused
+      - gofmt
+      - goimports
+      - nakedret
+      - gocritic
+      - prealloc
+      - misspell
