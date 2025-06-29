@@ -208,7 +208,7 @@ func (c *a2AServiceClient) DeleteTaskPushNotificationConfig(ctx context.Context,
 }
 
 // A2AServiceServer is the server API for A2AService service.
-// All implementations must embed UnimplementedA2AServiceServer
+// All implementations should embed UnimplementedA2AServiceServer
 // for forward compatibility.
 //
 // A2AService defines the gRPC version of the A2A protocol. This has a slightly
@@ -252,10 +252,9 @@ type A2AServiceServer interface {
 	GetAgentCard(context.Context, *GetAgentCardRequest) (*AgentCard, error)
 	// Delete a push notification config for a task.
 	DeleteTaskPushNotificationConfig(context.Context, *DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error)
-	mustEmbedUnimplementedA2AServiceServer()
 }
 
-// UnimplementedA2AServiceServer must be embedded to have
+// UnimplementedA2AServiceServer should be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
@@ -292,8 +291,7 @@ func (UnimplementedA2AServiceServer) GetAgentCard(context.Context, *GetAgentCard
 func (UnimplementedA2AServiceServer) DeleteTaskPushNotificationConfig(context.Context, *DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteTaskPushNotificationConfig not implemented")
 }
-func (UnimplementedA2AServiceServer) mustEmbedUnimplementedA2AServiceServer() {}
-func (UnimplementedA2AServiceServer) testEmbeddedByValue()                    {}
+func (UnimplementedA2AServiceServer) testEmbeddedByValue() {}
 
 // UnsafeA2AServiceServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to A2AServiceServer will

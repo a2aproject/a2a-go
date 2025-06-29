@@ -1,0 +1,18 @@
+version: v2
+clean: true
+inputs:
+  - git_repo: https://github.com/a2aproject/A2A.git
+    ref: main
+    subdir: specification/grpc
+managed:
+  enabled: true
+plugins:
+  - remote: buf.build/grpc/go # Generates Go client and server stubs for the gRPC framework.
+    out: pb
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
+  - remote: buf.build/protocolbuffers/go # Base types for Go. Generates message and enum types.
+    out: pb
+    opt:
+      - paths=source_relative
