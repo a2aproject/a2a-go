@@ -1,10 +1,6 @@
 {
     "[json]": {
         "editor.defaultFormatter": "vscode.json-language-features",
-        "editor.quickSuggestions": {
-            "strings": true
-        },
-        "editor.suggest.insertMode": "replace"
     },
     "[go]": {
         "editor.defaultFormatter": "golang.go",
@@ -12,6 +8,12 @@
         "editor.codeActionsOnSave": {
             "source.organizeImports": "always"
         }
+    },
+    "[markdown]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
     },
     "editor.formatOnSave": true,
     "files.insertFinalNewline": true,
@@ -21,14 +23,11 @@
     "go.lintTool": "golangci-lint",
     "go.lintFlags": [
         "--path-mode=abs",
-        "--fast-only"
+        "--fast"
     ],
     "go.formatTool": "custom",
     "go.alternateTools": {
         "customFormatter": "golangci-lint"
     },
-    "go.formatFlags": [
-        "fmt",
-        "--stdin"
-    ]
+    "go.formatFlags": []
 }
