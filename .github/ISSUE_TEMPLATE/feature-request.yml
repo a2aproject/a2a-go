@@ -1,7 +1,7 @@
 ---
 name: 💡 Feature Request
 description: Suggest an idea for this repository
-title: '[Feat]: '
+title: "[Feat]: "
 type: Feature
 body:
   - type: markdown
@@ -38,7 +38,7 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/a2aproject/a2a-python?tab=coc-ov-file#readme)
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/a2aproject/a2a-go?tab=coc-ov-file#readme)
       options:
         - label: I agree to follow this project's Code of Conduct
           required: true
