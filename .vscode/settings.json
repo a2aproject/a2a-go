@@ -1,0 +1,34 @@
+{
+    "[json]": {
+        "editor.defaultFormatter": "vscode.json-language-features",
+        "editor.quickSuggestions": {
+            "strings": true
+        },
+        "editor.suggest.insertMode": "replace"
+    },
+    "[go]": {
+        "editor.defaultFormatter": "golang.go",
+        "editor.insertSpaces": false,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always"
+        }
+    },
+    "editor.formatOnSave": true,
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    "files.trimFinalNewlines": true,
+    // Recommended settings from https://golangci-lint.run/welcome/integrations#visual-studio-code
+    "go.lintTool": "golangci-lint",
+    "go.lintFlags": [
+        "--path-mode=abs",
+        "--fast-only"
+    ],
+    "go.formatTool": "custom",
+    "go.alternateTools": {
+        "customFormatter": "golangci-lint"
+    },
+    "go.formatFlags": [
+        "fmt",
+        "--stdin"
+    ]
+}
