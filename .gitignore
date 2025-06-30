@@ -53,3 +53,10 @@ Temporary Items
 ### macOS Patch ###
 # iCloud generated files
 *.icloud
+
+### Project specific ###
+# Generated protobuf files
+generated/
+
+# Buf lock file
+buf.lock

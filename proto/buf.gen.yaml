@@ -1,0 +1,17 @@
+version: v1
+managed:
+  enabled: true
+  go_package_prefix:
+    default: github.com/a2aproject/a2a-go/generated
+    except:
+      - buf.build/googleapis/googleapis
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: ../generated
+    opt:
+      - paths=source_relative
+  - plugin: buf.build/grpc/go
+    out: ../generated
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false
