@@ -65,7 +65,7 @@ mkdir -p "${PROTO_DIR}"
 
 # Download fresh proto file
 echo "Downloading official A2A proto definition..."
-TEMP_PROTO="/tmp/a2a_proto_$$"
+TEMP_PROTO=$(mktemp)
 curl -fsSL "${OFFICIAL_REPO}/a2a.proto" -o "${TEMP_PROTO}"
 
 # Verify download

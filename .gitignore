@@ -58,5 +58,3 @@ Temporary Items
 # Generated protobuf files
 generated/
 
-# Buf lock file
-buf.lock
