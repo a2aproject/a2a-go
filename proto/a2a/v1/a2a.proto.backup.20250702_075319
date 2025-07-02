@@ -1,7 +1,7 @@
 // This file was automatically downloaded from the official A2A specification repository
 // Source: https://github.com/a2aproject/A2A/blob/main/specification/grpc/a2a.proto
-// Fetched: 2025-07-02T06:53:19Z
-// Official commit: 90fa64209498948b329a7b2ac6ec38942369157a
+// Fetched: 2025-06-30T12:49:41Z
+// Official commit: 147a675ba0e8c049f4892ada8c1c6753dab57cd3
 //
 // Older protoc compilers don't understand edition yet.
 syntax = "proto3";
@@ -27,7 +27,7 @@ option java_package = "com.google.a2a.v1";
 // - Messages are not a standard resource so there is no get/delete/update/list
 //   interface, only a send and stream custom methods.
 // - Tasks have a get interface and custom cancel and subscribe methods.
-// - TaskPushNotificationConfig are a resource whose parent is a task.
+// - TaskPushNotificationConfig are a resource whose parent is a task. 
 //   They have get, list and create methods.
 // - AgentCard is a static resource with only a get method.
 // fields are not present as they don't comply with AIP rules, and the
@@ -346,8 +346,6 @@ message AgentInterface {
 // - Default modalities/content types supported by the agent.
 // - Authentication requirements
 message AgentCard {
-  // The version of the A2A protocol this agent supports.
-  string protocol_version = 16;
   // A human readable name for the agent.
   string name = 1;
   // A description of the agents domain of action/solution space.
@@ -598,10 +596,13 @@ message DeleteTaskPushNotificationConfigRequest {
 message CreateTaskPushNotificationConfigRequest {
   // The task resource for this config.
   // Format: tasks/{id}
-  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED
+  ];
   string config_id = 2 [(google.api.field_behavior) = REQUIRED];
-  TaskPushNotificationConfig config = 3
-      [(google.api.field_behavior) = REQUIRED];
+  TaskPushNotificationConfig config = 3  [
+    (google.api.field_behavior) = REQUIRED
+  ];
 }
 
 message TaskSubscriptionRequest {
@@ -617,8 +618,8 @@ message ListTaskPushNotificationConfigRequest {
   // If unspecified, all configs will be returned.
   int32 page_size = 2;
 
-  // A page token received from a previous
-  // ListTaskPushNotificationConfigRequest call.
+  // A page token received from a previous 
+  // ListTaskPushNotificationConfigRequest call. 
   // Provide this to retrieve the subsequent page.
   // When paginating, all other parameters provided to
   // `ListTaskPushNotificationConfigRequest` must match the call that provided
@@ -629,6 +630,7 @@ message ListTaskPushNotificationConfigRequest {
 message GetAgentCardRequest {
   // Empty. Added to fix linter violation.
 }
+
 
 //////// Response Messages ///////////
 message SendMessageResponse {
