@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.23.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools
+      run: make install-tools
+
+    - name: Check proto definitions are up to date
+      run: make check-proto-updated
+
+    - name: Generate code
+      run: make proto
+
+    - name: Lint Go code
+      run: make lint-go
+
+    - name: Build
+      run: make build
+
+    - name: Run tests
+      run: make test
+
+    - name: Check for breaking changes
+      if: github.event_name == 'pull_request'
+      run: make breaking
+
+  proto-update-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for proto updates
+      id: check-proto
+      run: |
+        make update-proto
+        if [[ -n $(git status --porcelain) ]]; then
+          echo "Proto definitions have been updated"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add proto/
+          git commit -m "chore: update A2A proto definitions" || exit 0
+          echo "updated=true" >> $GITHUB_OUTPUT
+        else
+          echo "Proto definitions are up to date"
+          echo "updated=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Pull Request
+      if: steps.check-proto.outputs.updated == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        title: "chore: update A2A proto definitions"
+        body: |
+          This PR updates the A2A protocol buffer definitions to the latest version from the official repository.
+
+          Changes:
+          - Updated proto definitions from https://github.com/a2aproject/A2A
+
+          This is an automated update from a2a-go CI.
+        branch: update-proto-definitions
