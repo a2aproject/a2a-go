@@ -180,7 +180,7 @@ func (s *A2AServer) handleAgentCard(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleJSONRPC is the main handler for all JSON-RPC 2.0 requests.
-// Routes methods like tasks/send, tasks/get, etc., as defined in A2A Spec.
+// Routes methods like message/send, tasks/get, tasks/cancel, etc., as defined in A2A Spec.
 func (s *A2AServer) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	// --- CORS Handling ---
 	if s.corsEnabled {
@@ -555,7 +555,7 @@ func (s *A2AServer) handleTasksResubscribe(ctx context.Context, w http.ResponseW
 	}
 
 	// Use the helper function to handle the SSE stream
-	handleSSEStream(ctx, s.corsEnabled, w, flusher, eventsChan, request.ID.(string), true)
+	handleSSEStream(ctx, s.corsEnabled, w, flusher, eventsChan, request.ID, true)
 }
 
 // handleMessageSend handles the message_send method.
@@ -613,7 +613,7 @@ func (s *A2AServer) handleMessageStream(ctx context.Context, w http.ResponseWrit
 	}
 
 	// Use the helper function to handle the SSE stream
-	handleSSEStream(ctx, s.corsEnabled, w, flusher, eventsChan, request.ID.(string), false)
+	handleSSEStream(ctx, s.corsEnabled, w, flusher, eventsChan, request.ID, false)
 }
 
 // handleSSEStream handles an SSE stream for a task, including setup and event forwarding.
@@ -624,7 +624,7 @@ func handleSSEStream(
 	w http.ResponseWriter,
 	flusher http.Flusher,
 	eventsChan <-chan jsonprotocol.StreamingMessageEvent,
-	rpcID string,
+	rpcID interface{},
 	isResubscribe bool,
 ) {
 	// Set headers for SSE.
@@ -641,9 +641,9 @@ func handleSSEStream(
 
 	// Log appropriate message based on whether this is a new subscription or resubscribe
 	if isResubscribe {
-		log.Infof("SSE stream reopened for request ID: %v)", rpcID)
+		log.Debugf("SSE stream reopened for request ID: %v)", rpcID)
 	} else {
-		log.Infof("SSE stream opened for request ID: %v)", rpcID)
+		log.Debugf("SSE stream opened for request ID: %v)", rpcID)
 	}
 
 	// Use request context to detect client disconnection.
@@ -669,13 +669,13 @@ func handleSSEStream(
 			flusher.Flush()
 		case <-clientClosed:
 			// Client disconnected (request context canceled).
-			log.Infof("SSE client disconnected for request ID: %s. Closing stream.", rpcID)
+			log.Debugf("SSE client disconnected for request ID: %s. Closing stream.", rpcID)
 			return // Exit the handler.
 		}
 	}
 }
 
-func sendSSEEvent(w http.ResponseWriter, rpcID string, event interface{}) error {
+func sendSSEEvent(w http.ResponseWriter, rpcID interface{}, event interface{}) error {
 	// Determine event type string for SSE.
 	var eventType string
 	var actualEvent jsonprotocol.Event

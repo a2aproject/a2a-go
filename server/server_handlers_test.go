@@ -13,7 +13,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/auth"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
-	jsonrpc1 "github.com/a2aproject/a2a-go/protocol/jsonprotocol"
+	"github.com/a2aproject/a2a-go/protocol/jsonprotocol"
 	"github.com/a2aproject/a2a-go/taskmanager"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,7 +126,7 @@ func TestA2AServer_HandlerErrors(t *testing.T) {
 	// Test wrong content type
 	t.Run("Wrong Content Type", func(t *testing.T) {
 		reqBody := bytes.NewBufferString(
-			`{"jsonrpc":"2.0","method":"tasks/send","params":{},"id":"test-id"}`)
+			`{"jsonrpc":"2.0","method":"tasks/get","params":{},"id":"test-id"}`)
 		testJSONRPCErrorResponse(t, testServer, http.MethodPost, reqBody, "text/plain",
 			jsonrpc.CodeInvalidRequest, "Content-Type")
 	})
@@ -141,7 +141,7 @@ func TestA2AServer_HandlerErrors(t *testing.T) {
 	// Test wrong JSONRPC version
 	t.Run("Wrong JSONRPC Version", func(t *testing.T) {
 		reqBody := bytes.NewBufferString(
-			`{"jsonrpc":"1.0","method":"tasks/send","params":{},"id":"test-id"}`)
+			`{"jsonrpc":"1.0","method":"tasks/get","params":{},"id":"test-id"}`)
 		testJSONRPCErrorResponse(t, testServer, http.MethodPost, reqBody, "application/json",
 			jsonrpc.CodeInvalidRequest, "jsonrpc field must be '2.0'")
 	})
@@ -156,10 +156,10 @@ func TestA2AServer_HandlerErrors(t *testing.T) {
 
 	// Test invalid parameters
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		// Missing required fields in params (Message with no parts)
+		// Message with empty parts array for message/stream
 		reqBody := bytes.NewBufferString(
-			`{"jsonrpc":"2.0","method":"tasks/send",
-			"params":{"id":"test-task","message":{"role":"user","parts":[]}},"id":"test-id"}`)
+			`{"jsonrpc":"2.0","method":"message/stream",
+			"params":{"message":{"role":"user","parts":[],"messageId":"msg-test","kind":"message"}},"id":"test-id"}`)
 		testJSONRPCErrorResponse(t, testServer, http.MethodPost, reqBody, "application/json",
 			jsonrpc.CodeInvalidParams, "")
 	})
@@ -186,15 +186,15 @@ func TestA2AServer_AuthMiddleware(t *testing.T) {
 
 	t.Run("Auth Success", func(t *testing.T) {
 		// Configure mock task manager to succeed
-		mockTM.GetResponse = &jsonrpc1.Task{
+		mockTM.GetResponse = &jsonprotocol.Task{
 			ID:     "test-task-auth",
-			Status: jsonrpc1.TaskStatus{State: jsonrpc1.TaskStateCompleted},
+			Status: jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateCompleted},
 		}
 		mockTM.GetError = nil
 
 		// Create valid request with auth header
-		req, _ := createJSONRPCRequest(t, jsonrpc1.MethodTasksGet,
-			jsonrpc1.TaskQueryParams{ID: "test-task-auth"}, "req-auth-1")
+		req, _ := createJSONRPCRequest(t, jsonprotocol.MethodTasksGet,
+			jsonprotocol.TaskQueryParams{ID: "test-task-auth"}, "req-auth-1")
 		req.Header.Set("X-API-Key", "test-api-key") // Valid API key
 
 		resp := executeRequest(t, testServer, req, testServer.URL+"/")
@@ -208,8 +208,8 @@ func TestA2AServer_AuthMiddleware(t *testing.T) {
 
 	t.Run("Auth Failure", func(t *testing.T) {
 		// Create request with invalid auth
-		req, _ := createJSONRPCRequest(t, jsonrpc1.MethodTasksGet,
-			jsonrpc1.TaskQueryParams{ID: "test-task-auth"}, "req-auth-2")
+		req, _ := createJSONRPCRequest(t, jsonprotocol.MethodTasksGet,
+			jsonprotocol.TaskQueryParams{ID: "test-task-auth"}, "req-auth-2")
 		req.Header.Set("X-API-Key", "invalid-key") // Invalid API key
 
 		resp := executeRequest(t, testServer, req, testServer.URL+"/")
@@ -220,7 +220,7 @@ func TestA2AServer_AuthMiddleware(t *testing.T) {
 
 	// Test that agent card endpoint is still accessible without auth
 	t.Run("AgentCard_NoAuth", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, testServer.URL+jsonrpc1.AgentCardPath, nil)
+		req, err := http.NewRequest(http.MethodGet, testServer.URL+jsonprotocol.AgentCardPath, nil)
 		require.NoError(t, err)
 
 		resp, err := testServer.Client().Do(req)
@@ -244,44 +244,44 @@ func TestA2AServer_Resubscribe(t *testing.T) {
 
 	t.Run("Resubscribe_Success", func(t *testing.T) {
 		// Configure mock events
-		workingEvent := jsonrpc1.TaskStatusUpdateEvent{
+		workingEvent := jsonprotocol.TaskStatusUpdateEvent{
 			TaskID:    "resubscribe-task",
 			ContextID: "test-context",
-			Kind:      jsonrpc1.KindTaskStatusUpdate,
-			Status:    jsonrpc1.TaskStatus{State: jsonrpc1.TaskStateWorking},
+			Kind:      jsonprotocol.KindTaskStatusUpdate,
+			Status:    jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateWorking},
 		}
 		finalPtr := true
-		completedEvent := jsonrpc1.TaskStatusUpdateEvent{
+		completedEvent := jsonprotocol.TaskStatusUpdateEvent{
 			TaskID:    "resubscribe-task",
 			ContextID: "test-context",
-			Kind:      jsonrpc1.KindTaskStatusUpdate,
-			Status:    jsonrpc1.TaskStatus{State: jsonrpc1.TaskStateCompleted},
+			Kind:      jsonprotocol.KindTaskStatusUpdate,
+			Status:    jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateCompleted},
 			Final:     finalPtr,
 		}
-		mockTM.SubscribeEvents = []jsonrpc1.StreamingMessageEvent{
+		mockTM.SubscribeEvents = []jsonprotocol.StreamingMessageEvent{
 			{Result: &workingEvent},
 			{Result: &completedEvent},
 		}
 		mockTM.SubscribeError = nil
 
 		// Add task to mock task manager to ensure it exists
-		mockTM.tasks["resubscribe-task"] = &jsonrpc1.Task{
+		mockTM.tasks["resubscribe-task"] = &jsonprotocol.Task{
 			ID: "resubscribe-task",
-			Status: jsonrpc1.TaskStatus{
-				State:     jsonrpc1.TaskStateWorking,
+			Status: jsonprotocol.TaskStatus{
+				State:     jsonprotocol.TaskStateWorking,
 				Timestamp: getCurrentTimestamp(),
 			},
 		}
 
 		// Create request - resubscribe expects SSE response
-		params := jsonrpc1.TaskIDParams{
+		params := jsonprotocol.TaskIDParams{
 			ID: "resubscribe-task",
 		}
 		paramsBytes, _ := json.Marshal(params)
 
 		reqBody := jsonrpc.Request{
 			Message: jsonrpc.Message{JSONRPC: "2.0", ID: "req-resub-1"},
-			Method:  jsonrpc1.MethodTasksResubscribe,
+			Method:  jsonprotocol.MethodTasksResubscribe,
 			Params:  json.RawMessage(paramsBytes),
 		}
 		reqBytes, _ := json.Marshal(reqBody)
@@ -317,14 +317,14 @@ func TestA2AServer_Resubscribe(t *testing.T) {
 		mockTM.SubscribeError = taskmanager.ErrTaskNotFound("nonexistent-task")
 
 		// Create request
-		params := jsonrpc1.TaskIDParams{
+		params := jsonprotocol.TaskIDParams{
 			ID: "nonexistent-task",
 		}
 
 		resp := performJSONRPCRequest(
 			t,
 			testServer,
-			jsonrpc1.MethodTasksResubscribe,
+			jsonprotocol.MethodTasksResubscribe,
 			params,
 			"req-resub-err",
 		)

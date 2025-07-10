@@ -206,7 +206,7 @@ func TestA2AClient_SetPushNotification(t *testing.T) {
 		TaskID: taskID,
 		PushNotificationConfig: jsonprotocol.PushNotificationConfig{
 			URL: "https://example.com/webhook",
-			Authentication: &jsonprotocol.AuthenticationInfo{
+			Authentication: &jsonprotocol.PushNotificationAuthenticationInfo{
 				Schemes: []string{"bearer"},
 			},
 		},
@@ -314,7 +314,7 @@ func TestA2AClient_GetPushNotification(t *testing.T) {
 			TaskID: taskID,
 			PushNotificationConfig: jsonprotocol.PushNotificationConfig{
 				URL: "https://example.com/webhook",
-				Authentication: &jsonprotocol.AuthenticationInfo{
+				Authentication: &jsonprotocol.PushNotificationAuthenticationInfo{
 					Schemes: []string{"bearer"},
 				},
 			},

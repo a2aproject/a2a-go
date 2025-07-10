@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
-	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/protocol/jsonprotocol"
 	"github.com/a2aproject/a2a-go/taskmanager"
 )
@@ -118,48 +116,7 @@ func TestA2AServer_HandleJSONRPC_Methods(t *testing.T) {
 	require.NoError(t, err)
 	testServer := httptest.NewServer(http.HandlerFunc(a2aServer.handleJSONRPC))
 	defer testServer.Close()
-
 	taskID := "test-task-rpc-1"
-	initialMsg := jsonprotocol.Message{Role: jsonprotocol.MessageRoleUser, Parts: []jsonprotocol.Part{jsonprotocol.NewTextPart("Input data")}}
-
-	// --- Test tasks/send ---
-	t.Run("tasks/send success", func(t *testing.T) {
-		mockTM.SendResponse = &jsonprotocol.Task{
-			ID:     taskID,
-			Status: jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateWorking},
-		}
-		mockTM.SendError = nil
-
-		params := jsonprotocol.SendTaskParams{ID: taskID, Message: initialMsg}
-		resp := performJSONRPCRequest(t, testServer, "tasks/send", params, taskID)
-
-		assert.Nil(t, resp.Error, "Response error should be nil")
-		require.NotNil(t, resp.Result, "Response result should not be nil")
-
-		// Remarshal result interface{} to bytes
-		resultBytes, err := json.Marshal(resp.Result)
-		require.NoError(t, err, "Failed to remarshal result for Task unmarshalling")
-		var resultTask jsonprotocol.Task
-		err = json.Unmarshal(resultBytes, &resultTask)
-		require.NoError(t, err, "Failed to unmarshal task from remarshalled result")
-		assert.Equal(t, taskID, resultTask.ID)
-		assert.Equal(t, jsonprotocol.TaskStateWorking, resultTask.Status.State)
-	})
-
-	t.Run("tasks/send error", func(t *testing.T) {
-		mockTM.SendResponse = nil
-		mockTM.SendError = fmt.Errorf("mock send task failed")
-
-		params := jsonprotocol.SendTaskParams{ID: "task-send-fail", Message: initialMsg}
-		resp := performJSONRPCRequest(t, testServer, "tasks/send", params, "req-send-fail")
-
-		assert.Nil(t, resp.Result, "Response result should be nil")
-		require.NotNil(t, resp.Error, "Response error should not be nil")
-		assert.Equal(t, jsonrpc.CodeInternalError, resp.Error.Code)
-		assert.Contains(t, resp.Error.Data, "mock send task failed")
-	})
-
-	// --- Test tasks/get ---
 	t.Run("tasks/get success", func(t *testing.T) {
 		mockTM.GetResponse = &jsonprotocol.Task{
 			ID:     taskID,
@@ -241,146 +198,6 @@ func TestA2AServer_HandleJSONRPC_Methods(t *testing.T) {
 		require.NotNil(t, resp.Error, "Response error should not be nil")
 		assert.Equal(t, jsonrpc.CodeMethodNotFound, resp.Error.Code)
 	})
-}
-
-func TestA2ASrv_HandleTasksSendSub_SSE(t *testing.T) {
-	mockTM := newMockTaskManager()
-	agentCard := defaultAgentCard()
-	a2aServer, err := NewA2AServer(agentCard, mockTM)
-	require.NoError(t, err)
-	testServer := httptest.NewServer(http.HandlerFunc(a2aServer.handleJSONRPC))
-	defer testServer.Close()
-
-	taskID := "test-task-sse-1"
-	initialMsg := jsonprotocol.Message{
-		Role: jsonprotocol.MessageRoleUser, Parts: []jsonprotocol.Part{jsonprotocol.NewTextPart("SSE test input")}}
-
-	// Configure mock events
-	event1 := jsonprotocol.TaskStatusUpdateEvent{
-		TaskID: taskID,
-		Status: jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateWorking},
-	}
-	event2 := jsonprotocol.TaskArtifactUpdateEvent{
-		TaskID: taskID,
-		Artifact: jsonprotocol.Artifact{
-			ArtifactID: "test-artifact-1",
-			Parts:      []jsonprotocol.Part{jsonprotocol.NewTextPart("Intermediate result")},
-		},
-	}
-	final := true
-	event3 := jsonprotocol.TaskStatusUpdateEvent{
-		TaskID: taskID,
-		Status: jsonprotocol.TaskStatus{State: jsonprotocol.TaskStateCompleted},
-		Final:  final,
-	}
-	// Wrap events in StreamingMessageEvent
-	mockTM.SubscribeEvents = []jsonprotocol.StreamingMessageEvent{
-		{Result: &event1},
-		{Result: &event2},
-		{Result: &event3},
-	}
-	mockTM.SubscribeError = nil
-
-	// Prepare SSE request
-	params := jsonprotocol.SendTaskParams{ID: taskID, Message: initialMsg}
-	paramsBytes, _ := json.Marshal(params)
-	reqBody := jsonrpc.Request{
-		Message: jsonrpc.Message{JSONRPC: "2.0", ID: taskID},
-		Method:  "tasks/sendSubscribe",
-		Params:  json.RawMessage(paramsBytes),
-	}
-	reqBytes, _ := json.Marshal(reqBody)
-
-	httpReq, err := http.NewRequest(http.MethodPost, testServer.URL+"/", bytes.NewReader(reqBytes))
-	require.NoError(t, err)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream") // Critical for SSE
-
-	// Perform request
-	resp, err := testServer.Client().Do(httpReq)
-	require.NoError(t, err, "HTTP request for SSE failed")
-	defer resp.Body.Close()
-
-	// Assert initial response
-	require.Equal(t, http.StatusOK, resp.StatusCode, "SSE initial response status should be OK")
-	require.True(t, strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream"), "Content-Type should be text/event-stream")
-	assert.Equal(t, "no-cache", resp.Header.Get("Cache-Control"), "Cache-Control should be no-cache")
-	assert.Equal(t, "keep-alive", resp.Header.Get("Connection"), "Connection should be keep-alive")
-
-	// Read and verify SSE events
-	reader := sse.NewEventReader(resp.Body) // Use the client's SSE reader
-	receivedEvents := []jsonprotocol.StreamingMessageEvent{}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	for {
-		data, eventType, err := reader.ReadEvent()
-		if err == io.EOF {
-			break // End of stream
-		}
-		if err != nil {
-			t.Fatalf("Error reading SSE event: %v", err)
-		}
-		if len(data) == 0 { // Skip keep-alive comments/empty lines
-			continue
-		}
-		var jsonRPCResponse jsonrpc.RawResponse
-		if err := json.Unmarshal(data, &jsonRPCResponse); err != nil {
-			t.Logf("Not a JSON-RPC response: %s", string(data))
-			if eventType == "close" {
-				t.Logf("Received close event: %s", string(data))
-				break
-			}
-			continue
-		}
-		if jsonRPCResponse.Error != nil {
-			t.Fatalf("JSON-RPC error in SSE event: %v", jsonRPCResponse.Error)
-			continue
-		}
-		eventBytes := jsonRPCResponse.Result
-
-		var event *jsonprotocol.StreamingMessageEvent
-		switch eventType {
-		case "task_status_update":
-			var statusEvent jsonprotocol.TaskStatusUpdateEvent
-			if err := json.Unmarshal(eventBytes, &statusEvent); err != nil {
-				t.Fatalf("Failed to unmarshal task_status_update: %v. Data: %s", err, string(eventBytes))
-			}
-			event = &jsonprotocol.StreamingMessageEvent{Result: &statusEvent}
-		case "task_artifact_update":
-			var artifactEvent jsonprotocol.TaskArtifactUpdateEvent
-			if err := json.Unmarshal(eventBytes, &artifactEvent); err != nil {
-				t.Fatalf("Failed to unmarshal task_artifact_update: %v. Data: %s", err, string(eventBytes))
-			}
-			event = &jsonprotocol.StreamingMessageEvent{Result: &artifactEvent}
-		case "close": // Handle potential close event
-			t.Logf("Received close event: %s", string(data))
-			return
-		default:
-			t.Logf("Skipping unknown event type: %s", eventType)
-			continue
-		}
-
-		if event != nil {
-			receivedEvents = append(receivedEvents, *event)
-		}
-
-		// Check context cancellation (e.g., test timeout)
-		if ctx.Err() != nil {
-			t.Fatalf("Test context canceled: %v", ctx.Err())
-		}
-	}
-	require.Greater(t, len(receivedEvents), 0, "Should have received at least one event")
-	var lastStatusEvent jsonprotocol.TaskStatusUpdateEvent
-	for i := len(receivedEvents) - 1; i >= 0; i-- {
-		if statusEvent, ok := receivedEvents[i].Result.(*jsonprotocol.TaskStatusUpdateEvent); ok {
-			lastStatusEvent = *statusEvent
-			break
-		}
-	}
-	require.NotEmpty(t, lastStatusEvent.TaskID, "Should have received at least one status update event")
-	assert.Equal(t, jsonprotocol.TaskStateCompleted, lastStatusEvent.Status.State, "State of last status event should be 'completed'")
 }
 
 // getCurrentTimestamp returns the current time in ISO 8601 format

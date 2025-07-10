@@ -659,25 +659,6 @@ func NewTaskArtifactUpdateEvent(taskID, contextID string, artifact Artifact, las
 	}
 }
 
-// SendTaskParams defines the parameters for the tasks_send and tasks_sendSubscribe RPC methods.
-// See A2A Spec section on RPC Methods.
-type SendTaskParams struct {
-	// RPCID is the ID of json-rpc.
-	RPCID string `json:"-"`
-	// ID is the ID of the task.
-	ID string `json:"id"`
-	// SessionID is the optional session ID.
-	SessionID *string `json:"sessionId,omitempty"`
-	// Message is the user's message initiating the task.
-	Message Message `json:"message"`
-	// PushNotification contains optional push notification settings.
-	PushNotification *PushNotificationConfig `json:"pushNotification,omitempty"`
-	// HistoryLength is the requested history length in response.
-	HistoryLength *int `json:"historyLength,omitempty"`
-	// Metadata is the optional metadata.
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-}
-
 // TaskQueryParams defines the parameters for the tasks_get RPC method.
 // See A2A Spec section on RPC Methods.
 type TaskQueryParams struct {
