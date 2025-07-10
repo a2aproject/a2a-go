@@ -1,4 +1,4 @@
-// Package jsonrpc defines constants and potentially shared types for the A2A protocol itself.
+// Package jsonprotocol defines constants and potentially shared types for the A2A protocol itself.
 package jsonprotocol
 
 // Method names for A2A 0.2.2 specification.
