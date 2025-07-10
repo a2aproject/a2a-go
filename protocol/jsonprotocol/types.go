@@ -273,10 +273,6 @@ type PushNotificationAuthenticationInfo struct {
 	Schemes []string `json:"schemes"`
 }
 
-// AuthenticationInfo is deprecated, use PushNotificationAuthenticationInfo instead.
-// TODO: Remove in next major version.
-type AuthenticationInfo = PushNotificationAuthenticationInfo
-
 // OAuth2AuthInfo contains OAuth2-specific authentication details.
 type OAuth2AuthInfo struct {
 	// ClientID is the OAuth2 client ID.
@@ -324,7 +320,7 @@ type APIKeyAuthInfo struct {
 // PushNotificationConfig represents the configuration for task push notifications.
 type PushNotificationConfig struct {
 	// Authentication contains optional authentication details.
-	Authentication *AuthenticationInfo `json:"authentication,omitempty"`
+	Authentication *PushNotificationAuthenticationInfo `json:"authentication,omitempty"`
 	// Push Notification ID, created by server to support multiple push notification.
 	ID string `json:"id,omitempty"`
 	// Token is an optional authentication token.

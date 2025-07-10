@@ -419,7 +419,7 @@ func (s *A2AServer) handleTasksPushNotificationSet(
 	if s.jwksEnabled && s.pushAuth != nil {
 		// Add JWT support by indicating the auth scheme in the config.
 		if params.PushNotificationConfig.Authentication == nil {
-			params.PushNotificationConfig.Authentication = &jsonprotocol.AuthenticationInfo{
+			params.PushNotificationConfig.Authentication = &jsonprotocol.PushNotificationAuthenticationInfo{
 				Schemes: []string{"bearer"},
 			}
 		} else {

@@ -27,12 +27,6 @@ const (
 	ErrCodeInvalidAgentResponse         int = -32006 // Invalid agent response
 )
 
-// ErrCodeTaskFinal is deprecated: Use ErrCodeTaskNotCancelable instead
-const ErrCodeTaskFinal int = -32002
-
-// ErrCodePushNotificationNotConfigured is deprecated: Use ErrCodePushNotificationNotSupported instead
-const ErrCodePushNotificationNotConfigured int = -32003
-
 // Standard JSON-RPC error functions
 
 // ErrJSONParse creates a JSON-RPC error for invalid JSON payload.
