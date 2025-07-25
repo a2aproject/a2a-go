@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.23.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools
+      run: make install-tools
+
+    - name: Check proto definitions are up to date
+      run: make check-proto-updated
+
+    - name: Generate code
+      run: make proto
+
+    - name: Lint Go code
+      run: make lint-go
+
+    - name: Build
+      run: make build
+
+    - name: Run tests
+      run: make test
+
+    - name: Check for breaking changes
+      if: github.event_name == 'pull_request'
+      run: make breaking

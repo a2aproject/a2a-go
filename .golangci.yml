@@ -1,0 +1,40 @@
+run:
+  timeout: 5m
+  go: "1.24"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - gosec
+    - unconvert
+    - prealloc
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: unused-parameter
+        disabled: false
+
+issues:
+  exclude-rules:
+    # Exclude generated protobuf files
+    - path: generated/
+      linters:
+        - all
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
