@@ -1,0 +1,91 @@
+name: Proto Update
+
+on:
+  schedule:
+    # Check for proto updates weekly on Mondays at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    # Allow manual triggering of proto updates
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  proto-update:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.x'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools
+      run: make install-tools
+
+    - name: Check for proto updates and commit
+      id: check-proto
+      run: |
+        set -e # Exit immediately if a command exits with a non-zero status.
+        make update-proto
+        if [[ -n $(git status --porcelain) ]]; then
+          echo "Proto definitions have been updated"
+
+          # Get version info for commit message and PR description
+          if [[ -f "buf.gen.yaml" ]]; then
+            NEW_VERSION=$(grep 'ref:' buf.gen.yaml | sed 's/.*ref: *//')
+            echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          else
+            NEW_VERSION="latest"
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add buf.gen.yaml grpc/
+          git commit -m "chore: update A2A proto definitions to ${NEW_VERSION}"
+          echo "updated=true" >> $GITHUB_OUTPUT
+        else
+          echo "Proto definitions are up to date"
+          echo "updated=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Pull Request with GitHub CLI
+      if: steps.check-proto.outputs.updated == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PR_TITLE: "chore: update A2A proto definitions to ${{ steps.check-proto.outputs.version }}"
+        PR_BODY: |
+          ## A2A Protocol Update
+          This PR updates the A2A protocol buffer definitions to **${{ steps.check-proto.outputs.version }}** from the official repository.
+          ### Changes
+          - Updated `buf.gen.yaml` to reference ${{ steps.check-proto.outputs.version }}
+          - Regenerated Go protobuf code in `grpc/a2a/v1/`
+          - Updated proto definitions from [a2aproject/A2A](https://github.com/a2aproject/A2A)
+      run: |
+        gh pr create \
+          --title "$PR_TITLE" \
+          --body "$PR_BODY" \
+          --base "main" \
+          --head "chore/proto-update-${{ steps.check-proto.outputs.version }}-${{ github.run_id }}"
+
+    - name: Summary
+      run: |
+        if [[ "${{ steps.check-proto.outputs.updated }}" == "true" ]]; then
+          echo "Proto definitions updated to ${{ steps.check-proto.outputs.version }}"
+          echo "Pull request created for review"
+        else
+          echo "Proto definitions are already up to date"
+        fi
