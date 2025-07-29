@@ -6,7 +6,7 @@
 // 	protoc        (unknown)
 // source: a2a.proto
 
-package grpc
+package a2av1
 
 import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -3579,9 +3579,9 @@ const file_a2a_proto_rawDesc = "" +
 	"\x1eListTaskPushNotificationConfig\x12-.a2a.v1.ListTaskPushNotificationConfigRequest\x1a..a2a.v1.ListTaskPushNotificationConfigResponse\"=\xdaA\x06parent\x82\xd3\xe4\x93\x02.\x12,/v1/{parent=tasks/*}/pushNotificationConfigs\x12P\n" +
 	"\fGetAgentCard\x12\x1b.a2a.v1.GetAgentCardRequest\x1a\x11.a2a.v1.AgentCard\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/card\x12\xa8\x01\n" +
-	" DeleteTaskPushNotificationConfig\x12/.a2a.v1.DeleteTaskPushNotificationConfigRequest\x1a\x16.google.protobuf.Empty\";\xdaA\x04name\x82\xd3\xe4\x93\x02.*,/v1/{name=tasks/*/pushNotificationConfigs/*}Bo\n" +
+	" DeleteTaskPushNotificationConfig\x12/.a2a.v1.DeleteTaskPushNotificationConfigRequest\x1a\x16.google.protobuf.Empty\";\xdaA\x04name\x82\xd3\xe4\x93\x02.*,/v1/{name=tasks/*/pushNotificationConfigs/*}B\x7f\n" +
 	"\n" +
-	"com.a2a.v1B\bA2aProtoP\x01Z\x1egithub.com/a2aproject/a2a/grpc\xa2\x02\x03AXX\xaa\x02\x06A2a.V1\xca\x02\x06A2a\\V1\xe2\x02\x12A2a\\V1\\GPBMetadata\xea\x02\aA2a::V1b\x06proto3"
+	"com.a2a.v1B\bA2aProtoP\x01Z.github.com/a2aproject/a2a-go/grpc/a2a/v1;a2av1\xa2\x02\x03AXX\xaa\x02\x06A2a.V1\xca\x02\x06A2a\\V1\xe2\x02\x12A2a\\V1\\GPBMetadata\xea\x02\aA2a::V1b\x06proto3"
 
 var (
 	file_a2a_proto_rawDescOnce sync.Once
