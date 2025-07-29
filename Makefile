@@ -65,16 +65,6 @@ clean:
 	@rm -rf grpc/a2a/
 	@echo "Clean complete"
 
-# Check for breaking changes
-breaking:
-	@echo "Checking for breaking changes..."
-	@if git ls-tree -r HEAD --name-only | grep -q "proto/.*\.proto$$"; then \
-		cd proto && $(BUF) breaking --against '../.git#branch=main,subdir=proto'; \
-	else \
-		echo "No proto files in git history yet - skipping breaking change check"; \
-	fi
-	@echo "Breaking change check complete"
-
 # Update dependencies
 deps:
 	@echo "Updating dependencies..."
@@ -104,7 +94,7 @@ proto-info:
 		echo "Repository: $$(grep 'git_repo:' buf.gen.yaml | sed 's/.*git_repo: *//')"; \
 		echo "Version/Ref: $$(grep 'ref:' buf.gen.yaml | sed 's/.*ref: *//')"; \
 		echo "Subdir: $$(grep 'subdir:' buf.gen.yaml | sed 's/.*subdir: *//')"; \
-		echo "Output: grpc/a2a/v1/"; \
+	    echo "Output: $$(grep 'out:' buf.gen.yaml | head -n1 | sed 's/.*out: *//')"
 	else \
 		echo "No buf.gen.yaml found. Run 'make setup' to initialize."; \
 	fi

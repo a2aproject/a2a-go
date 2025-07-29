@@ -28,12 +28,12 @@ if [[ -f "${BUF_GEN_FILE}" ]]; then
 fi
 
 # Get latest available tag from the official repo
-LATEST_REF=$(curl -fsSL "https://api.github.com/repos/a2aproject/A2A/tags" 2>/dev/null | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -1 || echo "unknown")
+LATEST_REF=$(curl -fsSL "https://api.github.com/repos/a2aproject/A2A/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' || echo "unknown")
 
 # Compare versions
 if [[ -n "$CURRENT_REF" && "$CURRENT_REF" == "$LATEST_REF" && "$LATEST_REF" != "unknown" ]]; then
     echo "✓ Proto definitions are up to date (version: ${CURRENT_REF})"
-    
+
     # Check if generated files exist
     if [[ -d "${PROJECT_ROOT}/grpc/a2a/v1" ]] && [[ -f "${PROJECT_ROOT}/grpc/a2a/v1/a2a.pb.go" ]]; then
         echo "✓ Generated files are present"
@@ -61,7 +61,14 @@ fi
 
 # Update buf.gen.yaml with latest version
 echo "Updating buf.gen.yaml to version ${LATEST_REF}..."
-sed -i.backup "s/ref: .*/ref: ${LATEST_REF}/" "${BUF_GEN_FILE}"
+if command -v yq &> /dev/null; then
+    yq e ".inputs[0].ref = \"${LATEST_REF}\"" -i "${BUF_GEN_FILE}"
+    echo "Updated buf.gen.yaml using yq."
+else
+    # Fallback to sed if yq is not available
+    sed -i.backup "s/ref: .*/ref: ${LATEST_REF}/" "${BUF_GEN_FILE}"
+    echo "Updated buf.gen.yaml using sed (yq not found)."
+fi
 
 echo "Successfully updated A2A proto version reference"
 

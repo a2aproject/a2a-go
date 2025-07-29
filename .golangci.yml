@@ -29,7 +29,7 @@ linters-settings:
 issues:
   exclude-rules:
     # Exclude generated protobuf files
-    - path: generated/
+    - path: grpc/a2a/v1
       linters:
         - all
 
