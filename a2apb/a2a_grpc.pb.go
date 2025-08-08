@@ -6,7 +6,7 @@
 // - protoc             (unknown)
 // source: a2a.proto
 
-package grpc
+package a2apb
 
 import (
 	context "context"
