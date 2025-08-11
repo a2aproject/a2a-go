@@ -20,11 +20,10 @@ managed:
       value: github.com/a2aproject/a2a-go/a2apb
 
 plugins:
-  - remote: buf.build/protocolbuffers/go
+  - local: protoc-gen-gogoslick
     out: a2apb
-    opt:
-      - paths=source_relative
-  
+    opt: [paths=source_relative]
+
   - remote: buf.build/grpc/go
     out: a2apb
     opt:
