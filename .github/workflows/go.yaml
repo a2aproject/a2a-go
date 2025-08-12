@@ -14,6 +14,10 @@ on:
 
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,13 +28,10 @@ jobs:
       uses: ./.github/actions/setup
 
     - name: Tidy
-      run: |
-        go mod tidy
-        git diff --exit-code go.mod
-        git diff --exit-code go.sum
+      run: go mod tidy -diff
       
     - name: Build
-      run:  go build -mod=readonly -v -trimpath ./...
+      run: go build -mod=readonly -v ./...
 
     - name: Test
       run: go test -mod=readonly -v ./...
