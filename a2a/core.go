@@ -261,7 +261,7 @@ type FilePartFile struct {
 	Name *string
 
 	// A URL pointing to the file's content.
-	Uri string
+	URI string
 }
 
 // Represents a file with its content provided directly as a base64-encoded string.
@@ -277,7 +277,7 @@ type FileWithBytes struct {
 }
 
 // Represents a file with its content located at a specific URI.
-type FileWithUri struct {
+type FileWithURI struct {
 	// The MIME type of the file (e.g., "application/pdf").
 	MimeType *string
 
@@ -285,7 +285,7 @@ type FileWithUri struct {
 	Name *string
 
 	// A URL pointing to the file's content.
-	Uri string
+	URI string
 }
 
 // Requests

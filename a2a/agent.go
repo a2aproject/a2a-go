@@ -152,7 +152,7 @@ type AgentExtension struct {
 	Required *bool
 
 	// The unique URI identifying the extension.
-	Uri string
+	URI string
 }
 
 // Declares a combination of a target URL and a transport protocol for interacting
