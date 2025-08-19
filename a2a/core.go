@@ -264,13 +264,14 @@ type TaskStatusUpdateEvent struct {
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
 func NewStatusUpdateEvent(task Task, state TaskState, msg *Message) TaskStatusUpdateEvent {
+	now := time.Now()
 	return TaskStatusUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
 		Status: TaskStatus{
 			State:     state,
 			Message:   msg,
-			Timestamp: &time.Time{},
+			Timestamp: &now,
 		},
 	}
 }
@@ -399,17 +400,7 @@ type MessageSendParams struct {
 	Metadata map[string]any
 }
 
-// Int is a utility for creating a pointer to int.
-func Int(v int) *int {
-	return &v
-}
-
-// String is a utility for creating a pointer to string.
-func String(v string) *string {
-	return &v
-}
-
-// Bool is a utility for creating a pointer to bool.
-func Bool(v bool) *bool {
+// Ptr is a utility for creating pointers to primitives.
+func Ptr[T any](v T) *T {
 	return &v
 }
