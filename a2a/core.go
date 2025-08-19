@@ -218,8 +218,8 @@ type TaskArtifactUpdateEvent struct {
 	Metadata map[string]any
 }
 
-// NewCreateArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
-func NewCreateArtifactEvent(task Task, parts ...Part) TaskArtifactUpdateEvent {
+// NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
+func NewArtifactEvent(task Task, parts ...Part) TaskArtifactUpdateEvent {
 	return TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
@@ -230,8 +230,8 @@ func NewCreateArtifactEvent(task Task, parts ...Part) TaskArtifactUpdateEvent {
 	}
 }
 
-// NewUpdateArtifactEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
-func NewUpdateArtifactEvent(task Task, id ArtifactID, parts ...Part) TaskArtifactUpdateEvent {
+// NewArtifactUpdateEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
+func NewArtifactUpdateEvent(task Task, id ArtifactID, parts ...Part) TaskArtifactUpdateEvent {
 	return TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
@@ -397,4 +397,19 @@ type MessageSendParams struct {
 
 	// Optional metadata for extensions.
 	Metadata map[string]any
+}
+
+// Int is a utility for creating a pointer to int.
+func Int(v int) *int {
+	return &v
+}
+
+// String is a utility for creating a pointer to string.
+func String(v string) *string {
+	return &v
+}
+
+// Bool is a utility for creating a pointer to bool.
+func Bool(v bool) *bool {
+	return &v
 }
