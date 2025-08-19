@@ -302,29 +302,22 @@ type DataPart struct {
 // provided either directly as bytes or as a URI.
 type FilePart struct {
 	// The file content, represented as either a URI or as base64-encoded bytes.
-	File FilePartFile
+	File FilePartContent
 
 	// Optional metadata associated with this part.
 	Metadata map[string]any
 }
 
-// Represents a file with its content provided directly as a base64-encoded string.
-type FilePartFile struct {
-	// The base64-encoded content of the file.
-	Bytes string
-
-	// The MIME type of the file (e.g., "application/pdf").
-	MimeType *string
-
-	// An optional name for the file (e.g., "document.pdf").
-	Name *string
-
-	// A URL pointing to the file's content.
-	URI string
+// A discriminated union representing content of a FilePart.
+type FilePartContent interface {
+	isFilePartContent()
 }
 
+func (FileBytes) isFilePartContent() {}
+func (FileURI) isFilePartContent()   {}
+
 // Represents a file with its content provided directly as a base64-encoded string.
-type FileWithBytes struct {
+type FileBytes struct {
 	// The base64-encoded content of the file.
 	Bytes string
 
@@ -336,7 +329,7 @@ type FileWithBytes struct {
 }
 
 // Represents a file with its content located at a specific URI.
-type FileWithURI struct {
+type FileURI struct {
 	// The MIME type of the file (e.g., "application/pdf").
 	MimeType *string
 
