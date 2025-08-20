@@ -310,6 +310,12 @@ type FilePart struct {
 	// The file content, represented as either a URI or as base64-encoded bytes.
 	File FilePartContent
 
+	// The MIME type of the file (e.g., "application/pdf").
+	MimeType *string
+
+	// An optional name for the file (e.g., "document.pdf").
+	Name *string
+
 	// Optional metadata associated with this part.
 	Metadata map[string]any
 }
@@ -326,22 +332,10 @@ func (FileURI) isFilePartContent()   {}
 type FileBytes struct {
 	// The base64-encoded content of the file.
 	Bytes string
-
-	// The MIME type of the file (e.g., "application/pdf").
-	MimeType *string
-
-	// An optional name for the file (e.g., "document.pdf").
-	Name *string
 }
 
 // Represents a file with its content located at a specific URI.
 type FileURI struct {
-	// The MIME type of the file (e.g., "application/pdf").
-	MimeType *string
-
-	// An optional name for the file (e.g., "document.pdf").
-	Name *string
-
 	// A URL pointing to the file's content.
 	URI string
 }
