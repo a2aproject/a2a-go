@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/events"
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
@@ -26,7 +27,7 @@ type AgentExecutor interface {
 	// into A2A events writing them to the provided event queue.
 	//
 	// Returns an error if agent invocation failed.
-	Execute(ctx context.Context, reqCtx RequestContext, queue EventWriter) error
+	Execute(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error
 
 	// Cancel requests the agent to stop processing an ongoing task.
 	//
@@ -35,7 +36,7 @@ type AgentExecutor interface {
 	// state TaskStateCanceled to the event queue.
 	//
 	// Returns an error if the cancellation request cannot be processed.
-	Cancel(ctx context.Context, reqCtx RequestContext, queue EventWriter) error
+	Cancel(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error
 }
 
 // AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
