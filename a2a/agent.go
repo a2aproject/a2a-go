@@ -82,7 +82,7 @@ type AgentCard struct {
 	// protocol.
 	// Clients should prefer this transport and URL combination when both are
 	// supported.
-	PreferredTransport TransportProtocol
+	PreferredTransport string
 
 	// The version of the A2A protocol this agent supports.
 	ProtocolVersion string
@@ -161,7 +161,7 @@ type AgentExtension struct {
 // mechanisms.
 type AgentInterface struct {
 	// The transport protocol supported at this URL.
-	Transport TransportProtocol
+	Transport string
 
 	// The URL where this interface is available. Must be a valid absolute HTTPS URL
 	// in production.
