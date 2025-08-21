@@ -17,7 +17,7 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 	}
 	defer q.Close()
 
-	want := a2a.Event(a2a.Message{MessageID: "test-event"})
+	want := a2a.Message{MessageID: "test-event"}
 	if err := q.Write(context.Background(), want); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
@@ -27,7 +27,7 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 		t.Fatalf("Read() error = %v", err)
 	}
 
-	if got != want {
+	if got.(a2a.Message).MessageID != want.MessageID {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
 }

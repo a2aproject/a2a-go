@@ -78,7 +78,7 @@ func (m *mockEventQueue) Close() error {
 	return nil
 }
 
-func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
+func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 	messageWithTaskID := a2a.MessageSendParams{
 		Message: a2a.Message{
@@ -113,13 +113,13 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 
 		handler := NewHandler(mockExec, WithEventQueueManager(mockQM))
 
-		result, err := handler.OnHandleSendMessage(ctx, messageWithTaskID)
+		result, err := handler.OnSendMessage(ctx, messageWithTaskID)
 		if err != nil {
-			t.Fatalf("OnHandleSendMessage() error = %v, wantErr nil", err)
+			t.Fatalf("OnSendMessage() error = %v, wantErr nil", err)
 		}
 
 		if !reflect.DeepEqual(result, expectedEvent) {
-			t.Errorf("OnHandleSendMessage() got = %v, want %v", result, expectedEvent)
+			t.Errorf("OnSendMessage() got = %v, want %v", result, expectedEvent)
 		}
 	})
 
@@ -134,13 +134,13 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 			}
 		}()
 
-		_, err := handler.OnHandleSendMessage(ctx, messageWithoutTaskID)
+		_, err := handler.OnSendMessage(ctx, messageWithoutTaskID)
 		if err == nil {
-			t.Fatal("OnHandleSendMessage() with nil TaskID should have returned an error, but got nil")
+			t.Fatal("OnSendMessage() with nil TaskID should have returned an error, but got nil")
 		}
 		expectedErrStr := "message is missing TaskID"
 		if err.Error() != expectedErrStr {
-			t.Errorf("OnHandleSendMessage() error = %q, want %q", err.Error(), expectedErrStr)
+			t.Errorf("OnSendMessage() error = %q, want %q", err.Error(), expectedErrStr)
 		}
 	})
 
@@ -155,9 +155,9 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 
 		handler := NewHandler(mockExec, WithEventQueueManager(mockQM))
 
-		_, err := handler.OnHandleSendMessage(ctx, messageWithTaskID)
+		_, err := handler.OnSendMessage(ctx, messageWithTaskID)
 		if !errors.Is(err, expectedErr) {
-			t.Errorf("OnHandleSendMessage() error = %v, want %v", err, expectedErr)
+			t.Errorf("OnSendMessage() error = %v, want %v", err, expectedErr)
 		}
 	})
 
@@ -177,9 +177,9 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 
 		handler := NewHandler(mockExec, WithEventQueueManager(mockQM))
 
-		_, err := handler.OnHandleSendMessage(ctx, messageWithTaskID)
+		_, err := handler.OnSendMessage(ctx, messageWithTaskID)
 		if !errors.Is(err, expectedErr) {
-			t.Errorf("OnHandleSendMessage() error = %v, want %v", err, expectedErr)
+			t.Errorf("OnSendMessage() error = %v, want %v", err, expectedErr)
 		}
 	})
 
@@ -200,9 +200,9 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 
 		handler := NewHandler(mockExec, WithEventQueueManager(mockQM))
 
-		_, err := handler.OnHandleSendMessage(ctx, messageWithTaskID)
+		_, err := handler.OnSendMessage(ctx, messageWithTaskID)
 		if !errors.Is(err, expectedErr) {
-			t.Errorf("OnHandleSendMessage() error = %v, want %v", err, expectedErr)
+			t.Errorf("OnSendMessage() error = %v, want %v", err, expectedErr)
 		}
 	})
 
@@ -227,7 +227,7 @@ func TestDefaultRequestHandler_OnHandleSendMessage(t *testing.T) {
 			}
 		}()
 
-		_, _ = handler.OnHandleSendMessage(ctx, messageWithTaskID)
+		_, _ = handler.OnSendMessage(ctx, messageWithTaskID)
 	})
 }
 
@@ -235,28 +235,28 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	handler := NewHandler(&mockAgentExecutor{})
 	ctx := context.Background()
 
-	if _, err := handler.OnHandleGetTask(ctx, a2a.TaskQueryParams{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleGetTask: expected unimplemented error, got %v", err)
+	if _, err := handler.OnGetTask(ctx, a2a.TaskQueryParams{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnGetTask: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnHandleCancelTask(ctx, a2a.TaskIDParams{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleCancelTask: expected unimplemented error, got %v", err)
+	if _, err := handler.OnCancelTask(ctx, a2a.TaskIDParams{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
 	}
-	if seq := handler.OnHandleResubscribeToTask(ctx, a2a.TaskIDParams{}); seq != nil {
-		t.Error("OnHandleResubscribeToTask: expected nil iterator, got non-nil")
+	if seq := handler.OnResubscribeToTask(ctx, a2a.TaskIDParams{}); seq != nil {
+		t.Error("OnResubscribeToTask: expected nil iterator, got non-nil")
 	}
-	if seq := handler.OnHandleSendMessageStream(ctx, a2a.MessageSendParams{}); seq != nil {
-		t.Error("OnHandleSendMessageStream: expected nil iterator, got non-nil")
+	if seq := handler.OnSendMessageStream(ctx, a2a.MessageSendParams{}); seq != nil {
+		t.Error("OnSendMessageStream: expected nil iterator, got non-nil")
 	}
-	if _, err := handler.OnHandleGetTaskPushConfig(ctx, a2a.GetTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleGetTaskPushConfig: expected unimplemented error, got %v", err)
+	if _, err := handler.OnGetTaskPushConfig(ctx, a2a.GetTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnHandleListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleListTaskPushConfig: expected unimplemented error, got %v", err)
+	if _, err := handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnListTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnHandleSetTaskPushConfig(ctx, a2a.TaskPushConfig{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleSetTaskPushConfig: expected unimplemented error, got %v", err)
+	if _, err := handler.OnSetTaskPushConfig(ctx, a2a.TaskPushConfig{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnSetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if err := handler.OnHandleDeleteTaskPushConfig(ctx, a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
-		t.Errorf("OnHandleDeleteTaskPushConfig: expected unimplemented error, got %v", err)
+	if err := handler.OnDeleteTaskPushConfig(ctx, a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+		t.Errorf("OnDeleteTaskPushConfig: expected unimplemented error, got %v", err)
 	}
 }
