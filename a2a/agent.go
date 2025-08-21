@@ -161,7 +161,7 @@ type AgentExtension struct {
 // mechanisms.
 type AgentInterface struct {
 	// The transport protocol supported at this URL.
-	Transport string
+	Transport TransportProtocol
 
 	// The URL where this interface is available. Must be a valid absolute HTTPS URL
 	// in production.
