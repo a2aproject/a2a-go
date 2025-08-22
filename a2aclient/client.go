@@ -27,14 +27,14 @@ type Config struct {
 	PushConfigs []a2a.PushConfig
 	// AcceptedOutputModes to pass as message send configuration to A2A server.
 	AcceptedOutputModes []string
-	// PreferredTransports is used for selecting the most appropriate communication protocol. 
-	// The first transport from the list which is also supported by the server is going to be used 
+	// PreferredTransports is used for selecting the most appropriate communication protocol.
+	// The first transport from the list which is also supported by the server is going to be used
 	// to establish a connection. If no preference is provided the server ordering will be used.
 	PreferredTransports []string
 }
 
 // EventCallback can be attached to a Client for receiving Task update notifications.
-type EventCallback func(ctx context.Context, card a2a.AgentCard, event a2a.Event)
+type EventCallback func(ctx context.Context, card a2a.AgentCard, event a2a.Event) error
 
 // Client represents a transport-agnostic implementation of A2A client.
 // The actual call is delegated to a specific Transport implementation.
