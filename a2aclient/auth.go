@@ -30,6 +30,15 @@ type SessionID string
 // AuthCredential represents a security-scheme specific credential (eg. a JWT token).
 type AuthCredential string
 
+// AuthInterceptor implements CallInterceptor.
+// It uses SessionID provided using a2aclient.WithSessionID to lookup credentials according
+// and attach them to the according to the security scheme described in a2a.AgentCard.
+// Credentials fetching is delegated to CredentialsService.
+type AuthInterceptor struct {
+	PassthroughCallInterceptor
+	Service CredentialsService
+}
+
 // CredentialsService is used by auth interceptor for resolving credentials.
 type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme string) (AuthCredential, error)
@@ -39,15 +48,6 @@ type CredentialsService interface {
 type InMemoryCredentialsStore struct {
 	mu          sync.RWMutex
 	credentials map[SessionID]map[string]AuthCredential
-}
-
-// AuthInterceptor implements CallInterceptor. It uses SessionID attached to the context.Context
-// using a2aclient.WithSessionID to lookup and attach credentials according to the security
-// scheme described in a2a.AgentCard.
-// Credentials fetching is delegated to CredentialsService.
-type AuthInterceptor struct {
-	PassthroughCallInterceptor
-	Service CredentialsService
 }
 
 // NewInMemoryCredentialsStore initializes an InMemoryCredentialsStore.

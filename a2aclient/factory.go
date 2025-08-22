@@ -20,8 +20,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Factory provides an API for creating Clients compatible with agent cards or configured
-// with the provided transports.
+// Factory provides an API for creating Clients compatible with the requested transports.
 // Factory is immutable, but the configuration can be extended using WithAdditionalOptions(f, opts...) call.
 // Additional configurations can be applied at the moment of Client creation.
 type Factory struct {
@@ -64,11 +63,6 @@ func (f factoryOptionFn) apply(factory *Factory) {
 	f(factory)
 }
 
-// defaultsDisabledOpt is a marker for creating a Factory without any defaults set.
-type defaultsDisabledOpt struct{}
-
-func (defaultsDisabledOpt) apply(f *Factory) {}
-
 // WithConfig makes the provided Config be used for all Clients created by the factory.
 func WithConfig(c Config) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
@@ -96,6 +90,11 @@ func WithInterceptors(interceptors ...CallInterceptor) FactoryOption {
 		f.interceptors = append(f.interceptors, interceptors...)
 	})
 }
+
+// defaultsDisabledOpt is a marker for creating a Factory without any defaults set.
+type defaultsDisabledOpt struct{}
+
+func (defaultsDisabledOpt) apply(f *Factory) {}
 
 // WithDefaultsDisabled attaches call interceptors to clients created by the factory.
 func WithDefaultsDisabled() FactoryOption {

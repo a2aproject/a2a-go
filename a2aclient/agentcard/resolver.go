@@ -16,7 +16,7 @@ package agentcard
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -28,7 +28,7 @@ type Resolver struct {
 	BaseURL string
 }
 
-// ResolveOption is used to customize Resolve behavior.
+// ResolveOption is used to customize Resolve() behavior.
 type ResolveOption func(r *resolveRequest)
 
 type resolveRequest struct {
@@ -44,7 +44,7 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (a2a.Agen
 		o(req)
 	}
 
-	return a2a.AgentCard{}, errors.New("not implemented")
+	return a2a.AgentCard{}, fmt.Errorf("not implemented")
 }
 
 // WithPath makes Resolve fetch from the provided path relative to BaseURL.
@@ -54,9 +54,11 @@ func WithPath(path string) ResolveOption {
 	}
 }
 
-// WithRequestHeader makes Resolve perform fetch attaching the provided HTTP header.
-func WithRequestHeader(k string, v string) ResolveOption {
+// WithRequestHeader makes Resolve perform fetch attaching the provided HTTP headers.
+func WithRequestHeaders(headers map[string]string) ResolveOption {
 	return func(r *resolveRequest) {
-		r.headers[k] = v
+		for k, v := range headers {
+			r.headers[k] = v
+		}
 	}
 }
