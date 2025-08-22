@@ -64,7 +64,9 @@ func (m *InMemoryQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) e
 		return fmt.Errorf("queue for taskId: %s does not exist", taskId)
 	}
 	queue := m.queues[taskId]
-	queue.Close() // todo: care about the error
+	if err := queue.Close(); err != nil {
+		return fmt.Errorf("failed to close queue: %w", err)
+	}
 	delete(m.queues, taskId)
 	return nil
 }

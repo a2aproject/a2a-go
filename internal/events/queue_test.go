@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package events
 
 import (
@@ -15,7 +29,11 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create event queue: %v", err)
 	}
-	defer q.Close()
+	defer func() {
+		if err := q.Close(); err != nil {
+			t.Fatalf("failed to close event queue: %v", err)
+		}
+	}()
 
 	want := a2a.Message{MessageID: "test-event"}
 	if err := q.Write(context.Background(), want); err != nil {
@@ -38,7 +56,11 @@ func TestInMemoryEventQueue_ReadEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create event queue: %v", err)
 	}
-	defer q.Close()
+	defer func() {
+		if err := q.Close(); err != nil {
+			t.Fatalf("failed to close event queue: %v", err)
+		}
+	}()
 
 	_, err = q.Read(context.Background())
 	if err == nil {
@@ -57,7 +79,11 @@ func TestInMemoryEventQueue_WriteFull(t *testing.T) {
 	q := &InMemoryEventQueue{
 		events: make(chan a2a.Event, 1),
 	}
-	defer q.Close()
+	defer func() {
+		if err := q.Close(); err != nil {
+			t.Fatalf("failed to close event queue: %v", err)
+		}
+	}()
 
 	// Fill the queue
 	if err := q.Write(context.Background(), a2a.Message{MessageID: "1"}); err != nil {
@@ -81,7 +107,10 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create event queue: %v", err)
 	}
-	q.Close()
+
+	if err := q.Close(); err != nil {
+		t.Fatalf("failed to close event queue: %v", err)
+	}
 
 	// Writing to a closed queue should fail
 	err = q.Write(context.Background(), a2a.Message{MessageID: "test"})
@@ -103,7 +132,9 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	}
 
 	// Closing again should be a no-op and not panic
-	q.Close()
+	if err := q.Close(); err != nil {
+		t.Fatalf("failed to close event queue: %v", err)
+	}
 }
 
 func TestInMemoryEventQueue_WriteWithCanceledContext(t *testing.T) {

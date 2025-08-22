@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package a2asrv
 
 import (
@@ -27,7 +41,7 @@ func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, q
 	if m.CancelFunc != nil {
 		return m.CancelFunc(ctx, reqCtx, queue)
 	}
-	return errors.New("cancel not implemented")
+	return errors.New("Cancel() not implemented")
 }
 
 // mockQueueManager is a mock of events.EventQueueManager.
@@ -40,14 +54,14 @@ func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (
 	if m.GetOrCreateFunc != nil {
 		return m.GetOrCreateFunc(ctx, taskId)
 	}
-	return nil, errors.New("getorcreate not implemented")
+	return nil, errors.New("GetOrCreate() not implemented")
 }
 
 func (m *mockQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
 	if m.DestroyFunc != nil {
 		return m.DestroyFunc(ctx, taskId)
 	}
-	return errors.New("destroy not implemented")
+	return errors.New("Destroy() not implemented")
 }
 
 // mockevents.EventQueue is a mock of events.EventQueue.
@@ -61,21 +75,21 @@ func (m *mockEventQueue) Read(ctx context.Context) (a2a.Event, error) {
 	if m.ReadFunc != nil {
 		return m.ReadFunc(ctx)
 	}
-	return nil, errors.New("read not implemented")
+	return nil, errors.New("Read() not implemented")
 }
 
 func (m *mockEventQueue) Write(ctx context.Context, event a2a.Event) error {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, event)
 	}
-	return nil
+	return errors.New("Write() not implemented")
 }
 
 func (m *mockEventQueue) Close() error {
 	if m.CloseFunc != nil {
-		m.CloseFunc()
+		return m.CloseFunc()
 	}
-	return nil
+	return errors.New("Close() not implemented")
 }
 
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
