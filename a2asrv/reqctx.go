@@ -16,15 +16,17 @@ package a2asrv
 
 import (
 	"context"
-
+	"errors"
+	"fmt"
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/uuid"
 )
 
 // RequestContextBuilder defines an extension point for constructing request contexts
 // that contain the information needed by AgentExecutor implementations to process incoming requests.
 type RequestContextBuilder interface {
 	// Build constructs a RequestContext from the provided parameters.
-	Build(ctx context.Context, p a2a.MessageSendParams, t *a2a.Task) RequestContext
+	Build(ctx context.Context, p a2a.MessageSendParams, t *a2a.Task) (RequestContext, error)
 }
 
 // RequestContext provides information about an incoming A2A request to AgentExecutor.
@@ -39,4 +41,89 @@ type RequestContext struct {
 	RelatedTasks []a2a.Task
 	// ContextID is a server-generated identifier for maintaining context across multiple related tasks or interactions. Matches the Task ContextID.
 	ContextID string
+}
+
+// SimpleRequestContextBuilder Builds request context and populates referred tasks.
+type SimpleRequestContextBuilder struct {
+	store                       TaskStore
+	shouldPopulateReferredTasks bool
+}
+
+func NewSimpleRequestContextBuilder(store TaskStore, shouldPopulateReferredTasks bool) *SimpleRequestContextBuilder {
+	return &SimpleRequestContextBuilder{
+		store:                       store,
+		shouldPopulateReferredTasks: shouldPopulateReferredTasks,
+	}
+}
+
+func (s *SimpleRequestContextBuilder) Build(ctx context.Context, p a2a.MessageSendParams, t *a2a.Task) (RequestContext, error) {
+	relatedTasks := make([]a2a.Task, 0)
+	var err error
+	if s.store != nil && s.shouldPopulateReferredTasks {
+		for _, taskId := range p.Message.ReferenceTasks {
+			task, e := s.store.Get(ctx, taskId)
+			if e != nil {
+				e = fmt.Errorf("failed to get referenced task: %w, taskid: %v", e, taskId)
+				err = errors.Join(err, e)
+				continue
+			}
+			if IsTerminalStates(task.Status.State) {
+				e = fmt.Errorf("referenced task (ID: %s) is in terminal state (%s)", taskId, task.Status.State)
+				err = errors.Join(err, e)
+				continue
+			}
+			relatedTasks = append(relatedTasks, task)
+		}
+	}
+	if err != nil {
+		return RequestContext{}, err
+	}
+
+	return NewRequestContext(p, t, relatedTasks)
+}
+
+func NewRequestContext(
+	request a2a.MessageSendParams,
+	task *a2a.Task,
+	relatedTasks []a2a.Task,
+) (RequestContext, error) {
+	var (
+		tid a2a.TaskID
+		cid string
+	)
+
+	if request.Message.TaskID != nil {
+		tid = *request.Message.TaskID
+		if task != nil && task.ID != tid {
+			return RequestContext{}, errors.New("bad task id")
+		}
+	} else {
+		tid = a2a.TaskID(uuid.NewString())
+	}
+
+	if request.Message.ContextID != nil {
+		cid = *request.Message.ContextID
+		if task != nil && task.ContextID != cid {
+			return RequestContext{}, errors.New("bad task id")
+		}
+	} else {
+		cid = uuid.NewString()
+	}
+
+	request.Message.TaskID = &tid
+	request.Message.ContextID = &cid
+
+	if task == nil {
+		return RequestContext{Task: nil, ContextID: cid, TaskID: tid, RelatedTasks: relatedTasks}, nil
+	}
+	return RequestContext{Request: request, TaskID: tid, ContextID: cid, Task: task, RelatedTasks: relatedTasks}, nil
+}
+
+func IsTerminalStates(state a2a.TaskState) bool {
+	return state == a2a.TaskStateCanceled ||
+		state == a2a.TaskStateRejected ||
+		state == a2a.TaskStateFailed ||
+		state == a2a.TaskStateCompleted ||
+		state == a2a.TaskStateUnknown ||
+		state == a2a.TaskStateInputRequired
 }
