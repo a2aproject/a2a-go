@@ -93,15 +93,15 @@ func (f optionFunc) option(r *RequestContext) {
 	f(r)
 }
 
-func WithTaskID(taskId a2a.TaskID) RequestContextOption {
+func WithTaskID(taskID a2a.TaskID) RequestContextOption {
 	return optionFunc(func(r *RequestContext) {
-		r.TaskID = taskId
+		r.TaskID = taskID
 	})
 }
 
-func WithContextID(contextId string) RequestContextOption {
+func WithContextID(contextID string) RequestContextOption {
 	return optionFunc(func(r *RequestContext) {
-		r.ContextID = contextId
+		r.ContextID = contextID
 	})
 }
 
