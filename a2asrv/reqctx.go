@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/google/uuid"
 )
@@ -67,7 +68,7 @@ func (s *SimpleRequestContextBuilder) Build(ctx context.Context, p a2a.MessageSe
 				err = errors.Join(err, e)
 				continue
 			}
-			if IsTerminalStates(task.Status.State) {
+			if IsTerminalState(task.Status.State) {
 				e = fmt.Errorf("referenced task (ID: %s) is in terminal state (%s)", taskId, task.Status.State)
 				err = errors.Join(err, e)
 				continue
@@ -82,48 +83,83 @@ func (s *SimpleRequestContextBuilder) Build(ctx context.Context, p a2a.MessageSe
 	return NewRequestContext(p, t, relatedTasks)
 }
 
+type RequestContextOption interface {
+	option(*RequestContext)
+}
+
+type optionFunc func(*RequestContext)
+
+func (f optionFunc) option(r *RequestContext) {
+	f(r)
+}
+
+func WithTaskID(taskId a2a.TaskID) RequestContextOption {
+	return optionFunc(func(r *RequestContext) {
+		r.TaskID = taskId
+	})
+}
+
+func WithContextID(contextId string) RequestContextOption {
+	return optionFunc(func(r *RequestContext) {
+		r.ContextID = contextId
+	})
+}
+
 func NewRequestContext(
 	request a2a.MessageSendParams,
 	task *a2a.Task,
 	relatedTasks []a2a.Task,
+	options ...RequestContextOption,
 ) (RequestContext, error) {
-	var (
-		tid a2a.TaskID
-		cid string
-	)
+	ctx := RequestContext{
+		Task:         task,
+		RelatedTasks: relatedTasks,
+	}
 
-	if request.Message.TaskID != nil {
-		tid = *request.Message.TaskID
+	for _, opt := range options {
+		opt.option(&ctx)
+	}
+
+	param := request
+	tid := ctx.TaskID
+	cid := ctx.ContextID
+
+	if tid != "" {
+		param.Message.TaskID = &tid
 		if task != nil && task.ID != tid {
-			return RequestContext{}, errors.New("bad task id")
+			return RequestContext{}, errors.New("param message task ID does not match provided task ID")
 		}
 	} else {
-		tid = a2a.TaskID(uuid.NewString())
+		if param.Message.TaskID == nil {
+			id := a2a.TaskID(uuid.NewString())
+			param.Message.TaskID = &id
+		}
+		tid = *param.Message.TaskID
 	}
+	ctx.TaskID = tid
 
-	if request.Message.ContextID != nil {
-		cid = *request.Message.ContextID
+	if cid != "" {
+		param.Message.ContextID = &cid
 		if task != nil && task.ContextID != cid {
-			return RequestContext{}, errors.New("bad task id")
+			return RequestContext{}, errors.New("param message context ID does not match provided task context ID")
 		}
 	} else {
-		cid = uuid.NewString()
+		if param.Message.ContextID == nil {
+			id := uuid.NewString()
+			param.Message.ContextID = &id
+		}
+		cid = *param.Message.ContextID
 	}
+	ctx.ContextID = cid
 
-	request.Message.TaskID = &tid
-	request.Message.ContextID = &cid
-
-	if task == nil {
-		return RequestContext{Task: nil, ContextID: cid, TaskID: tid, RelatedTasks: relatedTasks}, nil
-	}
-	return RequestContext{Request: request, TaskID: tid, ContextID: cid, Task: task, RelatedTasks: relatedTasks}, nil
+	ctx.Request = param
+	return ctx, nil
 }
 
-func IsTerminalStates(state a2a.TaskState) bool {
+func IsTerminalState(state a2a.TaskState) bool {
 	return state == a2a.TaskStateCanceled ||
 		state == a2a.TaskStateRejected ||
 		state == a2a.TaskStateFailed ||
 		state == a2a.TaskStateCompleted ||
-		state == a2a.TaskStateUnknown ||
-		state == a2a.TaskStateInputRequired
+		state == a2a.TaskStateUnknown
 }
