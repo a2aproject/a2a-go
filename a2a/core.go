@@ -25,18 +25,18 @@ type SendMessageResult interface {
 	isSendMessageResult()
 }
 
-func (Task) isSendMessageResult()    {}
-func (Message) isSendMessageResult() {}
+func (*Task) isSendMessageResult()    {}
+func (*Message) isSendMessageResult() {}
 
 // Event interface is used to represent types that can be sent over a streaming connection.
 type Event interface {
 	isEvent()
 }
 
-func (t Message) isEvent()                 {}
-func (t Task) isEvent()                    {}
-func (t TaskStatusUpdateEvent) isEvent()   {}
-func (t TaskArtifactUpdateEvent) isEvent() {}
+func (*Message) isEvent()                 {}
+func (*Task) isEvent()                    {}
+func (*TaskStatusUpdateEvent) isEvent()   {}
+func (*TaskArtifactUpdateEvent) isEvent() {}
 
 type MessageRole string
 
@@ -81,8 +81,8 @@ type Message struct {
 }
 
 // NewMessage creates a new message with a random identifier.
-func NewMessage(role MessageRole, parts ...Part) Message {
-	return Message{
+func NewMessage(role MessageRole, parts ...Part) *Message {
+	return &Message{
 		ID:    NewMessageID(),
 		Role:  role,
 		Parts: parts,
@@ -90,8 +90,8 @@ func NewMessage(role MessageRole, parts ...Part) Message {
 }
 
 // NewMessageForTask creates a new message with a random identifier that references the provided Task.
-func NewMessageForTask(role MessageRole, task Task, parts ...Part) Message {
-	return Message{
+func NewMessageForTask(role MessageRole, task Task, parts ...Part) *Message {
+	return &Message{
 		ID:        NewMessageID(),
 		Role:      role,
 		TaskID:    &task.ID,
@@ -219,8 +219,8 @@ type TaskArtifactUpdateEvent struct {
 }
 
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
-func NewArtifactEvent(task Task, parts ...Part) TaskArtifactUpdateEvent {
-	return TaskArtifactUpdateEvent{
+func NewArtifactEvent(task Task, parts ...Part) *TaskArtifactUpdateEvent {
+	return &TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
 		Artifact: Artifact{
@@ -231,8 +231,8 @@ func NewArtifactEvent(task Task, parts ...Part) TaskArtifactUpdateEvent {
 }
 
 // NewArtifactUpdateEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
-func NewArtifactUpdateEvent(task Task, id ArtifactID, parts ...Part) TaskArtifactUpdateEvent {
-	return TaskArtifactUpdateEvent{
+func NewArtifactUpdateEvent(task Task, id ArtifactID, parts ...Part) *TaskArtifactUpdateEvent {
+	return &TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
 		Append:    true,
@@ -263,9 +263,9 @@ type TaskStatusUpdateEvent struct {
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
-func NewStatusUpdateEvent(task Task, state TaskState, msg *Message) TaskStatusUpdateEvent {
+func NewStatusUpdateEvent(task Task, state TaskState, msg *Message) *TaskStatusUpdateEvent {
 	now := time.Now()
-	return TaskStatusUpdateEvent{
+	return &TaskStatusUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
 		Status: TaskStatus{
