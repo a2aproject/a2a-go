@@ -135,11 +135,10 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	tests := []struct {
-		name                 string
-		messages             []a2a.MessageSendParams
-		wantEvents           []a2a.Event
-		wantErrs             []string
-		overrideQueueManager events.EventQueueManager
+		name       string
+		messages   []a2a.MessageSendParams
+		wantEvents []a2a.Event
+		wantErrs   []string
 	}{
 		{
 			name: "success with TaskID",
@@ -211,9 +210,6 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			qm := newEventReplayQueueManager(t, tt.wantEvents...)
-			if tt.overrideQueueManager != nil {
-				qm = tt.overrideQueueManager
-			}
 			handler := newTestHandler(WithEventQueueManager(qm))
 			for i, m := range tt.messages {
 				result, err := handler.OnSendMessage(ctx, m)
