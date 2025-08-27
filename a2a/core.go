@@ -56,7 +56,8 @@ type Message struct {
 	ID string
 
 	// The context identifier for this message, used to group related interactions.
-	ContextID *string
+	// An empty string means the message doesn't reference any context.
+	ContextID string
 
 	// The URIs of extensions that are relevant to this message.
 	Extensions []string
@@ -77,7 +78,8 @@ type Message struct {
 
 	// The identifier of the task this message is part of. Can be omitted for the
 	// first message of a new task.
-	TaskID *TaskID
+	// An empty string means the message doesn't reference any Task.
+	TaskID TaskID
 }
 
 // NewMessage creates a new message with a random identifier.
@@ -94,8 +96,8 @@ func NewMessageForTask(role MessageRole, task Task, parts ...Part) *Message {
 	return &Message{
 		ID:        NewMessageID(),
 		Role:      role,
-		TaskID:    &task.ID,
-		ContextID: &task.ContextID,
+		TaskID:    task.ID,
+		ContextID: task.ContextID,
 		Parts:     parts,
 	}
 }
@@ -138,7 +140,7 @@ type Task struct {
 	Artifacts []Artifact
 
 	// A server-generated identifier for maintaining context across multiple related
-	// tasks or interactions.
+	// tasks or interactions. Required to be non empty.
 	ContextID string
 
 	// An array of messages exchanged during the task, representing the conversation
@@ -180,7 +182,7 @@ type Artifact struct {
 	ID ArtifactID
 
 	// An optional, human-readable description of the artifact.
-	Description *string
+	Description string
 
 	// The URIs of extensions that are relevant to this artifact.
 	Extensions []string
@@ -189,7 +191,7 @@ type Artifact struct {
 	Metadata map[string]any
 
 	// An optional, human-readable name for the artifact.
-	Name *string
+	Name string
 
 	// An array of content parts that make up the artifact.
 	Parts []Part
@@ -205,7 +207,7 @@ type TaskArtifactUpdateEvent struct {
 	// The artifact that was generated or updated.
 	Artifact Artifact
 
-	// The context ID associated with the task.
+	// The context ID associated with the task. Required to be non-empty.
 	ContextID string
 
 	// If true, this is the final chunk of the artifact.
@@ -246,7 +248,7 @@ func NewArtifactUpdateEvent(task Task, id ArtifactID, parts ...Part) *TaskArtifa
 // An event sent by the agent to notify the client of a change in a task's status.
 // This is typically used in streaming or subscription models.
 type TaskStatusUpdateEvent struct {
-	// The context ID associated with the task.
+	// The context ID associated with the task. Required to be non-empty.
 	ContextID string
 
 	// If true, this is the final event in the stream for this interaction.
@@ -310,11 +312,11 @@ type FilePart struct {
 	// The file content, represented as either a URI or as base64-encoded bytes.
 	File FilePartContent
 
-	// The MIME type of the file (e.g., "application/pdf").
-	MimeType *string
+	// An optinal MIME type of the file (e.g., "application/pdf").
+	MimeType string
 
 	// An optional name for the file (e.g., "document.pdf").
-	Name *string
+	Name string
 
 	// Optional metadata associated with this part.
 	Metadata map[string]any
@@ -392,9 +394,4 @@ type MessageSendParams struct {
 
 	// Optional metadata for extensions.
 	Metadata map[string]any
-}
-
-// Ptr is a utility for creating pointers to primitives.
-func Ptr[T any](v T) *T {
-	return &v
 }

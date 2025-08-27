@@ -29,7 +29,7 @@ func (OAuth2SecurityScheme) isSecurityScheme()        {}
 // Defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
 	// An optional description for the security scheme.
-	Description *string
+	Description string
 
 	// The location of the API key.
 	In APIKeySecuritySchemeIn
@@ -55,9 +55,9 @@ type AuthzCodeOAuthFlow struct {
 	// This MUST be a URL and use TLS.
 	AuthzURL string
 
-	// The URL to be used for obtaining refresh tokens.
+	// An optional URL to be used for obtaining refresh tokens.
 	// This MUST be a URL and use TLS.
-	RefreshURL *string
+	RefreshURL string
 
 	// The available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
@@ -70,8 +70,8 @@ type AuthzCodeOAuthFlow struct {
 
 // Defines configuration details for the OAuth 2.0 Client Credentials flow.
 type ClientCredentialsOAuthFlow struct {
-	// The URL to be used for obtaining refresh tokens. This MUST be a URL.
-	RefreshURL *string
+	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	RefreshURL string
 
 	// The available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
@@ -83,13 +83,12 @@ type ClientCredentialsOAuthFlow struct {
 
 // Defines a security scheme using HTTP authentication.
 type HTTPAuthSecurityScheme struct {
-	// A hint to the client to identify how the bearer token is formatted (e.g.,
-	// "JWT").
-	// This is primarily for documentation purposes.
-	BearerFormat *string
+	// An optional hint to the client to identify how the bearer token is formatted (e.g.,
+	// "JWT"). This is primarily for documentation purposes.
+	BearerFormat string
 
 	// An optional description for the security scheme.
-	Description *string
+	Description string
 
 	// The name of the HTTP Authentication scheme to be used in the Authorization
 	// header,
@@ -106,8 +105,8 @@ type ImplicitOAuthFlow struct {
 	// The authorization URL to be used for this flow. This MUST be a URL.
 	AuthzURL string
 
-	// The URL to be used for obtaining refresh tokens. This MUST be a URL.
-	RefreshURL *string
+	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	RefreshURL string
 
 	// The available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
@@ -117,7 +116,7 @@ type ImplicitOAuthFlow struct {
 // Defines a security scheme using mTLS authentication.
 type MutualTLSSecurityScheme struct {
 	// An optional description for the security scheme.
-	Description *string
+	Description string
 
 	// The type of the security scheme. Must be 'mutualTLS'.
 	Type string
@@ -126,15 +125,15 @@ type MutualTLSSecurityScheme struct {
 // Defines a security scheme using OAuth 2.0.
 type OAuth2SecurityScheme struct {
 	// An optional description for the security scheme.
-	Description *string
+	Description string
 
 	// An object containing configuration information for the supported OAuth 2.0
 	// flows.
 	Flows OAuthFlows
 
-	// URL to the oauth2 authorization server metadata
+	// An optional URL to the oauth2 authorization server metadata
 	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
-	Oauth2MetadataURL *string
+	Oauth2MetadataURL string
 
 	// The type of the security scheme. Must be 'oauth2'.
 	Type string
@@ -160,7 +159,7 @@ type OAuthFlows struct {
 // Defines a security scheme using OpenID Connect.
 type OpenIDConnectSecurityScheme struct {
 	// An optional description for the security scheme.
-	Description *string
+	Description string
 
 	// The OpenID Connect Discovery URL for the OIDC provider's metadata.
 	OpenIDConnectURL string
@@ -171,8 +170,8 @@ type OpenIDConnectSecurityScheme struct {
 
 // Defines configuration details for the OAuth 2.0 Resource Owner Password flow.
 type PasswordOAuthFlow struct {
-	// The URL to be used for obtaining refresh tokens. This MUST be a URL.
-	RefreshURL *string
+	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	RefreshURL string
 
 	// The available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.

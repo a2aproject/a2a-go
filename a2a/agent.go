@@ -21,14 +21,14 @@ type AgentCapabilities struct {
 
 	// Indicates if the agent supports sending push notifications for asynchronous
 	// task updates.
-	PushNotifications *bool
+	PushNotifications bool
 
 	// Indicates if the agent provides a history of state transitions for a task.
-	StateTransitionHistory *bool
+	StateTransitionHistory bool
 
 	// Indicates if the agent supports Server-Sent Events (SSE) for streaming
 	// responses.
-	Streaming *bool
+	Streaming bool
 }
 
 // The AgentCard is a self-describing manifest for an agent. It provides essential
@@ -66,10 +66,10 @@ type AgentCard struct {
 	Description string
 
 	// An optional URL to the agent's documentation.
-	DocumentationURL *string
+	DocumentationURL string
 
 	// An optional URL to an icon for the agent.
-	IconURL *string
+	IconURL string
 
 	// A human-readable name for the agent.
 	Name string
@@ -114,7 +114,7 @@ type AgentCard struct {
 
 	// If true, the agent can provide an extended agent card with additional details
 	// to authenticated users. Defaults to false.
-	SupportsAuthenticatedExtendedCard *bool
+	SupportsAuthenticatedExtendedCard bool
 
 	// The preferred endpoint URL for interacting with the agent.
 	// This URL MUST support the transport specified by 'preferredTransport'.
@@ -140,16 +140,15 @@ type AgentCardSignature struct {
 
 // A declaration of a protocol extension supported by an Agent.
 type AgentExtension struct {
-	// A human-readable description of how this agent uses the extension.
-	Description *string
+	// An optional human-readable description of how this agent uses the extension.
+	Description string
 
 	// Optional, extension-specific configuration parameters.
 	Params map[string]any
 
 	// If true, the client must understand and comply with the extension's
-	// requirements
-	// to interact with the agent.
-	Required *bool
+	// requirements to interact with the agent.
+	Required bool
 
 	// The unique URI identifying the extension.
 	URI string
