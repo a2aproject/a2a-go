@@ -104,7 +104,7 @@ type AgentCard struct {
 	// A declaration of the security schemes available to authorize requests. The key
 	// is the
 	// scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
-	SecuritySchemes map[string]any
+	SecuritySchemes map[string]SecurityScheme
 
 	// JSON Web Signatures computed for this AgentCard.
 	Signatures []AgentCardSignature

@@ -50,10 +50,10 @@ const (
 )
 
 // Defines configuration details for the OAuth 2.0 Authorization Code flow.
-type AuthzCodeOAuthFlow struct {
+type AuthorizationCodeOAuthFlow struct {
 	// The authorization URL to be used for this flow.
 	// This MUST be a URL and use TLS.
-	AuthzURL string
+	AuthorizationURL string
 
 	// An optional URL to be used for obtaining refresh tokens.
 	// This MUST be a URL and use TLS.
@@ -103,7 +103,7 @@ type HTTPAuthSecurityScheme struct {
 // Defines configuration details for the OAuth 2.0 Implicit flow.
 type ImplicitOAuthFlow struct {
 	// The authorization URL to be used for this flow. This MUST be a URL.
-	AuthzURL string
+	AuthorizationURL string
 
 	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string
@@ -143,7 +143,7 @@ type OAuth2SecurityScheme struct {
 type OAuthFlows struct {
 	// Configuration for the OAuth Authorization Code flow. Previously called
 	// accessCode in OpenAPI 2.0.
-	AuthzCode *AuthzCodeOAuthFlow
+	AuthorizationCode *AuthorizationCodeOAuthFlow
 
 	// Configuration for the OAuth Client Credentials flow. Previously called
 	// application in OpenAPI 2.0.
