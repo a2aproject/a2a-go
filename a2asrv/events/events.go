@@ -16,9 +16,13 @@ package events
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
+
+const defaultMaxQueueSize = 1024
 
 // EventReader defines the interface for reading events from a queue.
 // A2A server stack reads events written by AgentExecutor.
@@ -53,4 +57,117 @@ type EventQueueManager interface {
 
 	// Destroy closes the queue for the specified task and frees all associates resources.
 	Destroy(ctx context.Context, taskId a2a.TaskID) error
+}
+
+// Implements EventQueueManager interface
+type inMemoryQueueManager struct {
+	mu     sync.Mutex
+	queues map[a2a.TaskID]EventQueue
+}
+
+// Implements EventQueue interface
+type inMemoryEventQueue struct {
+	// An element needs to be written to a semaphore before writing to events or closing it.
+	semaphore chan any
+	// Channel to keep all events related to a specific task
+	events chan a2a.Event
+	// Indicates that the queue has been closed but still can be drained by Read()
+	closed bool
+	// An element needs to be written to close before trying to acquire a semaphore for closing events.
+	close chan any
+}
+
+// NewInMemoryQueueManager creates a new queue manager
+func NewInMemoryQueueManager() EventQueueManager {
+	return &inMemoryQueueManager{
+		queues: make(map[a2a.TaskID]EventQueue),
+	}
+}
+
+func (m *inMemoryQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (EventQueue, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.queues[taskId]; !ok {
+		queue := NewInMemoryQueue(defaultMaxQueueSize)
+		m.queues[taskId] = queue
+	}
+	return m.queues[taskId], nil
+}
+
+func (m *inMemoryQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.queues[taskId]; !ok {
+		return fmt.Errorf("queue for taskId: %s does not exist", taskId)
+	}
+	queue := m.queues[taskId]
+	_ = queue.Close() // in memory queue close never fails
+	delete(m.queues, taskId)
+	return nil
+}
+
+func NewInMemoryQueue(size int) *inMemoryEventQueue {
+	return &inMemoryEventQueue{
+		semaphore: make(chan any, 1),
+		events:    make(chan a2a.Event, size),
+		close:     make(chan any, 1),
+	}
+}
+
+func (q *inMemoryEventQueue) Write(ctx context.Context, event a2a.Event) error {
+	select {
+	case q.semaphore <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-q.semaphore }()
+
+	if q.closed {
+		return a2a.ErrQueueClosed
+	}
+
+	select {
+	case q.events <- event:
+		return nil
+	case <-q.close:
+		close(q.events)
+		q.closed = true
+		return a2a.ErrQueueClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (q *inMemoryEventQueue) Read(ctx context.Context) (a2a.Event, error) {
+	// q.closed is not checked so that the readers can drain the queue.
+	select {
+	case event, ok := <-q.events:
+		if !ok {
+			return nil, a2a.ErrQueueClosed
+		}
+		return event, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (q *inMemoryEventQueue) Close() error {
+	select {
+	case q.close <- struct{}{}:
+	default:
+		// There's already a signal in the channel but q.closed
+		// hasn't been set properly so we move on to close the queue
+	}
+
+	// It might be blocked here if there is a writer holding the semaphore.
+	// But it's going to be unblocked by the signal we sent.
+	q.semaphore <- struct{}{}
+	defer func() { <-q.semaphore }()
+
+	if !q.closed {
+		close(q.events)
+		q.closed = true
+	}
+
+	return nil
 }

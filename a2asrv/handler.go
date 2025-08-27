@@ -16,16 +16,15 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/events"
-
-	ie "github.com/a2aproject/a2a-go/internal/events"
 )
 
-var errUnimplemented = fmt.Errorf("unimplemented")
+var errUnimplemented = errors.New("unimplemented")
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -68,24 +67,28 @@ type defaultRequestHandler struct {
 
 type RequestHandlerOption func(*defaultRequestHandler)
 
+// WithTaskStore overrides TaskStore with custom implementation
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.taskStore = store
 	}
 }
 
+// WithEventQueueManager overrides events.EventQueueManager with custom implementation
 func WithEventQueueManager(manager events.EventQueueManager) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.queueManager = manager
 	}
 }
 
+// WithPushConfigStore overrides default PushConfigStore with custom implementation
 func WithPushConfigStore(store PushConfigStore) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.pushConfigStore = store
 	}
 }
 
+// WithPushNotifier overrides default PushNotifier with custom implementation
 func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.pushNotifier = notifier
@@ -96,7 +99,7 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
 		executor:     executor,
-		queueManager: ie.NewInMemoryQueueManager(),
+		queueManager: events.NewInMemoryQueueManager(),
 	}
 	for _, option := range options {
 		option(h)
@@ -114,7 +117,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id a2a.TaskIDP
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	if message.Message.TaskID == nil {
-		// todo: generate task id (https://github.com/a2aproject/a2a-go/issues/18)
+		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
 		return nil, fmt.Errorf("message is missing TaskID")
 	}
 	taskID := *message.Message.TaskID
@@ -132,7 +135,12 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.M
 	if err != nil {
 		return nil, fmt.Errorf("failed to read event from queue: %w", err)
 	}
+
 	// todo: handle returned update event
+	if _, ok := event.(a2a.SendMessageResult); !ok {
+		return nil, fmt.Errorf("unexpected event type: %T", event)
+	}
+
 	return event.(a2a.SendMessageResult), nil
 }
 
