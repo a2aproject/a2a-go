@@ -19,8 +19,8 @@ type GetTaskPushConfigParams struct {
 	// The unique identifier of the task.
 	TaskID TaskID
 
-	// The ID of the push notification configuration to retrieve.
-	ConfigID *string
+	// An optional ID of the push notification configuration to retrieve.
+	ConfigID string
 }
 
 // Defines parameters for listing all push notification configurations associated with a task.
@@ -49,17 +49,17 @@ type TaskPushConfig struct {
 
 // Defines the configuration for setting up push notifications for task updates.
 type PushConfig struct {
+	// An optional unique ID for the push notification configuration, set by the client
+	// to support multiple notification callbacks.
+	ID string
+
 	// Optional authentication details for the agent to use when calling the
 	// notification URL.
 	Auth *PushAuthInfo
 
-	// A unique ID for the push notification configuration, set by the client
-	// to support multiple notification callbacks.
-	ID *string
-
-	// A unique token for this task or session to validate incoming push
+	// An optional unique token for this task or session to validate incoming push
 	// notifications.
-	Token *string
+	Token string
 
 	// The callback URL where the agent should send push notifications.
 	URL string
@@ -68,7 +68,7 @@ type PushConfig struct {
 // Defines authentication details for a push notification endpoint.
 type PushAuthInfo struct {
 	// Optional credentials required by the push notification endpoint.
-	Credentials *string
+	Credentials string
 
 	// A list of supported authentication schemes (e.g., 'Basic', 'Bearer').
 	Schemes []string
