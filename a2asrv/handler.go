@@ -116,11 +116,11 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id a2a.TaskIDP
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	if message.Message.TaskID == nil {
+	taskID := message.Message.TaskID
+	if taskID == "" {
 		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
 		return nil, fmt.Errorf("message is missing TaskID")
 	}
-	taskID := *message.Message.TaskID
 	queue, err := h.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve queue: %w", err)

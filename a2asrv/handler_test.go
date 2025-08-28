@@ -143,43 +143,43 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 		{
 			name: "success with TaskID",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
+				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
-			wantEvent: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
+			wantEvent: &a2a.Message{TaskID: taskID, ID: "test-message"},
 		},
 		{
 			name: "missing TaskID",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{MessageID: "test-message"},
+				Message: a2a.Message{ID: "test-message"},
 			},
 			wantErr: errors.New("message is missing TaskID"),
 		},
 		{
 			name: "type assertion fails",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
+				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
-			wantEvent: a2a.TaskStatusUpdateEvent{Kind: "status-update", TaskID: taskID},
-			wantErr:   errors.New("unexpected event type: a2a.TaskStatusUpdateEvent"),
+			wantEvent: &a2a.TaskStatusUpdateEvent{TaskID: taskID},
+			wantErr:   errors.New("unexpected event type: *a2a.TaskStatusUpdateEvent"),
 		},
 		{
 			name: "GetOrCreate() fails",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: &getOrCreateFailTaskID, MessageID: "test-message"},
+				Message: a2a.Message{TaskID: getOrCreateFailTaskID, ID: "test-message"},
 			},
 			wantErr: errors.New("failed to retrieve queue: get or create failed"),
 		},
 		{
 			name: "executor Execute() fails",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: &executeFailTaskID, MessageID: "test-message"},
+				Message: a2a.Message{TaskID: executeFailTaskID, ID: "test-message"},
 			},
 			wantErr: errors.New("execute failed"),
 		},
 		{
 			name: "queue Read() fails",
 			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
+				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
 			wantErr: errors.New("failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"),
 		},

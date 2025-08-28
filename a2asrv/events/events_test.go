@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 	}()
 
 	// write wanted event
-	want := a2a.Message{MessageID: "test-event"}
+	want := &a2a.Message{ID: "test-event"}
 	if err := q.Write(ctx, want); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
@@ -48,7 +49,7 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 	}
 
 	// validate written event
-	if got.(a2a.Message).MessageID != want.MessageID {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
 }
@@ -57,9 +58,9 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
-	want := []a2a.Message{
-		{MessageID: "test-event"},
-		{MessageID: "test-event2"},
+	want := []*a2a.Message{
+		{ID: "test-event"},
+		{ID: "test-event2"},
 	}
 	// write wanted events
 	for _, w := range want {
@@ -74,19 +75,19 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 	}
 
 	// retrieve written events
-	var got []a2a.Message
+	var got []a2a.Event
 	for range len(q.events) {
 		event, err := q.Read(ctx)
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
-		got = append(got, event.(a2a.Message))
+		got = append(got, event)
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Read() got = %v, want %v", got, want)
 	}
 	for i, w := range want {
-		if got[i].MessageID != w.MessageID {
+		if !reflect.DeepEqual(got[i], w) {
 			t.Errorf("Read() got = %v, want %v", got, want)
 		}
 	}
@@ -112,7 +113,7 @@ func TestInMemoryEventQueue_ReadEmpty(t *testing.T) {
 		t.Fatal("method should be blocking")
 	case <-time.After(100 * time.Millisecond):
 		// unblock blocked code by writing to queue
-		err := q.Write(ctx, a2a.Message{MessageID: "test"})
+		err := q.Write(ctx, &a2a.Message{ID: "test"})
 		if err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
@@ -126,13 +127,13 @@ func TestInMemoryEventQueue_WriteFull(t *testing.T) {
 	completed := make(chan struct{})
 
 	// Fill the queue
-	if err := q.Write(ctx, a2a.Message{MessageID: "1"}); err != nil {
+	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
 		t.Fatalf("Write() failed unexpectedly: %v", err)
 	}
 
 	go func() {
 		// Try to write to the full queue
-		err := q.Write(ctx, a2a.Message{MessageID: "2"})
+		err := q.Write(ctx, &a2a.Message{ID: "2"})
 		if err != nil {
 			t.Errorf("Write() error = %v", err)
 			return
@@ -162,7 +163,7 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	}
 
 	// Writing to a closed queue should fail
-	err := q.Write(ctx, a2a.Message{MessageID: "test"})
+	err := q.Write(ctx, &a2a.Message{ID: "test"})
 	if err == nil {
 		t.Error("Write() to closed queue should have returned an error, but got nil")
 	}
@@ -192,13 +193,13 @@ func TestInMemoryEventQueue_WriteWithCanceledContext(t *testing.T) {
 	q := NewInMemoryQueue(1)
 
 	// Fill the queue
-	if err := q.Write(ctx, a2a.Message{MessageID: "1"}); err != nil {
+	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
 		t.Fatalf("Write() failed unexpectedly: %v", err)
 	}
 
 	cancel()
 
-	err := q.Write(ctx, a2a.Message{MessageID: "2"})
+	err := q.Write(ctx, &a2a.Message{ID: "2"})
 	if err == nil {
 		t.Error("Write() with canceled context should have returned an error, but got nil")
 	}
@@ -265,7 +266,7 @@ func TestInMemoryQueueManager_Destroy(t *testing.T) {
 	}
 
 	// Verify the queue is closed
-	err = q.Write(ctx, a2a.Message{MessageID: "test"})
+	err = q.Write(ctx, &a2a.Message{ID: "test"})
 	if err == nil || !errors.Is(err, a2a.ErrQueueClosed) {
 		t.Errorf("Queue should be closed after manager destroys it, but Write() returned %v", err)
 	}
