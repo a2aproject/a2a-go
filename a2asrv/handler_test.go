@@ -33,18 +33,18 @@ var (
 
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
-	ExecuteFunc func(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error
-	CancelFunc  func(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error
+	ExecuteFunc func(ctx context.Context, reqCtx RequestContext, queue events.Queue) error
+	CancelFunc  func(ctx context.Context, reqCtx RequestContext, queue events.Queue) error
 }
 
-func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error {
+func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx RequestContext, queue events.Queue) error {
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, reqCtx, queue)
 	}
 	return nil
 }
 
-func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, queue events.EventQueue) error {
+func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, queue events.Queue) error {
 	if m.CancelFunc != nil {
 		return m.CancelFunc(ctx, reqCtx, queue)
 	}
@@ -53,11 +53,11 @@ func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, q
 
 // mockQueueManager is a mock of events.EventQueueManager.
 type mockQueueManager struct {
-	GetOrCreateFunc func(ctx context.Context, taskId a2a.TaskID) (events.EventQueue, error)
+	GetOrCreateFunc func(ctx context.Context, taskId a2a.TaskID) (events.Queue, error)
 	DestroyFunc     func(ctx context.Context, taskId a2a.TaskID) error
 }
 
-func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (events.EventQueue, error) {
+func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (events.Queue, error) {
 	if m.GetOrCreateFunc != nil {
 		return m.GetOrCreateFunc(ctx, taskId)
 	}
@@ -99,7 +99,7 @@ func (m *mockEventQueue) Close() error {
 	return errors.New("Close() not implemented")
 }
 
-func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.EventQueueManager {
+func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.QueueManager {
 	i := 0
 	mockQ := &mockEventQueue{
 		ReadFunc: func(ctx context.Context) (a2a.Event, error) {
@@ -112,7 +112,7 @@ func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.EventQ
 		},
 	}
 	return &mockQueueManager{
-		GetOrCreateFunc: func(ctx context.Context, id a2a.TaskID) (events.EventQueue, error) {
+		GetOrCreateFunc: func(ctx context.Context, id a2a.TaskID) (events.Queue, error) {
 			if id == getOrCreateFailTaskID {
 				return nil, errors.New("get or create failed")
 			}
@@ -123,7 +123,7 @@ func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.EventQ
 
 func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 	mockExec := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q events.EventQueue) error {
+		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q events.Queue) error {
 			if reqCtx.TaskID == executeFailTaskID {
 				return errors.New("execute failed")
 			}
@@ -135,82 +135,79 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	tests := []struct {
-		name       string
-		message    a2a.MessageSendParams
-		wantEvents []a2a.Event
-		wantErr    error
+		name      string
+		message   a2a.MessageSendParams
+		wantEvent a2a.Event
+		wantErr   error
 	}{
 		{
 			name: "success with TaskID",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{
-				a2a.Message{TaskID: &taskID, MessageID: "test-message"},
-			},
+			wantEvent: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 		},
 		{
 			name: "missing TaskID",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{},
-			wantErr:    errors.New("message is missing TaskID"),
+			wantErr: errors.New("message is missing TaskID"),
 		},
 		{
 			name: "type assertion fails",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{
-				a2a.TaskStatusUpdateEvent{Kind: "status-update"},
-			},
-			wantErr: errors.New("unexpected event type: a2a.TaskStatusUpdateEvent"),
+			wantEvent: a2a.TaskStatusUpdateEvent{Kind: "status-update", TaskID: taskID},
+			wantErr:   errors.New("unexpected event type: a2a.TaskStatusUpdateEvent"),
 		},
 		{
-			name: "get or create fails",
+			name: "GetOrCreate() fails",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{TaskID: &getOrCreateFailTaskID, MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{},
-			wantErr:    errors.New("failed to retrieve queue: get or create failed"),
+			wantErr: errors.New("failed to retrieve queue: get or create failed"),
 		},
 		{
-			name: "executor Execute fails",
+			name: "executor Execute() fails",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{TaskID: &executeFailTaskID, MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{},
-			wantErr:    errors.New("execute failed"),
+			wantErr: errors.New("execute failed"),
 		},
 		{
-			name: "queue Read fails",
+			name: "queue Read() fails",
 			message: a2a.MessageSendParams{
 				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
-			wantEvents: []a2a.Event{},
-			wantErr:    errors.New("failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"),
+			wantErr: errors.New("failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			qm := newEventReplayQueueManager(t, tt.wantEvents...)
+			var qm events.QueueManager
+			if tt.wantEvent == nil {
+				qm = newEventReplayQueueManager(t)
+			} else {
+				qm = newEventReplayQueueManager(t, tt.wantEvent)
+			}
 			handler := newTestHandler(WithEventQueueManager(qm))
 			result, gotErr := handler.OnSendMessage(ctx, tt.message)
 			if tt.wantErr == nil {
 				if gotErr != nil {
 					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
-				if !reflect.DeepEqual(result, tt.wantEvents) {
-					t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantEvents)
+				if !reflect.DeepEqual(result, tt.wantEvent) {
+					t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantEvent)
 				}
 			} else {
 				if gotErr == nil {
 					t.Fatalf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
 				}
-				if !errors.Is(gotErr, tt.wantErr) {
+				if gotErr.Error() != tt.wantErr.Error() {
 					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 

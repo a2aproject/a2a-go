@@ -60,7 +60,7 @@ type RequestHandler interface {
 type defaultRequestHandler struct {
 	pushNotifier    PushNotifier
 	executor        AgentExecutor
-	queueManager    events.EventQueueManager
+	queueManager    events.QueueManager
 	pushConfigStore PushConfigStore
 	taskStore       TaskStore
 }
@@ -75,7 +75,7 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 }
 
 // WithEventQueueManager overrides events.EventQueueManager with custom implementation
-func WithEventQueueManager(manager events.EventQueueManager) RequestHandlerOption {
+func WithEventQueueManager(manager events.QueueManager) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.queueManager = manager
 	}
