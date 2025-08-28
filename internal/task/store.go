@@ -14,4 +14,68 @@
 
 package task
 
-type InMemoryTaskStore struct{}
+import (
+	"bytes"
+	"context"
+	"encoding/gob"
+	"sync"
+
+	"github.com/a2aproject/a2a-go/a2a"
+)
+
+// InMemoryTaskStore stores deep-copied Tasks in memory.
+type InMemoryTaskStore struct {
+	mu    sync.RWMutex
+	tasks map[a2a.TaskID]*a2a.Task
+}
+
+// NewInMemoryTaskStore creates an empty InMemoryTaskStore
+func NewInMemoryTaskStore() *InMemoryTaskStore {
+	return &InMemoryTaskStore{
+		tasks: make(map[a2a.TaskID]*a2a.Task),
+	}
+}
+
+func (s *InMemoryTaskStore) Save(ctx context.Context, task *a2a.Task) error {
+	copy, err := deepCopy(task)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.tasks[task.ID] = copy
+	s.mu.Unlock()
+
+	return nil
+}
+
+// Get retrieves a task by ID.
+func (s *InMemoryTaskStore) Get(ctx context.Context, taskId a2a.TaskID) (*a2a.Task, error) {
+	s.mu.RLock()
+	task, ok := s.tasks[taskId]
+	s.mu.RUnlock()
+
+	if !ok {
+		return nil, a2a.ErrTaskNotFound
+	}
+
+	return deepCopy(task)
+}
+
+// Copy to keep a saved Task unchanged until an explicit Save.
+func deepCopy(task *a2a.Task) (*a2a.Task, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	dec := gob.NewDecoder(&buf)
+
+	if err := enc.Encode(*task); err != nil {
+		return nil, err
+	}
+
+	copy := a2a.Task{}
+	if err := dec.Decode(&copy); err != nil {
+		return nil, err
+	}
+
+	return &copy, nil
+}
