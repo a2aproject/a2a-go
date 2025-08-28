@@ -136,73 +136,60 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	tests := []struct {
 		name       string
-		messages   []a2a.MessageSendParams
+		message    a2a.MessageSendParams
 		wantEvents []a2a.Event
-		wantErrs   []string
+		wantErr    error
 	}{
 		{
 			name: "success with TaskID",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{
 				a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
-			wantErrs: []string{""},
 		},
 		{
 			name: "missing TaskID",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{},
-			wantErrs:   []string{"message is missing TaskID"},
+			wantErr:    errors.New("message is missing TaskID"),
 		},
 		{
 			name: "type assertion fails",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{
 				a2a.TaskStatusUpdateEvent{Kind: "status-update"},
 			},
-			wantErrs: []string{"unexpected event type: a2a.TaskStatusUpdateEvent"},
+			wantErr: errors.New("unexpected event type: a2a.TaskStatusUpdateEvent"),
 		},
 		{
 			name: "get or create fails",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{TaskID: &getOrCreateFailTaskID, MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{TaskID: &getOrCreateFailTaskID, MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{},
-			wantErrs:   []string{"failed to retrieve queue: get or create failed"},
+			wantErr:    errors.New("failed to retrieve queue: get or create failed"),
 		},
 		{
 			name: "executor Execute fails",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{TaskID: &executeFailTaskID, MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{TaskID: &executeFailTaskID, MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{},
-			wantErrs:   []string{"execute failed"},
+			wantErr:    errors.New("execute failed"),
 		},
 		{
 			name: "queue Read fails",
-			messages: []a2a.MessageSendParams{
-				{
-					Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
-				},
+			message: a2a.MessageSendParams{
+				Message: a2a.Message{TaskID: &taskID, MessageID: "test-message"},
 			},
 			wantEvents: []a2a.Event{},
-			wantErrs:   []string{"failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"},
+			wantErr:    errors.New("failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"),
 		},
 	}
 
@@ -211,22 +198,20 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			ctx := t.Context()
 			qm := newEventReplayQueueManager(t, tt.wantEvents...)
 			handler := newTestHandler(WithEventQueueManager(qm))
-			for i, m := range tt.messages {
-				result, err := handler.OnSendMessage(ctx, m)
-				if tt.wantErrs[i] == "" {
-					if err != nil {
-						t.Fatalf("OnSendMessage() error = %v, wantErr nil", err)
-					}
-					if !reflect.DeepEqual(result, tt.wantEvents[i]) {
-						t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantEvents[i])
-					}
-				} else {
-					if err == nil {
-						t.Fatalf("OnSendMessage() error = nil, wantErr %q", tt.wantErrs[i])
-					}
-					if err.Error() != tt.wantErrs[i] {
-						t.Fatalf("OnSendMessage() error = %v, wantErr %q", err, tt.wantErrs[i])
-					}
+			result, gotErr := handler.OnSendMessage(ctx, tt.message)
+			if tt.wantErr == nil {
+				if gotErr != nil {
+					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+				}
+				if !reflect.DeepEqual(result, tt.wantEvents) {
+					t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantEvents)
+				}
+			} else {
+				if gotErr == nil {
+					t.Fatalf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
+				}
+				if !errors.Is(gotErr, tt.wantErr) {
+					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 
 			}

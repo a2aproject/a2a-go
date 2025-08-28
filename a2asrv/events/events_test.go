@@ -15,6 +15,8 @@
 package events
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -44,7 +46,7 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 		t.Fatalf("Read() error = %v", err)
 	}
 
-	// validtae written event
+	// validate written event
 	if got.(a2a.Message).MessageID != want.MessageID {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
@@ -54,7 +56,6 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
-
 	want := []a2a.Message{
 		{MessageID: "test-event"},
 		{MessageID: "test-event2"},
@@ -80,15 +81,62 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 		}
 		got = append(got, event.(a2a.Message))
 	}
-
 	if len(got) != len(want) {
 		t.Fatalf("Read() got = %v, want %v", got, want)
 	}
-
 	for i, w := range want {
 		if got[i].MessageID != w.MessageID {
 			t.Errorf("Read() got = %v, want %v", got, want)
 		}
+	}
+}
+
+func TestInMemoryEventQueue_ReadEmpty(t *testing.T) {
+	t.Parallel()
+	q := NewInMemoryQueue(3)
+	defer func() {
+		if err := q.Close(); err != nil {
+			t.Fatalf("failed to close event queue: %v", err)
+		}
+	}()
+
+	_, err := q.Read(t.Context())
+	if err == nil {
+		t.Error("Read() on empty queue should have returned an error, but got nil")
+	}
+	wantErr := errors.New("queue is empty")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Read() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestInMemoryEventQueue_WriteFull(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	// This test depends on the non-blocking nature of Write.
+	// We create a queue with size 1 to test the full condition.
+	q := &inMemoryEventQueue{
+		events: make(chan a2a.Event, 1),
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			t.Fatalf("failed to close event queue: %v", err)
+		}
+	}()
+
+	// Fill the queue
+	if err := q.Write(ctx, a2a.Message{MessageID: "1"}); err != nil {
+		t.Fatalf("Write() failed unexpectedly: %v", err)
+	}
+
+	// Try to write to the full queue
+	err := q.Write(ctx, a2a.Message{MessageID: "2"})
+	if err == nil {
+		t.Error("Write() to full queue should have returned an error, but got nil")
+	}
+	wantErr := errors.New("queue is full")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Write() error = %v, want %v", err, wantErr)
 	}
 }
 
@@ -106,9 +154,9 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	if err == nil {
 		t.Error("Write() to closed queue should have returned an error, but got nil")
 	}
-	wantErr := a2a.ErrQueueClosed.Error()
-	if err.Error() != wantErr {
-		t.Errorf("Write() error = %v, want %v", err.Error(), wantErr)
+	wantErr := a2a.ErrQueueClosed
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Write() error = %v, want %v", err, wantErr)
 	}
 
 	// Reading from a closed queue should fail
@@ -116,13 +164,39 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	if err == nil {
 		t.Error("Read() from closed queue should have returned an error, but got nil")
 	}
-	if err.Error() != wantErr {
-		t.Errorf("Read() error = %v, want %v", err.Error(), wantErr)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Read() error = %v, want %v", err, wantErr)
 	}
 
 	// Closing again should be a no-op and not panic
 	if err := q.Close(); err != nil {
 		t.Fatalf("failed to close event queue: %v", err)
+	}
+}
+
+func TestInMemoryEventQueue_WriteWithCanceledContext(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	// To test context cancellation on Write, the queue must be full.
+	q := &inMemoryEventQueue{
+		events: make(chan a2a.Event, 1),
+	}
+	defer q.Close()
+
+	// Fill the queue
+	if err := q.Write(ctx, a2a.Message{MessageID: "1"}); err != nil {
+		t.Fatalf("Write() failed unexpectedly: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	cancel() // Cancel the context immediately
+
+	err := q.Write(ctx, a2a.Message{MessageID: "2"})
+	if err == nil {
+		t.Error("Write() with canceled context should have returned an error, but got nil")
+	}
+	if err != context.Canceled {
+		t.Errorf("Write() error = %v, want %v", err, context.Canceled)
 	}
 }
 
@@ -164,7 +238,7 @@ func TestInMemoryQueueManager_Destroy(t *testing.T) {
 	}
 	wantErr := fmt.Sprintf("queue for taskId: %s does not exist", taskID)
 	if err.Error() != wantErr {
-		t.Errorf("Destroy() error = %v, want %v", err.Error(), wantErr)
+		t.Errorf("Destroy() error = %v, want %v", err, wantErr)
 	}
 
 	// Create a queue
@@ -173,37 +247,46 @@ func TestInMemoryQueueManager_Destroy(t *testing.T) {
 		t.Fatalf("GetOrCreate() failed: %v", err)
 	}
 
-	// Destroy the existing queue
+	sameQ, err := m.GetOrCreate(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetOrCreate() failed: %v", err)
+	}
+
+	// Destroy the existing queue - q & sameQ
 	if err := m.Destroy(ctx, taskID); err != nil {
 		t.Fatalf("Destroy() failed: %v", err)
 	}
 
 	// Verify the queue is closed
 	err = q.Write(ctx, a2a.Message{MessageID: "test"})
-	if err == nil || err.Error() != a2a.ErrQueueClosed.Error() {
+	if err == nil || !errors.Is(err, a2a.ErrQueueClosed) {
 		t.Errorf("Queue should be closed after manager destroys it, but Write() returned %v", err)
 	}
 
-	// Verify the queue is removed from the manager
-	imqm := m.(*inMemoryQueueManager)
-	imqm.mu.Lock()
-	_, exists := imqm.queues[taskID]
-	imqm.mu.Unlock()
-	if exists {
-		t.Error("Queue should be removed from manager after Destroy(), but it still exists")
+	// Verify the queue is removed by creating a new queue with same taskID
+	q2, err := m.GetOrCreate(ctx, taskID)
+	if err != nil {
+		t.Fatalf("GetOrCreate() failed after manager destroyed the queue: %v", err)
+	}
+	if q != sameQ {
+		t.Fatalf("sameQ and q should be the same instance, but they are different")
+	}
+	if q == q2 {
+		t.Fatalf("Destroyed queue should be removed from the manager, but it still exists")
 	}
 }
 
-func TestInMemoryQueueManager_Concurrency(t *testing.T) {
+func TestInMemoryQueueManager_ConcurrentCreation(t *testing.T) {
 	t.Parallel()
 	m := NewInMemoryQueueManager()
 	ctx := t.Context()
 	var wg sync.WaitGroup
 	numGoroutines := 100
 	numTaskIDs := 10
-
-	queues := make(map[a2a.TaskID]*inMemoryEventQueue)
-	var mu sync.Mutex
+	created := make(chan struct {
+		queue  EventQueue
+		taskId a2a.TaskID
+	}, numGoroutines)
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
@@ -219,25 +302,28 @@ func TestInMemoryQueueManager_Concurrency(t *testing.T) {
 				t.Error("Concurrent GetOrCreate() returned nil queue")
 				return
 			}
-			typedQ := q.(*inMemoryEventQueue) // Type assertion
-			mu.Lock()
-			if existingQ, ok := queues[taskID]; ok {
-				if existingQ != typedQ {
-					t.Errorf("Concurrent GetOrCreate() returned different queue instances for the same task ID")
-				}
-			} else {
-				queues[taskID] = typedQ
-			}
-			mu.Unlock()
+			created <- struct {
+				queue  EventQueue
+				taskId a2a.TaskID
+			}{queue: q, taskId: taskID}
 		}(i)
 	}
 
 	wg.Wait()
+	close(created)
+
+	for got := range created {
+		existingQ, err := m.GetOrCreate(ctx, got.taskId)
+		if err != nil {
+			t.Errorf("GetOrCreate() failed after concurrent creation: %v", err)
+		}
+		if existingQ != got.queue {
+			t.Fatalf("GetOrCreate() should return the same queue instance for the same task ID, but got different queues")
+		}
+	}
 
 	imqm := m.(*inMemoryQueueManager)
-	imqm.mu.Lock()
-	defer imqm.mu.Unlock()
 	if len(imqm.queues) != numTaskIDs {
-		t.Errorf("Expected %d queues to be created, but got %d", numTaskIDs, len(imqm.queues))
+		t.Fatalf("Expected %d queues to be created, but got %d", numTaskIDs, len(imqm.queues))
 	}
 }
