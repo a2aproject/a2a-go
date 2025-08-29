@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/events"
+	"github.com/a2aproject/a2a-go/internal/task"
 )
 
 var errUnimplemented = errors.New("unimplemented")
@@ -58,9 +59,10 @@ type RequestHandler interface {
 
 // Implements a2asrv.RequestHandler
 type defaultRequestHandler struct {
-	pushNotifier    PushNotifier
-	executor        AgentExecutor
-	queueManager    events.QueueManager
+	executor     *taskExecutor
+	pushNotifier PushNotifier
+	queueManager events.QueueManager
+
 	pushConfigStore PushConfigStore
 	taskStore       TaskStore
 }
@@ -98,12 +100,15 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		executor:     executor,
 		queueManager: events.NewInMemoryQueueManager(),
+		taskStore:    task.NewInMemoryTaskStore(),
 	}
 	for _, option := range options {
 		option(h)
 	}
+	h.executor = newTaskExecutor(executor, func(ctx context.Context, e a2a.Event) (*a2a.SendMessageResult, error) {
+		return nil, nil
+	})
 	return h
 }
 
@@ -116,32 +121,36 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id a2a.TaskIDP
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	taskID := message.Message.TaskID
-	if taskID == "" {
+	if len(message.Message.TaskID) == 0 {
 		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
 		return nil, fmt.Errorf("message is missing TaskID")
 	}
+	taskID := message.Message.TaskID
 	queue, err := h.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve queue: %w", err)
 	}
-	if err := h.executor.Execute(ctx, RequestContext{
-		Request: message,
-		TaskID:  taskID,
-	}, queue); err != nil {
+
+	reqCtx := RequestContext{Request: message, TaskID: taskID}
+	execution, err := h.executor.execute(ctx, reqCtx, queue)
+	if err != nil {
 		return nil, err
 	}
-	event, err := queue.Read(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read event from queue: %w", err)
+
+	eventChan, err := execution.subscribe(ctx)
+	defer execution.unsubscribe(ctx, eventChan)
+
+	for event := range eventChan {
+		if shouldInterrupt(event) {
+			return event.(a2a.SendMessageResult), nil
+		}
 	}
 
-	// todo: handle returned update event
-	if _, ok := event.(a2a.SendMessageResult); !ok {
-		return nil, fmt.Errorf("unexpected event type: %T", event)
-	}
+	return execution.wait(ctx)
+}
 
-	return event.(a2a.SendMessageResult), nil
+func shouldInterrupt(event a2a.Event) bool {
+	return false
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, id a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
