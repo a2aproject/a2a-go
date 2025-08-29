@@ -21,7 +21,7 @@ import (
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/events"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 var errUnimplemented = errors.New("unimplemented")
@@ -60,7 +60,7 @@ type RequestHandler interface {
 type defaultRequestHandler struct {
 	pushNotifier    PushNotifier
 	executor        AgentExecutor
-	queueManager    events.QueueManager
+	queueManager    eventqueue.Manager
 	pushConfigStore PushConfigStore
 	taskStore       TaskStore
 }
@@ -74,8 +74,8 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 	}
 }
 
-// WithEventQueueManager overrides events.EventQueueManager with custom implementation
-func WithEventQueueManager(manager events.QueueManager) RequestHandlerOption {
+// WithEventQueueManager overrides eventqueue.Manager with custom implementation
+func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.queueManager = manager
 	}
@@ -99,7 +99,7 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
 		executor:     executor,
-		queueManager: events.NewInMemoryQueueManager(),
+		queueManager: eventqueue.NewInMemoryManager(),
 	}
 	for _, option := range options {
 		option(h)

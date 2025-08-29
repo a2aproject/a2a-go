@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package events
+package eventqueue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -23,6 +24,11 @@ import (
 )
 
 const defaultMaxQueueSize = 1024
+
+var (
+	// ErrQueueClosed indicates that the event queue has been closed.
+	ErrQueueClosed = errors.New("queue is closed")
+)
 
 // Reader defines the interface for reading events from a queue.
 // A2A server stack reads events written by AgentExecutor.
@@ -48,10 +54,10 @@ type Queue interface {
 	Close() error
 }
 
-// QueueManager manages event queues on a per-task basis.
+// Manager manages event queues on a per-task basis.
 // It provides lifecycle management for task-specific event queues,
 // enabling multiple clients to attach to the same task's event stream.
-type QueueManager interface {
+type Manager interface {
 	// GetOrCreate returns an existing queue if one exists, or creates a new one.
 	GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error)
 
@@ -59,13 +65,13 @@ type QueueManager interface {
 	Destroy(ctx context.Context, taskId a2a.TaskID) error
 }
 
-// Implements EventQueueManager interface
-type inMemoryQueueManager struct {
+// Implements Manager interface
+type inMemoryManager struct {
 	mu     sync.Mutex
 	queues map[a2a.TaskID]Queue
 }
 
-// Implements EventQueue interface
+// Implements Queue interface
 type inMemoryQueue struct {
 	// An element needs to be written to a semaphore before writing to events or closing it.
 	semaphore chan any
@@ -77,14 +83,14 @@ type inMemoryQueue struct {
 	close chan any
 }
 
-// NewInMemoryQueueManager creates a new queue manager
-func NewInMemoryQueueManager() QueueManager {
-	return &inMemoryQueueManager{
+// NewInMemoryManager creates a new queue manager
+func NewInMemoryManager() Manager {
+	return &inMemoryManager{
 		queues: make(map[a2a.TaskID]Queue),
 	}
 }
 
-func (m *inMemoryQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error) {
+func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.queues[taskId]; !ok {
@@ -94,7 +100,7 @@ func (m *inMemoryQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskI
 	return m.queues[taskId], nil
 }
 
-func (m *inMemoryQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
+func (m *inMemoryManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.queues[taskId]; !ok {
@@ -106,11 +112,16 @@ func (m *inMemoryQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) e
 	return nil
 }
 
-func NewInMemoryQueue(size int) *inMemoryQueue {
+// NewInMemoryQueue creates a new queue of desired size
+func NewInMemoryQueue(size int) Queue {
 	return &inMemoryQueue{
 		semaphore: make(chan any, 1),
-		events:    make(chan a2a.Event, size),
-		close:     make(chan any, 1),
+		// todo: consider unbounded queue implementation to avoid preallocating a large buffered channel
+		// examples:
+		// https://github.com/modelcontextprotocol/go-sdk/blob/a76bae3a11c008d59488083185d05a74b86f429c/mcp/transport.go#L305
+		// https://github.com/golang/net/blob/master/quic/queue.go
+		events: make(chan a2a.Event, size),
+		close:  make(chan any, 1),
 	}
 }
 
@@ -123,7 +134,7 @@ func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	defer func() { <-q.semaphore }()
 
 	if q.closed {
-		return a2a.ErrQueueClosed
+		return ErrQueueClosed
 	}
 
 	select {
@@ -132,7 +143,7 @@ func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	case <-q.close:
 		close(q.events)
 		q.closed = true
-		return a2a.ErrQueueClosed
+		return ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -143,7 +154,7 @@ func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, error) {
 	select {
 	case event, ok := <-q.events:
 		if !ok {
-			return nil, a2a.ErrQueueClosed
+			return nil, ErrQueueClosed
 		}
 		return event, nil
 	case <-ctx.Done():

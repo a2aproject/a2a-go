@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package events
+package eventqueue
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-func TestInMemoryEventQueue_WriteRead(t *testing.T) {
+func TestInMemoryQueue_WriteRead(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
@@ -35,26 +35,20 @@ func TestInMemoryEventQueue_WriteRead(t *testing.T) {
 			t.Fatalf("failed to close event queue: %v", err)
 		}
 	}()
-
-	// write wanted event
 	want := &a2a.Message{ID: "test-event"}
 	if err := q.Write(ctx, want); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-
-	// retrieve written event
 	got, err := q.Read(ctx)
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
-
-	// validate written event
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
 }
 
-func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
+func TestInMemoryQueue_WriteCloseRead(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
@@ -62,21 +56,17 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 		{ID: "test-event"},
 		{ID: "test-event2"},
 	}
-	// write wanted events
 	for _, w := range want {
 		if err := q.Write(ctx, w); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}
-
-	// close queue
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-
-	// retrieve written events
 	var got []a2a.Event
-	for range len(q.events) {
+	typedQ := q.(*inMemoryQueue)
+	for range len(typedQ.events) {
 		event, err := q.Read(ctx)
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
@@ -93,7 +83,7 @@ func TestInMemoryEventQueue_WriteCloseRead(t *testing.T) {
 	}
 }
 
-func TestInMemoryEventQueue_ReadEmpty(t *testing.T) {
+func TestInMemoryQueue_ReadEmpty(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
@@ -120,19 +110,17 @@ func TestInMemoryEventQueue_ReadEmpty(t *testing.T) {
 	}
 }
 
-func TestInMemoryEventQueue_WriteFull(t *testing.T) {
+func TestInMemoryQueue_WriteFull(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(1)
 	completed := make(chan struct{})
 
-	// Fill the queue
 	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
 		t.Fatalf("Write() failed unexpectedly: %v", err)
 	}
 
 	go func() {
-		// Try to write to the full queue
 		err := q.Write(ctx, &a2a.Message{ID: "2"})
 		if err != nil {
 			t.Errorf("Write() error = %v", err)
@@ -153,7 +141,7 @@ func TestInMemoryEventQueue_WriteFull(t *testing.T) {
 	}
 }
 
-func TestInMemoryEventQueue_Close(t *testing.T) {
+func TestInMemoryQueue_Close(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	q := NewInMemoryQueue(3)
@@ -167,7 +155,7 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	if err == nil {
 		t.Error("Write() to closed queue should have returned an error, but got nil")
 	}
-	wantErr := a2a.ErrQueueClosed
+	wantErr := ErrQueueClosed
 	if !errors.Is(err, wantErr) {
 		t.Errorf("Write() error = %v, want %v", err, wantErr)
 	}
@@ -187,7 +175,7 @@ func TestInMemoryEventQueue_Close(t *testing.T) {
 	}
 }
 
-func TestInMemoryEventQueue_WriteWithCanceledContext(t *testing.T) {
+func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
 	q := NewInMemoryQueue(1)
@@ -208,9 +196,9 @@ func TestInMemoryEventQueue_WriteWithCanceledContext(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueueManager_GetOrCreate(t *testing.T) {
+func TestInMemoryManager_GetOrCreate(t *testing.T) {
 	t.Parallel()
-	m := NewInMemoryQueueManager()
+	m := NewInMemoryManager()
 	taskID := a2a.TaskID("task-1")
 	ctx := t.Context()
 
@@ -233,28 +221,15 @@ func TestInMemoryQueueManager_GetOrCreate(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueueManager_Destroy(t *testing.T) {
+func TestInMemoryManager_DestroyExisting(t *testing.T) {
 	t.Parallel()
-	m := NewInMemoryQueueManager()
+	m := NewInMemoryManager()
 	taskID := a2a.TaskID("task-1")
 	ctx := t.Context()
-
-	// Destroying a non-existent queue should return an error
-	err := m.Destroy(ctx, taskID)
-	if err == nil {
-		t.Error("Destroy() on non-existent queue should have returned an error, but got nil")
-	}
-	wantErr := fmt.Sprintf("queue for taskId: %s does not exist", taskID)
-	if err.Error() != wantErr {
-		t.Errorf("Destroy() error = %v, want %v", err, wantErr)
-	}
-
-	// Create a queue
 	q, err := m.GetOrCreate(ctx, taskID)
 	if err != nil {
 		t.Fatalf("GetOrCreate() failed: %v", err)
 	}
-
 	sameQ, err := m.GetOrCreate(ctx, taskID)
 	if err != nil {
 		t.Fatalf("GetOrCreate() failed: %v", err)
@@ -264,10 +239,8 @@ func TestInMemoryQueueManager_Destroy(t *testing.T) {
 	if err := m.Destroy(ctx, taskID); err != nil {
 		t.Fatalf("Destroy() failed: %v", err)
 	}
-
-	// Verify the queue is closed
 	err = q.Write(ctx, &a2a.Message{ID: "test"})
-	if err == nil || !errors.Is(err, a2a.ErrQueueClosed) {
+	if err == nil || !errors.Is(err, ErrQueueClosed) {
 		t.Errorf("Queue should be closed after manager destroys it, but Write() returned %v", err)
 	}
 
@@ -284,9 +257,25 @@ func TestInMemoryQueueManager_Destroy(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueueManager_ConcurrentCreation(t *testing.T) {
+func TestInMemoryManager_DestroyNonExistent(t *testing.T) {
 	t.Parallel()
-	m := NewInMemoryQueueManager()
+	m := NewInMemoryManager()
+	taskID := a2a.TaskID("task-1")
+	ctx := t.Context()
+
+	wantErr := fmt.Sprintf("queue for taskId: %s does not exist", taskID)
+	err := m.Destroy(ctx, taskID)
+	if err == nil {
+		t.Error("Destroy() on non-existent queue should have returned an error, but got nil")
+	}
+	if err.Error() != wantErr {
+		t.Errorf("Destroy() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
+	t.Parallel()
+	m := NewInMemoryManager()
 	ctx := t.Context()
 	var wg sync.WaitGroup
 	numGoroutines := 100
@@ -330,7 +319,7 @@ func TestInMemoryQueueManager_ConcurrentCreation(t *testing.T) {
 		}
 	}
 
-	imqm := m.(*inMemoryQueueManager)
+	imqm := m.(*inMemoryManager)
 	if len(imqm.queues) != numTaskIDs {
 		t.Fatalf("Expected %d queues to be created, but got %d", numTaskIDs, len(imqm.queues))
 	}
