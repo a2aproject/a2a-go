@@ -90,7 +90,7 @@ func TestInMemoryManager_DestroyNonExistent(t *testing.T) {
 	taskID := a2a.TaskID("task-1")
 	ctx := t.Context()
 
-	wantErr := fmt.Sprintf("queue for taskId: %s does not exist", taskID)
+	wantErr := fmt.Sprintf("queue cannot be destroyed as queue for taskId: %s does not exist", taskID)
 	err := m.Destroy(ctx, taskID)
 	if err == nil {
 		t.Error("Destroy() on non-existent queue should have returned an error, but got nil")

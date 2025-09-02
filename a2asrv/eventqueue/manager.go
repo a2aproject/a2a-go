@@ -16,8 +16,6 @@ package eventqueue
 
 import (
 	"context"
-	"fmt"
-	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -31,39 +29,4 @@ type Manager interface {
 
 	// Destroy closes the queue for the specified task and frees all associates resources.
 	Destroy(ctx context.Context, taskId a2a.TaskID) error
-}
-
-// Implements Manager interface
-type inMemoryManager struct {
-	mu     sync.Mutex
-	queues map[a2a.TaskID]Queue
-}
-
-// NewInMemoryManager creates a new queue manager
-func NewInMemoryManager() Manager {
-	return &inMemoryManager{
-		queues: make(map[a2a.TaskID]Queue),
-	}
-}
-
-func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.queues[taskId]; !ok {
-		queue := NewInMemoryQueue(defaultMaxQueueSize)
-		m.queues[taskId] = queue
-	}
-	return m.queues[taskId], nil
-}
-
-func (m *inMemoryManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.queues[taskId]; !ok {
-		return fmt.Errorf("queue for taskId: %s does not exist", taskId)
-	}
-	queue := m.queues[taskId]
-	_ = queue.Close() // in memory queue close never fails
-	delete(m.queues, taskId)
-	return nil
 }
