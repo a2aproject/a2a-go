@@ -49,7 +49,6 @@ func (s *InMemoryTaskStore) Save(ctx context.Context, task *a2a.Task) error {
 	return nil
 }
 
-// Get retrieves a task by ID.
 func (s *InMemoryTaskStore) Get(ctx context.Context, taskId a2a.TaskID) (*a2a.Task, error) {
 	s.mu.RLock()
 	task, ok := s.tasks[taskId]

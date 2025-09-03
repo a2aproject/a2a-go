@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/task"
 )
 
 var errUnimplemented = errors.New("unimplemented")
@@ -100,6 +101,7 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
 		queueManager: eventqueue.NewInMemoryManager(),
+		taskStore:    task.NewInMemoryTaskStore(),
 	}
 	for _, option := range options {
 		option(h)
@@ -124,6 +126,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.M
 		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
 		return nil, fmt.Errorf("message is missing TaskID")
 	}
+
 	queue, err := h.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve queue: %w", err)
@@ -135,13 +138,10 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.M
 		return nil, fmt.Errorf("failed to execute: %w", err)
 	}
 
-	eventChan, err := execution.subscribe(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to execution result: %w", err)
-	}
-	defer execution.unsubscribe(ctx, eventChan)
-
-	for event := range eventChan {
+	for event, err := range execution.getEvents(ctx) {
+		if err != nil {
+			return nil, err
+		}
 		if shouldInterrupt(event) {
 			return event.(a2a.SendMessageResult), nil
 		}
@@ -150,12 +150,15 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.M
 	return execution.wait(ctx)
 }
 
-func shouldInterrupt(event a2a.Event) bool {
-	return false
-}
-
-func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, id a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return nil
+func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	// TODO(yarolegovich): proper validations https://github.com/a2aproject/a2a-go/issues/26
+	exec, ok := h.executor.getExecution(params.ID)
+	if !ok {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(nil, a2a.ErrTaskNotFound)
+		}
+	}
+	return exec.getEvents(ctx)
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, message a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
@@ -176,4 +179,8 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params a2a.DeleteTaskPushConfigParams) error {
 	return errUnimplemented
+}
+
+func shouldInterrupt(event a2a.Event) bool {
+	return false
 }

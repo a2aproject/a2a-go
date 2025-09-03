@@ -2,6 +2,8 @@ package a2asrv
 
 import (
 	"context"
+	"fmt"
+	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -26,6 +28,33 @@ func newAgentExecution(queue eventqueue.Queue) *agentExecution {
 		subscribeChan:   make(chan chan a2a.Event),
 		unsubscribeChan: make(chan chan a2a.Event),
 		done:            make(chan any),
+	}
+}
+
+func (e *agentExecution) getEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		eventChan, err := e.subscribe(ctx)
+		if err != nil {
+			yield(nil, fmt.Errorf("failed to subscribe to execution result: %w", err))
+			return
+		}
+		defer e.unsubscribe(ctx, eventChan)
+
+		for {
+			select {
+			case <-ctx.Done():
+				yield(nil, err)
+				return
+
+			case event, ok := <-eventChan:
+				if !ok {
+					return
+				}
+				if !yield(event, nil) {
+					return
+				}
+			}
+		}
 	}
 }
 
