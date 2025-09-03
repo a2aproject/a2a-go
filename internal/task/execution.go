@@ -1,4 +1,4 @@
-package a2asrv
+package task
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-type agentExecution struct {
+type Execution struct {
 	queue eventqueue.Queue
 
 	subscribeChan   chan chan a2a.Event
@@ -21,8 +21,9 @@ type agentExecution struct {
 	err    error
 }
 
-func newAgentExecution(queue eventqueue.Queue) *agentExecution {
-	return &agentExecution{
+// Not exported, because Executions are created by Executor.
+func newExecution(queue eventqueue.Queue) *Execution {
+	return &Execution{
 		queue: queue,
 
 		subscribeChan:   make(chan chan a2a.Event),
@@ -31,14 +32,14 @@ func newAgentExecution(queue eventqueue.Queue) *agentExecution {
 	}
 }
 
-func (e *agentExecution) getEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
+func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		eventChan, err := e.subscribe(ctx)
+		eventChan, err := e.Subscribe(ctx)
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to subscribe to execution result: %w", err))
 			return
 		}
-		defer e.unsubscribe(ctx, eventChan)
+		defer e.Unsubscribe(ctx, eventChan)
 
 		for {
 			select {
@@ -58,7 +59,7 @@ func (e *agentExecution) getEvents(ctx context.Context) iter.Seq2[a2a.Event, err
 	}
 }
 
-func (e *agentExecution) wait(ctx context.Context) (a2a.SendMessageResult, error) {
+func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -67,7 +68,7 @@ func (e *agentExecution) wait(ctx context.Context) (a2a.SendMessageResult, error
 	}
 }
 
-func (e *agentExecution) subscribe(ctx context.Context) (chan a2a.Event, error) {
+func (e *Execution) Subscribe(ctx context.Context) (chan a2a.Event, error) {
 	ch := make(chan a2a.Event)
 
 	select {
@@ -83,7 +84,7 @@ func (e *agentExecution) subscribe(ctx context.Context) (chan a2a.Event, error) 
 	}
 }
 
-func (e *agentExecution) unsubscribe(ctx context.Context, ch chan a2a.Event) error {
+func (e *Execution) Unsubscribe(ctx context.Context, ch chan a2a.Event) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

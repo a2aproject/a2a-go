@@ -1,4 +1,4 @@
-package a2asrv
+package task
 
 import (
 	"context"
@@ -12,32 +12,33 @@ import (
 )
 
 var (
-	errTaskExecutionInProgress = errors.New("task execution is already in progress")
-	errTaskExecutionNotFound   = errors.New("task execution not found")
+	ErrTaskExecutionInProgress = errors.New("task execution is already in progress")
+	ErrTaskExecutionNotFound   = errors.New("task execution not found")
 )
 
 // execution terminates when either a non-nil result or a non-nil error is returned.
 // the terminal value becomes the result of the execution.
 type handleEventFn func(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
 
-type taskExecutor struct {
-	agentExecutor AgentExecutor
+type ExecutableFn func(context.Context) error
+type CancelExecutionFn func(context.Context, *Execution) error
+
+type Executor struct {
 	handleEventFn handleEventFn
 
 	mu         sync.Mutex
-	executions map[a2a.TaskID]*agentExecution
+	executions map[a2a.TaskID]*Execution
 }
 
-func newTaskExecutor(agentExecutor AgentExecutor, eventHandler handleEventFn) *taskExecutor {
-	return &taskExecutor{
-		agentExecutor: agentExecutor,
+func NewExecutor(eventHandler handleEventFn) *Executor {
+	return &Executor{
 		handleEventFn: eventHandler,
-		executions:    make(map[a2a.TaskID]*agentExecution),
+		executions:    make(map[a2a.TaskID]*Execution),
 	}
 }
 
 // GetExecution can be used to resubscribe to events which are being produced by agentExecution.
-func (e *taskExecutor) getExecution(taskID a2a.TaskID) (*agentExecution, bool) {
+func (e *Executor) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	execution, ok := e.executions[taskID]
@@ -46,36 +47,37 @@ func (e *taskExecutor) getExecution(taskID a2a.TaskID) (*agentExecution, bool) {
 
 // Execute starts an AgentExecutor in a separate goroutine with a detached context.
 // There can only be a single active execution per TaskID.
-func (e *taskExecutor) execute(ctx context.Context, req RequestContext, queue eventqueue.Queue) (*agentExecution, error) {
+func (e *Executor) Execute(ctx context.Context, id a2a.TaskID, queue eventqueue.Queue, execFn ExecutableFn) (*Execution, error) {
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	// TODO(yarolegovich): handle idempotency once spec establishes the key.
-	if _, ok := e.executions[req.TaskID]; ok {
-		return nil, errTaskExecutionInProgress
+	if _, ok := e.executions[id]; ok {
+		return nil, ErrTaskExecutionInProgress
 	}
 
-	execution := newAgentExecution(queue)
-	e.executions[req.TaskID] = execution
+	execution := newExecution(queue)
+	e.executions[id] = execution
 
 	detachedCtx := context.WithoutCancel(ctx)
 
-	go e.startExecution(detachedCtx, req, execution)
+	go e.startExecution(detachedCtx, id, execution, execFn)
 
 	return execution, nil
 }
 
 // Cancel requests AgentExecutor to stop the execution and waits for it to finish.
-func (e *taskExecutor) cancel(ctx context.Context, req RequestContext, taskID a2a.TaskID) (*a2a.Task, error) {
+func (e *Executor) Cancel(ctx context.Context, taskID a2a.TaskID, cancelFn CancelExecutionFn) (*a2a.Task, error) {
 	e.mu.Lock()
 	execution, ok := e.executions[taskID]
 	e.mu.Unlock()
 
 	if !ok {
-		return nil, errTaskExecutionNotFound
+		return nil, ErrTaskExecutionNotFound
 	}
 
-	if err := e.agentExecutor.Cancel(ctx, req, execution.queue); err != nil {
+	if err := cancelFn(ctx, execution); err != nil {
 		return nil, fmt.Errorf("failed to cancel task: %w", err)
 	}
 
@@ -101,10 +103,10 @@ func (e *taskExecutor) cancel(ctx context.Context, req RequestContext, taskID a2
 	return task, nil
 }
 
-func (e *taskExecutor) startExecution(ctx context.Context, req RequestContext, execution *agentExecution) {
+func (e *Executor) startExecution(ctx context.Context, id a2a.TaskID, execution *Execution, execFn ExecutableFn) {
 	defer func() {
 		e.mu.Lock()
-		delete(e.executions, req.TaskID)
+		delete(e.executions, id)
 		e.mu.Unlock()
 	}()
 
@@ -128,7 +130,7 @@ func (e *taskExecutor) startExecution(ctx context.Context, req RequestContext, e
 				err = fmt.Errorf("agent executor panic: %v", r)
 			}
 		}()
-		err = e.agentExecutor.Execute(ctx, req, execution.queue)
+		err = execFn(ctx)
 		return
 	})
 
@@ -148,7 +150,7 @@ func (e *taskExecutor) startExecution(ctx context.Context, req RequestContext, e
 	close(execution.done)
 }
 
-func (e *taskExecutor) handleExecutionEvents(ctx context.Context, execution *agentExecution) (a2a.SendMessageResult, error) {
+func (e *Executor) handleExecutionEvents(ctx context.Context, execution *Execution) (a2a.SendMessageResult, error) {
 	subscribers := make(map[chan a2a.Event]any)
 
 	defer func() {

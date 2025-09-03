@@ -30,10 +30,10 @@ var errUnimplemented = errors.New("unimplemented")
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
 	// OnGetTask handles the 'tasks/get' protocol method.
-	OnGetTask(ctx context.Context, query a2a.TaskQueryParams) (a2a.Task, error)
+	OnGetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error)
 
 	// OnCancelTask handles the 'tasks/cancel' protocol method.
-	OnCancelTask(ctx context.Context, id a2a.TaskIDParams) (a2a.Task, error)
+	OnCancelTask(ctx context.Context, id a2a.TaskIDParams) (*a2a.Task, error)
 
 	// OnSendMessage handles the 'message/send' protocol method (non-streaming).
 	OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error)
@@ -112,12 +112,13 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	return h
 }
 
-func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query a2a.TaskQueryParams) (a2a.Task, error) {
-	return a2a.Task{}, errUnimplemented
+func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error) {
+	return &a2a.Task{}, errUnimplemented
 }
 
-func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id a2a.TaskIDParams) (a2a.Task, error) {
-	return a2a.Task{}, errUnimplemented
+func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params a2a.TaskIDParams) (*a2a.Task, error) {
+	// TODO(yarolegovich): https://github.com/a2aproject/a2a-go/issues/21
+	return h.executor.cancel(ctx, RequestContext{TaskID: params.ID}, params.ID)
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -151,7 +152,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.M
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	// TODO(yarolegovich): proper validations https://github.com/a2aproject/a2a-go/issues/26
+	// TODO(yarolegovich): https://github.com/a2aproject/a2a-go/issues/26
 	exec, ok := h.executor.getExecution(params.ID)
 	if !ok {
 		return func(yield func(a2a.Event, error) bool) {
@@ -181,6 +182,7 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 	return errUnimplemented
 }
 
+// TODO(yarolegovich): handle auth-required state
 func shouldInterrupt(event a2a.Event) bool {
 	return false
 }
