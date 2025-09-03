@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/events"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -46,7 +46,7 @@ func (e *taskExecutor) getExecution(taskID a2a.TaskID) (*agentExecution, bool) {
 
 // Execute starts an AgentExecutor in a separate goroutine with a detached context.
 // There can only be a single active execution per TaskID.
-func (e *taskExecutor) execute(ctx context.Context, req RequestContext, queue events.Queue) (*agentExecution, error) {
+func (e *taskExecutor) execute(ctx context.Context, req RequestContext, queue eventqueue.Queue) (*agentExecution, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -194,7 +194,7 @@ func (e *taskExecutor) handleExecutionEvents(ctx context.Context, execution *age
 	}
 }
 
-func readQueueToChannels(ctx context.Context, queue events.Reader, eventChan chan a2a.Event, errorChan chan error) {
+func readQueueToChannels(ctx context.Context, queue eventqueue.Reader, eventChan chan a2a.Event, errorChan chan error) {
 	for {
 		event, err := queue.Read(ctx)
 		if err != nil {

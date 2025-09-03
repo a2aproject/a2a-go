@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/events"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 type agentExecution struct {
-	queue events.Queue
+	queue eventqueue.Queue
 
 	subscribeChan   chan chan a2a.Event
 	unsubscribeChan chan chan a2a.Event
@@ -19,7 +19,7 @@ type agentExecution struct {
 	err    error
 }
 
-func newAgentExecution(queue events.Queue) *agentExecution {
+func newAgentExecution(queue eventqueue.Queue) *agentExecution {
 	return &agentExecution{
 		queue: queue,
 

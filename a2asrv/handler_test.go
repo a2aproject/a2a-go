@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/events"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 var (
@@ -33,31 +33,31 @@ var (
 
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
-	ExecuteFunc func(ctx context.Context, reqCtx RequestContext, queue events.Queue) error
-	CancelFunc  func(ctx context.Context, reqCtx RequestContext, queue events.Queue) error
+	ExecuteFunc func(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
+	CancelFunc  func(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
 }
 
-func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx RequestContext, queue events.Queue) error {
+func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error {
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, reqCtx, queue)
 	}
 	return nil
 }
 
-func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, queue events.Queue) error {
+func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error {
 	if m.CancelFunc != nil {
 		return m.CancelFunc(ctx, reqCtx, queue)
 	}
 	return errors.New("Cancel() not implemented")
 }
 
-// mockQueueManager is a mock of events.EventQueueManager.
+// mockQueueManager is a mock of eventqueue.Manager
 type mockQueueManager struct {
-	GetOrCreateFunc func(ctx context.Context, taskId a2a.TaskID) (events.Queue, error)
+	GetOrCreateFunc func(ctx context.Context, taskId a2a.TaskID) (eventqueue.Queue, error)
 	DestroyFunc     func(ctx context.Context, taskId a2a.TaskID) error
 }
 
-func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (events.Queue, error) {
+func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (eventqueue.Queue, error) {
 	if m.GetOrCreateFunc != nil {
 		return m.GetOrCreateFunc(ctx, taskId)
 	}
@@ -71,7 +71,7 @@ func (m *mockQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) error
 	return errors.New("Destroy() not implemented")
 }
 
-// mockevents.EventQueue is a mock of events.EventQueue.
+// mockEventQueue is a mock of eventqueue.Queue
 type mockEventQueue struct {
 	ReadFunc  func(ctx context.Context) (a2a.Event, error)
 	WriteFunc func(ctx context.Context, event a2a.Event) error
@@ -99,7 +99,7 @@ func (m *mockEventQueue) Close() error {
 	return errors.New("Close() not implemented")
 }
 
-func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.QueueManager {
+func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) eventqueue.Manager {
 	i := 0
 	mockQ := &mockEventQueue{
 		ReadFunc: func(ctx context.Context) (a2a.Event, error) {
@@ -112,7 +112,7 @@ func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.QueueM
 		},
 	}
 	return &mockQueueManager{
-		GetOrCreateFunc: func(ctx context.Context, id a2a.TaskID) (events.Queue, error) {
+		GetOrCreateFunc: func(ctx context.Context, id a2a.TaskID) (eventqueue.Queue, error) {
 			if id == getOrCreateFailTaskID {
 				return nil, errors.New("get or create failed")
 			}
@@ -123,7 +123,7 @@ func newEventReplayQueueManager(t *testing.T, toSend ...a2a.Event) events.QueueM
 
 func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 	mockExec := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q events.Queue) error {
+		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q eventqueue.Queue) error {
 			if reqCtx.TaskID == executeFailTaskID {
 				return errors.New("execute failed")
 			}
@@ -188,7 +188,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			var qm events.QueueManager
+			var qm eventqueue.Manager
 			if tt.wantEvent == nil {
 				qm = newEventReplayQueueManager(t)
 			} else {
