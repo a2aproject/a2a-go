@@ -49,6 +49,7 @@ func (m *inMemoryManager) Destroy(ctx context.Context, taskId a2a.TaskID) error 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.queues[taskId]; !ok {
+		// todo: consider not failing when it already has desired state
 		return fmt.Errorf("queue cannot be destroyed as queue for taskId: %s does not exist", taskId)
 	}
 	queue := m.queues[taskId]

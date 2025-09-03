@@ -193,3 +193,47 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 		t.Errorf("Write() error = %v, want %v", err, context.Canceled)
 	}
 }
+
+func TestInMemoryQueue_BlockingDoubleWrite(t *testing.T) {
+	t.Parallel()
+	q := NewInMemoryQueue(1)
+	ctx := t.Context()
+	completed1 := make(chan struct{})
+	completed2 := make(chan struct{})
+	event := &a2a.Message{ID: "test"}
+
+	// Fill the queue
+	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
+		t.Fatalf("Write() failed unexpectedly: %v", err)
+	}
+
+	go func() {
+		ctx1 := t.Context()
+		err := q.Write(ctx1, event) // blocks on trying to write to a full channel
+		if !errors.Is(err, ErrQueueClosed) {
+			t.Errorf("Write1() error = %v, want %v", err, ErrQueueClosed)
+			return
+		}
+		close(completed1)
+	}()
+
+	go func() {
+		ctx2 := t.Context()
+		err := q.Write(ctx2, event) // blocks on semaphore
+		if !errors.Is(err, ErrQueueClosed) {
+			t.Errorf("Write2() error = %v, want %v", err, ErrQueueClosed)
+			return
+		}
+		close(completed2)
+	}()
+
+	select {
+	case <-completed1:
+		t.Fatal("method should be blocking")
+	case <-completed2:
+		t.Fatal("method should be blocking")
+	case <-time.After(100 * time.Millisecond):
+		q.Close() // sets `q.closed = true` and signals the first Write to wake up and exit
+		// The second Write acquires the semaphore. will know to exit because the close flag is set
+	}
+}
