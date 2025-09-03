@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package task
+package taskstore
 
 import (
 	"bytes"
@@ -24,19 +24,19 @@ import (
 )
 
 // InMemoryTaskStore stores deep-copied Tasks in memory.
-type InMemoryTaskStore struct {
+type InMemory struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*a2a.Task
 }
 
 // NewInMemoryTaskStore creates an empty InMemoryTaskStore
-func NewInMemoryTaskStore() *InMemoryTaskStore {
-	return &InMemoryTaskStore{
+func NewInMemory() *InMemory {
+	return &InMemory{
 		tasks: make(map[a2a.TaskID]*a2a.Task),
 	}
 }
 
-func (s *InMemoryTaskStore) Save(ctx context.Context, task *a2a.Task) error {
+func (s *InMemory) Save(ctx context.Context, task *a2a.Task) error {
 	copy, err := deepCopy(task)
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (s *InMemoryTaskStore) Save(ctx context.Context, task *a2a.Task) error {
 	return nil
 }
 
-func (s *InMemoryTaskStore) Get(ctx context.Context, taskId a2a.TaskID) (*a2a.Task, error) {
+func (s *InMemory) Get(ctx context.Context, taskId a2a.TaskID) (*a2a.Task, error) {
 	s.mu.RLock()
 	task, ok := s.tasks[taskId]
 	s.mu.RUnlock()
