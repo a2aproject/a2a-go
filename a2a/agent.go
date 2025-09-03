@@ -82,7 +82,7 @@ type AgentCard struct {
 	// protocol.
 	// Clients should prefer this transport and URL combination when both are
 	// supported.
-	PreferredTransport TransportProtocol
+	PreferredTransport string
 
 	// The version of the A2A protocol this agent supports.
 	ProtocolVersion string
