@@ -194,7 +194,7 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueue_BlockingDoubleWrite(t *testing.T) {
+func TestInMemoryQueue_BlockedWriteOnFullQueueThenClose(t *testing.T) {
 	t.Parallel()
 	q := NewInMemoryQueue(1)
 	ctx := t.Context()
@@ -233,7 +233,10 @@ func TestInMemoryQueue_BlockingDoubleWrite(t *testing.T) {
 	case <-completed2:
 		t.Fatal("method should be blocking")
 	case <-time.After(100 * time.Millisecond):
-		q.Close() // sets `q.closed = true` and signals the first Write to wake up and exit
-		// The second Write acquires the semaphore. will know to exit because the close flag is set
+		// unblock blocked code by closing queue
+		err := q.Close()
+		if err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
 	}
 }
