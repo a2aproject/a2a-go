@@ -33,7 +33,7 @@ type Manager struct {
 	cancellations map[a2a.TaskID]*cancellation
 }
 
-func NewExecutionManager(queueManager eventqueue.Manager) *Manager {
+func NewManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
 		queueManager:  queueManager,
 		executions:    make(map[a2a.TaskID]*Execution),
@@ -132,9 +132,7 @@ func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution 
 		return
 	})
 
-	m.handleEvents(ctx, group, execution.result, func(ctx context.Context) (a2a.SendMessageResult, error) {
-		return execution.processEvents(ctx)
-	})
+	m.handleEvents(ctx, group, execution.result, execution.processEvents)
 }
 
 func (m *Manager) handleCancellation(ctx context.Context, id a2a.TaskID, cancellation *cancellation) {
@@ -156,12 +154,10 @@ func (m *Manager) handleCancellation(ctx context.Context, id a2a.TaskID, cancell
 		return
 	})
 
-	// If a concurrent execution is running, there is an event processor goroutine.
-	// Cancellation taps into the result set by it.
+	// If there is no concurrent cancellation we need to start event processor goroutine.
+	// Otherwise, we can tap into the concurrent execution processor.
 	if cancellation.concurrentExec == nil {
-		m.handleEvents(ctx, group, cancellation.result, func(ctx context.Context) (a2a.SendMessageResult, error) {
-			return cancellation.processEvents(ctx)
-		})
+		m.handleEvents(ctx, group, cancellation.result, cancellation.processEvents)
 		return
 	}
 

@@ -39,7 +39,7 @@ func (c *cancellation) wait(ctx context.Context) (*a2a.Task, error) {
 	result, err := c.result.wait(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("execution failed: %w", err)
+		return nil, fmt.Errorf("cancellation failed: %w", err)
 	}
 
 	task, ok := result.(*a2a.Task)
