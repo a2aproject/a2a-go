@@ -90,27 +90,27 @@ func (m *Manager) Cancel(ctx context.Context, taskID a2a.TaskID, canceller Cance
 
 	m.mu.Lock()
 	execution := m.executions[taskID]
-	cancellation, cancelInProgress := m.cancellations[taskID]
+	cancel, cancelInProgress := m.cancellations[taskID]
 
-	if cancellation == nil {
-		if execution != nil {
-			cancellation = newConcurrentCancellation(canceller, execution)
-		} else {
-			cancellation = newCancellation(canceller, queue)
-		}
-		m.cancellations[taskID] = cancellation
+	if cancel == nil {
+		cancel = newCancellation(canceller, queue)
+		m.cancellations[taskID] = cancel
 	}
 	m.mu.Unlock()
 
 	if cancelInProgress {
-		return cancellation.wait(ctx)
+		return cancel.wait(ctx)
 	}
 
 	detachedCtx := context.WithoutCancel(ctx)
 
-	go m.handleCancellation(detachedCtx, taskID, cancellation)
+	if execution != nil {
+		go m.handleCancelWithConcurrentRun(detachedCtx, taskID, cancel, execution)
+	} else {
+		go m.handleCancel(detachedCtx, taskID, cancel)
+	}
 
-	return cancellation.wait(ctx)
+	return cancel.wait(ctx)
 }
 
 func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution *Execution) {
@@ -118,6 +118,8 @@ func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution 
 		m.mu.Lock()
 		delete(m.executions, id)
 		m.mu.Unlock()
+
+		_ = m.queueManager.Destroy(ctx, id)
 	}()
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -135,11 +137,13 @@ func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution 
 	m.handleEvents(ctx, group, execution.result, execution.processEvents)
 }
 
-func (m *Manager) handleCancellation(ctx context.Context, id a2a.TaskID, cancellation *cancellation) {
+func (m *Manager) handleCancel(ctx context.Context, taskID a2a.TaskID, cancel *cancellation) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancellations, id)
+		delete(m.cancellations, taskID)
 		m.mu.Unlock()
+
+		_ = m.queueManager.Destroy(ctx, taskID)
 	}()
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -150,29 +154,38 @@ func (m *Manager) handleCancellation(ctx context.Context, id a2a.TaskID, cancell
 				err = fmt.Errorf("task cancellation panic: %v", r)
 			}
 		}()
-		err = cancellation.start(ctx)
+		err = cancel.start(ctx)
 		return
 	})
 
-	// If there is no concurrent cancellation we need to start event processor goroutine.
-	// Otherwise, we can tap into the concurrent execution processor.
-	if cancellation.concurrentExec == nil {
-		m.handleEvents(ctx, group, cancellation.result, cancellation.processEvents)
+	m.handleEvents(ctx, group, cancel.result, cancel.processEvents)
+}
+
+func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, taskID a2a.TaskID, cancel *cancellation, run *Execution) {
+	defer func() {
+		if r := recover(); r != nil {
+			cancel.result.reject(fmt.Errorf("task cancellation panic: %v", r))
+		}
+	}()
+
+	defer func() {
+		m.mu.Lock()
+		delete(m.cancellations, taskID)
+		m.mu.Unlock()
+	}()
+
+	if err := cancel.start(ctx); err != nil {
+		cancel.result.reject(err)
 		return
 	}
 
-	if err := group.Wait(); err != nil {
-		cancellation.result.reject(err)
-		return
-	}
-
-	result, err := cancellation.concurrentExec.Result(ctx)
+	result, err := run.Result(ctx)
 	if err != nil {
-		cancellation.result.reject(err)
+		cancel.result.reject(err)
 		return
 	}
 
-	cancellation.result.resolve(result)
+	cancel.result.resolve(result)
 }
 
 func (m *Manager) handleEvents(ctx context.Context, group *errgroup.Group, r *promise, processor func(ctx context.Context) (a2a.SendMessageResult, error)) {

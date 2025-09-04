@@ -8,10 +8,9 @@ import (
 )
 
 type cancellation struct {
-	canceller      Canceller
-	queue          eventqueue.Queue
-	concurrentExec *Execution
-	result         *promise
+	canceller Canceller
+	queue     eventqueue.Queue
+	result    *promise
 }
 
 func newCancellation(controller Canceller, queue eventqueue.Queue) *cancellation {
@@ -19,15 +18,6 @@ func newCancellation(controller Canceller, queue eventqueue.Queue) *cancellation
 		canceller: controller,
 		queue:     queue,
 		result:    newPromise(),
-	}
-}
-
-func newConcurrentCancellation(controller Canceller, execution *Execution) *cancellation {
-	return &cancellation{
-		canceller:      controller,
-		queue:          execution.queue,
-		result:         newPromise(),
-		concurrentExec: execution,
 	}
 }
 
