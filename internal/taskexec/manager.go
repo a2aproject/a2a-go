@@ -12,32 +12,32 @@ import (
 )
 
 var (
-	ErrExecutionInProgress    = errors.New("task execution is already in progress")
-	ErrCancellationInProgress = errors.New("task cancellation is in progress")
+	ErrExecutionInProgress   = errors.New("task execution is already in progress")
+	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
 // Manager provides an API for executing and canceling tasks in a way that ensures
 // concurrent calls don't interfere with one another in unexpected ways.
 // The following guarantees are provided:
-//   - If a Task is being cancelled, a concurrent Execution can't be started.
-//   - If a Task is being cancelled, a concurrent cancellation will await the existing cancellation.
-//   - If a Task is being executed, a concurrent cancellation will have the same result as the execution.
+//   - If a Task is being canceled, a concurrent Execution can't be started.
+//   - If a Task is being canceled, a concurrent cancelation will await the existing cancelation.
+//   - If a Task is being executed, a concurrent cancelation will have the same result as the execution.
 //   - If a Task is being executed, a concurrent execution will be rejected.
 //
-// Both cancellations and executions are started in detached context and run until completion.
+// Both cancelations and executions are started in detached context and run until completion.
 type Manager struct {
 	queueManager eventqueue.Manager
 
-	mu            sync.Mutex
-	executions    map[a2a.TaskID]*Execution
-	cancellations map[a2a.TaskID]*cancellation
+	mu           sync.Mutex
+	executions   map[a2a.TaskID]*Execution
+	cancelations map[a2a.TaskID]*cancelation
 }
 
 func NewManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
-		queueManager:  queueManager,
-		executions:    make(map[a2a.TaskID]*Execution),
-		cancellations: make(map[a2a.TaskID]*cancellation),
+		queueManager: queueManager,
+		executions:   make(map[a2a.TaskID]*Execution),
+		cancelations: make(map[a2a.TaskID]*cancelation),
 	}
 }
 
@@ -61,8 +61,8 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 		return nil, ErrExecutionInProgress
 	}
 
-	if _, ok := m.cancellations[tid]; ok {
-		return nil, ErrCancellationInProgress
+	if _, ok := m.cancelations[tid]; ok {
+		return nil, ErrCancelationInProgress
 	}
 
 	execution := newExecution(tid, executor)
@@ -75,19 +75,19 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 	return execution, nil
 }
 
-// Cancel uses Canceller to finish execution and waits for it to finish.
-// If there's a cancellation in progress we wait for its result instead of starting a new attempt.
-// If there's an active Execution Canceller will be writing to the same result queue. Consumers
-// subscribed to the Execution will receive a Task cancellation Event.
-// If there's no active Execution Canceller is responsible for processing Task events.
-func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceller Canceller) (*a2a.Task, error) {
+// Cancel uses Canceler to finish execution and waits for it to finish.
+// If there's a cancelation in progress we wait for its result instead of starting a new attempt.
+// If there's an active Execution Canceler will be writing to the same result queue. Consumers
+// subscribed to the Execution will receive a Task cancelation Event.
+// If there's no active Execution Canceler is responsible for processing Task events.
+func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceler Canceler) (*a2a.Task, error) {
 	m.mu.Lock()
 	execution := m.executions[tid]
-	cancel, cancelInProgress := m.cancellations[tid]
+	cancel, cancelInProgress := m.cancelations[tid]
 
 	if cancel == nil {
-		cancel = newCancellation(tid, canceller)
-		m.cancellations[tid] = cancel
+		cancel = newCancelation(tid, canceler)
+		m.cancelations[tid] = cancel
 	}
 	m.mu.Unlock()
 
@@ -142,13 +142,13 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 }
 
 // Uses an errogroup to start two goroutines.
-// Cancellation is started in on of them. Another is processing events until a result or error
+// Cancelation is started in on of them. Another is processing events until a result or error
 // is returned.
-// The returned value is set as Cancellation result.
-func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
+// The returned value is set as Cancelation result.
+func (m *Manager) handleCancel(ctx context.Context, cancel *cancelation) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancellations, cancel.tid)
+		delete(m.cancelations, cancel.tid)
 		m.mu.Unlock()
 	}()
 
@@ -164,10 +164,10 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("task cancellation panic: %v", r)
+				err = fmt.Errorf("task cancelation panic: %v", r)
 			}
 		}()
-		err = cancel.canceller.Cancel(ctx, queue)
+		err = cancel.canceler.Cancel(ctx, queue)
 		return
 	})
 
@@ -176,18 +176,18 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 	})
 }
 
-// Sends a cancellation request on the queue which is being used by an active execution.
-// Then waits for the execution to complete and resolves cancellation to the same result.
-func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancellation, run *Execution) {
+// Sends a cancelation request on the queue which is being used by an active execution.
+// Then waits for the execution to complete and resolves cancelation to the same result.
+func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *Execution) {
 	defer func() {
 		if r := recover(); r != nil {
-			cancel.result.reject(fmt.Errorf("task cancellation panic: %v", r))
+			cancel.result.reject(fmt.Errorf("task cancelation panic: %v", r))
 		}
 	}()
 
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancellations, cancel.tid)
+		delete(m.cancelations, cancel.tid)
 		m.mu.Unlock()
 	}()
 
@@ -198,7 +198,7 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 	}
 	defer m.destroyQueue(ctx, cancel.tid)
 
-	if err := cancel.canceller.Cancel(ctx, queue); err != nil {
+	if err := cancel.canceler.Cancel(ctx, queue); err != nil {
 		cancel.result.reject(err)
 		return
 	}

@@ -21,9 +21,9 @@ type Executor interface {
 	Execute(context.Context, eventqueue.Queue) error
 }
 
-type Canceller interface {
+type Canceler interface {
 	Processor
 	// Cancel attempts to cancel a Task.
-	// Expected to produce a Task update event with cancelled state.
+	// Expected to produce a Task update event with canceled state.
 	Cancel(context.Context, eventqueue.Queue) error
 }

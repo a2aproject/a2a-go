@@ -19,13 +19,13 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	return e.agent.Execute(ctx, e.reqCtx, q)
 }
 
-type canceller struct {
+type canceler struct {
 	*processor
 	agent AgentExecutor
 	task  *a2a.Task
 }
 
-func (c *canceller) Cancel(ctx context.Context, q eventqueue.Queue) error {
+func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	reqCtx := RequestContext{
 		TaskID:    c.task.ID,
 		ContextID: c.task.ContextID,

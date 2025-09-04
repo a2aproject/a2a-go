@@ -120,7 +120,7 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query a2a.TaskQue
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params a2a.TaskIDParams) (*a2a.Task, error) {
 	// TODO(yarolegovich): https://github.com/a2aproject/a2a-go/issues/21
-	return h.taskExecutor.Cancel(ctx, params.ID, &canceller{})
+	return h.taskExecutor.Cancel(ctx, params.ID, &canceler{})
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params a2a.MessageSendParams) (a2a.SendMessageResult, error) {

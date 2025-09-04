@@ -56,7 +56,7 @@ func TestReadQueueToChannels_StopsWhenReadFails(t *testing.T) {
 	}
 }
 
-func TestReadQueueToChannels_StopsEventWriteWhenContextCancelled(t *testing.T) {
+func TestReadQueueToChannels_StopsEventWriteWhenContextCanceled(t *testing.T) {
 	eventChan, errChan := makeUnbufferedChannels()
 	queue := newTestQueue()
 
@@ -74,7 +74,7 @@ func TestReadQueueToChannels_StopsEventWriteWhenContextCancelled(t *testing.T) {
 	// Expect readQueueToChannels exits without eventChan reader
 }
 
-func TestReadQueueToChannels_StopsErrorWriteWhenContextCancelled(t *testing.T) {
+func TestReadQueueToChannels_StopsErrorWriteWhenContextCanceled(t *testing.T) {
 	eventChan, errChan := makeUnbufferedChannels()
 	queue := newTestQueue()
 

@@ -8,25 +8,25 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-type cancellation struct {
-	tid       a2a.TaskID
-	canceller Canceller
-	result    *promise
+type cancelation struct {
+	tid      a2a.TaskID
+	canceler Canceler
+	result   *promise
 }
 
-func newCancellation(tid a2a.TaskID, controller Canceller) *cancellation {
-	return &cancellation{
-		tid:       tid,
-		canceller: controller,
-		result:    newPromise(),
+func newCancelation(tid a2a.TaskID, controller Canceler) *cancelation {
+	return &cancelation{
+		tid:      tid,
+		canceler: controller,
+		result:   newPromise(),
 	}
 }
 
-func (c *cancellation) wait(ctx context.Context) (*a2a.Task, error) {
+func (c *cancelation) wait(ctx context.Context) (*a2a.Task, error) {
 	result, err := c.result.wait(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("cancellation failed: %w", err)
+		return nil, fmt.Errorf("cancelation failed: %w", err)
 	}
 
 	task, ok := result.(*a2a.Task)
@@ -41,7 +41,7 @@ func (c *cancellation) wait(ctx context.Context) (*a2a.Task, error) {
 	return task, nil
 }
 
-func (c *cancellation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
+func (c *cancelation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
 	eventChan := make(chan a2a.Event)
 	errorChan := make(chan error)
 	go readQueueToChannels(ctx, queue, eventChan, errorChan)
@@ -49,7 +49,7 @@ func (c *cancellation) processEvents(ctx context.Context, queue eventqueue.Queue
 	for {
 		select {
 		case event := <-eventChan:
-			res, err := c.canceller.Process(ctx, event)
+			res, err := c.canceler.Process(ctx, event)
 
 			if err != nil {
 				return nil, err

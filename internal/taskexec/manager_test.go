@@ -102,8 +102,8 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	close(executor.block)
 	_, _ = execution.Result(ctx)
 
-	if !executor.testProcessor.contextCancelled {
-		t.Fatalf("expected processing context to be cancelled")
+	if !executor.testProcessor.contextCanceled {
+		t.Fatalf("expected processing context to be canceled")
 	}
 }
 
@@ -123,8 +123,8 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	executor.queue.Write(ctx, &a2a.Task{ID: tid})
 	_, _ = execution.Result(ctx)
 
-	if !executor.contextCancelled {
-		t.Fatalf("expected processing context to be cancelled")
+	if !executor.contextCanceled {
+		t.Fatalf("expected processing context to be canceled")
 	}
 }
 
@@ -196,15 +196,15 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 	}
 	<-executor.executeCalled
 
-	canceller := newCanceller()
+	canceler := newCanceler()
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
 	go func() {
-		<-canceller.cancelCalled
-		canceller.queue.Write(ctx, want)
+		<-canceler.cancelCalled
+		canceler.queue.Write(ctx, want)
 
 	}()
 
-	task, err := manager.Cancel(ctx, tid, canceller)
+	task, err := manager.Cancel(ctx, tid, canceler)
 	if err != nil || task != want {
 		t.Fatalf("expected Cancel() to return %v, got %v, %v", want, task, err)
 	}
@@ -219,15 +219,15 @@ func TestManager_CancelWithoutActiveExecution(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
-	canceller := newCanceller()
-	canceller.nextEventTerminal = true
+	canceler := newCanceler()
+	canceler.nextEventTerminal = true
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
 	go func() {
-		<-canceller.cancelCalled
-		canceller.queue.Write(ctx, want)
+		<-canceler.cancelCalled
+		canceler.queue.Write(ctx, want)
 	}()
 
-	task, err := manager.Cancel(ctx, tid, canceller)
+	task, err := manager.Cancel(ctx, tid, canceler)
 	if err != nil || task != want {
 		t.Fatalf("expected Cancel() to return %v, got %v, %v", want, task, err)
 	}
@@ -245,28 +245,28 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	}
 	<-executor.executeCalled
 
-	canceller := newCanceller()
-	canceller.block = make(chan struct{})
+	canceler := newCanceler()
+	canceler.block = make(chan struct{})
 	cancelErr := make(chan error)
 	go func() {
-		task, err := manager.Cancel(ctx, tid, canceller)
+		task, err := manager.Cancel(ctx, tid, canceler)
 		if task != nil || err == nil {
 			t.Errorf("expected Cancel() to fail, got %v, %v", task, err)
 		}
 		cancelErr <- err
 	}()
-	<-canceller.cancelCalled
+	<-canceler.cancelCalled
 
 	executor.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 	_, _ = execution.Result(ctx)
-	close(canceller.block)
+	close(canceler.block)
 
 	if got := <-cancelErr; !errors.Is(got, a2a.ErrTaskNotCancelable) {
 		t.Fatalf("expected Cancel() to fail with %v, got %v", a2a.ErrTaskNotCancelable, got)
 	}
 }
 
-func TestManager_ConcurrentCancellationsResolveToTheSameResult(t *testing.T) {
+func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
@@ -274,25 +274,25 @@ func TestManager_ConcurrentCancellationsResolveToTheSameResult(t *testing.T) {
 	wg.Add(2)
 	results := make(chan *a2a.Task, 2)
 
-	canceller1 := newCanceller()
-	canceller1.nextEventTerminal = true
-	canceller1.block = make(chan struct{})
+	canceler1 := newCanceler()
+	canceler1.nextEventTerminal = true
+	canceler1.block = make(chan struct{})
 	go func() {
-		task, err := manager.Cancel(ctx, tid, canceller1)
+		task, err := manager.Cancel(ctx, tid, canceler1)
 		if err != nil {
 			t.Errorf("Cancel() failed: %v", err)
 		}
 		results <- task
 		wg.Done()
 	}()
-	<-canceller1.cancelCalled
+	<-canceler1.cancelCalled
 
-	canceller2 := newCanceller()
-	canceller2.cancelErr = errors.New("test error") // this should never be returned
+	canceler2 := newCanceler()
+	canceler2.cancelErr = errors.New("test error") // this should never be returned
 	ready := make(chan struct{})
 	go func() {
 		close(ready)
-		task, err := manager.Cancel(ctx, tid, canceller2)
+		task, err := manager.Cancel(ctx, tid, canceler2)
 		if err != nil {
 			t.Errorf("Cancel() failed: %v", err)
 		}
@@ -301,9 +301,9 @@ func TestManager_ConcurrentCancellationsResolveToTheSameResult(t *testing.T) {
 	}()
 	<-ready
 
-	close(canceller1.block)
+	close(canceler1.block)
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
-	canceller1.queue.Write(ctx, want)
+	canceler1.queue.Write(ctx, want)
 	wg.Wait()
 
 	t1, t2 := <-results, <-results
@@ -312,26 +312,26 @@ func TestManager_ConcurrentCancellationsResolveToTheSameResult(t *testing.T) {
 	}
 }
 
-func TestManager_NotAllowedToExecuteWhileCancelling(t *testing.T) {
+func TestManager_NotAllowedToExecuteWhileCanceling(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
-	canceller := newCanceller()
-	canceller.block = make(chan struct{})
-	canceller.cancelErr = errors.New("test error")
+	canceler := newCanceler()
+	canceler.block = make(chan struct{})
+	canceler.cancelErr = errors.New("test error")
 	done := make(chan struct{})
 	go func() {
-		_, _ = manager.Cancel(ctx, tid, canceller)
+		_, _ = manager.Cancel(ctx, tid, canceler)
 		close(done)
 	}()
-	<-canceller.cancelCalled
+	<-canceler.cancelCalled
 
 	execution, err := manager.Execute(ctx, tid, newExecutor())
-	if execution != nil || !errors.Is(err, ErrCancellationInProgress) {
-		t.Fatalf("expected Execute() to fail with %v, got %v, %v", ErrCancellationInProgress, execution, err)
+	if execution != nil || !errors.Is(err, ErrCancelationInProgress) {
+		t.Fatalf("expected Execute() to fail with %v, got %v, %v", ErrCancelationInProgress, execution, err)
 	}
 
-	close(canceller.block)
+	close(canceler.block)
 	<-done
 }
 
@@ -339,10 +339,10 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
-	// First cancellation fails
-	canceller := newCanceller()
-	canceller.cancelErr = errors.New("test error")
-	if _, err := manager.Cancel(ctx, tid, canceller); err == nil {
+	// First cancelation fails
+	canceler := newCanceler()
+	canceler.cancelErr = errors.New("test error")
+	if _, err := manager.Cancel(ctx, tid, canceler); err == nil {
 		t.Fatalf("expected Cancel() to fail, got %v", err)
 	}
 
@@ -364,22 +364,22 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
-	// First cancellation fails
-	canceller := newCanceller()
-	canceller.cancelErr = errors.New("test error")
-	if task, err := manager.Cancel(ctx, tid, canceller); err == nil {
+	// First cancelation fails
+	canceler := newCanceler()
+	canceler.cancelErr = errors.New("test error")
+	if task, err := manager.Cancel(ctx, tid, canceler); err == nil {
 		t.Fatalf("expected Cancel() to fail, got %v", task)
 	}
 
-	// Second cancellation succeeds
-	canceller = newCanceller()
-	canceller.nextEventTerminal = true
+	// Second cancelation succeeds
+	canceler = newCanceler()
+	canceler.nextEventTerminal = true
 	go func() {
-		<-canceller.cancelCalled
-		canceller.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}})
+		<-canceler.cancelCalled
+		canceler.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}})
 	}()
 
-	if _, err := manager.Cancel(ctx, tid, canceller); err != nil {
+	if _, err := manager.Cancel(ctx, tid, canceler); err != nil {
 		t.Errorf("expected Cancel() to succeed, got %v", err)
 	}
 }
@@ -424,8 +424,8 @@ type testProcessor struct {
 	nextEventTerminal bool
 	processErr        error
 
-	contextCancelled bool
-	block            chan struct{}
+	contextCanceled bool
+	block           chan struct{}
 }
 
 func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
@@ -435,7 +435,7 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.Send
 		select {
 		case <-e.block:
 		case <-ctx.Done():
-			e.contextCancelled = true
+			e.contextCanceled = true
 			return nil, ctx.Err()
 		}
 	}
@@ -455,11 +455,11 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.Send
 type testExecutor struct {
 	*testProcessor
 
-	executeCalled    chan struct{}
-	executeErr       error
-	queue            eventqueue.Queue
-	contextCancelled bool
-	block            chan struct{}
+	executeCalled   chan struct{}
+	executeErr      error
+	queue           eventqueue.Queue
+	contextCanceled bool
+	block           chan struct{}
 }
 
 func newExecutor() *testExecutor {
@@ -474,7 +474,7 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) erro
 		select {
 		case <-e.block:
 		case <-ctx.Done():
-			e.contextCancelled = true
+			e.contextCanceled = true
 			return ctx.Err()
 		}
 	}
@@ -482,21 +482,21 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) erro
 	return e.executeErr
 }
 
-type testCanceller struct {
+type testCanceler struct {
 	*testProcessor
 
-	cancelCalled     chan struct{}
-	cancelErr        error
-	queue            eventqueue.Queue
-	contextCancelled bool
-	block            chan struct{}
+	cancelCalled    chan struct{}
+	cancelErr       error
+	queue           eventqueue.Queue
+	contextCanceled bool
+	block           chan struct{}
 }
 
-func newCanceller() *testCanceller {
-	return &testCanceller{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
+func newCanceler() *testCanceler {
+	return &testCanceler{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
 }
 
-func (c *testCanceller) Cancel(ctx context.Context, queue eventqueue.Queue) error {
+func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error {
 	c.queue = queue
 	close(c.cancelCalled)
 
@@ -504,7 +504,7 @@ func (c *testCanceller) Cancel(ctx context.Context, queue eventqueue.Queue) erro
 		select {
 		case <-c.block:
 		case <-ctx.Done():
-			c.contextCancelled = true
+			c.contextCanceled = true
 			return ctx.Err()
 		}
 	}
