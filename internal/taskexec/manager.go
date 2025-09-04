@@ -55,9 +55,8 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// TODO(yarolegovich): handle idempotency once spec establishes the key.
-	// We can return an execution in progress here and decide whether to tap into it or not
-	// on the caller side.
+	// TODO(yarolegovich): handle idempotency once spec establishes the key. We can return
+	// an execution in progress here and decide whether to tap it or not on the caller side.
 	if _, ok := m.executions[tid]; ok {
 		return nil, ErrExecutionInProgress
 	}
@@ -76,7 +75,11 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 	return execution, nil
 }
 
-// Cancel requests AgentExecutor to stop the execution and waits for it to finish.
+// Cancel uses Canceller to finish execution and waits for it to finish.
+// If there's a cancellation in progress we wait for its result instead of starting a new attempt.
+// If there's an active Execution Canceller will be writing to the same result queue. Consumers
+// subscribed to the Execution will receive a Task cancellation Event.
+// If there's no active Execution Canceller is responsible for processing Task events.
 func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceller Canceller) (*a2a.Task, error) {
 	m.mu.Lock()
 	execution := m.executions[tid]
@@ -103,6 +106,10 @@ func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceller Cancelle
 	return cancel.wait(ctx)
 }
 
+// Uses an errogroup to start two goroutines.
+// Execution is started in on of them. Another is processing events until a result or error
+// is returned.
+// The returned value is set as Execution result.
 func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
@@ -115,6 +122,7 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 		execution.result.reject(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
+	defer m.destroyQueue(ctx, execution.tid)
 
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -133,13 +141,15 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	})
 }
 
+// Uses an errogroup to start two goroutines.
+// Cancellation is started in on of them. Another is processing events until a result or error
+// is returned.
+// The returned value is set as Cancellation result.
 func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancellations, cancel.tid)
 		m.mu.Unlock()
-
-		_ = m.queueManager.Destroy(ctx, cancel.tid)
 	}()
 
 	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
@@ -147,6 +157,7 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
+	defer m.destroyQueue(ctx, cancel.tid)
 
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -165,6 +176,8 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 	})
 }
 
+// Sends a cancellation request on the queue which is being used by an active execution.
+// Then waits for the execution to complete and resolves cancellation to the same result.
 func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancellation, run *Execution) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -183,6 +196,7 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
+	defer m.destroyQueue(ctx, cancel.tid)
 
 	if err := cancel.canceller.Cancel(ctx, queue); err != nil {
 		cancel.result.reject(err)
@@ -200,6 +214,10 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 
 type eventHandlerFn func(context.Context) (a2a.SendMessageResult, error)
 
+// Event producer is supposed to be started by the caller.
+// Starts an event-processor goroutine in the provided error group and consumes events
+// until a result is returned.
+// The result is on the provided promise once group.Wait() returns.
 func handleEvents(ctx context.Context, group *errgroup.Group, r *promise, handler eventHandlerFn) {
 	var result *a2a.SendMessageResult
 	group.Go(func() (err error) {
@@ -224,4 +242,10 @@ func handleEvents(ctx context.Context, group *errgroup.Group, r *promise, handle
 	}
 
 	r.resolve(*result)
+}
+
+func (m *Manager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
+	// TODO(yarolegovich): log if destroy fails
+	// TODO(yarolegovich): consider not destroying queues until a Task reaches terminal state
+	_ = m.queueManager.Destroy(ctx, tid)
 }
