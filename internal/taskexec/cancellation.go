@@ -8,21 +8,17 @@ import (
 )
 
 type cancellation struct {
+	tid       a2a.TaskID
 	canceller Canceller
-	queue     eventqueue.Queue
 	result    *promise
 }
 
-func newCancellation(controller Canceller, queue eventqueue.Queue) *cancellation {
+func newCancellation(tid a2a.TaskID, controller Canceller) *cancellation {
 	return &cancellation{
+		tid:       tid,
 		canceller: controller,
-		queue:     queue,
 		result:    newPromise(),
 	}
-}
-
-func (c *cancellation) start(ctx context.Context) error {
-	return c.canceller.Cancel(ctx, c.queue)
 }
 
 func (c *cancellation) wait(ctx context.Context) (*a2a.Task, error) {
@@ -44,10 +40,10 @@ func (c *cancellation) wait(ctx context.Context) (*a2a.Task, error) {
 	return task, nil
 }
 
-func (c *cancellation) processEvents(ctx context.Context) (a2a.SendMessageResult, error) {
+func (c *cancellation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
 	eventChan := make(chan a2a.Event)
 	errorChan := make(chan error)
-	go readQueueToChannels(ctx, c.queue, eventChan, errorChan)
+	go readQueueToChannels(ctx, queue, eventChan, errorChan)
 
 	for {
 		select {

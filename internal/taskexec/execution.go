@@ -10,8 +10,8 @@ import (
 )
 
 type Execution struct {
+	tid        a2a.TaskID
 	controller Executor
-	queue      eventqueue.Queue
 
 	subscribeChan   chan chan a2a.Event
 	unsubscribeChan chan chan a2a.Event
@@ -20,10 +20,10 @@ type Execution struct {
 }
 
 // Not exported, because Executions are created by Executor.
-func newExecution(controller Executor, queue eventqueue.Queue) *Execution {
+func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 	return &Execution{
+		tid:        tid,
 		controller: controller,
-		queue:      queue,
 
 		subscribeChan:   make(chan chan a2a.Event),
 		unsubscribeChan: make(chan chan a2a.Event),
@@ -92,11 +92,7 @@ func (e *Execution) Unsubscribe(ctx context.Context, ch chan a2a.Event) error {
 	}
 }
 
-func (e *Execution) start(ctx context.Context) error {
-	return e.controller.Execute(ctx, e.queue)
-}
-
-func (e *Execution) processEvents(ctx context.Context) (a2a.SendMessageResult, error) {
+func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
 	subscribers := make(map[chan a2a.Event]any)
 
 	defer func() {
@@ -107,8 +103,7 @@ func (e *Execution) processEvents(ctx context.Context) (a2a.SendMessageResult, e
 
 	eventChan := make(chan a2a.Event)
 	errorChan := make(chan error)
-
-	go readQueueToChannels(ctx, e.queue, eventChan, errorChan)
+	go readQueueToChannels(ctx, queue, eventChan, errorChan)
 
 	for {
 		select {

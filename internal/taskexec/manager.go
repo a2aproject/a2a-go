@@ -51,50 +51,40 @@ func (m *Manager) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 
 // Execute starts an AgentExecutor in a separate goroutine with a detached context.
 // There can only be a single active execution per TaskID.
-func (m *Manager) Execute(ctx context.Context, id a2a.TaskID, executor Executor) (*Execution, error) {
-	queue, err := m.queueManager.GetOrCreate(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("queue creation failed: %w", err)
-	}
-
+func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor) (*Execution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// TODO(yarolegovich): handle idempotency once spec establishes the key.
 	// We can return an execution in progress here and decide whether to tap into it or not
 	// on the caller side.
-	if _, ok := m.executions[id]; ok {
+	if _, ok := m.executions[tid]; ok {
 		return nil, ErrExecutionInProgress
 	}
 
-	if _, ok := m.cancellations[id]; ok {
+	if _, ok := m.cancellations[tid]; ok {
 		return nil, ErrCancellationInProgress
 	}
 
-	execution := newExecution(executor, queue)
-	m.executions[id] = execution
+	execution := newExecution(tid, executor)
+	m.executions[tid] = execution
 
 	detachedCtx := context.WithoutCancel(ctx)
 
-	go m.handleExecution(detachedCtx, id, execution)
+	go m.handleExecution(detachedCtx, execution)
 
 	return execution, nil
 }
 
 // Cancel requests AgentExecutor to stop the execution and waits for it to finish.
-func (m *Manager) Cancel(ctx context.Context, taskID a2a.TaskID, canceller Canceller) (*a2a.Task, error) {
-	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("queue creation failed: %w", err)
-	}
-
+func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceller Canceller) (*a2a.Task, error) {
 	m.mu.Lock()
-	execution := m.executions[taskID]
-	cancel, cancelInProgress := m.cancellations[taskID]
+	execution := m.executions[tid]
+	cancel, cancelInProgress := m.cancellations[tid]
 
 	if cancel == nil {
-		cancel = newCancellation(canceller, queue)
-		m.cancellations[taskID] = cancel
+		cancel = newCancellation(tid, canceller)
+		m.cancellations[tid] = cancel
 	}
 	m.mu.Unlock()
 
@@ -105,22 +95,26 @@ func (m *Manager) Cancel(ctx context.Context, taskID a2a.TaskID, canceller Cance
 	detachedCtx := context.WithoutCancel(ctx)
 
 	if execution != nil {
-		go m.handleCancelWithConcurrentRun(detachedCtx, taskID, cancel, execution)
+		go m.handleCancelWithConcurrentRun(detachedCtx, cancel, execution)
 	} else {
-		go m.handleCancel(detachedCtx, taskID, cancel)
+		go m.handleCancel(detachedCtx, cancel)
 	}
 
 	return cancel.wait(ctx)
 }
 
-func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution *Execution) {
+func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.executions, id)
+		delete(m.executions, execution.tid)
 		m.mu.Unlock()
-
-		_ = m.queueManager.Destroy(ctx, id)
 	}()
+
+	queue, err := m.queueManager.GetOrCreate(ctx, execution.tid)
+	if err != nil {
+		execution.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		return
+	}
 
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -130,21 +124,29 @@ func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution 
 				err = fmt.Errorf("task execution panic: %v", r)
 			}
 		}()
-		err = execution.start(ctx)
+		err = execution.controller.Execute(ctx, queue)
 		return
 	})
 
-	m.handleEvents(ctx, group, execution.result, execution.processEvents)
+	handleEvents(ctx, group, execution.result, func(context.Context) (a2a.SendMessageResult, error) {
+		return execution.processEvents(ctx, queue)
+	})
 }
 
-func (m *Manager) handleCancel(ctx context.Context, taskID a2a.TaskID, cancel *cancellation) {
+func (m *Manager) handleCancel(ctx context.Context, cancel *cancellation) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancellations, taskID)
+		delete(m.cancellations, cancel.tid)
 		m.mu.Unlock()
 
-		_ = m.queueManager.Destroy(ctx, taskID)
+		_ = m.queueManager.Destroy(ctx, cancel.tid)
 	}()
+
+	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
+	if err != nil {
+		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		return
+	}
 
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -154,14 +156,16 @@ func (m *Manager) handleCancel(ctx context.Context, taskID a2a.TaskID, cancel *c
 				err = fmt.Errorf("task cancellation panic: %v", r)
 			}
 		}()
-		err = cancel.start(ctx)
+		err = cancel.canceller.Cancel(ctx, queue)
 		return
 	})
 
-	m.handleEvents(ctx, group, cancel.result, cancel.processEvents)
+	handleEvents(ctx, group, cancel.result, func(context.Context) (a2a.SendMessageResult, error) {
+		return cancel.processEvents(ctx, queue)
+	})
 }
 
-func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, taskID a2a.TaskID, cancel *cancellation, run *Execution) {
+func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancellation, run *Execution) {
 	defer func() {
 		if r := recover(); r != nil {
 			cancel.result.reject(fmt.Errorf("task cancellation panic: %v", r))
@@ -170,11 +174,17 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, taskID a2a.
 
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancellations, taskID)
+		delete(m.cancellations, cancel.tid)
 		m.mu.Unlock()
 	}()
 
-	if err := cancel.start(ctx); err != nil {
+	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
+	if err != nil {
+		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		return
+	}
+
+	if err := cancel.canceller.Cancel(ctx, queue); err != nil {
 		cancel.result.reject(err)
 		return
 	}
@@ -188,7 +198,9 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, taskID a2a.
 	cancel.result.resolve(result)
 }
 
-func (m *Manager) handleEvents(ctx context.Context, group *errgroup.Group, r *promise, processor func(ctx context.Context) (a2a.SendMessageResult, error)) {
+type eventHandlerFn func(context.Context) (a2a.SendMessageResult, error)
+
+func handleEvents(ctx context.Context, group *errgroup.Group, r *promise, handler eventHandlerFn) {
 	var result *a2a.SendMessageResult
 	group.Go(func() (err error) {
 		defer func() {
@@ -196,7 +208,7 @@ func (m *Manager) handleEvents(ctx context.Context, group *errgroup.Group, r *pr
 				err = fmt.Errorf("task event consumer panic: %v", r)
 			}
 		}()
-		localResult, err := processor(ctx)
+		localResult, err := handler(ctx)
 		result = &localResult
 		return
 	})
@@ -207,8 +219,7 @@ func (m *Manager) handleEvents(ctx context.Context, group *errgroup.Group, r *pr
 	}
 
 	if result == nil {
-		err := fmt.Errorf("bug: no error returned, but result unset")
-		r.reject(err)
+		r.reject(fmt.Errorf("bug: no error returned, but result unset"))
 		return
 	}
 
