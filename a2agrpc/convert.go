@@ -6,6 +6,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func fromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSendParams, error) {
@@ -144,6 +145,7 @@ func toProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessag
 
 func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 	if msg == nil {
+		// is it okay if message is nil ?
 		return nil, fmt.Errorf("message is nil")
 	}
 	parts := make([]*a2apb.Part, len(msg.Parts))
@@ -173,6 +175,19 @@ func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 		TaskId:     string(msg.TaskID),
 		Metadata:   pMetadata,
 	}, nil
+}
+
+func toProtoMessages(msgs []a2a.Message) ([]*a2apb.Message, error) {
+	pMsgs := make([]*a2apb.Message, len(msgs))
+	for i, msg := range msgs {
+		pMsg, err := toProtoMessage(&msg)
+		if err != nil {
+			// consider to continue so we could return converted messages + multierr
+			return nil, fmt.Errorf("failed to convert message: %w", err)
+		}
+		pMsgs[i] = pMsg
+	}
+	return pMsgs, nil
 }
 
 func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
@@ -215,6 +230,19 @@ func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
 	}
 }
 
+func toProtoParts(parts []a2a.Part) ([]*a2apb.Part, error) {
+	pParts := make([]*a2apb.Part, len(parts))
+	for i, part := range parts {
+		pPart, err := toProtoPart(part)
+		if err != nil {
+			// consider to continue so we could return converted parts + multierr
+			return nil, fmt.Errorf("failed to convert part: %w", err)
+		}
+		pParts[i] = pPart
+	}
+	return pParts, nil
+}
+
 func toProtoRole(role a2a.MessageRole) a2apb.Role {
 	switch role {
 	case a2a.MessageRoleUser:
@@ -226,14 +254,105 @@ func toProtoRole(role a2a.MessageRole) a2apb.Role {
 	}
 }
 
+func toProtoTaskState(state a2a.TaskState) a2apb.TaskState {
+	switch state {
+	case a2a.TaskStateAuthRequired:
+		return a2apb.TaskState_TASK_STATE_AUTH_REQUIRED
+	case a2a.TaskStateCanceled:
+		return a2apb.TaskState_TASK_STATE_CANCELLED
+	case a2a.TaskStateCompleted:
+		return a2apb.TaskState_TASK_STATE_COMPLETED
+	case a2a.TaskStateFailed:
+		return a2apb.TaskState_TASK_STATE_FAILED
+	case a2a.TaskStateInputRequired:
+		return a2apb.TaskState_TASK_STATE_INPUT_REQUIRED
+	case a2a.TaskStateRejected:
+		return a2apb.TaskState_TASK_STATE_REJECTED
+	case a2a.TaskStateSubmitted:
+		return a2apb.TaskState_TASK_STATE_SUBMITTED
+	case a2a.TaskStateWorking:
+		return a2apb.TaskState_TASK_STATE_WORKING
+	default:
+		return a2apb.TaskState_TASK_STATE_UNSPECIFIED
+	}
+}
+
+func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
+	message, err := toProtoMessage(status.Message)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert message: %w", err)
+	}
+
+	return &a2apb.TaskStatus{
+		State:     toProtoTaskState(status.State),
+		Update:    message,
+		Timestamp: timestamppb.New(*status.Timestamp),
+	}, nil
+}
+
+func toProtoArtifacts(artifacts []a2a.Artifact) ([]*a2apb.Artifact, error) {
+	result := make([]*a2apb.Artifact, len(artifacts))
+	for i, artifact := range artifacts {
+		var metadata *structpb.Struct
+		if artifact.Metadata != nil {
+			var err error
+			metadata, err = structpb.NewStruct(artifact.Metadata)
+			if err != nil {
+				// consider to continue so we could return converted artifacts + multierr
+				return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
+			}
+		}
+		parts, err := toProtoParts(artifact.Parts)
+		if err != nil {
+			// same as above
+			return nil, fmt.Errorf("failed to convert to proto parts: %w", err)
+		}
+		result[i] = &a2apb.Artifact{
+			ArtifactId:  string(artifact.ID),
+			Name:        artifact.Name,
+			Description: artifact.Description,
+			Parts:       parts,
+			Metadata:    metadata,
+			Extensions:  artifact.Extensions,
+		}
+	}
+	return result, nil
+}
+
 func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	if task == nil {
 		return nil, fmt.Errorf("task is nil")
 	}
-	// This is a partial conversion for demonstration. A full implementation
-	// would convert all fields, including Status, Artifacts, History, etc.
+
+	status, err := toProtoTaskStatus(task.Status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert status: %w", err)
+	}
+
+	artifacts, err := toProtoArtifacts(task.Artifacts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert artifacts: %w", err)
+	}
+
+	history, err := toProtoMessages(task.History)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert history: %w", err)
+	}
+
+	var metadata *structpb.Struct
+	if task.Metadata != nil {
+		metadata, err = structpb.NewStruct(task.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
+		}
+	}
+
 	return &a2apb.Task{
 		Id:        string(task.ID),
 		ContextId: task.ContextID,
+		Status:    status,
+		Artifacts: artifacts,
+		History:   history,
+		Metadata:  metadata,
 	}, nil
 }
