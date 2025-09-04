@@ -12,21 +12,32 @@ import (
 )
 
 var (
-	ErrExecutionInProgress = errors.New("task execution is already in progress")
-	ErrExecutionNotFound   = errors.New("task execution not found")
+	ErrExecutionInProgress    = errors.New("task execution is already in progress")
+	ErrCancellationInProgress = errors.New("task cancellation is in progress")
 )
 
+// Manager provides an API for executing and canceling tasks in a way that ensures
+// concurrent calls don't interfere with one another in unexpected ways.
+// The following guarantees are provided:
+//   - If a Task is being cancelled, a concurrent Execution can't be started.
+//   - If a Task is being cancelled, a concurrent cancellation will await the existing cancellation.
+//   - If a Task is being executed, a concurrent cancellation will have the same result as the execution.
+//   - If a Task is being executed, a concurrent execution will be rejected.
+//
+// Both cancellations and executions are started in detached context and run until completion.
 type Manager struct {
 	queueManager eventqueue.Manager
 
-	mu         sync.Mutex
-	executions map[a2a.TaskID]*Execution
+	mu            sync.Mutex
+	executions    map[a2a.TaskID]*Execution
+	cancellations map[a2a.TaskID]*cancellation
 }
 
 func NewExecutionManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
-		queueManager: queueManager,
-		executions:   make(map[a2a.TaskID]*Execution),
+		queueManager:  queueManager,
+		executions:    make(map[a2a.TaskID]*Execution),
+		cancellations: make(map[a2a.TaskID]*cancellation),
 	}
 }
 
@@ -40,7 +51,7 @@ func (m *Manager) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 
 // Execute starts an AgentExecutor in a separate goroutine with a detached context.
 // There can only be a single active execution per TaskID.
-func (m *Manager) Execute(ctx context.Context, id a2a.TaskID, controller Controller) (*Execution, error) {
+func (m *Manager) Execute(ctx context.Context, id a2a.TaskID, executor Executor) (*Execution, error) {
 	queue, err := m.queueManager.GetOrCreate(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("queue creation failed: %w", err)
@@ -50,57 +61,59 @@ func (m *Manager) Execute(ctx context.Context, id a2a.TaskID, controller Control
 	defer m.mu.Unlock()
 
 	// TODO(yarolegovich): handle idempotency once spec establishes the key.
+	// We can return an execution in progress here and decide whether to tap into it or not
+	// on the caller side.
 	if _, ok := m.executions[id]; ok {
 		return nil, ErrExecutionInProgress
 	}
 
-	execution := newExecution(controller, queue)
+	if _, ok := m.cancellations[id]; ok {
+		return nil, ErrCancellationInProgress
+	}
+
+	execution := newExecution(executor, queue)
 	m.executions[id] = execution
 
 	detachedCtx := context.WithoutCancel(ctx)
 
-	go m.startExecution(detachedCtx, id, execution)
+	go m.handleExecution(detachedCtx, id, execution)
 
 	return execution, nil
 }
 
 // Cancel requests AgentExecutor to stop the execution and waits for it to finish.
-func (m *Manager) Cancel(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+func (m *Manager) Cancel(ctx context.Context, taskID a2a.TaskID, canceller Canceller) (*a2a.Task, error) {
+	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("queue creation failed: %w", err)
+	}
+
 	m.mu.Lock()
-	execution, ok := m.executions[taskID]
+	execution := m.executions[taskID]
+	cancellation, cancelInProgress := m.cancellations[taskID]
+
+	if cancellation == nil {
+		if execution != nil {
+			cancellation = newConcurrentCancellation(canceller, execution)
+		} else {
+			cancellation = newCancellation(canceller, queue)
+		}
+		m.cancellations[taskID] = cancellation
+	}
 	m.mu.Unlock()
 
-	if !ok {
-		return nil, ErrExecutionNotFound
+	if cancelInProgress {
+		return cancellation.wait(ctx)
 	}
 
-	if err := execution.cancel(ctx); err != nil {
-		return nil, fmt.Errorf("failed to cancel task: %w", err)
-	}
+	detachedCtx := context.WithoutCancel(ctx)
 
-	select {
-	case <-execution.done:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	go m.handleCancellation(detachedCtx, taskID, cancellation)
 
-	if execution.err != nil {
-		return nil, fmt.Errorf("execution failed: %w", execution.err)
-	}
-
-	task, ok := execution.result.(*a2a.Task)
-	if !ok { // a2a.Message was the result of the execution
-		return nil, a2a.ErrTaskNotCancelable
-	}
-
-	if task.Status.State != a2a.TaskStateCanceled {
-		return nil, a2a.ErrTaskNotCancelable
-	}
-
-	return task, nil
+	return cancellation.wait(ctx)
 }
 
-func (m *Manager) startExecution(ctx context.Context, id a2a.TaskID, execution *Execution) {
+func (m *Manager) handleExecution(ctx context.Context, id a2a.TaskID, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.executions, id)
@@ -109,40 +122,86 @@ func (m *Manager) startExecution(ctx context.Context, id a2a.TaskID, execution *
 
 	group, ctx := errgroup.WithContext(ctx)
 
-	var result *a2a.SendMessageResult
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("event consumer panic: %v", r)
-			}
-		}()
-		localResult, err := execution.processEvents(ctx)
-		result = &localResult
-		return
-	})
-
-	group.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("agent executor panic: %v", r)
+				err = fmt.Errorf("task execution panic: %v", r)
 			}
 		}()
 		err = execution.start(ctx)
 		return
 	})
 
+	m.handleEvents(ctx, group, execution.result, func(ctx context.Context) (a2a.SendMessageResult, error) {
+		return execution.processEvents(ctx)
+	})
+}
+
+func (m *Manager) handleCancellation(ctx context.Context, id a2a.TaskID, cancellation *cancellation) {
+	defer func() {
+		m.mu.Lock()
+		delete(m.cancellations, id)
+		m.mu.Unlock()
+	}()
+
+	group, ctx := errgroup.WithContext(ctx)
+
+	group.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("task cancellation panic: %v", r)
+			}
+		}()
+		err = cancellation.start(ctx)
+		return
+	})
+
+	// If a concurrent execution is running, there is an event processor goroutine.
+	// Cancellation taps into the result set by it.
+	if cancellation.concurrentExec == nil {
+		m.handleEvents(ctx, group, cancellation.result, func(ctx context.Context) (a2a.SendMessageResult, error) {
+			return cancellation.processEvents(ctx)
+		})
+		return
+	}
+
 	if err := group.Wait(); err != nil {
-		execution.err = err
-		close(execution.done)
+		cancellation.result.reject(err)
+		return
+	}
+
+	result, err := cancellation.concurrentExec.Result(ctx)
+	if err != nil {
+		cancellation.result.reject(err)
+		return
+	}
+
+	cancellation.result.resolve(result)
+}
+
+func (m *Manager) handleEvents(ctx context.Context, group *errgroup.Group, r *promise, processor func(ctx context.Context) (a2a.SendMessageResult, error)) {
+	var result *a2a.SendMessageResult
+	group.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("task event consumer panic: %v", r)
+			}
+		}()
+		localResult, err := processor(ctx)
+		result = &localResult
+		return
+	})
+
+	if err := group.Wait(); err != nil {
+		r.reject(err)
 		return
 	}
 
 	if result == nil {
-		execution.err = fmt.Errorf("bug: no error returned, but result unset")
-		close(execution.done)
+		err := fmt.Errorf("bug: no error returned, but result unset")
+		r.reject(err)
 		return
 	}
 
-	execution.result = *result
-	close(execution.done)
+	r.resolve(*result)
 }
