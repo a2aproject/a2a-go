@@ -129,6 +129,13 @@ const (
 	TaskStateWorking       TaskState = "working"
 )
 
+func (ts TaskState) Terminal() bool {
+	return ts == TaskStateCompleted ||
+		ts == TaskStateCanceled ||
+		ts == TaskStateFailed ||
+		ts == TaskStateRejected
+}
+
 // Represents a single, stateful operation or conversation between a client and an
 // agent.
 type Task struct {
