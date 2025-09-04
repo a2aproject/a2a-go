@@ -35,7 +35,7 @@ func TestInMemoryTaskStore_GetSaved(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
-	store := NewInMemoryTaskStore()
+	store := NewInMemory()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
 	mustSave(t, store, task)
@@ -50,7 +50,7 @@ func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
-	store := NewInMemoryTaskStore()
+	store := NewInMemory()
 	metaKey := "key"
 
 	task := &a2a.Task{
@@ -78,7 +78,7 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
-	store := NewInMemoryTaskStore()
+	store := NewInMemory()
 
 	_, err := store.Get(t.Context(), a2a.TaskID("invalid"))
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
@@ -86,13 +86,13 @@ func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
 	}
 }
 
-func mustSave(t *testing.T, store *InMemoryTaskStore, task *a2a.Task) {
+func mustSave(t *testing.T, store *InMemory, task *a2a.Task) {
 	if err := store.Save(t.Context(), task); err != nil {
 		t.Fatalf("Save() error: %v", err)
 	}
 }
 
-func mustGet(t *testing.T, store *InMemoryTaskStore, id a2a.TaskID) *a2a.Task {
+func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
 	got, err := store.Get(t.Context(), id)
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
