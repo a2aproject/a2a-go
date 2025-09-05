@@ -38,14 +38,14 @@ type processor struct {
 	updateManager *taskupdate.Manager
 }
 
-func (p *processor) Process(ctx context.Context, q a2a.Event) (*a2a.SendMessageResult, error) {
+func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
-	if msg, ok := q.(*a2a.Message); ok {
+	if msg, ok := event.(*a2a.Message); ok {
 		var result a2a.SendMessageResult = msg
 		return &result, nil
 	}
 
-	if err := p.updateManager.Process(ctx, q); err != nil {
+	if err := p.updateManager.Process(ctx, event); err != nil {
 		return nil, err
 	}
 
@@ -53,8 +53,20 @@ func (p *processor) Process(ctx context.Context, q a2a.Event) (*a2a.SendMessageR
 
 	// TODO(yarolegovich): handle pushes
 
+	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
+		return nil, nil
+	}
+
+	if statusUpdate, ok := event.(*a2a.TaskStatusUpdateEvent); ok {
+		if statusUpdate.Final {
+			var result a2a.SendMessageResult = task
+			return &result, nil
+		}
+		return nil, nil
+	}
+
 	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown state state")
+		return nil, fmt.Errorf("unknown task state")
 	}
 
 	if task.Status.State.Terminal() || task.Status.State == a2a.TaskStateInputRequired {
