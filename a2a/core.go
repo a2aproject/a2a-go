@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"encoding/gob"
 	"time"
 
 	"github.com/google/uuid"
@@ -152,7 +153,7 @@ type Task struct {
 
 	// An array of messages exchanged during the task, representing the conversation
 	// history.
-	History []Message
+	History []*Message
 
 	// Optional metadata for extensions. The key is an extension-specific identifier.
 	Metadata map[string]any
@@ -272,7 +273,7 @@ type TaskStatusUpdateEvent struct {
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
-func NewStatusUpdateEvent(task Task, state TaskState, msg *Message) *TaskStatusUpdateEvent {
+func NewStatusUpdateEvent(task *Task, state TaskState, msg *Message) *TaskStatusUpdateEvent {
 	now := time.Now()
 	return &TaskStatusUpdateEvent{
 		ContextID: task.ContextID,
@@ -294,6 +295,12 @@ type Part interface {
 func (TextPart) isPart() {}
 func (FilePart) isPart() {}
 func (DataPart) isPart() {}
+
+func init() {
+	gob.Register(TextPart{})
+	gob.Register(FilePart{})
+	gob.Register(DataPart{})
+}
 
 // Represents a text segment within a message or artifact.
 type TextPart struct {
@@ -336,6 +343,11 @@ type FilePartContent interface {
 
 func (FileBytes) isFilePartContent() {}
 func (FileURI) isFilePartContent()   {}
+
+func init() {
+	gob.Register(FileBytes{})
+	gob.Register(FileURI{})
+}
 
 // Represents a file with its content provided directly as a base64-encoded string.
 type FileBytes struct {

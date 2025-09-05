@@ -65,7 +65,7 @@ func (ep *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdate
 	task := ep.Task
 
 	if task.Status.Message != nil {
-		task.History = append(task.History, *task.Status.Message)
+		task.History = append(task.History, task.Status.Message)
 	}
 
 	if event.Metadata != nil {
