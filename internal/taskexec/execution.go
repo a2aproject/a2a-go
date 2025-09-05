@@ -1,3 +1,17 @@
+// Copyright 20\d\d The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package taskexec
 
 import (
@@ -39,11 +53,20 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
 		}
-		defer e.Unsubscribe(ctx, eventChan)
+
+		stopped := false
+		defer func() {
+			err := e.Unsubscribe(ctx, eventChan)
+			// TODO(yarolegovich): else log
+			if !stopped {
+				yield(nil, err)
+			}
+		}()
 
 		for {
 			select {
 			case <-ctx.Done():
+				stopped = true
 				yield(nil, err)
 				return
 
@@ -52,6 +75,7 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 					return
 				}
 				if !yield(event, nil) {
+					stopped = true
 					return
 				}
 			}

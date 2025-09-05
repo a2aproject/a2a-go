@@ -26,6 +26,18 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
+	if err := e.queue.Write(t.Context(), event); err != nil {
+		t.Fatalf("queue Write() failed with: %v", err)
+	}
+}
+
+func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
+	if err := e.queue.Write(t.Context(), event); err != nil {
+		t.Fatalf("queue Write() failed with: %v", err)
+	}
+}
+
 func TestManager_Execute(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
@@ -39,7 +51,7 @@ func TestManager_Execute(t *testing.T) {
 
 	<-executor.executeCalled
 	want := &a2a.Task{ID: tid}
-	executor.queue.Write(ctx, want)
+	executor.mustWrite(t, want)
 
 	if got, err := execution.Result(ctx); err != nil || got != want {
 		t.Fatalf("expected Result() to return %v, got %v, %v", want, got, err)
@@ -58,7 +70,7 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	executor.queue.Write(ctx, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: tid})
 
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.processErr) {
 		t.Fatalf("expected Result() to return %v, got %v", executor.processErr, err)
@@ -95,7 +107,7 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	executor.queue.Write(ctx, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: tid})
 	for executor.testProcessor.callCount.Load() == 0 {
 		time.Sleep(1 * time.Millisecond)
 	}
@@ -120,7 +132,7 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	executor.queue.Write(ctx, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: tid})
 	_, _ = execution.Result(ctx)
 
 	if !executor.contextCanceled {
@@ -150,7 +162,11 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 		go func() {
 			sub, _ := execution.Subscribe(t.Context())
 			waitSubscribed.Done()
-			defer execution.Unsubscribe(t.Context(), sub)
+			defer func() {
+				if err := execution.Unsubscribe(t.Context(), sub); err != nil {
+					t.Errorf("Unsubscribe() failed with %v", err)
+				}
+			}()
 
 			for event := range sub {
 				mu.Lock()
@@ -167,7 +183,7 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	for i, state := range states {
 		waitConsumed.Add(consumerCount)
 		executor.nextEventTerminal = i == len(states)-1
-		_ = executor.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: state}})
+		executor.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: state}})
 		waitConsumed.Wait()
 	}
 
@@ -200,8 +216,7 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
 	go func() {
 		<-canceler.cancelCalled
-		canceler.queue.Write(ctx, want)
-
+		canceler.mustWrite(t, want)
 	}()
 
 	task, err := manager.Cancel(ctx, tid, canceler)
@@ -224,7 +239,7 @@ func TestManager_CancelWithoutActiveExecution(t *testing.T) {
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
 	go func() {
 		<-canceler.cancelCalled
-		canceler.queue.Write(ctx, want)
+		canceler.mustWrite(t, want)
 	}()
 
 	task, err := manager.Cancel(ctx, tid, canceler)
@@ -257,7 +272,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	}()
 	<-canceler.cancelCalled
 
-	executor.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
+	executor.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 	_, _ = execution.Result(ctx)
 	close(canceler.block)
 
@@ -303,7 +318,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 
 	close(canceler1.block)
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
-	canceler1.queue.Write(ctx, want)
+	canceler1.mustWrite(t, want)
 	wg.Wait()
 
 	t1, t2 := <-results, <-results
@@ -354,7 +369,7 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	executor.queue.Write(ctx, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: tid})
 
 	if _, err := execution.Result(ctx); err != nil {
 		t.Fatalf("Result() failed: %v", err)
@@ -376,7 +391,7 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	canceler.nextEventTerminal = true
 	go func() {
 		<-canceler.cancelCalled
-		canceler.queue.Write(ctx, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}})
+		canceler.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}})
 	}()
 
 	if _, err := manager.Cancel(ctx, tid, canceler); err != nil {
@@ -405,7 +420,7 @@ func TestManager_GetExecution(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	executor.queue.Write(ctx, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: tid})
 	_, _ = startedExecution.Result(ctx)
 
 	execution, ok = manager.GetExecution(tid)
