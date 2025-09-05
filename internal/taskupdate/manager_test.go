@@ -22,6 +22,31 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+func newTestTask() *a2a.Task {
+	return &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+}
+
+func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
+	return &a2a.TaskStatusUpdateEvent{TaskID: task.ID, ContextID: task.ContextID}
+}
+
+func getText(m *a2a.Message) string {
+	return m.Parts[0].(a2a.TextPart).Text
+}
+
+type testSaver struct {
+	saved *a2a.Task
+	fail  error
+}
+
+func (s *testSaver) Save(ctx context.Context, task *a2a.Task) error {
+	if s.fail != nil {
+		return s.fail
+	}
+	s.saved = task
+	return nil
+}
+
 func TestManager_TaskSaved(t *testing.T) {
 	saver := &testSaver{}
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
@@ -166,29 +191,4 @@ func TestManager_IDValidationFailure(t *testing.T) {
 			t.Fatalf("expected ID validation to fail")
 		}
 	}
-}
-
-func newTestTask() *a2a.Task {
-	return &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-}
-
-func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
-	return &a2a.TaskStatusUpdateEvent{TaskID: task.ID, ContextID: task.ContextID}
-}
-
-func getText(m *a2a.Message) string {
-	return m.Parts[0].(a2a.TextPart).Text
-}
-
-type testSaver struct {
-	saved *a2a.Task
-	fail  error
-}
-
-func (s *testSaver) Save(ctx context.Context, task *a2a.Task) error {
-	if s.fail != nil {
-		return s.fail
-	}
-	s.saved = task
-	return nil
 }

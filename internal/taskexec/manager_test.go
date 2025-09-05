@@ -26,6 +26,104 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+func newManager() *Manager {
+	qm := eventqueue.NewInMemoryManager()
+	return NewManager(qm)
+}
+
+type testProcessor struct {
+	callCount         atomic.Int32
+	nextEventTerminal bool
+	processErr        error
+
+	contextCanceled bool
+	block           chan struct{}
+}
+
+func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
+	e.callCount.Add(1)
+
+	if e.block != nil {
+		select {
+		case <-e.block:
+		case <-ctx.Done():
+			e.contextCanceled = true
+			return nil, ctx.Err()
+		}
+	}
+
+	if e.processErr != nil {
+		return nil, e.processErr
+	}
+
+	if e.nextEventTerminal {
+		result := event.(a2a.SendMessageResult)
+		return &result, nil
+	}
+
+	return nil, nil
+}
+
+type testExecutor struct {
+	*testProcessor
+
+	executeCalled   chan struct{}
+	executeErr      error
+	queue           eventqueue.Queue
+	contextCanceled bool
+	block           chan struct{}
+}
+
+func newExecutor() *testExecutor {
+	return &testExecutor{executeCalled: make(chan struct{}), testProcessor: &testProcessor{}}
+}
+
+func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) error {
+	e.queue = queue
+	close(e.executeCalled)
+
+	if e.block != nil {
+		select {
+		case <-e.block:
+		case <-ctx.Done():
+			e.contextCanceled = true
+			return ctx.Err()
+		}
+	}
+
+	return e.executeErr
+}
+
+type testCanceler struct {
+	*testProcessor
+
+	cancelCalled    chan struct{}
+	cancelErr       error
+	queue           eventqueue.Queue
+	contextCanceled bool
+	block           chan struct{}
+}
+
+func newCanceler() *testCanceler {
+	return &testCanceler{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
+}
+
+func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error {
+	c.queue = queue
+	close(c.cancelCalled)
+
+	if c.block != nil {
+		select {
+		case <-c.block:
+		case <-ctx.Done():
+			c.contextCanceled = true
+			return ctx.Err()
+		}
+	}
+
+	return c.cancelErr
+}
+
 func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
 	if err := e.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed with: %v", err)
@@ -427,102 +525,4 @@ func TestManager_GetExecution(t *testing.T) {
 	if ok || execution != nil {
 		t.Fatalf("expected finished execution to be removed, got %v, %v", ok, execution)
 	}
-}
-
-func newManager() *Manager {
-	qm := eventqueue.NewInMemoryManager()
-	return NewManager(qm)
-}
-
-type testProcessor struct {
-	callCount         atomic.Int32
-	nextEventTerminal bool
-	processErr        error
-
-	contextCanceled bool
-	block           chan struct{}
-}
-
-func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
-	e.callCount.Add(1)
-
-	if e.block != nil {
-		select {
-		case <-e.block:
-		case <-ctx.Done():
-			e.contextCanceled = true
-			return nil, ctx.Err()
-		}
-	}
-
-	if e.processErr != nil {
-		return nil, e.processErr
-	}
-
-	if e.nextEventTerminal {
-		result := event.(a2a.SendMessageResult)
-		return &result, nil
-	}
-
-	return nil, nil
-}
-
-type testExecutor struct {
-	*testProcessor
-
-	executeCalled   chan struct{}
-	executeErr      error
-	queue           eventqueue.Queue
-	contextCanceled bool
-	block           chan struct{}
-}
-
-func newExecutor() *testExecutor {
-	return &testExecutor{executeCalled: make(chan struct{}), testProcessor: &testProcessor{}}
-}
-
-func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) error {
-	e.queue = queue
-	close(e.executeCalled)
-
-	if e.block != nil {
-		select {
-		case <-e.block:
-		case <-ctx.Done():
-			e.contextCanceled = true
-			return ctx.Err()
-		}
-	}
-
-	return e.executeErr
-}
-
-type testCanceler struct {
-	*testProcessor
-
-	cancelCalled    chan struct{}
-	cancelErr       error
-	queue           eventqueue.Queue
-	contextCanceled bool
-	block           chan struct{}
-}
-
-func newCanceler() *testCanceler {
-	return &testCanceler{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
-}
-
-func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error {
-	c.queue = queue
-	close(c.cancelCalled)
-
-	if c.block != nil {
-		select {
-		case <-c.block:
-		case <-ctx.Done():
-			c.contextCanceled = true
-			return ctx.Err()
-		}
-	}
-
-	return c.cancelErr
 }

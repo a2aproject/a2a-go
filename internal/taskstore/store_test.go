@@ -22,6 +22,20 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+func mustSave(t *testing.T, store *InMemory, task *a2a.Task) {
+	if err := store.Save(t.Context(), task); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+}
+
+func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
+	got, err := store.Get(t.Context(), id)
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+	return got
+}
+
 func TestInMemoryTaskStore_GetSaved(t *testing.T) {
 	store := NewInMemory()
 
@@ -84,18 +98,4 @@ func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
 		t.Fatalf("Unexpected error: got: %v, wanted ErrTaskNotFound", err)
 	}
-}
-
-func mustSave(t *testing.T, store *InMemory, task *a2a.Task) {
-	if err := store.Save(t.Context(), task); err != nil {
-		t.Fatalf("Save() error: %v", err)
-	}
-}
-
-func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
-	got, err := store.Get(t.Context(), id)
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
-	return got
 }

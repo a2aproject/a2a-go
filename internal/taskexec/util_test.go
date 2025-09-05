@@ -23,6 +23,30 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+type testQueue struct {
+	events chan a2a.Event
+	err    chan error
+}
+
+func (q *testQueue) Read(ctx context.Context) (a2a.Event, error) {
+	select {
+	case e := <-q.events:
+		return e, nil
+	case err := <-q.err:
+		return nil, err
+	}
+}
+
+func newTestQueue() *testQueue {
+	return &testQueue{events: make(chan a2a.Event), err: make(chan error)}
+}
+
+func makeUnbufferedChannels() (chan a2a.Event, chan error) {
+	eventChan := make(chan a2a.Event)
+	errorChan := make(chan error)
+	return eventChan, errorChan
+}
+
 func TestReadQueueToChannels_WriteMultipleEvents(t *testing.T) {
 	eventChan, errChan := makeUnbufferedChannels()
 	queue := newTestQueue()
@@ -104,31 +128,4 @@ func TestReadQueueToChannels_StopsErrorWriteWhenContextCanceled(t *testing.T) {
 	<-done
 
 	// Expect readQueueToChannels exist without errChan reader
-}
-
-type testQueue struct {
-	events chan a2a.Event
-	err    chan error
-}
-
-func (q *testQueue) Read(ctx context.Context) (a2a.Event, error) {
-	select {
-	case e := <-q.events:
-		return e, nil
-	case err := <-q.err:
-		return nil, err
-	}
-}
-
-func newTestQueue() *testQueue {
-	return &testQueue{
-		events: make(chan a2a.Event),
-		err:    make(chan error),
-	}
-}
-
-func makeUnbufferedChannels() (chan a2a.Event, chan error) {
-	eventChan := make(chan a2a.Event)
-	errorChan := make(chan error)
-	return eventChan, errorChan
 }
