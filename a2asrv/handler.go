@@ -104,8 +104,9 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		queueManager: eventqueue.NewInMemoryManager(),
-		taskStore:    taskstore.NewInMemory(),
+		agentExecutor: executor,
+		queueManager:  eventqueue.NewInMemoryManager(),
+		taskStore:     taskstore.NewInMemory(),
 	}
 	for _, option := range options {
 		option(h)
