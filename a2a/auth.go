@@ -14,6 +14,10 @@
 
 package a2a
 
+import (
+	"encoding/gob"
+)
+
 // Defines a security scheme that can be used to secure an agent's endpoints.
 // This is a discriminated union type based on the OpenAPI 3.0 Security Scheme.
 type SecurityScheme interface {
@@ -25,6 +29,14 @@ func (HTTPAuthSecurityScheme) isSecurityScheme()      {}
 func (OpenIDConnectSecurityScheme) isSecurityScheme() {}
 func (MutualTLSSecurityScheme) isSecurityScheme()     {}
 func (OAuth2SecurityScheme) isSecurityScheme()        {}
+
+func init() {
+	gob.Register(APIKeySecurityScheme{})
+	gob.Register(HTTPAuthSecurityScheme{})
+	gob.Register(OpenIDConnectSecurityScheme{})
+	gob.Register(MutualTLSSecurityScheme{})
+	gob.Register(OAuth2SecurityScheme{})
+}
 
 // Defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
