@@ -43,7 +43,4 @@ var (
 	// ErrAuthenticatedExtendedCardNotConfigured indicates that the agent does not have an Authenticated
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
-
-	// ErrQueueClosed indicates that the event queue has been closed.
-	ErrQueueClosed = errors.New("queue is closed")
 )
