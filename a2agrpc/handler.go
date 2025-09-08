@@ -79,7 +79,8 @@ func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
-		stream.Send(resp)
+		err = stream.Send(resp)
+		return status.Errorf(codes.Aborted, "failed to send response: %v", err)
 	}
 
 	return nil
@@ -122,7 +123,8 @@ func (h *GrpcHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
-		stream.Send(resp)
+		err = stream.Send(resp)
+		return status.Errorf(codes.Aborted, "failed to send response: %v", err)
 	}
 	return nil
 }
