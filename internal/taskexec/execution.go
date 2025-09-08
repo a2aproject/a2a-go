@@ -125,8 +125,7 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 		}
 	}()
 
-	eventChan := make(chan a2a.Event)
-	errorChan := make(chan error)
+	eventChan, errorChan := make(chan a2a.Event), make(chan error)
 	go readQueueToChannels(ctx, queue, eventChan, errorChan)
 
 	for {

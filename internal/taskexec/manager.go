@@ -205,16 +205,17 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 		m.mu.Unlock()
 	}()
 
-	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
-	if err != nil {
-		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
-		return
-	}
-	defer m.destroyQueue(ctx, cancel.tid)
-
-	if err := cancel.canceler.Cancel(ctx, queue); err != nil {
-		cancel.result.reject(err)
-		return
+	// TODO(yarolegovich): better handling for concurrent Execute() and Cancel() calls.
+	// Currently we try to send a cancelation signal on the same queue which active execution uses for events.
+	// This means a cancelation will fail if the concurrent execution fails or resolves to a
+	// non-terminal state (eg. input-required) before receiving the cancelation signal.
+	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
+	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
+	if queue, ok := m.queueManager.Get(ctx, cancel.tid); ok {
+		if err := cancel.canceler.Cancel(ctx, queue); err != nil {
+			cancel.result.reject(err)
+			return
+		}
 	}
 
 	result, err := run.Result(ctx)
