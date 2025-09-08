@@ -56,8 +56,7 @@ func (c *cancelation) wait(ctx context.Context) (*a2a.Task, error) {
 }
 
 func (c *cancelation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
-	eventChan := make(chan a2a.Event)
-	errorChan := make(chan error)
+	eventChan, errorChan := make(chan a2a.Event), make(chan error)
 	go readQueueToChannels(ctx, queue, eventChan, errorChan)
 
 	for {

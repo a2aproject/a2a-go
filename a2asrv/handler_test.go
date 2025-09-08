@@ -52,6 +52,7 @@ func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, q
 // mockQueueManager is a mock of eventqueue.Manager
 type mockQueueManager struct {
 	GetOrCreateFunc func(ctx context.Context, taskId a2a.TaskID) (eventqueue.Queue, error)
+	GetFunc         func(ctx context.Context, taskId a2a.TaskID) (eventqueue.Queue, bool)
 	DestroyFunc     func(ctx context.Context, taskId a2a.TaskID) error
 }
 
@@ -60,6 +61,13 @@ func (m *mockQueueManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (
 		return m.GetOrCreateFunc(ctx, taskId)
 	}
 	return nil, errors.New("GetOrCreate() not implemented")
+}
+
+func (m *mockQueueManager) Get(ctx context.Context, taskId a2a.TaskID) (eventqueue.Queue, bool) {
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, taskId)
+	}
+	return nil, false
 }
 
 func (m *mockQueueManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
