@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventqueue
+package taskexec
 
 import (
 	"context"
@@ -20,16 +20,32 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Manager manages event queues on a per-task basis.
-// It provides lifecycle management for task-specific event queues,
-// enabling multiple clients to attach to the same task's event stream.
-type Manager interface {
-	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error)
+type promise struct {
+	// done channel gets closed once value or err field is set
+	done  chan struct{}
+	value a2a.SendMessageResult
+	err   error
+}
 
-	// Get returns an existing queue if one exists.
-	Get(ctx context.Context, taskId a2a.TaskID) (Queue, bool)
+func newPromise() *promise {
+	return &promise{done: make(chan struct{})}
+}
 
-	// Destroy closes the queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskId a2a.TaskID) error
+func (p *promise) resolve(value a2a.SendMessageResult) {
+	p.value = value
+	close(p.done)
+}
+
+func (p *promise) reject(err error) {
+	p.err = err
+	close(p.done)
+}
+
+func (r *promise) wait(ctx context.Context) (a2a.SendMessageResult, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-r.done:
+		return r.value, r.err
+	}
 }

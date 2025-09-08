@@ -35,7 +35,7 @@ type AgentExecutor interface {
 	// task ID in the request context and publish a TaskStatusUpdateEvent with
 	// state TaskStateCanceled to the event queue.
 	//
-	// Returns an error if the cancellation request cannot be processed.
+	// Returns an error if the cancelation request cannot be processed.
 	Cancel(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
 }
 
