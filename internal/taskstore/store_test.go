@@ -23,12 +23,14 @@ import (
 )
 
 func mustSave(t *testing.T, store *InMemory, task *a2a.Task) {
+	t.Helper()
 	if err := store.Save(t.Context(), task); err != nil {
 		t.Fatalf("Save() error: %v", err)
 	}
 }
 
 func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
+	t.Helper()
 	got, err := store.Get(t.Context(), id)
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
