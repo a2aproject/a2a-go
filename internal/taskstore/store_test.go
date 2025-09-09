@@ -15,12 +15,15 @@
 package taskstore
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
+
+type customMeta struct{ Val int }
 
 func mustSave(t *testing.T, store *Mem, task *a2a.Task) {
 	t.Helper()
@@ -40,13 +43,20 @@ func mustGet(t *testing.T, store *Mem, id a2a.TaskID) *a2a.Task {
 
 func TestInMemoryTaskStore_GetSaved(t *testing.T) {
 	store := NewMem()
+	metaKey := "key"
 
+	meta := customMeta{Val: 42}
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+	task.Metadata = map[string]any{metaKey: meta}
+	gob.Register(customMeta{})
 	mustSave(t, store, task)
 
 	got := mustGet(t, store, task.ID)
 	if task.ContextID != got.ContextID {
-		t.Fatalf("Data mismatch: got = %v, want = %v", task, got)
+		t.Fatalf("Data mismatch: got = %v, want = %v", got, task)
+	}
+	if meta != got.Metadata[metaKey] {
+		t.Fatalf("Metadata mismatch: got = %v, want = %v", got, task)
 	}
 }
 
