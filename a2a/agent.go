@@ -91,20 +91,16 @@ type AgentCard struct {
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
 	// A list of security requirement objects that apply to all agent interactions.
-	// Each object
-	// lists security schemes that can be used. Follows the OpenAPI 3.0 Security
-	// Requirement Object.
+	// Each object lists security schemes that can be used.
+	// Follows the OpenAPI 3.0 Security Requirement Object.
 	// This list can be seen as an OR of ANDs. Each object in the list describes one
-	// possible
-	// set of security requirements that must be present on a request. This allows
-	// specifying,
-	// for example, "callers must either use OAuth OR an API Key AND mTLS."
+	// possible set of security requirements that must be present on a request.
+	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS."
 	Security []map[string][]string `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// A declaration of the security schemes available to authorize requests. The key
-	// is the
-	// scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
-	SecuritySchemes map[string]SecurityScheme `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty" mapstructure:"securitySchemes,omitempty"`
+	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
+	SecuritySchemes NamedSecuritySchemes `json:"securitySchemes,omitempty" yaml:"securitySchemes,omitempty" mapstructure:"securitySchemes,omitempty"`
 
 	// JSON Web Signatures computed for this AgentCard.
 	Signatures []AgentCardSignature `json:"signatures,omitempty" yaml:"signatures,omitempty" mapstructure:"signatures,omitempty"`
