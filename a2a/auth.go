@@ -16,6 +16,7 @@ package a2a
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 // A declaration of the security schemes available to authorize requests. The key
@@ -69,6 +70,8 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 				return err
 			}
 			result[k] = scheme
+		default:
+			return fmt.Errorf("unknown security scheme type %s", ts.Type)
 		}
 	}
 

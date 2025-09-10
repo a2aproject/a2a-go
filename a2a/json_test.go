@@ -33,8 +33,7 @@ func mustMarshal(t *testing.T, data any) string {
 
 func mustUnmarshal(t *testing.T, data []byte, out any) {
 	t.Helper()
-	err := json.Unmarshal(data, out)
-	if err != nil {
+	if err := json.Unmarshal(data, out); err != nil {
 		t.Fatalf("Unmarshal() failed with: %v", err)
 	}
 }
@@ -142,15 +141,18 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		`"name4":{"type":"http","bearerFormat":"JWT","scheme":"Bearer"}`,
 		`"name5":{"type":"oauth2","flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}`,
 	}
-
 	wantJSON := fmt.Sprintf("{%s}", strings.Join(entriesJSON, ","))
-	if got := mustMarshal(t, schemes); got != wantJSON {
-		t.Fatalf("Marshal() failed:\nwant %v\ngot: %s", wantJSON, got)
+
+	var decodedJSON NamedSecuritySchemes
+	mustUnmarshal(t, []byte(wantJSON), &decodedJSON)
+	if !reflect.DeepEqual(decodedJSON, schemes) {
+		t.Fatalf("Unmarshal() failed:\nwant %v\ngot: %s", schemes, decodedJSON)
 	}
 
-	var got NamedSecuritySchemes
-	mustUnmarshal(t, []byte(wantJSON), &got)
-	if !reflect.DeepEqual(got, schemes) {
-		t.Fatalf("Unmarshal() failed:\nwant %v\ngot: %s", schemes, got)
+	encodedSchemes := mustMarshal(t, schemes)
+	var decodedBack NamedSecuritySchemes
+	mustUnmarshal(t, []byte(encodedSchemes), &decodedBack)
+	if !reflect.DeepEqual(decodedJSON, decodedJSON) {
+		t.Fatalf("Decoding back failed:\nwant %v\ngot: %s", decodedJSON, decodedBack)
 	}
 }

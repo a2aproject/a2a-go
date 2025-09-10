@@ -317,6 +317,8 @@ func (j *ContentParts) UnmarshalJSON(b []byte) error {
 				return err
 			}
 			result[i] = part
+		default:
+			return fmt.Errorf("unknown part kind %s", tp.Kind)
 		}
 	}
 
@@ -442,7 +444,7 @@ type FileBytes struct {
 	Bytes string `json:"bytes" yaml:"bytes" mapstructure:"bytes"`
 }
 
-// Represents a file with its content provided directly as a base64-encoded string.
+// Represents a file with its content located at a specific URI.
 type FileURI struct {
 	FileMeta
 	// A URL pointing to the file's content.
