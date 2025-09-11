@@ -19,8 +19,8 @@ import (
 	"fmt"
 )
 
-// A declaration of the security schemes available to authorize requests. The key
-// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
+// NamedSecuritySchemes is a declaration of the security schemes available to authorize requests.
+// The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
 type NamedSecuritySchemes map[string]SecurityScheme
 
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
@@ -90,7 +90,7 @@ func (OpenIDConnectSecurityScheme) isSecurityScheme() {}
 func (MutualTLSSecurityScheme) isSecurityScheme()     {}
 func (OAuth2SecurityScheme) isSecurityScheme()        {}
 
-// Defines a security scheme using an API key.
+// APIKeySecurityScheme defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
 	// An optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
@@ -111,6 +111,7 @@ func (s APIKeySecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "apiKey", wrapped: wrapped(s)})
 }
 
+// APIKeySecuritySchemeIn defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
 type APIKeySecuritySchemeIn string
 
 const (
@@ -119,48 +120,47 @@ const (
 	APIKeySecuritySchemeInQuery  APIKeySecuritySchemeIn = "query"
 )
 
-// Defines configuration details for the OAuth 2.0 Authorization Code flow.
+// AuthorizationCodeOAuthFlow defines configuration details for the OAuth 2.0 Authorization Code flow.
 type AuthorizationCodeOAuthFlow struct {
-	// The authorization URL to be used for this flow.
+	// AuthorizationURL is the authorization URL to be used for this flow.
 	// This MUST be a URL and use TLS.
 	AuthorizationURL string `json:"authorizationUrl" yaml:"authorizationUrl" mapstructure:"authorizationUrl"`
 
-	// An optional URL to be used for obtaining refresh tokens.
+	// RefreshURL is an optional URL to be used for obtaining refresh tokens.
 	// This MUST be a URL and use TLS.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// The available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 
-	// The token URL to be used for this flow.
-	// This MUST be a URL and use TLS.
+	// TokenURL is the URL to be used for this flow. This MUST be a URL and use TLS.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 }
 
-// Defines configuration details for the OAuth 2.0 Client Credentials flow.
+// ClientCredentialsOAuthFlow defines configuration details for the OAuth 2.0 Client Credentials flow.
 type ClientCredentialsOAuthFlow struct {
-	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// The available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 
-	// The token URL to be used for this flow. This MUST be a URL.
+	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 }
 
-// Defines a security scheme using HTTP authentication.
+// HTTPAuthSecurityScheme defines a security scheme using HTTP authentication.
 type HTTPAuthSecurityScheme struct {
-	// An optional hint to the client to identify how the bearer token is formatted (e.g.,
+	// BearerFormat is an optional hint to the client to identify how the bearer token is formatted (e.g.,
 	// "JWT"). This is primarily for documentation purposes.
 	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty" mapstructure:"bearerFormat,omitempty"`
 
-	// An optional description for the security scheme.
+	// Description is an optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
-	// The name of the HTTP Authentication scheme to be used in the Authorization
+	// Scheme is the name of the HTTP Authentication scheme to be used in the Authorization
 	// header, as defined in RFC7235 (e.g., "Bearer").
 	// This value should be registered in the IANA Authentication Scheme registry.
 	Scheme string `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
@@ -175,22 +175,22 @@ func (s HTTPAuthSecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "http", wrapped: wrapped(s)})
 }
 
-// Defines configuration details for the OAuth 2.0 Implicit flow.
+// ImplicitOAuthFlow defines configuration details for the OAuth 2.0 Implicit flow.
 type ImplicitOAuthFlow struct {
-	// The authorization URL to be used for this flow. This MUST be a URL.
+	// AuthorizationURL is the authorization URL to be used for this flow. This MUST be a URL.
 	AuthorizationURL string `json:"authorizationUrl" yaml:"authorizationUrl" mapstructure:"authorizationUrl"`
 
-	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// The available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 }
 
-// Defines a security scheme using mTLS authentication.
+// MutualTLSSecurityScheme defines a security scheme using mTLS authentication.
 type MutualTLSSecurityScheme struct {
-	// An optional description for the security scheme.
+	// Description is an optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 }
 
@@ -203,15 +203,15 @@ func (s MutualTLSSecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "mutualTLS", wrapped: wrapped(s)})
 }
 
-// Defines a security scheme using OAuth 2.0.
+// OAuth2SecurityScheme defines a security scheme using OAuth 2.0.
 type OAuth2SecurityScheme struct {
-	// An optional description for the security scheme.
+	// Description is an optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
-	// An object containing configuration information for the supported OAuth 2.0 flows.
+	// Flows is an object containing configuration information for the supported OAuth 2.0 flows.
 	Flows OAuthFlows `json:"flows" yaml:"flows" mapstructure:"flows"`
 
-	// An optional URL to the oauth2 authorization server metadata
+	// Oauth2MetadataURL is an optional URL to the oauth2 authorization server metadata
 	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
 	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
 }
@@ -225,29 +225,29 @@ func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "oauth2", wrapped: wrapped(s)})
 }
 
-// Defines the configuration for the supported OAuth 2.0 flows.
+// OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
 type OAuthFlows struct {
-	// Configuration for the OAuth Authorization Code flow. Previously called
-	// accessCode in OpenAPI 2.0.
+	// AuthorizationCode is a configuration for the OAuth Authorization Code flow.
+	// Previously called accessCode in OpenAPI 2.0.
 	AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode,omitempty" yaml:"authorizationCode,omitempty" mapstructure:"authorizationCode,omitempty"`
 
-	// Configuration for the OAuth Client Credentials flow. Previously called
+	// ClientCredentials is a configuration for the OAuth Client Credentials flow. Previously called
 	// application in OpenAPI 2.0.
 	ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty" mapstructure:"clientCredentials,omitempty"`
 
-	// Configuration for the OAuth Implicit flow.
+	// Implicit is a configuration for the OAuth Implicit flow.
 	Implicit *ImplicitOAuthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty" mapstructure:"implicit,omitempty"`
 
-	// Configuration for the OAuth Resource Owner Password flow.
+	// Password is a configuration for the OAuth Resource Owner Password flow.
 	Password *PasswordOAuthFlow `json:"password,omitempty" yaml:"password,omitempty" mapstructure:"password,omitempty"`
 }
 
-// Defines a security scheme using OpenID Connect.
+// OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.
 type OpenIDConnectSecurityScheme struct {
-	// An optional description for the security scheme.
+	// Description is an optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
-	// The OpenID Connect Discovery URL for the OIDC provider's metadata.
+	// OpenIDConnectURL is the OpenID Connect Discovery URL for the OIDC provider's metadata.
 	OpenIDConnectURL string `json:"openIdConnectUrl" yaml:"openIdConnectUrl" mapstructure:"openIdConnectUrl"`
 }
 
@@ -260,15 +260,15 @@ func (s OpenIDConnectSecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "openIdConnect", wrapped: wrapped(s)})
 }
 
-// Defines configuration details for the OAuth 2.0 Resource Owner Password flow.
+// PasswordOAuthFlow defines configuration details for the OAuth 2.0 Resource Owner Password flow.
 type PasswordOAuthFlow struct {
-	// An optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// The available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are еру available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 
-	// The token URL to be used for this flow. This MUST be a URL.
+	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 }
