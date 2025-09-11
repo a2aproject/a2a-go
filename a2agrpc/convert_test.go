@@ -146,8 +146,12 @@ func TestFromProtoConversion(t *testing.T) {
 					File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
 				}}},
 				want: a2a.FilePart{
-					MimeType: "text/plain",
-					File:     a2a.FileBytes{Bytes: "content"},
+					File: a2a.FileBytes{
+						FileMeta: a2a.FileMeta{
+							MimeType: "text/plain",
+						},
+						Bytes: "content",
+					},
 				},
 			},
 			{
@@ -157,8 +161,12 @@ func TestFromProtoConversion(t *testing.T) {
 					File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
 				}}},
 				want: a2a.FilePart{
-					MimeType: "text/plain",
-					File:     a2a.FileURI{URI: "http://example.com/file"},
+					File: a2a.FileURI{
+						FileMeta: a2a.FileMeta{
+							MimeType: "text/plain",
+						},
+						URI: "http://example.com/file",
+					},
 				},
 			},
 			{
@@ -686,16 +694,16 @@ func TestToProtoConversion(t *testing.T) {
 	})
 
 	t.Run("toProtoMessges", func(t *testing.T) {
-		msgs := []a2a.Message{
+		msgs := []*a2a.Message{
 			{ID: "test-message", Role: a2a.MessageRoleUser},
 			{ID: "msg2", Role: a2a.MessageRoleAgent},
 		}
-		msg1, _ := toProtoMessage(&msgs[0])
-		msg2, _ := toProtoMessage(&msgs[1])
+		msg1, _ := toProtoMessage(msgs[0])
+		msg2, _ := toProtoMessage(msgs[1])
 
 		tests := []struct {
 			name    string
-			msgs    []a2a.Message
+			msgs    []*a2a.Message
 			want    []*a2apb.Message
 			wantErr bool
 		}{
@@ -706,12 +714,12 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name: "empty slice",
-				msgs: []a2a.Message{},
+				msgs: []*a2a.Message{},
 				want: []*a2apb.Message{},
 			},
 			{
 				name: "conversion error",
-				msgs: []a2a.Message{
+				msgs: []*a2a.Message{
 					{ID: "test-message"},
 					{Metadata: map[string]any{"bad": func() {}}},
 				},
@@ -758,8 +766,12 @@ func TestToProtoConversion(t *testing.T) {
 			{
 				name: "file with bytes",
 				p: a2a.FilePart{
-					MimeType: "text/plain",
-					File:     a2a.FileBytes{Bytes: "content"},
+					File: a2a.FileBytes{
+						FileMeta: a2a.FileMeta{
+							MimeType: "text/plain",
+						},
+						Bytes: "content",
+					},
 				},
 				want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 					MimeType: "text/plain",
@@ -769,8 +781,12 @@ func TestToProtoConversion(t *testing.T) {
 			{
 				name: "file with uri",
 				p: a2a.FilePart{
-					MimeType: "text/plain",
-					File:     a2a.FileURI{URI: "http://example.com/file"},
+					File: a2a.FileURI{
+						FileMeta: a2a.FileMeta{
+							MimeType: "text/plain",
+						},
+						URI: "http://example.com/file",
+					},
 				},
 				want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 					MimeType: "text/plain",
@@ -1124,7 +1140,7 @@ func TestToProtoConversion(t *testing.T) {
 		a2aMeta := map[string]interface{}{"task_key": "task_val"}
 		pMeta, _ := structpb.NewStruct(a2aMeta)
 
-		a2aHistory := []a2a.Message{
+		a2aHistory := []*a2a.Message{
 			{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: []a2a.Part{a2a.TextPart{Text: "history"}}},
 		}
 		pHistory := []*a2apb.Message{
@@ -1218,7 +1234,7 @@ func TestToProtoConversion(t *testing.T) {
 					ContextID: a2aContextID,
 					Status:    a2aStatus,
 					Artifacts: a2aArtifacts,
-					History:   []a2a.Message{{Metadata: map[string]any{"bad": func() {}}}},
+					History:   []*a2a.Message{{Metadata: map[string]any{"bad": func() {}}}},
 					Metadata:  a2aMeta,
 				},
 				wantErr: true,

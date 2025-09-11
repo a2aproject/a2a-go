@@ -94,13 +94,21 @@ func fromProtoFilePart(pPart *a2apb.FilePart) (a2a.FilePart, error) {
 	switch f := pPart.GetFile().(type) {
 	case *a2apb.FilePart_FileWithBytes:
 		return a2a.FilePart{
-			MimeType: pPart.GetMimeType(),
-			File:     a2a.FileBytes{Bytes: string(f.FileWithBytes)},
+			File: a2a.FileBytes{
+				FileMeta: a2a.FileMeta{
+					MimeType: pPart.GetMimeType(),
+				},
+				Bytes: string(f.FileWithBytes),
+			},
 		}, nil
 	case *a2apb.FilePart_FileWithUri:
 		return a2a.FilePart{
-			MimeType: pPart.GetMimeType(),
-			File:     a2a.FileURI{URI: f.FileWithUri},
+			File: a2a.FileURI{
+				FileMeta: a2a.FileMeta{
+					MimeType: pPart.GetMimeType(),
+				},
+				URI: f.FileWithUri,
+			},
 		}, nil
 	default:
 		return a2a.FilePart{}, fmt.Errorf("unsupported FilePart type: %T", f)
@@ -351,10 +359,10 @@ func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 	}, nil
 }
 
-func toProtoMessages(msgs []a2a.Message) ([]*a2apb.Message, error) {
+func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 	pMsgs := make([]*a2apb.Message, len(msgs))
 	for i, msg := range msgs {
-		pMsg, err := toProtoMessage(&msg)
+		pMsg, err := toProtoMessage(msg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
@@ -367,12 +375,12 @@ func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
 	switch fc := part.File.(type) {
 	case a2a.FileBytes:
 		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: part.MimeType,
+			MimeType: fc.MimeType,
 			File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
 		}}}, nil
 	case a2a.FileURI:
 		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: part.MimeType,
+			MimeType: fc.MimeType,
 			File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
 		}}}, nil
 	default:
