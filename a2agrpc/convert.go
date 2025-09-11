@@ -16,6 +16,7 @@ package a2agrpc
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
@@ -23,20 +24,25 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+var (
+	taskIDRegex   = regexp.MustCompile(`tasks/([^/]+)`)
+	configIDRegex = regexp.MustCompile(`pushConfigs/([^/]+)`)
+)
+
 func extractTaskID(name string) (a2a.TaskID, error) {
-	if name == "" {
-		return "", fmt.Errorf("task name is empty")
+	matches := taskIDRegex.FindStringSubmatch(name)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("invalid or missing task ID in name: %q", name)
 	}
-	// todo: actually extract from format: name=tasks/{id}/...
-	return a2a.TaskID(name), nil
+	return a2a.TaskID(matches[1]), nil
 }
 
 func extractConfigID(name string) (string, error) {
-	if name == "" {
-		return "", fmt.Errorf("task name is empty")
+	matches := configIDRegex.FindStringSubmatch(name)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("invalid or missing config ID in name: %q", name)
 	}
-	// todo: actually extract from format: name=tasks/{id}/pushConfigs/{id}
-	return name, nil
+	return matches[1], nil
 }
 
 func fromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSendParams, error) {
@@ -44,14 +50,13 @@ func fromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSend
 	if err != nil {
 		return a2a.MessageSendParams{}, err
 	}
+	config, err := fromProtoSendMessageConfig(req.GetConfiguration())
+	if err != nil {
+		return a2a.MessageSendParams{}, err
+	}
 	params := a2a.MessageSendParams{
 		Message: msg,
-	}
-	if req.GetConfiguration() != nil {
-		params.Config, err = fromProtoSendMessageConfig(req.GetConfiguration())
-		if err != nil {
-			return a2a.MessageSendParams{}, err
-		}
+		Config:  config,
 	}
 	if req.GetMetadata() != nil {
 		params.Metadata = req.GetMetadata().AsMap()
@@ -127,8 +132,8 @@ func fromProtoRole(role a2apb.Role) a2a.MessageRole {
 }
 
 func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, error) {
-	if pConf == nil {
-		return nil, fmt.Errorf("push config is nil")
+	if pConf == nil || pConf.GetId() == "" {
+		return nil, fmt.Errorf("invalid push config")
 	}
 	result := &a2a.PushConfig{
 		ID:    pConf.GetId(),
@@ -146,22 +151,22 @@ func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, 
 
 func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.MessageSendConfig, error) {
 	if conf == nil {
-		return nil, fmt.Errorf("send message config is nil")
+		return nil, nil // config is optional field
 	}
+
+	pConf, err := fromProtoPushConfig(conf.GetPushNotification())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert push config: %w", err)
+	}
+
 	result := &a2a.MessageSendConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
 		Blocking:            conf.GetBlocking(),
+		PushConfig:          pConf,
 	}
 	if conf.HistoryLength > 0 {
 		hl := int(conf.HistoryLength)
 		result.HistoryLength = &hl
-	}
-	if conf.GetPushNotification() != nil {
-		pConf, err := fromProtoPushConfig(conf.GetPushNotification())
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert push config: %w", err)
-		}
-		result.PushConfig = pConf
 	}
 	return result, nil
 }
@@ -171,18 +176,22 @@ func fromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, er
 	if err != nil {
 		return a2a.TaskQueryParams{}, fmt.Errorf("failed to extract task id: %w", err)
 	}
-	historyLength := int(req.GetHistoryLength())
-	return a2a.TaskQueryParams{
-		ID:            taskID,
-		HistoryLength: &historyLength,
-	}, nil
+	params := a2a.TaskQueryParams{
+		ID: taskID,
+	}
+	if req.GetHistoryLength() > 0 {
+		historyLength := int(req.GetHistoryLength())
+		params.HistoryLength = &historyLength
+	}
+	return params, nil
 }
 
 func fromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (a2a.TaskPushConfig, error) {
-	if req.GetConfig().GetPushNotificationConfig() == nil {
-		return a2a.TaskPushConfig{}, fmt.Errorf("push notification config is nil")
+	config := req.GetConfig()
+	if config == nil || config.GetPushNotificationConfig() == nil {
+		return a2a.TaskPushConfig{}, fmt.Errorf("invalid config")
 	}
-	pConf, err := fromProtoPushConfig(req.GetConfig().GetPushNotificationConfig())
+	pConf, err := fromProtoPushConfig(config.GetPushNotificationConfig())
 	if err != nil {
 		return a2a.TaskPushConfig{}, fmt.Errorf("failed to convert push config: %w", err)
 	}
@@ -268,9 +277,12 @@ func toProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := structpb.NewStruct(e.Metadata)
-		if err != nil {
-			return nil, err
+		var metadata *structpb.Struct
+		if e.Metadata != nil {
+			metadata, err = structpb.NewStruct(e.Metadata)
+			if err != nil {
+				return nil, err
+			}
 		}
 		resp.Payload = &a2apb.StreamResponse_StatusUpdate{StatusUpdate: &a2apb.TaskStatusUpdateEvent{
 			ContextId: e.ContextID,
@@ -284,9 +296,12 @@ func toProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := structpb.NewStruct(e.Metadata)
-		if err != nil {
-			return nil, err
+		var metadata *structpb.Struct
+		if e.Metadata != nil {
+			metadata, err = structpb.NewStruct(e.Metadata)
+			if err != nil {
+				return nil, err
+			}
 		}
 		resp.Payload = &a2apb.StreamResponse_ArtifactUpdate{
 			ArtifactUpdate: &a2apb.TaskArtifactUpdateEvent{
@@ -341,7 +356,6 @@ func toProtoMessages(msgs []a2a.Message) ([]*a2apb.Message, error) {
 	for i, msg := range msgs {
 		pMsg, err := toProtoMessage(&msg)
 		if err != nil {
-			// consider to continue so we could return converted messages + multierr
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
 		pMsgs[i] = pMsg
@@ -394,7 +408,6 @@ func toProtoParts(parts []a2a.Part) ([]*a2apb.Part, error) {
 	for i, part := range parts {
 		pPart, err := toProtoPart(part)
 		if err != nil {
-			// consider to continue so we could return converted parts + multierr
 			return nil, fmt.Errorf("failed to convert part: %w", err)
 		}
 		pParts[i] = pPart
@@ -437,16 +450,23 @@ func toProtoTaskState(state a2a.TaskState) a2apb.TaskState {
 }
 
 func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
-	message, err := toProtoMessage(status.Message)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert message: %w", err)
+	pStatus := &a2apb.TaskStatus{
+		State: toProtoTaskState(status.State),
 	}
 
-	return &a2apb.TaskStatus{
-		State:     toProtoTaskState(status.State),
-		Update:    message,
-		Timestamp: timestamppb.New(*status.Timestamp),
-	}, nil
+	if status.Message != nil {
+		message, err := toProtoMessage(status.Message)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert message for task status: %w", err)
+		}
+		pStatus.Update = message
+	}
+
+	if status.Timestamp != nil {
+		pStatus.Timestamp = timestamppb.New(*status.Timestamp)
+	}
+
+	return pStatus, nil
 }
 
 func toProtoArtifact(artifact a2a.Artifact) (*a2apb.Artifact, error) {
@@ -477,7 +497,6 @@ func toProtoArtifacts(artifacts []a2a.Artifact) ([]*a2apb.Artifact, error) {
 	for i, artifact := range artifacts {
 		pArtifact, err := toProtoArtifact(artifact)
 		if err != nil {
-			// consider to continue so we could return converted artifacts + multierr
 			return nil, fmt.Errorf("failed to convert artifact: %w", err)
 		}
 		result[i] = pArtifact
@@ -524,21 +543,26 @@ func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 }
 
 func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
-	if config == nil {
-		return nil, fmt.Errorf("config is nil")
+	if config == nil || config.Config == nil || config.Config.ID == "" {
+		return nil, fmt.Errorf("invalid config")
+	}
+
+	pConfig := &a2apb.PushNotificationConfig{
+		Id:    config.Config.ID,
+		Url:   config.Config.URL,
+		Token: config.Config.Token,
+	}
+
+	if config.Config.Auth != nil {
+		pConfig.Authentication = &a2apb.AuthenticationInfo{
+			Schemes:     config.Config.Auth.Schemes,
+			Credentials: config.Config.Auth.Credentials,
+		}
 	}
 
 	return &a2apb.TaskPushNotificationConfig{
-		Name: fmt.Sprintf("tasks/%s/pushConfigs/%s", config.TaskID, config.Config.ID),
-		PushNotificationConfig: &a2apb.PushNotificationConfig{
-			Id:    config.Config.ID,
-			Url:   config.Config.URL,
-			Token: config.Config.Token,
-			Authentication: &a2apb.AuthenticationInfo{
-				Schemes:     config.Config.Auth.Schemes,
-				Credentials: config.Config.Auth.Credentials,
-			},
-		},
+		Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s", config.TaskID, config.Config.ID),
+		PushNotificationConfig: pConfig,
 	}, nil
 }
 
