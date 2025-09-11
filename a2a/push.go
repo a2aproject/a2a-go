@@ -50,7 +50,7 @@ type DeleteTaskPushConfigParams struct {
 // TaskPushConfig is a container associating a push notification configuration with a specific task.
 type TaskPushConfig struct {
 	// Config is the push notification configuration for this task.
-	Config *PushConfig `json:"pushNotificationConfig" yaml:"pushNotificationConfig" mapstructure:"pushNotificationConfig"`
+	Config PushConfig `json:"pushNotificationConfig" yaml:"pushNotificationConfig" mapstructure:"pushNotificationConfig"`
 
 	// TaskID is the ID of the task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`

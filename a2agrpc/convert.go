@@ -161,17 +161,19 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 	if conf == nil {
 		return nil, nil // config is optional field
 	}
-
-	pConf, err := fromProtoPushConfig(conf.GetPushNotification())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
-
 	result := &a2a.MessageSendConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
 		Blocking:            conf.GetBlocking(),
-		PushConfig:          pConf,
 	}
+
+	if conf.GetPushNotification() != nil {
+		pConf, err := fromProtoPushConfig(conf.GetPushNotification())
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert push config: %w", err)
+		}
+		result.PushConfig = pConf
+	}
+
 	if conf.HistoryLength > 0 {
 		hl := int(conf.HistoryLength)
 		result.HistoryLength = &hl
@@ -210,7 +212,7 @@ func fromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 
 	return a2a.TaskPushConfig{
 		TaskID: taskID,
-		Config: pConf,
+		Config: *pConf,
 	}, nil
 }
 
@@ -551,7 +553,7 @@ func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 }
 
 func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
-	if config == nil || config.Config == nil || config.Config.ID == "" {
+	if config == nil || config.Config.ID == "" {
 		return nil, fmt.Errorf("invalid config")
 	}
 
@@ -569,7 +571,7 @@ func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 	}
 
 	return &a2apb.TaskPushNotificationConfig{
-		Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s", config.TaskID, config.Config.ID),
+		Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s", config.TaskID, pConfig.GetId()),
 		PushNotificationConfig: pConfig,
 	}, nil
 }

@@ -268,18 +268,18 @@ func TestFromProtoConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "config with no history length",
+				name: "config with unlimited history only",
 				in: &a2apb.SendMessageConfiguration{
 					HistoryLength: 0,
 				},
-				wantErr: true,
+				want: &a2a.MessageSendConfig{},
 			},
 			{
 				name: "config with no push notification",
 				in: &a2apb.SendMessageConfiguration{
 					PushNotification: nil,
 				},
-				wantErr: true,
+				want: &a2a.MessageSendConfig{},
 			},
 			{
 				name: "bad push config",
@@ -493,7 +493,7 @@ func TestFromProtoRequests(t *testing.T) {
 					Parent: "tasks/test",
 					Config: &a2apb.TaskPushNotificationConfig{PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"}},
 				},
-				want: a2a.TaskPushConfig{TaskID: "test", Config: &a2a.PushConfig{ID: "test-config"}},
+				want: a2a.TaskPushConfig{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
 			},
 			{
 				name: "nil config",
@@ -1010,7 +1010,7 @@ func TestToProtoConversion(t *testing.T) {
 				name: "full config",
 				config: &a2a.TaskPushConfig{
 					TaskID: "t1",
-					Config: &a2a.PushConfig{
+					Config: a2a.PushConfig{
 						ID:    "c1",
 						URL:   "http://a.com",
 						Token: "tok",
@@ -1037,7 +1037,7 @@ func TestToProtoConversion(t *testing.T) {
 				name: "config without auth",
 				config: &a2a.TaskPushConfig{
 					TaskID: "t1",
-					Config: &a2a.PushConfig{ID: "c1", URL: "http://a.com"},
+					Config: a2a.PushConfig{ID: "c1", URL: "http://a.com"},
 				},
 				want: &a2apb.TaskPushNotificationConfig{
 					Name: "tasks/t1/pushConfigs/c1",
@@ -1053,10 +1053,10 @@ func TestToProtoConversion(t *testing.T) {
 				wantErr: true,
 			},
 			{
-				name: "nil inner push config",
+				name: "empty inner push config",
 				config: &a2a.TaskPushConfig{
 					TaskID: "test-task",
-					Config: nil,
+					Config: a2a.PushConfig{},
 				},
 				wantErr: true,
 			},
@@ -1078,8 +1078,8 @@ func TestToProtoConversion(t *testing.T) {
 
 	t.Run("toProtoListTaskPushConfig", func(t *testing.T) {
 		configs := []a2a.TaskPushConfig{
-			{TaskID: "test-task", Config: &a2a.PushConfig{ID: "test-config1"}},
-			{TaskID: "test-task", Config: &a2a.PushConfig{ID: "test-config2"}},
+			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
+			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 		}
 		pConf1, _ := toProtoTaskPushConfig(&configs[0])
 		pConf2, _ := toProtoTaskPushConfig(&configs[1])
@@ -1107,7 +1107,7 @@ func TestToProtoConversion(t *testing.T) {
 			{
 				name: "conversion error",
 				configs: []a2a.TaskPushConfig{
-					{TaskID: "test-task", Config: nil},
+					{TaskID: "test-task", Config: a2a.PushConfig{}},
 				},
 				wantErr: true,
 			},
