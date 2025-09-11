@@ -106,7 +106,14 @@ func TestValidateParts(t *testing.T) {
 	}
 }
 
-func TestValidateMetaCircularReference(t *testing.T) {
+func TestValidateMetaRepeatedRefSuccess(t *testing.T) {
+	arr := make([]any, 1)
+	if err := validateMeta(map[string]any{"a": arr, "b": arr}); err != nil {
+		t.Fatalf("expected validateMeta() success, got %v", err)
+	}
+}
+
+func TestValidateMetaCircularRefFailure(t *testing.T) {
 	arr := make([]any, 1)
 	arr[0] = arr
 	if err := validateMeta(map[string]any{"a": arr}); !isCircularRefErr(err) {

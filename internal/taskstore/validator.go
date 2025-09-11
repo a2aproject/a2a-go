@@ -70,7 +70,7 @@ func validateMeta(meta map[string]any) error {
 	return validateMetaRecursive(meta, map[string]struct{}{})
 }
 
-func validateMetaRecursive(value any, seen map[string]struct{}) error {
+func validateMetaRecursive(value any, processing map[string]struct{}) error {
 	if value == nil {
 		return nil
 	}
@@ -81,14 +81,15 @@ func validateMetaRecursive(value any, seen map[string]struct{}) error {
 	}
 
 	key := fmt.Sprintf("%p", value)
-	if _, ok := seen[key]; ok {
+	if _, ok := processing[key]; ok {
 		return fmt.Errorf("circular reference in Metadata")
 	}
-	seen[key] = struct{}{}
+	processing[key] = struct{}{}
+	defer delete(processing, key)
 
 	if arr, ok := value.([]any); ok {
 		for _, elem := range arr {
-			if err := validateMetaRecursive(elem, seen); err != nil {
+			if err := validateMetaRecursive(elem, processing); err != nil {
 				return err
 			}
 		}
@@ -97,7 +98,7 @@ func validateMetaRecursive(value any, seen map[string]struct{}) error {
 
 	if m, ok := value.(map[string]any); ok {
 		for _, elem := range m {
-			if err := validateMetaRecursive(elem, seen); err != nil {
+			if err := validateMetaRecursive(elem, processing); err != nil {
 				return err
 			}
 		}
