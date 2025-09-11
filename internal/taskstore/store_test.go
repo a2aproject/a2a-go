@@ -82,13 +82,13 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 	task := &a2a.Task{
 		ID:        a2a.NewTaskID(),
 		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
-		Artifacts: []a2a.Artifact{{Name: "foo"}},
+		Artifacts: []*a2a.Artifact{&a2a.Artifact{Name: "foo"}},
 		Metadata:  make(map[string]any),
 	}
 	mustSave(t, store, task)
 
 	task.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
-	task.Artifacts[0] = a2a.Artifact{Name: "bar"}
+	task.Artifacts[0] = &a2a.Artifact{Name: "bar"}
 	task.Metadata[metaKey] = fmt.Sprintf("%v", task.Metadata["new"]) + "-modified"
 
 	got := mustGet(t, store, task.ID)
