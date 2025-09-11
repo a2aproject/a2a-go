@@ -133,6 +133,8 @@ const (
 	TaskStateWorking       TaskState = "working"
 )
 
+// Terminal returns true for states in which a Task becomes immutable, i.e. no further
+// changes to the Task are permitted.
 func (ts TaskState) Terminal() bool {
 	return ts == TaskStateCompleted ||
 		ts == TaskStateCanceled ||
