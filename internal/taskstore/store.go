@@ -37,6 +37,10 @@ func NewMem() *Mem {
 }
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
+	if err := validateTask(task); err != nil {
+		return err
+	}
+
 	copy, err := deepCopy(task)
 	if err != nil {
 		return err
