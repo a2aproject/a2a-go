@@ -12,25 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package taskupdate provides types and utilities for performing Task updates in response
+// to events produced by the AgentExecutor.
 package taskupdate
-
-import "github.com/a2aproject/a2a-go/a2a"
-
-// NewSubmittedTask is a utility for converting a Message sent by the user to a new Task
-// the Agent will be working on.
-func NewSubmittedTask(msg *a2a.Message) *a2a.Task {
-	history := make([]*a2a.Message, 1)
-	history[0] = msg
-
-	contextID := msg.ContextID
-	if len(contextID) == 0 {
-		contextID = a2a.NewContextID()
-	}
-
-	return &a2a.Task{
-		ID:        a2a.NewTaskID(),
-		ContextID: contextID,
-		Status:    a2a.TaskStatus{State: a2a.TaskStateSubmitted},
-		History:   history,
-	}
-}
