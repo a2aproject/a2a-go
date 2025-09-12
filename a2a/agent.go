@@ -91,7 +91,7 @@ type AgentCard struct {
 	// protocol.
 	// Clients should prefer this transport and URL combination when both are
 	// supported.
-	PreferredTransport string `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
+	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
 
 	// ProtocolVersion is the version of the A2A protocol this agent supports.
 	ProtocolVersion string `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
@@ -205,8 +205,7 @@ type AgentSkill struct {
 	// Name is a human-readable name for the skill.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 
-	// OutputModes is the set of supported output MIME types for this skill, overriding the agent's
-	// defaults.
+	// OutputModes is the set of supported output MIME types for this skill, overriding the agent's defaults.
 	OutputModes []string `json:"outputModes,omitempty" yaml:"outputModes,omitempty" mapstructure:"outputModes,omitempty"`
 
 	// Security is a map of schemes necessary for the agent to leverage this skill.
@@ -219,7 +218,8 @@ type AgentSkill struct {
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`
 }
 
-// TransportProtocol represents a subset of transport protocols an agent can support.
+// TransportProtocol represents a transport protocol which a client and an agent can use
+// for communication. Custom protocols are allowed and the type MUST NOT be treated as an enum.
 type TransportProtocol string
 
 const (

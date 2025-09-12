@@ -25,12 +25,18 @@ import (
 type Config struct {
 	// PushConfigs specifies the default push notification configurations to apply for every Task.
 	PushConfigs []a2a.PushConfig
-	// AcceptedOutputModes to pass as message send configuration to A2A server.
+	// AcceptedOutputModes are MIME types passed with every Client message and might be used by an agent
+	// to decide on the result format.
+	// For example, an Agent might declare a skill with OutputModes: ["application/json", "image/png"]
+	// and a Client that doesn't support images will pass AcceptedOutputModes: ["application/json"]
+	// to get a result in the desired format.
 	AcceptedOutputModes []string
 	// PreferredTransports is used for selecting the most appropriate communication protocol.
 	// The first transport from the list which is also supported by the server is going to be used
 	// to establish a connection. If no preference is provided the server ordering will be used.
-	PreferredTransports []string
+	// If there's no overlap in supported Transport Factory will return an error on Client
+	// creation attempt.
+	PreferredTransports []a2a.TransportProtocol
 }
 
 // Client represents a transport-agnostic implementation of A2A client.

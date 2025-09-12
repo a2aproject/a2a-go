@@ -26,7 +26,7 @@ import (
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
-	transports   map[string]TransportFactory
+	transports   map[a2a.TransportProtocol]TransportFactory
 }
 
 // CreateFromCard returns a Client configured to communicate with the agent described by
@@ -70,7 +70,7 @@ func WithConfig(c Config) FactoryOption {
 }
 
 // WithTransport enables the factory to creates clients for the provided protocol.
-func WithTransport(protocol string, factory TransportFactory) FactoryOption {
+func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
 		f.transports[protocol] = factory
 	})
@@ -99,7 +99,7 @@ var defaultOptions = []FactoryOption{WithGRPCTransport()}
 // NewFactory creates a new Factory applying the provided configurations.
 func NewFactory(options ...FactoryOption) *Factory {
 	f := &Factory{
-		transports:   make(map[string]TransportFactory),
+		transports:   make(map[a2a.TransportProtocol]TransportFactory),
 		interceptors: make([]CallInterceptor, 0),
 	}
 

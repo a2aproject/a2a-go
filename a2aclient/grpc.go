@@ -28,7 +28,7 @@ import (
 // enable support of gRPC-A2A communication.
 func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
 	return WithTransport(
-		string(a2a.TransportProtocolGRPC),
+		a2a.TransportProtocolGRPC,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
 			conn, err := grpc.NewClient(url, opts...)
 			if err != nil {
