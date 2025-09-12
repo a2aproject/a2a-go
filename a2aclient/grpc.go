@@ -41,13 +41,16 @@ func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
 
 // NewGRPCTransport exposes a method for direct A2A gRPC protocol handler.
 func NewGRPCTransport(conn *grpc.ClientConn) Transport {
-	return &grpcTransport{a2apb.NewA2AServiceClient(conn), conn}
+	return &grpcTransport{
+		client:      a2apb.NewA2AServiceClient(conn),
+		closeConnFn: func() error { return conn.Close() },
+	}
 }
 
 // grpcTransport implements Transport by delegating to a2apb.A2AServiceClient.
 type grpcTransport struct {
-	client a2apb.A2AServiceClient
-	conn   *grpc.ClientConn
+	client      a2apb.A2AServiceClient
+	closeConnFn func() error
 }
 
 // A2A protocol methods
@@ -97,5 +100,5 @@ func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error
 }
 
 func (c *grpcTransport) Destroy() error {
-	return c.conn.Close()
+	return c.closeConnFn()
 }
