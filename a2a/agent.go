@@ -30,6 +30,16 @@ type AgentCapabilities struct {
 	Streaming bool `json:"streaming,omitempty" yaml:"streaming,omitempty" mapstructure:"streaming,omitempty"`
 }
 
+// SecurityRequirements describes a set of security requirements that must be present on a request.
+// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
+// following requirements object needs to be created:
+//
+//	SecurityRequirements{
+//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
+//		SecuritySchemeName("mTLS"): {}
+//	}
+type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
+
 // AgentCard is a self-describing manifest for an agent. It provides essential
 // metadata including the agent's identity, capabilities, skills, supported
 // communication methods, and security requirements.
@@ -94,8 +104,13 @@ type AgentCard struct {
 	// Follows the OpenAPI 3.0 Security Requirement Object.
 	// This list can be seen as an OR of ANDs. Each object in the list describes one
 	// possible set of security requirements that must be present on a request.
-	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS."
-	Security []map[string][]string `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
+	//
+	// Security: []SecurityRequirements{
+	//		{"oauth2": SecuritySchemeScopes{"read"}},
+	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
+	// }
+	Security []SecurityRequirements `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.

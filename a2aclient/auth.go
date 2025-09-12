@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"sync"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // ErrCredentialNotFound is returned by CredentialsService if a credential for the provided
@@ -44,20 +46,22 @@ type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme string) (AuthCredential, error)
 }
 
+type SessionCredentials map[a2a.SecuritySchemeName]AuthCredential
+
 // InMemoryCredentialsStore implements CredentialsService.
 type InMemoryCredentialsStore struct {
 	mu          sync.RWMutex
-	credentials map[SessionID]map[string]AuthCredential
+	credentials map[SessionID]SessionCredentials
 }
 
 // NewInMemoryCredentialsStore initializes an InMemoryCredentialsStore.
 func NewInMemoryCredentialsStore() InMemoryCredentialsStore {
 	return InMemoryCredentialsStore{
-		credentials: make(map[SessionID]map[string]AuthCredential),
+		credentials: make(map[SessionID]SessionCredentials),
 	}
 }
 
-func (s *InMemoryCredentialsStore) Get(ctx context.Context, sid SessionID, scheme string) (AuthCredential, error) {
+func (s *InMemoryCredentialsStore) Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -74,12 +78,12 @@ func (s *InMemoryCredentialsStore) Get(ctx context.Context, sid SessionID, schem
 	return credential, nil
 }
 
-func (s *InMemoryCredentialsStore) Set(sid SessionID, scheme string, credential AuthCredential) {
+func (s *InMemoryCredentialsStore) Set(sid SessionID, scheme a2a.SecuritySchemeName, credential AuthCredential) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.credentials[sid]; !ok {
-		s.credentials[sid] = make(map[string]AuthCredential)
+		s.credentials[sid] = make(map[a2a.SecuritySchemeName]AuthCredential)
 	}
 	s.credentials[sid][scheme] = credential
 }
