@@ -29,7 +29,7 @@ import (
 func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
 	return WithTransport(
 		string(a2a.TransportProtocolGRPC),
-		TransportFactoryFn(func(ctx context.Context, url string, card a2a.AgentCard) (Transport, error) {
+		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
 			conn, err := grpc.NewClient(url, opts...)
 			if err != nil {
 				return nil, err
@@ -92,8 +92,8 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2a.Del
 	return ErrNotImplemented
 }
 
-func (c *grpcTransport) GetAgentCard(ctx context.Context) (a2a.AgentCard, error) {
-	return a2a.AgentCard{}, ErrNotImplemented
+func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return &a2a.AgentCard{}, ErrNotImplemented
 }
 
 func (c *grpcTransport) Destroy() error {

@@ -32,7 +32,7 @@ type Factory struct {
 
 // CreateFromCard returns a Client configured to communicate with the agent described by
 // the provided AgentCard or fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromCard(ctx context.Context, card a2a.AgentCard, opts ...FactoryOption) (Client, error) {
+func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (Client, error) {
 	if len(opts) > 0 {
 		extended := WithAdditionalOptions(*f, opts...)
 		return extended.CreateFromCard(ctx, card)

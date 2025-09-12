@@ -99,8 +99,8 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params a2a.DeleteTask
 	return ErrNotImplemented
 }
 
-func (c *Client) GetAgentCard(ctx context.Context) (a2a.AgentCard, error) {
-	return a2a.AgentCard{}, ErrNotImplemented
+func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return &a2a.AgentCard{}, ErrNotImplemented
 }
 
 func (c *Client) Destroy() error {

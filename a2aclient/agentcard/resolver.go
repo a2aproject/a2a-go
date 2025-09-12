@@ -38,13 +38,13 @@ type resolveRequest struct {
 
 // Resolve fetches an AgentCard from the provided URL.
 // By default fetches from the  /.well-known/agent-card.json path.
-func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (a2a.AgentCard, error) {
+func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.AgentCard, error) {
 	req := &resolveRequest{path: defaultAgentCardPath}
 	for _, o := range opts {
 		o(req)
 	}
 
-	return a2a.AgentCard{}, fmt.Errorf("not implemented")
+	return &a2a.AgentCard{}, fmt.Errorf("not implemented")
 }
 
 // WithPath makes Resolve fetch from the provided path relative to BaseURL.
