@@ -25,7 +25,6 @@ import (
 // Additional configurations can be applied at the moment of Client creation.
 type Factory struct {
 	config       Config
-	callbacks    []EventCallback
 	interceptors []CallInterceptor
 	transports   map[string]TransportFactory
 }
@@ -77,13 +76,6 @@ func WithTransport(protocol string, factory TransportFactory) FactoryOption {
 	})
 }
 
-// WithEventCallbacks attaches callbacks to clients created by the factory.
-func WithEventCallbacks(callbacks ...EventCallback) FactoryOption {
-	return factoryOptionFn(func(f *Factory) {
-		f.callbacks = append(f.callbacks, callbacks...)
-	})
-}
-
 // WithInterceptors attaches call interceptors to clients created by the factory.
 func WithInterceptors(interceptors ...CallInterceptor) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
@@ -108,7 +100,6 @@ var defaultOptions = []FactoryOption{WithGRPCTransport()}
 func NewFactory(options ...FactoryOption) *Factory {
 	f := &Factory{
 		transports:   make(map[string]TransportFactory),
-		callbacks:    make([]EventCallback, 0),
 		interceptors: make([]CallInterceptor, 0),
 	}
 
@@ -139,7 +130,6 @@ func WithAdditionalOptions(f Factory, opts ...FactoryOption) *Factory {
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
 		WithInterceptors(f.interceptors...),
-		WithEventCallbacks(f.callbacks...),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithTransport(k, v))

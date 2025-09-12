@@ -33,23 +33,13 @@ type Config struct {
 	PreferredTransports []string
 }
 
-// EventCallback can be attached to a Client for receiving Task update notifications.
-type EventCallback func(ctx context.Context, card a2a.AgentCard, event a2a.Event) error
-
 // Client represents a transport-agnostic implementation of A2A client.
 // The actual call is delegated to a specific Transport implementation.
 // CallInterceptors are applied before and after every protocol call.
-// EventCallbacks are notified about new Tasks, Messages and Task update events.
 type Client struct {
 	Config       Config
 	transport    Transport
 	interceptors []CallInterceptor
-	callbacks    []EventCallback
-}
-
-// AddEventCallback allows to attach an EventCallback to the client after creation.
-func (c *Client) AddEventCallback(ec EventCallback) {
-	c.callbacks = append(c.callbacks, ec)
 }
 
 // AddCallInterceptor allows to attach a CallInterceptor to the client after creation.
