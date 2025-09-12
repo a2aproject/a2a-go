@@ -80,7 +80,9 @@ func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
 		err = stream.Send(resp)
-		return status.Errorf(codes.Aborted, "failed to send response: %v", err)
+		if err != nil {
+			return status.Errorf(codes.Aborted, "failed to send response: %v", err)
+		}
 	}
 
 	return nil
@@ -124,7 +126,9 @@ func (h *GrpcHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
 		err = stream.Send(resp)
-		return status.Errorf(codes.Aborted, "failed to send response: %v", err)
+		if err != nil {
+			return status.Errorf(codes.Aborted, "failed to send response: %v", err)
+		}
 	}
 	return nil
 }
@@ -167,8 +171,8 @@ func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 }
 
 func (h *GrpcHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	// we don't have a way to get agent card yet
-	// h.handler.GetAgentCard(ctx, params)
+	// todo: add a way to get agent card
+	// h.cardProvider.GetAgentCard(ctx)
 	return nil, nil
 }
 

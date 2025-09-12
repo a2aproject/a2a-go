@@ -460,6 +460,10 @@ func toProtoTaskState(state a2a.TaskState) a2apb.TaskState {
 }
 
 func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
+	if status == (a2a.TaskStatus{}) {
+		return nil, fmt.Errorf("invalid status")
+	}
+
 	pStatus := &a2apb.TaskStatus{
 		State: toProtoTaskState(status.State),
 	}
@@ -524,32 +528,37 @@ func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 		return nil, fmt.Errorf("failed to convert status: %w", err)
 	}
 
-	artifacts, err := toProtoArtifacts(task.Artifacts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert artifacts: %w", err)
-	}
-
-	history, err := toProtoMessages(task.History)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert history: %w", err)
-	}
-
-	var metadata *structpb.Struct
-	if task.Metadata != nil {
-		metadata, err = structpb.NewStruct(task.Metadata)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
-		}
-	}
-
-	return &a2apb.Task{
+	result := &a2apb.Task{
 		Id:        string(task.ID),
 		ContextId: task.ContextID,
 		Status:    status,
-		Artifacts: artifacts,
-		History:   history,
-		Metadata:  metadata,
-	}, nil
+	}
+
+	if len(task.Artifacts) > 0 {
+		artifacts, err := toProtoArtifacts(task.Artifacts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert artifacts: %w", err)
+		}
+		result.Artifacts = artifacts
+	}
+
+	if len(task.History) > 0 {
+		history, err := toProtoMessages(task.History)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert history: %w", err)
+		}
+		result.History = history
+	}
+
+	if task.Metadata != nil {
+		metadata, err := structpb.NewStruct(task.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
+		}
+		result.Metadata = metadata
+	}
+
+	return result, nil
 }
 
 func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {

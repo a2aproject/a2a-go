@@ -1355,7 +1355,7 @@ func TestToProtoResponses(t *testing.T) {
 		pNow := timestamppb.New(now)
 		a2aMsg := &a2a.Message{ID: "test-message"}
 		pMsg, _ := toProtoMessage(a2aMsg)
-		a2aTask := &a2a.Task{ID: "test-task"}
+		a2aTask := &a2a.Task{ID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
 		pTask, _ := toProtoTask(a2aTask)
 		a2aStatusEvent := &a2a.TaskStatusUpdateEvent{
 			TaskID:    "test-task",
