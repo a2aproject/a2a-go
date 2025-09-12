@@ -59,27 +59,27 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 
 // A2A protocol methods
 
-func (c *Client) GetTask(ctx context.Context, query a2a.TaskQueryParams) (a2a.Task, error) {
-	return a2a.Task{}, ErrNotImplemented
+func (c *Client) GetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error) {
+	return &a2a.Task{}, ErrNotImplemented
 }
 
-func (c *Client) CancelTask(ctx context.Context, id a2a.TaskIDParams) (a2a.Task, error) {
-	return a2a.Task{}, ErrNotImplemented
+func (c *Client) CancelTask(ctx context.Context, id a2a.TaskIDParams) (*a2a.Task, error) {
+	return &a2a.Task{}, ErrNotImplemented
 }
 
 func (c *Client) SendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	return a2a.Task{}, ErrNotImplemented
+	return &a2a.Task{}, ErrNotImplemented
 }
 
 func (c *Client) ResubscribeToTask(ctx context.Context, id a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(a2a.Message{}, ErrNotImplemented)
+		yield(&a2a.Message{}, ErrNotImplemented)
 	}
 }
 
 func (c *Client) SendStreamingMessage(ctx context.Context, message a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(a2a.Message{}, ErrNotImplemented)
+		yield(&a2a.Message{}, ErrNotImplemented)
 	}
 }
 

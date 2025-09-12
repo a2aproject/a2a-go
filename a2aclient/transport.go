@@ -24,10 +24,10 @@ import (
 // A2AClient defines a transport-agnostic interface for making A2A requests.
 type Transport interface {
 	// GetTask calls the 'tasks/get' protocol method.
-	GetTask(ctx context.Context, query a2a.TaskQueryParams) (a2a.Task, error)
+	GetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error)
 
 	// CancelTask calls the 'tasks/cancel' protocol method.
-	CancelTask(ctx context.Context, id a2a.TaskIDParams) (a2a.Task, error)
+	CancelTask(ctx context.Context, id a2a.TaskIDParams) (*a2a.Task, error)
 
 	// SendMessage calls the 'message/send' protocol method (non-streaming).
 	SendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error)
