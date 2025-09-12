@@ -45,6 +45,13 @@ func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Q
 	return m.queues[taskId], nil
 }
 
+func (m *inMemoryManager) Get(ctx context.Context, taskId a2a.TaskID) (Queue, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	queue, ok := m.queues[taskId]
+	return queue, ok
+}
+
 func (m *inMemoryManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
