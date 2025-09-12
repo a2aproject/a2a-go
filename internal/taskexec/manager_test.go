@@ -125,12 +125,14 @@ func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error
 }
 
 func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
+	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed with: %v", err)
 	}
 }
 
 func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
+	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed with: %v", err)
 	}

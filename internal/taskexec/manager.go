@@ -26,7 +26,11 @@ import (
 )
 
 var (
-	ErrExecutionInProgress   = errors.New("task execution is already in progress")
+	// ErrExecutionInProgress is returned when a caller attempts to start an execution for
+	// a Task concurrently with another execution.
+	ErrExecutionInProgress = errors.New("task execution is already in progress")
+	// ErrCancelationInProgress is returned when a caller attempts to start an execution for
+	// a Task concurrently with its cancelation.
 	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
@@ -47,6 +51,7 @@ type Manager struct {
 	cancelations map[a2a.TaskID]*cancelation
 }
 
+// NewManager creates an initialized Manager instance.
 func NewManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
 		queueManager: queueManager,

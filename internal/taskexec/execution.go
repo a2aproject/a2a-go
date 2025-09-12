@@ -23,6 +23,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+// Execution represents an agent invocation in a context of the referenced task.
+// If the invocation was finished Result() will resolve immediately, otherwise it will block.
 type Execution struct {
 	tid        a2a.TaskID
 	controller Executor
@@ -46,6 +48,8 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 	}
 }
 
+// GetEvents subscribes to the events the agent is producing during an active Execution.
+// If the Execution was finished the sequence will be empty.
 func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		eventChan, err := e.Subscribe(ctx)
@@ -83,10 +87,13 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	}
 }
 
+// Result resolves immediately for the finished Execution or blocks until it is complete.
 func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
 }
 
+// Subscribe creates and returns a channel to which agent events will be written after processing.
+// The can be many subscriptions active at the same time. The channel is closed once Execution is finished.
 func (e *Execution) Subscribe(ctx context.Context) (chan a2a.Event, error) {
 	ch := make(chan a2a.Event)
 
@@ -103,6 +110,7 @@ func (e *Execution) Subscribe(ctx context.Context) (chan a2a.Event, error) {
 	}
 }
 
+// Unsubscribe removes the channel from the list of execution event subscribers.
 func (e *Execution) Unsubscribe(ctx context.Context, ch chan a2a.Event) error {
 	select {
 	case <-ctx.Done():
