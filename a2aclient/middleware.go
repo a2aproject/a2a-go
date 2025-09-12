@@ -21,8 +21,13 @@ import (
 // Used to store a CallContext in context.Context.
 type callContextKey struct{}
 
+// Used to store CallMeta in context.Context after all the interceptors were applied.
+type callMetaKey struct{}
+
 // CallMeta holds things like auth headers, signatures etc.
 // In jsonrpc it is passed as HTTP headers, in gRPC becomes a part of context.Context.
+// Custom protocol implementations can use CallMetaFrom to access this data and
+// perform the operations necessary for attaching it to the request.
 type CallMeta map[string]string
 
 // Request represents a transport-agnostic request to be sent to A2A server.
@@ -59,6 +64,13 @@ type CallContext struct {
 	SessionID SessionID
 }
 
+// CallMetaFrom allows Transport implementations to access CallMeta after all
+// the interceptors were applied.
+func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
+	meta, ok := ctx.Value(callMetaKey{}).(CallMeta)
+	return meta, ok
+}
+
 // CallContextFrom allows CallInterceptors to get additional information about the intercepted request.
 func CallContextFrom(ctx context.Context) (CallContext, bool) {
 	callCtx, ok := ctx.Value(callContextKey{}).(CallContext)
@@ -77,14 +89,14 @@ func WithSessionID(ctx context.Context, sid SessionID) context.Context {
 	return context.WithValue(ctx, callContextKey{}, callCtx)
 }
 
-// PassthroughCallInterceptor can be used by CallInterceptor implementers who don't need all methods.
+// PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
 // The struct can be embedded for providing a no-op implementation.
-type PassthroughCallInterceptor struct{}
+type PassthroughInterceptor struct{}
 
-func (PassthroughCallInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (PassthroughInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
 	return ctx, nil
 }
 
-func (PassthroughCallInterceptor) After(ctx context.Context, resp *Response) error {
+func (PassthroughInterceptor) After(ctx context.Context, resp *Response) error {
 	return nil
 }

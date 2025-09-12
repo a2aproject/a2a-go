@@ -37,7 +37,7 @@ type AuthCredential string
 // and attach them to the according to the security scheme described in a2a.AgentCard.
 // Credentials fetching is delegated to CredentialsService.
 type AuthInterceptor struct {
-	PassthroughCallInterceptor
+	PassthroughInterceptor
 	Service CredentialsService
 }
 
