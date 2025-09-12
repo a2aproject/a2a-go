@@ -30,6 +30,16 @@ type AgentCapabilities struct {
 	Streaming bool `json:"streaming,omitempty" yaml:"streaming,omitempty" mapstructure:"streaming,omitempty"`
 }
 
+// SecurityRequirements describes a set of security requirements that must be present on a request.
+// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
+// following requirements object needs to be created:
+//
+//	SecurityRequirements{
+//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
+//		SecuritySchemeName("mTLS"): {}
+//	}
+type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
+
 // AgentCard is a self-describing manifest for an agent. It provides essential
 // metadata including the agent's identity, capabilities, skills, supported
 // communication methods, and security requirements.
@@ -81,7 +91,7 @@ type AgentCard struct {
 	// protocol.
 	// Clients should prefer this transport and URL combination when both are
 	// supported.
-	PreferredTransport string `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
+	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
 
 	// ProtocolVersion is the version of the A2A protocol this agent supports.
 	ProtocolVersion string `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
@@ -94,8 +104,13 @@ type AgentCard struct {
 	// Follows the OpenAPI 3.0 Security Requirement Object.
 	// This list can be seen as an OR of ANDs. Each object in the list describes one
 	// possible set of security requirements that must be present on a request.
-	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS."
-	Security []map[string][]string `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
+	//
+	// Security: []SecurityRequirements{
+	//		{"oauth2": SecuritySchemeScopes{"read"}},
+	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
+	// }
+	Security []SecurityRequirements `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
@@ -190,8 +205,7 @@ type AgentSkill struct {
 	// Name is a human-readable name for the skill.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 
-	// OutputModes is the set of supported output MIME types for this skill, overriding the agent's
-	// defaults.
+	// OutputModes is the set of supported output MIME types for this skill, overriding the agent's defaults.
 	OutputModes []string `json:"outputModes,omitempty" yaml:"outputModes,omitempty" mapstructure:"outputModes,omitempty"`
 
 	// Security is a map of schemes necessary for the agent to leverage this skill.
@@ -204,7 +218,8 @@ type AgentSkill struct {
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`
 }
 
-// TransportProtocol represents a subset of transport protocols an agent can support.
+// TransportProtocol represents a transport protocol which a client and an agent can use
+// for communication. Custom protocols are allowed and the type MUST NOT be treated as an enum.
 type TransportProtocol string
 
 const (
