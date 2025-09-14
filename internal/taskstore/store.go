@@ -29,6 +29,11 @@ type Mem struct {
 	tasks map[a2a.TaskID]*a2a.Task
 }
 
+func init() {
+	gob.Register(map[string]any{})
+	gob.Register([]any{})
+}
+
 // NewMem creates an empty Mem store.
 func NewMem() *Mem {
 	return &Mem{
