@@ -20,17 +20,24 @@ import (
 	"fmt"
 )
 
+// SecuritySchemeName is a string used to describe a security scheme in AgentCard.SecuritySchemes
+// and reference it the AgentCard.Security requirements.
+type SecuritySchemeName string
+
+// SecuritySchemeScopes is a list of scopes a security credential must be covering.
+type SecuritySchemeScopes []string
+
 // NamedSecuritySchemes is a declaration of the security schemes available to authorize requests.
 // The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
-type NamedSecuritySchemes map[string]SecurityScheme
+type NamedSecuritySchemes map[SecuritySchemeName]SecurityScheme
 
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
-	var schemes map[string]json.RawMessage
+	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
 		return err
 	}
 
-	result := make(map[string]SecurityScheme, len(schemes))
+	result := make(map[SecuritySchemeName]SecurityScheme, len(schemes))
 	for k, v := range schemes {
 		type typedScheme struct {
 			Type string `json:"type"`
