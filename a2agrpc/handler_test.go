@@ -246,11 +246,23 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-func startTestServer(t *testing.T, handler a2asrv.RequestHandler) a2apb.A2AServiceClient {
+type mockAgentCardProducer struct {
+	card *a2a.AgentCard
+}
+
+func (m *mockAgentCardProducer) Card() *a2a.AgentCard {
+	return m.card
+}
+
+var defaultMockCardProducer = &mockAgentCardProducer{
+	card: nil,
+}
+
+func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	grpcHandler := NewHandler(nil, handler)
+	grpcHandler := NewHandler(cardProducer, handler)
 	grpcHandler.RegisterWith(s)
 
 	go func() {
@@ -288,7 +300,7 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name      string
@@ -370,7 +382,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -433,7 +445,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 func TestGrpcHandler_SendMessage(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -539,7 +551,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	taskID := a2a.TaskID("stream-task-123")
 	msgID := "stream-req-1"
@@ -694,7 +706,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 func TestGrpcHandler_TaskSubscription(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 	taskID := a2a.TaskID("resub-task-456")
 	tests := []struct {
 		name       string
@@ -811,7 +823,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -901,7 +913,7 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -984,7 +996,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -1069,7 +1081,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler)
+	client := startTestServer(t, mockHandler, defaultMockCardProducer)
 
 	tests := []struct {
 		name       string
@@ -1132,6 +1144,83 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 				}
 				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedDeleteTaskPushConfigParams, tt.wantParams) {
 					t.Errorf("OnDeleteTaskPushConfig() params got = %v, want %v", mockHandler.capturedDeleteTaskPushConfigParams, tt.wantParams)
+				}
+			}
+		})
+	}
+}
+
+func TestGrpcHandler_GetAgentCard(t *testing.T) {
+	ctx := t.Context()
+
+	a2aCard := &a2a.AgentCard{
+		ProtocolVersion: "1.0",
+		Name:            "Test Agent",
+	}
+	pCard, err := toProtoAgentCard(a2aCard)
+	if err != nil {
+		t.Fatalf("failed to convert agent card for test setup: %v", err)
+	}
+
+	badCard := &a2a.AgentCard{
+		Capabilities: a2a.AgentCapabilities{
+			Extensions: []a2a.AgentExtension{{Params: map[string]any{"bad": func() {}}}},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		cardProducer a2asrv.AgentCardProducer
+		want         *a2apb.AgentCard
+		wantErr      bool
+		errCode      codes.Code
+	}{
+		{
+			name:         "success",
+			cardProducer: &mockAgentCardProducer{card: a2aCard},
+			want:         pCard,
+		},
+		{
+			name:         "nil producer",
+			cardProducer: nil,
+			wantErr:      true,
+			errCode:      codes.Unimplemented,
+		},
+		{
+			name:         "producer returns nil card",
+			cardProducer: &mockAgentCardProducer{card: nil},
+			wantErr:      true,
+			errCode:      codes.Internal,
+		},
+		{
+			name:         "producer returns bad card",
+			cardProducer: &mockAgentCardProducer{card: badCard},
+			wantErr:      true,
+			errCode:      codes.Internal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := startTestServer(t, defaultMockHandler, tt.cardProducer)
+			resp, err := client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("GetAgentCard() expected error, got nil")
+				}
+				st, ok := status.FromError(err)
+				if !ok {
+					t.Fatalf("GetAgentCard() error is not a gRPC status error: %v", err)
+				}
+				if st.Code() != tt.errCode {
+					t.Errorf("GetAgentCard() got error code %v, want %v", st.Code(), tt.errCode)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("GetAgentCard() got unexpected error: %v", err)
+				}
+				if !proto.Equal(resp, tt.want) {
+					t.Fatalf("GetAgentCard() got = %v, want %v", resp, tt.want)
 				}
 			}
 		})

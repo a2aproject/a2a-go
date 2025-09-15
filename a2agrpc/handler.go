@@ -53,17 +53,17 @@ func (h *GrpcHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 
-	result, err := h.handler.OnSendMessage(ctx, params)
+	resp, err := h.handler.OnSendMessage(ctx, params)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
 
-	resp, err := toProtoSendMessageResponse(result)
+	result, err := toProtoSendMessageResponse(resp)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert response: %v", err)
 	}
 
-	return resp, nil
+	return result, nil
 }
 
 func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
@@ -101,7 +101,11 @@ func (h *GrpcHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
-	return toProtoTask(&task)
+	result, err := toProtoTask(&task)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
+	}
+	return result, nil
 }
 
 func (h *GrpcHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
@@ -113,7 +117,11 @@ func (h *GrpcHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
-	return toProtoTask(&task)
+	result, err := toProtoTask(&task)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
+	}
+	return result, nil
 }
 
 func (h *GrpcHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
@@ -146,7 +154,11 @@ func (h *GrpcHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
-	return toProtoTaskPushConfig(&config)
+	result, err := toProtoTaskPushConfig(&config)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
+	}
+	return result, nil
 }
 
 func (h *GrpcHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
@@ -158,7 +170,11 @@ func (h *GrpcHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
-	return toProtoTaskPushConfig(&config)
+	result, err := toProtoTaskPushConfig(&config)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
+	}
+	return result, nil
 }
 
 func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
@@ -171,12 +187,23 @@ func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
 	}
-	return toProtoListTaskPushConfig(configs)
+	result, err := toProtoListTaskPushConfig(configs)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert list of push configs: %v", err)
+	}
+	return result, nil
 }
 
 func (h *GrpcHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
+	if h.cardProducer == nil {
+		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
+	}
 	card := h.cardProducer.Card()
-	return toProtoAgentCard(card)
+	result, err := toProtoAgentCard(card)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert agent card: %v", err)
+	}
+	return result, err
 }
 
 func (h *GrpcHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
