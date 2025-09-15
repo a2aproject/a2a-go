@@ -98,6 +98,14 @@ func (OpenIDConnectSecurityScheme) isSecurityScheme() {}
 func (MutualTLSSecurityScheme) isSecurityScheme()     {}
 func (OAuth2SecurityScheme) isSecurityScheme()        {}
 
+func init() {
+	gob.Register(APIKeySecurityScheme{})
+	gob.Register(HTTPAuthSecurityScheme{})
+	gob.Register(OpenIDConnectSecurityScheme{})
+	gob.Register(MutualTLSSecurityScheme{})
+	gob.Register(OAuth2SecurityScheme{})
+}
+
 // APIKeySecurityScheme defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
 	// An optional description for the security scheme.
@@ -278,6 +286,13 @@ func (ClientCredentialsOAuthFlow) isOAuthFlows() {}
 func (ImplicitOAuthFlow) isOAuthFlows()          {}
 func (PasswordOAuthFlow) isOAuthFlows()          {}
 
+func init() {
+	gob.Register(AuthorizationCodeOAuthFlow{})
+	gob.Register(ClientCredentialsOAuthFlow{})
+	gob.Register(ImplicitOAuthFlow{})
+	gob.Register(PasswordOAuthFlow{})
+}
+
 // OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.
 type OpenIDConnectSecurityScheme struct {
 	// Description is an optional description for the security scheme.
@@ -307,17 +322,4 @@ type PasswordOAuthFlow struct {
 
 	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
-}
-
-func init() {
-	gob.Register(APIKeySecurityScheme{})
-	gob.Register(HTTPAuthSecurityScheme{})
-	gob.Register(OpenIDConnectSecurityScheme{})
-	gob.Register(MutualTLSSecurityScheme{})
-	gob.Register(OAuth2SecurityScheme{})
-
-	gob.Register(AuthorizationCodeOAuthFlow{})
-	gob.Register(ClientCredentialsOAuthFlow{})
-	gob.Register(ImplicitOAuthFlow{})
-	gob.Register(PasswordOAuthFlow{})
 }
