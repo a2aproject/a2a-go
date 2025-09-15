@@ -29,15 +29,19 @@ import (
 
 type GrpcHandler struct {
 	a2apb.UnimplementedA2AServiceServer
-	handler a2asrv.RequestHandler
+	cardProducer a2asrv.AgentCardProducer
+	handler      a2asrv.RequestHandler
 }
 
 func (h *GrpcHandler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
-func NewHandler(handler a2asrv.RequestHandler) *GrpcHandler {
-	return &GrpcHandler{handler: handler}
+func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GrpcHandler {
+	return &GrpcHandler{
+		cardProducer: cardProducer,
+		handler:      handler,
+	}
 }
 
 func (h *GrpcHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
@@ -171,9 +175,8 @@ func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 }
 
 func (h *GrpcHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	// todo: add a way to get agent card
-	// h.cardProvider.GetAgentCard(ctx)
-	return nil, nil
+	card := h.cardProducer.Card()
+	return toProtoAgentCard(card)
 }
 
 func (h *GrpcHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {

@@ -70,7 +70,7 @@ var defaultMockHandler = &mockRequestHandler{
 			ContextID: params.Message.ContextID,
 			Status:    a2a.TaskStatus{State: a2a.TaskStateSubmitted},
 		}
-		statusUpdate := a2a.NewStatusUpdateEvent(*task, a2a.TaskStateWorking, nil)
+		statusUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil)
 		finalMessage := &a2a.Message{
 			ID:     fmt.Sprintf("%s-response", params.Message.ID),
 			TaskID: taskID,
@@ -99,7 +99,7 @@ var defaultMockHandler = &mockRequestHandler{
 			ContextID: "resubscribe-context",
 			Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
 		}
-		statusUpdate := a2a.NewStatusUpdateEvent(*task, a2a.TaskStateCompleted, nil)
+		statusUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil)
 		statusUpdate.Final = true
 		events := []a2a.Event{task, statusUpdate}
 
@@ -250,7 +250,7 @@ func startTestServer(t *testing.T, handler a2asrv.RequestHandler) a2apb.A2AServi
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	grpcHandler := NewHandler(handler)
+	grpcHandler := NewHandler(nil, handler)
 	grpcHandler.RegisterWith(s)
 
 	go func() {

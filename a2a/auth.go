@@ -98,14 +98,6 @@ func (OpenIDConnectSecurityScheme) isSecurityScheme() {}
 func (MutualTLSSecurityScheme) isSecurityScheme()     {}
 func (OAuth2SecurityScheme) isSecurityScheme()        {}
 
-func init() {
-	gob.Register(APIKeySecurityScheme{})
-	gob.Register(HTTPAuthSecurityScheme{})
-	gob.Register(OpenIDConnectSecurityScheme{})
-	gob.Register(MutualTLSSecurityScheme{})
-	gob.Register(OAuth2SecurityScheme{})
-}
-
 // APIKeySecurityScheme defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
 	// An optional description for the security scheme.
@@ -241,22 +233,15 @@ func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "oauth2", wrapped: wrapped(s)})
 }
 
-// OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
-type OAuthFlows struct {
-	// AuthorizationCode is a configuration for the OAuth Authorization Code flow.
-	// Previously called accessCode in OpenAPI 2.0.
-	AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode,omitempty" yaml:"authorizationCode,omitempty" mapstructure:"authorizationCode,omitempty"`
-
-	// ClientCredentials is a configuration for the OAuth Client Credentials flow. Previously called
-	// application in OpenAPI 2.0.
-	ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty" mapstructure:"clientCredentials,omitempty"`
-
-	// Implicit is a configuration for the OAuth Implicit flow.
-	Implicit *ImplicitOAuthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty" mapstructure:"implicit,omitempty"`
-
-	// Password is a configuration for the OAuth Resource Owner Password flow.
-	Password *PasswordOAuthFlow `json:"password,omitempty" yaml:"password,omitempty" mapstructure:"password,omitempty"`
+// OAuthFlows  is a sealed discriminated type union for supported OAuth 2.0 flows.
+type OAuthFlows interface {
+	isOAuthFlows()
 }
+
+func (AuthorizationCodeOAuthFlow) isOAuthFlows() {}
+func (ClientCredentialsOAuthFlow) isOAuthFlows() {}
+func (ImplicitOAuthFlow) isOAuthFlows()          {}
+func (PasswordOAuthFlow) isOAuthFlows()          {}
 
 // OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.
 type OpenIDConnectSecurityScheme struct {
@@ -287,4 +272,17 @@ type PasswordOAuthFlow struct {
 
 	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
+}
+
+func init() {
+	gob.Register(APIKeySecurityScheme{})
+	gob.Register(HTTPAuthSecurityScheme{})
+	gob.Register(OpenIDConnectSecurityScheme{})
+	gob.Register(MutualTLSSecurityScheme{})
+	gob.Register(OAuth2SecurityScheme{})
+
+	gob.Register(AuthorizationCodeOAuthFlow{})
+	gob.Register(ClientCredentialsOAuthFlow{})
+	gob.Register(ImplicitOAuthFlow{})
+	gob.Register(PasswordOAuthFlow{})
 }

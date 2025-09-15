@@ -1268,6 +1268,383 @@ func TestToProtoConversion(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("toProtoAgentCard", func(t *testing.T) {
+		a2aCard := &a2a.AgentCard{
+			ProtocolVersion:    "1.0",
+			Name:               "Test Agent",
+			Description:        "An agent for testing.",
+			URL:                "https://example.com/agent",
+			PreferredTransport: a2a.TransportProtocolGRPC,
+			AdditionalInterfaces: []a2a.AgentInterface{
+				{Transport: string(a2a.TransportProtocolJSONRPC), URL: "https://example.com/agent/jsonrpc"},
+			},
+			Provider: &a2a.AgentProvider{
+				Org: "Test Org",
+				URL: "https://example.com/org",
+			},
+			Version:          "0.1.0",
+			DocumentationURL: "https://example.com/docs",
+			Capabilities: a2a.AgentCapabilities{
+				Streaming:         true,
+				PushNotifications: true,
+				Extensions: []a2a.AgentExtension{
+					{URI: "ext-uri", Description: "ext-desc", Required: true, Params: map[string]any{"key": "val"}},
+				},
+			},
+			SecuritySchemes: a2a.NamedSecuritySchemes{
+				"apiKey": a2a.APIKeySecurityScheme{
+					Name:        "X-API-KEY",
+					In:          a2a.APIKeySecuritySchemeInHeader,
+					Description: "API Key",
+				},
+				"oauth2": a2a.OAuth2SecurityScheme{
+					Description: "OAuth2",
+					Flows: a2a.AuthorizationCodeOAuthFlow{
+						AuthorizationURL: "https://example.com/auth",
+						TokenURL:         "https://example.com/token",
+						Scopes:           map[string]string{"read": "read scope"},
+					},
+				},
+			},
+			Security: []a2a.SecurityRequirements{
+				{"apiKey": {}},
+				{"oauth2": {"read"}},
+			},
+			DefaultInputModes:  []string{"text/plain"},
+			DefaultOutputModes: []string{"text/plain"},
+			Skills: []a2a.AgentSkill{
+				{
+					ID:          "skill1",
+					Name:        "Test Skill",
+					Description: "A skill for testing.",
+					Tags:        []string{"test"},
+					Examples:    []string{"do a test"},
+					InputModes:  []string{"text/markdown"},
+					OutputModes: []string{"text/markdown"},
+				},
+			},
+			SupportsAuthenticatedExtendedCard: true,
+		}
+
+		extParams, _ := structpb.NewStruct(map[string]any{"key": "val"})
+		pCard := &a2apb.AgentCard{
+			ProtocolVersion:    "1.0",
+			Name:               "Test Agent",
+			Description:        "An agent for testing.",
+			Url:                "https://example.com/agent",
+			PreferredTransport: string(a2a.TransportProtocolGRPC),
+			AdditionalInterfaces: []*a2apb.AgentInterface{
+				{Transport: string(a2a.TransportProtocolJSONRPC), Url: "https://example.com/agent/jsonrpc"},
+			},
+			Provider: &a2apb.AgentProvider{
+				Organization: "Test Org",
+				Url:          "https://example.com/org",
+			},
+			Version:          "0.1.0",
+			DocumentationUrl: "https://example.com/docs",
+			Capabilities: &a2apb.AgentCapabilities{
+				Streaming:         true,
+				PushNotifications: true,
+				Extensions: []*a2apb.AgentExtension{
+					{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
+				},
+			},
+			SecuritySchemes: map[string]*a2apb.SecurityScheme{
+				"apiKey": {
+					Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
+						ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
+							Name:        "X-API-KEY",
+							Location:    string(a2a.APIKeySecuritySchemeInHeader),
+							Description: "API Key",
+						},
+					},
+				},
+				"oauth2": {
+					Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
+						Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
+							Description: "OAuth2",
+							Flows: &a2apb.OAuthFlows{
+								Flow: &a2apb.OAuthFlows_AuthorizationCode{
+									AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+										AuthorizationUrl: "https://example.com/auth",
+										TokenUrl:         "https://example.com/token",
+										Scopes:           map[string]string{"read": "read scope"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Security: []*a2apb.Security{
+				{Schemes: map[string]*a2apb.StringList{"apiKey": {List: []string{}}}},
+				{Schemes: map[string]*a2apb.StringList{"oauth2": {List: []string{"read"}}}},
+			},
+			DefaultInputModes:  []string{"text/plain"},
+			DefaultOutputModes: []string{"text/plain"},
+			Skills: []*a2apb.AgentSkill{
+				{
+					Id:          "skill1",
+					Name:        "Test Skill",
+					Description: "A skill for testing.",
+					Tags:        []string{"test"},
+					Examples:    []string{"do a test"},
+					InputModes:  []string{"text/markdown"},
+					OutputModes: []string{"text/markdown"},
+				},
+			},
+			SupportsAuthenticatedExtendedCard: true,
+		}
+
+		tests := []struct {
+			name    string
+			card    *a2a.AgentCard
+			want    *a2apb.AgentCard
+			wantErr bool
+		}{
+			{
+				name: "success",
+				card: a2aCard,
+				want: pCard,
+			},
+			{
+				name:    "nil card",
+				card:    nil,
+				wantErr: true,
+			},
+			{
+				name: "bad capabilities",
+				card: &a2a.AgentCard{
+					Capabilities: a2a.AgentCapabilities{
+						Extensions: []a2a.AgentExtension{
+							{Params: map[string]any{"bad": func() {}}},
+						},
+					},
+				},
+				wantErr: true,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := toProtoAgentCard(tt.card)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("toProtoAgentCard() error = %v, wantErr %v", err, tt.wantErr)
+					return
+				}
+				if !tt.wantErr {
+					if !proto.Equal(got, tt.want) {
+						t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
+						if !proto.Equal(got, tt.want) {
+							t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
+						}
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("toProtoOAuthFlows", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			flows   a2a.OAuthFlows
+			want    *a2apb.OAuthFlows
+			wantErr bool
+		}{
+			{
+				name: "authorization code flow",
+				flows: a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://auth.com/auth",
+					TokenURL:         "https://auth.com/token",
+					RefreshURL:       "https://auth.com/refresh",
+					Scopes:           map[string]string{"read": "read data"},
+				},
+				want: &a2apb.OAuthFlows{
+					Flow: &a2apb.OAuthFlows_AuthorizationCode{
+						AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+							AuthorizationUrl: "https://auth.com/auth",
+							TokenUrl:         "https://auth.com/token",
+							RefreshUrl:       "https://auth.com/refresh",
+							Scopes:           map[string]string{"read": "read data"},
+						},
+					},
+				},
+			},
+			{
+				name: "client credentials flow",
+				flows: a2a.ClientCredentialsOAuthFlow{
+					TokenURL:   "https://auth.com/token",
+					RefreshURL: "https://auth.com/refresh",
+					Scopes:     map[string]string{"write": "write data"},
+				},
+				want: &a2apb.OAuthFlows{
+					Flow: &a2apb.OAuthFlows_ClientCredentials{
+						ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
+							TokenUrl:   "https://auth.com/token",
+							RefreshUrl: "https://auth.com/refresh",
+							Scopes:     map[string]string{"write": "write data"},
+						},
+					},
+				},
+			},
+			{
+				name: "implicit flow",
+				flows: a2a.ImplicitOAuthFlow{
+					AuthorizationURL: "https://auth.com/auth",
+					RefreshURL:       "https://auth.com/refresh",
+					Scopes:           map[string]string{"profile": "read profile"},
+				},
+				want: &a2apb.OAuthFlows{
+					Flow: &a2apb.OAuthFlows_Implicit{
+						Implicit: &a2apb.ImplicitOAuthFlow{
+							AuthorizationUrl: "https://auth.com/auth",
+							RefreshUrl:       "https://auth.com/refresh",
+							Scopes:           map[string]string{"profile": "read profile"},
+						},
+					},
+				},
+			},
+			{
+				name: "password flow",
+				flows: a2a.PasswordOAuthFlow{
+					TokenURL:   "https://auth.com/token",
+					RefreshURL: "https://auth.com/refresh",
+					Scopes:     map[string]string{"user": "user info"},
+				},
+				want: &a2apb.OAuthFlows{
+					Flow: &a2apb.OAuthFlows_Password{
+						Password: &a2apb.PasswordOAuthFlow{
+							TokenUrl:   "https://auth.com/token",
+							RefreshUrl: "https://auth.com/refresh",
+							Scopes:     map[string]string{"user": "user info"},
+						},
+					},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := toProtoOAuthFlows(tt.flows)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("toProtoOAuthFlows() error = %v, wantErr %v", err, tt.wantErr)
+					return
+				}
+				if !tt.wantErr {
+					if !proto.Equal(got, tt.want) {
+						t.Errorf("toProtoOAuthFlows() got = %v, want %v", got, tt.want)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("toProtoSecurityScheme", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			scheme  a2a.SecurityScheme
+			want    *a2apb.SecurityScheme
+			wantErr bool
+		}{
+			{
+				name: "api key scheme",
+				scheme: a2a.APIKeySecurityScheme{
+					Name:        "X-API-KEY",
+					In:          a2a.APIKeySecuritySchemeInHeader,
+					Description: "API Key",
+				},
+				want: &a2apb.SecurityScheme{
+					Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
+						ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
+							Name:        "X-API-KEY",
+							Location:    string(a2a.APIKeySecuritySchemeInHeader),
+							Description: "API Key",
+						},
+					},
+				},
+			},
+			{
+				name: "http auth scheme",
+				scheme: a2a.HTTPAuthSecurityScheme{
+					Scheme:       "Bearer",
+					BearerFormat: "JWT",
+					Description:  "HTTP Bearer",
+				},
+				want: &a2apb.SecurityScheme{
+					Scheme: &a2apb.SecurityScheme_HttpAuthSecurityScheme{
+						HttpAuthSecurityScheme: &a2apb.HTTPAuthSecurityScheme{
+							Scheme:       "Bearer",
+							BearerFormat: "JWT",
+							Description:  "HTTP Bearer",
+						},
+					},
+				},
+			},
+			{
+				name: "openid connect scheme",
+				scheme: a2a.OpenIDConnectSecurityScheme{
+					OpenIDConnectURL: "https://oidc.com/.well-known",
+					Description:      "OIDC",
+				},
+				want: &a2apb.SecurityScheme{
+					Scheme: &a2apb.SecurityScheme_OpenIdConnectSecurityScheme{
+						OpenIdConnectSecurityScheme: &a2apb.OpenIdConnectSecurityScheme{
+							OpenIdConnectUrl: "https://oidc.com/.well-known",
+							Description:      "OIDC",
+						},
+					},
+				},
+			},
+			{
+				name:   "mutual tls scheme",
+				scheme: a2a.MutualTLSSecurityScheme{},
+				want:   nil, // This is expected to return nil, nil
+			},
+			{
+				name: "oauth2 scheme",
+				scheme: a2a.OAuth2SecurityScheme{
+					Description: "OAuth2",
+					Flows: a2a.AuthorizationCodeOAuthFlow{
+						AuthorizationURL: "https://auth.com/auth",
+						TokenURL:         "https://auth.com/token",
+						Scopes:           map[string]string{"read": "read data"},
+					},
+				},
+				want: &a2apb.SecurityScheme{
+					Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
+						Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
+							Description: "OAuth2",
+							Flows: &a2apb.OAuthFlows{
+								Flow: &a2apb.OAuthFlows_AuthorizationCode{
+									AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+										AuthorizationUrl: "https://auth.com/auth",
+										TokenUrl:         "https://auth.com/token",
+										Scopes:           map[string]string{"read": "read data"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := toProtoSecurityScheme(tt.scheme)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("toProtoSecurityScheme() error = %v, wantErr %v", err, tt.wantErr)
+					return
+				}
+				if !tt.wantErr {
+					if !proto.Equal(got, tt.want) {
+						t.Errorf("toProtoSecurityScheme() got = %v, want %v", got, tt.want)
+					}
+				}
+			})
+		}
+	})
 }
 
 func TestToProtoResponses(t *testing.T) {

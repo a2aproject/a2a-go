@@ -599,3 +599,250 @@ func toProtoListTaskPushConfig(configs []a2a.TaskPushConfig) (*a2apb.ListTaskPus
 		NextPageToken: "", // todo: add pagination
 	}, nil
 }
+
+func toProtoAdditionalInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentInterface {
+	pInterfaces := make([]*a2apb.AgentInterface, len(interfaces))
+	for i, iface := range interfaces {
+		pInterfaces[i] = &a2apb.AgentInterface{
+			Transport: string(iface.Transport),
+			Url:       iface.URL,
+		}
+	}
+	return pInterfaces
+}
+
+func toProtoAgentProvider(provider *a2a.AgentProvider) *a2apb.AgentProvider {
+	if provider == nil {
+		return nil
+	}
+	return &a2apb.AgentProvider{
+		Organization: provider.Org,
+		Url:          provider.URL,
+	}
+}
+
+func toProtoAgentExtensions(extensions []a2a.AgentExtension) ([]*a2apb.AgentExtension, error) {
+	pExtensions := make([]*a2apb.AgentExtension, len(extensions))
+	for i, ext := range extensions {
+		params, err := structpb.NewStruct(ext.Params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert extension params: %w", err)
+		}
+		pExtensions[i] = &a2apb.AgentExtension{
+			Uri:         ext.URI,
+			Description: ext.Description,
+			Required:    ext.Required,
+			Params:      params,
+		}
+	}
+	return pExtensions, nil
+}
+
+func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabilities, error) {
+	result := &a2apb.AgentCapabilities{
+		PushNotifications: capabilities.PushNotifications,
+		Streaming:         capabilities.Streaming,
+	}
+
+	if len(capabilities.Extensions) > 0 {
+		extensions, err := toProtoAgentExtensions(capabilities.Extensions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert extensions: %w", err)
+		}
+		result.Extensions = extensions
+	}
+
+	return result, nil
+}
+
+func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
+	switch f := flows.(type) {
+	case a2a.AuthorizationCodeOAuthFlow:
+		return &a2apb.OAuthFlows{
+			Flow: &a2apb.OAuthFlows_AuthorizationCode{
+				AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+					AuthorizationUrl: f.AuthorizationURL,
+					TokenUrl:         f.TokenURL,
+					RefreshUrl:       f.RefreshURL,
+					Scopes:           f.Scopes,
+				},
+			},
+		}, nil
+	case a2a.ClientCredentialsOAuthFlow:
+		return &a2apb.OAuthFlows{
+			Flow: &a2apb.OAuthFlows_ClientCredentials{
+				ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
+					TokenUrl:   f.TokenURL,
+					RefreshUrl: f.RefreshURL,
+					Scopes:     f.Scopes,
+				},
+			},
+		}, nil
+	case a2a.ImplicitOAuthFlow:
+		return &a2apb.OAuthFlows{
+			Flow: &a2apb.OAuthFlows_Implicit{
+				Implicit: &a2apb.ImplicitOAuthFlow{
+					AuthorizationUrl: f.AuthorizationURL,
+					RefreshUrl:       f.RefreshURL,
+					Scopes:           f.Scopes,
+				},
+			},
+		}, nil
+	case a2a.PasswordOAuthFlow:
+		return &a2apb.OAuthFlows{
+			Flow: &a2apb.OAuthFlows_Password{
+				Password: &a2apb.PasswordOAuthFlow{
+					TokenUrl:   f.TokenURL,
+					RefreshUrl: f.RefreshURL,
+					Scopes:     f.Scopes,
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported OAuthFlows type: %T", f)
+	}
+}
+
+func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, error) {
+	switch s := scheme.(type) {
+	case a2a.APIKeySecurityScheme:
+		return &a2apb.SecurityScheme{
+			Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
+				ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
+					Name:        s.Name,
+					Location:    string(s.In),
+					Description: s.Description},
+			},
+		}, nil
+	case a2a.HTTPAuthSecurityScheme:
+		return &a2apb.SecurityScheme{
+			Scheme: &a2apb.SecurityScheme_HttpAuthSecurityScheme{
+				HttpAuthSecurityScheme: &a2apb.HTTPAuthSecurityScheme{
+					Scheme:       string(s.Scheme),
+					Description:  s.Description,
+					BearerFormat: s.BearerFormat,
+				},
+			},
+		}, nil
+	case a2a.OpenIDConnectSecurityScheme:
+		return &a2apb.SecurityScheme{
+			Scheme: &a2apb.SecurityScheme_OpenIdConnectSecurityScheme{
+				OpenIdConnectSecurityScheme: &a2apb.OpenIdConnectSecurityScheme{
+					OpenIdConnectUrl: s.OpenIDConnectURL,
+					Description:      s.Description,
+				},
+			},
+		}, nil
+	case a2a.MutualTLSSecurityScheme:
+		return nil, nil
+	case a2a.OAuth2SecurityScheme:
+		flows, err := toProtoOAuthFlows(s.Flows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert OAuthFlows: %w", err)
+		}
+		return &a2apb.SecurityScheme{
+			Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
+				Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
+					Flows:       flows,
+					Description: s.Description,
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported security scheme type: %T", s)
+	}
+}
+
+func totoProtoSecuritySchemes(schemes a2a.NamedSecuritySchemes) (map[string]*a2apb.SecurityScheme, error) {
+	pSchemes := make(map[string]*a2apb.SecurityScheme, len(schemes))
+	for name, scheme := range schemes {
+		pScheme, err := toProtoSecurityScheme(scheme)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert security scheme: %w", err)
+		}
+		if pScheme != nil {
+			pSchemes[string(name)] = pScheme
+		}
+	}
+	return pSchemes, nil
+}
+
+func toProtoSecurity(security []a2a.SecurityRequirements) []*a2apb.Security {
+	pSecurity := make([]*a2apb.Security, len(security))
+	for i, sec := range security {
+		pSchemes := make(map[string]*a2apb.StringList)
+		for name, scopes := range sec {
+			pSchemes[string(name)] = &a2apb.StringList{
+				List: scopes,
+			}
+		}
+		pSecurity[i] = &a2apb.Security{
+			Schemes: pSchemes,
+		}
+	}
+	return pSecurity
+}
+
+func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
+	pSkills := make([]*a2apb.AgentSkill, len(skills))
+	for i, skill := range skills {
+		pSkills[i] = &a2apb.AgentSkill{
+			Id:          skill.ID,
+			Name:        skill.Name,
+			Description: skill.Description,
+			Tags:        skill.Tags,
+			Examples:    skill.Examples,
+			InputModes:  skill.InputModes,
+			OutputModes: skill.OutputModes,
+		}
+	}
+	return pSkills
+}
+
+func toProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
+	if card == nil {
+		return nil, fmt.Errorf("agent card not found")
+	}
+
+	capabilities, err := toProtoCapabilities(card.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert agent capabilities: %w", err)
+	}
+
+	result := &a2apb.AgentCard{
+		ProtocolVersion:                   card.ProtocolVersion,
+		Name:                              card.Name,
+		Description:                       card.Description,
+		Url:                               card.URL,
+		PreferredTransport:                string(card.PreferredTransport),
+		Provider:                          toProtoAgentProvider(card.Provider),
+		Version:                           card.Version,
+		DocumentationUrl:                  card.DocumentationURL,
+		Capabilities:                      capabilities,
+		DefaultInputModes:                 card.DefaultInputModes,
+		DefaultOutputModes:                card.DefaultOutputModes,
+		SupportsAuthenticatedExtendedCard: card.SupportsAuthenticatedExtendedCard,
+	}
+
+	if card.SecuritySchemes != nil {
+		schemes, err := totoProtoSecuritySchemes(card.SecuritySchemes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert security schemes: %w", err)
+		}
+		result.SecuritySchemes = schemes
+	}
+
+	if len(card.AdditionalInterfaces) > 0 {
+		result.AdditionalInterfaces = toProtoAdditionalInterfaces(card.AdditionalInterfaces)
+	}
+
+	if len(card.Security) > 0 {
+		result.Security = toProtoSecurity(card.Security)
+	}
+
+	if len(card.Skills) > 0 {
+		result.Skills = toProtoSkills(card.Skills)
+	}
+
+	return result, nil
+}
