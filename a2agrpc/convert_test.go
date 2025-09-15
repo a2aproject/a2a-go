@@ -1300,10 +1300,12 @@ func TestToProtoConversion(t *testing.T) {
 				},
 				"oauth2": a2a.OAuth2SecurityScheme{
 					Description: "OAuth2",
-					Flows: a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://example.com/auth",
-						TokenURL:         "https://example.com/token",
-						Scopes:           map[string]string{"read": "read scope"},
+					Flows: a2a.OAuthFlows{
+						AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
+							AuthorizationURL: "https://example.com/auth",
+							TokenURL:         "https://example.com/token",
+							Scopes:           map[string]string{"read": "read scope"},
+						},
 					},
 				},
 			},
@@ -1454,11 +1456,13 @@ func TestToProtoConversion(t *testing.T) {
 		}{
 			{
 				name: "authorization code flow",
-				flows: a2a.AuthorizationCodeOAuthFlow{
-					AuthorizationURL: "https://auth.com/auth",
-					TokenURL:         "https://auth.com/token",
-					RefreshURL:       "https://auth.com/refresh",
-					Scopes:           map[string]string{"read": "read data"},
+				flows: a2a.OAuthFlows{
+					AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
+						AuthorizationURL: "https://auth.com/auth",
+						TokenURL:         "https://auth.com/token",
+						RefreshURL:       "https://auth.com/refresh",
+						Scopes:           map[string]string{"read": "read data"},
+					},
 				},
 				want: &a2apb.OAuthFlows{
 					Flow: &a2apb.OAuthFlows_AuthorizationCode{
@@ -1473,10 +1477,12 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name: "client credentials flow",
-				flows: a2a.ClientCredentialsOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"write": "write data"},
+				flows: a2a.OAuthFlows{
+					ClientCredentials: &a2a.ClientCredentialsOAuthFlow{
+						TokenURL:   "https://auth.com/token",
+						RefreshURL: "https://auth.com/refresh",
+						Scopes:     map[string]string{"write": "write data"},
+					},
 				},
 				want: &a2apb.OAuthFlows{
 					Flow: &a2apb.OAuthFlows_ClientCredentials{
@@ -1490,10 +1496,12 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name: "implicit flow",
-				flows: a2a.ImplicitOAuthFlow{
-					AuthorizationURL: "https://auth.com/auth",
-					RefreshURL:       "https://auth.com/refresh",
-					Scopes:           map[string]string{"profile": "read profile"},
+				flows: a2a.OAuthFlows{
+					Implicit: &a2a.ImplicitOAuthFlow{
+						AuthorizationURL: "https://auth.com/auth",
+						RefreshURL:       "https://auth.com/refresh",
+						Scopes:           map[string]string{"profile": "read profile"},
+					},
 				},
 				want: &a2apb.OAuthFlows{
 					Flow: &a2apb.OAuthFlows_Implicit{
@@ -1507,10 +1515,12 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name: "password flow",
-				flows: a2a.PasswordOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"user": "user info"},
+				flows: a2a.OAuthFlows{
+					Password: &a2a.PasswordOAuthFlow{
+						TokenURL:   "https://auth.com/token",
+						RefreshURL: "https://auth.com/refresh",
+						Scopes:     map[string]string{"user": "user info"},
+					},
 				},
 				want: &a2apb.OAuthFlows{
 					Flow: &a2apb.OAuthFlows_Password{
@@ -1521,6 +1531,27 @@ func TestToProtoConversion(t *testing.T) {
 						},
 					},
 				},
+			},
+			{
+				name:    "no flows specified",
+				flows:   a2a.OAuthFlows{},
+				wantErr: true,
+			},
+			{
+				name: "multiple flows specified",
+				flows: a2a.OAuthFlows{
+					ClientCredentials: &a2a.ClientCredentialsOAuthFlow{
+						TokenURL:   "https://auth.com/token",
+						RefreshURL: "https://auth.com/refresh",
+						Scopes:     map[string]string{"write": "write data"},
+					},
+					Password: &a2a.PasswordOAuthFlow{
+						TokenURL:   "https://auth.com/token",
+						RefreshURL: "https://auth.com/refresh",
+						Scopes:     map[string]string{"user": "user info"},
+					},
+				},
+				wantErr: true,
 			},
 		}
 
@@ -1605,10 +1636,12 @@ func TestToProtoConversion(t *testing.T) {
 				name: "oauth2 scheme",
 				scheme: a2a.OAuth2SecurityScheme{
 					Description: "OAuth2",
-					Flows: a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://auth.com/auth",
-						TokenURL:         "https://auth.com/token",
-						Scopes:           map[string]string{"read": "read data"},
+					Flows: a2a.OAuthFlows{
+						AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
+							AuthorizationURL: "https://auth.com/auth",
+							TokenURL:         "https://auth.com/token",
+							Scopes:           map[string]string{"read": "read data"},
+						},
 					},
 				},
 				want: &a2apb.SecurityScheme{

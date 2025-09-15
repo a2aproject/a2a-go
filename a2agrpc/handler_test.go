@@ -308,8 +308,7 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 		req       *a2apb.GetTaskRequest
 		want      *a2apb.Task
 		wantQuery *a2a.TaskQueryParams
-		wantErr   bool
-		errCode   codes.Code
+		wantErr   codes.Code
 	}{
 		{
 			name: "success",
@@ -334,14 +333,12 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 		{
 			name:    "invalid name",
 			req:     &a2apb.GetTaskRequest{Name: "invalid/name"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
 			req:     &a2apb.GetTaskRequest{Name: "tasks/handler-error"},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -349,7 +346,7 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedGetTaskQuery = nil
 			resp, err := client.GetTask(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("GetTask() expected error, got nil")
 				}
@@ -357,8 +354,8 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 				if !ok {
 					t.Fatalf("GetTask() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("GetTask() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("GetTask() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -390,8 +387,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 		req        *a2apb.CancelTaskRequest
 		want       *a2apb.Task
 		wantParams *a2a.TaskIDParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name:       "success",
@@ -402,14 +398,12 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 		{
 			name:    "invalid name",
 			req:     &a2apb.CancelTaskRequest{Name: "invalid/name"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
 			req:     &a2apb.CancelTaskRequest{Name: "tasks/handler-error"},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -417,7 +411,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedCancelTaskIDParams = nil
 			resp, err := client.CancelTask(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("CancelTask() expected error, got nil")
 				}
@@ -425,8 +419,8 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 				if !ok {
 					t.Fatalf("CancelTask() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("CancelTask() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("CancelTask() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -453,8 +447,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		req        *a2apb.SendMessageRequest
 		want       *a2apb.SendMessageResponse
 		wantParams *a2a.MessageSendParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "message sent successfully without config",
@@ -496,8 +489,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		{
 			name:    "nil request message",
 			req:     &a2apb.SendMessageRequest{},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "invalid request",
@@ -506,16 +498,14 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 					Content: []*a2apb.Part{{Part: nil}},
 				},
 			},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{MessageId: "handler-error"},
 			},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -523,7 +513,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedSendMessageParams = nil
 			resp, err := client.SendMessage(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("SendMessage() expected error, got nil")
 				}
@@ -531,8 +521,8 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 				if !ok {
 					t.Fatalf("SendMessage() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("SendMessage() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("SendMessage() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -566,8 +556,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 		req        *a2apb.SendMessageRequest
 		want       []*a2apb.StreamResponse
 		wantParams *a2a.MessageSendParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -623,8 +612,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 		{
 			name:    "nil request message",
 			req:     &a2apb.SendMessageRequest{},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "invalid request",
@@ -633,16 +621,14 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					Content: []*a2apb.Part{{Part: nil}},
 				},
 			},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{MessageId: "handler-error"},
 			},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -661,13 +647,13 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					break
 				}
 				if err != nil {
-					if tt.wantErr {
+					if tt.wantErr != codes.OK {
 						st, ok := status.FromError(err)
 						if !ok {
 							t.Fatalf("stream.Recv() error is not a gRPC status error: %v", err)
 						}
-						if st.Code() != tt.errCode {
-							t.Errorf("stream.Recv() got error code %v, want %v", st.Code(), tt.errCode)
+						if st.Code() != tt.wantErr {
+							t.Errorf("stream.Recv() got error code %v, want %v", st.Code(), tt.wantErr)
 						}
 					} else {
 						t.Fatalf("stream.Recv() got unexpected error: %v", err)
@@ -677,7 +663,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 				received = append(received, resp)
 			}
 
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				t.Fatal("SendStreamingMessage() expected error, but stream completed successfully")
 			}
 
@@ -714,8 +700,7 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 		req        *a2apb.TaskSubscriptionRequest
 		want       []*a2apb.StreamResponse
 		wantParams *a2a.TaskIDParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -746,14 +731,12 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 		{
 			name:    "invalid name",
 			req:     &a2apb.TaskSubscriptionRequest{Name: "invalid/name"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
 			req:     &a2apb.TaskSubscriptionRequest{Name: "tasks/handler-error"},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -772,13 +755,13 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 					break
 				}
 				if err != nil {
-					if tt.wantErr {
+					if tt.wantErr != codes.OK {
 						st, ok := status.FromError(err)
 						if !ok {
 							t.Fatalf("stream.Recv() error is not a gRPC status error: %v", err)
 						}
-						if st.Code() != tt.errCode {
-							t.Errorf("stream.Recv() got error code %v, want %v", st.Code(), tt.errCode)
+						if st.Code() != tt.wantErr {
+							t.Errorf("stream.Recv() got error code %v, want %v", st.Code(), tt.wantErr)
 						}
 					} else {
 						t.Fatalf("stream.Recv() got unexpected error: %v", err)
@@ -788,7 +771,7 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 				received = append(received, resp)
 			}
 
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				t.Fatal("TaskSubscription() expected error, but stream completed successfully")
 			}
 
@@ -831,8 +814,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 		req        *a2apb.CreateTaskPushNotificationConfigRequest
 		want       *a2apb.TaskPushNotificationConfig
 		wantParams *a2a.TaskPushConfig
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -854,8 +836,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 		{
 			name:    "invalid request",
 			req:     &a2apb.CreateTaskPushNotificationConfigRequest{Parent: "invalid/parent"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
@@ -865,8 +846,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
 				},
 			},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -874,7 +854,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedSetTaskPushConfig = nil
 			resp, err := client.CreateTaskPushNotificationConfig(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("CreateTaskPushNotificationConfig() expected error, got nil")
 				}
@@ -882,8 +862,8 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 				if !ok {
 					t.Fatalf("CreateTaskPushNotificationConfig() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("CreateTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("CreateTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -921,8 +901,7 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		req        *a2apb.GetTaskPushNotificationConfigRequest
 		want       *a2apb.TaskPushNotificationConfig
 		wantParams *a2a.GetTaskPushConfigParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -941,14 +920,12 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		{
 			name:    "invalid request",
 			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/test-task/invalid/test-config"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
 			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/handler-error/pushConfigs/test-config"},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -956,7 +933,7 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedGetTaskPushConfigParams = nil
 			resp, err := client.GetTaskPushNotificationConfig(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("GetTaskPushNotificationConfig() expected error, got nil")
 				}
@@ -964,8 +941,8 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 				if !ok {
 					t.Fatalf("GetTaskPushNotificationConfig() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("GetTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("GetTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -1004,8 +981,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 		req        *a2apb.ListTaskPushNotificationConfigRequest
 		want       *a2apb.ListTaskPushNotificationConfigResponse
 		wantParams *a2a.ListTaskPushConfigParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -1027,14 +1003,12 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 		{
 			name:    "invalid parent",
 			req:     &a2apb.ListTaskPushNotificationConfigRequest{Parent: "invalid/parent"},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
 			req:     &a2apb.ListTaskPushNotificationConfigRequest{Parent: "tasks/handler-error"},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -1042,7 +1016,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedListTaskPushConfigParams = nil
 			resp, err := client.ListTaskPushNotificationConfig(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("ListTaskPushNotificationConfig() expected error, got nil")
 				}
@@ -1050,8 +1024,8 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 				if !ok {
 					t.Fatalf("ListTaskPushNotificationConfig() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("ListTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("ListTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -1095,8 +1069,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 		req        *a2apb.DeleteTaskPushNotificationConfigRequest
 		want       *emptypb.Empty
 		wantParams *a2a.DeleteTaskPushConfigParams
-		wantErr    bool
-		errCode    codes.Code
+		wantErr    codes.Code
 	}{
 		{
 			name: "success",
@@ -1114,16 +1087,14 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
 				Name: fmt.Sprintf("tasks/%s/invalid/%s", taskID, configID),
 			},
-			wantErr: true,
-			errCode: codes.InvalidArgument,
+			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
 				Name: fmt.Sprintf("tasks/handler-error/pushConfigs/%s", configID),
 			},
-			wantErr: true,
-			errCode: codes.Internal,
+			wantErr: codes.Internal,
 		},
 	}
 
@@ -1131,7 +1102,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedDeleteTaskPushConfigParams = nil
 			resp, err := client.DeleteTaskPushNotificationConfig(ctx, tt.req)
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("DeleteTaskPushNotificationConfig() expected error, got nil")
 				}
@@ -1139,8 +1110,8 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 				if !ok {
 					t.Fatalf("DeleteTaskPushNotificationConfig() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("DeleteTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("DeleteTaskPushNotificationConfig() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
@@ -1179,8 +1150,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		name         string
 		cardProducer a2asrv.AgentCardProducer
 		want         *a2apb.AgentCard
-		wantErr      bool
-		errCode      codes.Code
+		wantErr      codes.Code
 	}{
 		{
 			name:         "success",
@@ -1190,20 +1160,17 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		{
 			name:         "nil producer",
 			cardProducer: nil,
-			wantErr:      true,
-			errCode:      codes.Unimplemented,
+			wantErr:      codes.Unimplemented,
 		},
 		{
 			name:         "producer returns nil card",
 			cardProducer: &mockAgentCardProducer{card: nil},
-			wantErr:      true,
-			errCode:      codes.Internal,
+			wantErr:      codes.Internal,
 		},
 		{
 			name:         "producer returns bad card",
 			cardProducer: &mockAgentCardProducer{card: badCard},
-			wantErr:      true,
-			errCode:      codes.Internal,
+			wantErr:      codes.Internal,
 		},
 	}
 
@@ -1211,7 +1178,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := startTestServer(t, defaultMockHandler, tt.cardProducer)
 			resp, err := client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
-			if tt.wantErr {
+			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("GetAgentCard() expected error, got nil")
 				}
@@ -1219,8 +1186,8 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 				if !ok {
 					t.Fatalf("GetAgentCard() error is not a gRPC status error: %v", err)
 				}
-				if st.Code() != tt.errCode {
-					t.Errorf("GetAgentCard() got error code %v, want %v", st.Code(), tt.errCode)
+				if st.Code() != tt.wantErr {
+					t.Errorf("GetAgentCard() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {

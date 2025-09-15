@@ -655,52 +655,80 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	return result, nil
 }
 
-func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
-	switch f := flows.(type) {
-	case a2a.AuthorizationCodeOAuthFlow:
-		return &a2apb.OAuthFlows{
-			Flow: &a2apb.OAuthFlows_AuthorizationCode{
-				AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
-					AuthorizationUrl: f.AuthorizationURL,
-					TokenUrl:         f.TokenURL,
-					RefreshUrl:       f.RefreshURL,
-					Scopes:           f.Scopes,
-				},
+func toProtoOAuthFlows_AuthorizationCode(f *a2a.AuthorizationCodeOAuthFlow) *a2apb.OAuthFlows {
+	return &a2apb.OAuthFlows{
+		Flow: &a2apb.OAuthFlows_AuthorizationCode{
+			AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+				AuthorizationUrl: f.AuthorizationURL,
+				TokenUrl:         f.TokenURL,
+				RefreshUrl:       f.RefreshURL,
+				Scopes:           f.Scopes,
 			},
-		}, nil
-	case a2a.ClientCredentialsOAuthFlow:
-		return &a2apb.OAuthFlows{
-			Flow: &a2apb.OAuthFlows_ClientCredentials{
-				ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
-					TokenUrl:   f.TokenURL,
-					RefreshUrl: f.RefreshURL,
-					Scopes:     f.Scopes,
-				},
-			},
-		}, nil
-	case a2a.ImplicitOAuthFlow:
-		return &a2apb.OAuthFlows{
-			Flow: &a2apb.OAuthFlows_Implicit{
-				Implicit: &a2apb.ImplicitOAuthFlow{
-					AuthorizationUrl: f.AuthorizationURL,
-					RefreshUrl:       f.RefreshURL,
-					Scopes:           f.Scopes,
-				},
-			},
-		}, nil
-	case a2a.PasswordOAuthFlow:
-		return &a2apb.OAuthFlows{
-			Flow: &a2apb.OAuthFlows_Password{
-				Password: &a2apb.PasswordOAuthFlow{
-					TokenUrl:   f.TokenURL,
-					RefreshUrl: f.RefreshURL,
-					Scopes:     f.Scopes,
-				},
-			},
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported OAuthFlows type: %T", f)
+		},
 	}
+}
+
+func toProtoOAuthFlows_ClientCredentials(f *a2a.ClientCredentialsOAuthFlow) *a2apb.OAuthFlows {
+	return &a2apb.OAuthFlows{
+		Flow: &a2apb.OAuthFlows_ClientCredentials{
+			ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
+				TokenUrl:   f.TokenURL,
+				RefreshUrl: f.RefreshURL,
+				Scopes:     f.Scopes,
+			},
+		},
+	}
+}
+
+func toProtoOAuthFlows_Implicit(f *a2a.ImplicitOAuthFlow) *a2apb.OAuthFlows {
+	return &a2apb.OAuthFlows{
+		Flow: &a2apb.OAuthFlows_Implicit{
+			Implicit: &a2apb.ImplicitOAuthFlow{
+				AuthorizationUrl: f.AuthorizationURL,
+				RefreshUrl:       f.RefreshURL,
+				Scopes:           f.Scopes,
+			},
+		},
+	}
+}
+
+func toProtoOAuthFlows_Password(f *a2a.PasswordOAuthFlow) *a2apb.OAuthFlows {
+	return &a2apb.OAuthFlows{
+		Flow: &a2apb.OAuthFlows_Password{
+			Password: &a2apb.PasswordOAuthFlow{
+				TokenUrl:   f.TokenURL,
+				RefreshUrl: f.RefreshURL,
+				Scopes:     f.Scopes,
+			},
+		},
+	}
+}
+
+func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
+	var result []*a2apb.OAuthFlows
+
+	if flows.AuthorizationCode != nil {
+		result = append(result, toProtoOAuthFlows_AuthorizationCode(flows.AuthorizationCode))
+	}
+	if flows.ClientCredentials != nil {
+		result = append(result, toProtoOAuthFlows_ClientCredentials(flows.ClientCredentials))
+	}
+	if flows.Implicit != nil {
+		result = append(result, toProtoOAuthFlows_Implicit(flows.Implicit))
+	}
+	if flows.Password != nil {
+		result = append(result, toProtoOAuthFlows_Password(flows.Password))
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no OAuthFlows found")
+	}
+
+	if len(result) > 1 {
+		return nil, fmt.Errorf("only one OAuthFlow is allowed")
+	}
+
+	return result[0], nil
 }
 
 func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, error) {

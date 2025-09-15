@@ -232,41 +232,6 @@ type OAuth2SecurityScheme struct {
 	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
 }
 
-func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
-	type alias OAuth2SecurityScheme
-	var raw struct {
-		alias
-		Flows json.RawMessage `json:"flows"`
-	}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-
-	type flows struct {
-		AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode"`
-		ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials"`
-		Implicit          *ImplicitOAuthFlow          `json:"implicit"`
-		Password          *PasswordOAuthFlow          `json:"password"`
-	}
-	var f flows
-	if err := json.Unmarshal(raw.Flows, &f); err != nil {
-		return err
-	}
-
-	*s = OAuth2SecurityScheme(raw.alias)
-	if f.AuthorizationCode != nil {
-		s.Flows = *f.AuthorizationCode
-	} else if f.ClientCredentials != nil {
-		s.Flows = *f.ClientCredentials
-	} else if f.Implicit != nil {
-		s.Flows = *f.Implicit
-	} else if f.Password != nil {
-		s.Flows = *f.Password
-	}
-
-	return nil
-}
-
 func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	type wrapped OAuth2SecurityScheme
 	type withType struct {
@@ -276,21 +241,19 @@ func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withType{Type: "oauth2", wrapped: wrapped(s)})
 }
 
-// OAuthFlows  is a sealed discriminated type union for supported OAuth 2.0 flows.
-type OAuthFlows interface {
-	isOAuthFlows()
-}
+// OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
+type OAuthFlows struct {
+	// AuthorizationCode is a configuration for the OAuth Authorization Code flow.
+	// Previously called accessCode in OpenAPI 2.0.
+	AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode,omitempty" yaml:"authorizationCode,omitempty" mapstructure:"authorizationCode,omitempty"`
 
-func (AuthorizationCodeOAuthFlow) isOAuthFlows() {}
-func (ClientCredentialsOAuthFlow) isOAuthFlows() {}
-func (ImplicitOAuthFlow) isOAuthFlows()          {}
-func (PasswordOAuthFlow) isOAuthFlows()          {}
-
-func init() {
-	gob.Register(AuthorizationCodeOAuthFlow{})
-	gob.Register(ClientCredentialsOAuthFlow{})
-	gob.Register(ImplicitOAuthFlow{})
-	gob.Register(PasswordOAuthFlow{})
+	// ClientCredentials is a configuration for the OAuth Client Credentials flow. Previously called
+	// application in OpenAPI 2.0.
+	ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty" mapstructure:"clientCredentials,omitempty"`
+	// Implicit is a configuration for the OAuth Implicit flow.
+	Implicit *ImplicitOAuthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty" mapstructure:"implicit,omitempty"`
+	// Password is a configuration for the OAuth Resource Owner Password flow.
+	Password *PasswordOAuthFlow `json:"password,omitempty" yaml:"password,omitempty" mapstructure:"password,omitempty"`
 }
 
 // OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.

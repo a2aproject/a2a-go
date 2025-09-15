@@ -126,9 +126,11 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		"name3": MutualTLSSecurityScheme{Description: "optional"},
 		"name4": HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
 		"name5": OAuth2SecurityScheme{
-			Flows: PasswordOAuthFlow{
-				TokenURL: "url",
-				Scopes:   map[string]string{"email": "read user emails"},
+			Flows: OAuthFlows{
+				Password: &PasswordOAuthFlow{
+					TokenURL: "url",
+					Scopes:   map[string]string{"email": "read user emails"},
+				},
 			},
 		},
 	}
@@ -151,7 +153,7 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	encodedSchemes := mustMarshal(t, schemes)
 	var decodedBack NamedSecuritySchemes
 	mustUnmarshal(t, []byte(encodedSchemes), &decodedBack)
-	if !reflect.DeepEqual(decodedJSON, decodedJSON) {
+	if !reflect.DeepEqual(decodedJSON, decodedBack) {
 		t.Fatalf("Decoding back failed:\nwant %v\ngot: %s", decodedJSON, decodedBack)
 	}
 }
