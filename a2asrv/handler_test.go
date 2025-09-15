@@ -274,7 +274,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			} else {
 				qm = newEventReplayQueueManager(tt.agentEvents...)
 			}
-			store := taskstore.NewInMemory()
+			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
 			handler := newTestHandler(
 				WithEventQueueManager(qm),

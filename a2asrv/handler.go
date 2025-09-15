@@ -106,7 +106,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	h := &defaultRequestHandler{
 		agentExecutor: executor,
 		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewInMemory(),
+		taskStore:     taskstore.NewMem(),
 	}
 	for _, option := range options {
 		option(h)
