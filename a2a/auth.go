@@ -224,6 +224,41 @@ type OAuth2SecurityScheme struct {
 	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
 }
 
+func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
+	type alias OAuth2SecurityScheme
+	var raw struct {
+		alias
+		Flows json.RawMessage `json:"flows"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	type flows struct {
+		AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode"`
+		ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials"`
+		Implicit          *ImplicitOAuthFlow          `json:"implicit"`
+		Password          *PasswordOAuthFlow          `json:"password"`
+	}
+	var f flows
+	if err := json.Unmarshal(raw.Flows, &f); err != nil {
+		return err
+	}
+
+	*s = OAuth2SecurityScheme(raw.alias)
+	if f.AuthorizationCode != nil {
+		s.Flows = *f.AuthorizationCode
+	} else if f.ClientCredentials != nil {
+		s.Flows = *f.ClientCredentials
+	} else if f.Implicit != nil {
+		s.Flows = *f.Implicit
+	} else if f.Password != nil {
+		s.Flows = *f.Password
+	}
+
+	return nil
+}
+
 func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	type wrapped OAuth2SecurityScheme
 	type withType struct {

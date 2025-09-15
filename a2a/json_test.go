@@ -126,11 +126,10 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		"name3": MutualTLSSecurityScheme{Description: "optional"},
 		"name4": HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
 		"name5": OAuth2SecurityScheme{
-			Flows: OAuthFlows{
-				Password: &PasswordOAuthFlow{
-					TokenURL: "url",
-					Scopes:   map[string]string{"email": "read user emails"},
-				}},
+			Flows: PasswordOAuthFlow{
+				TokenURL: "url",
+				Scopes:   map[string]string{"email": "read user emails"},
+			},
 		},
 	}
 
