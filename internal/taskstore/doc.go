@@ -12,6 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package task
-
-type InMemoryTaskStore struct{}
+// Package taskstore provides types and utilities for storing Task snapshots.
+package taskstore

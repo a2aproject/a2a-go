@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -131,6 +132,15 @@ const (
 	TaskStateUnknown       TaskState = "unknown"
 	TaskStateWorking       TaskState = "working"
 )
+
+// Terminal returns true for states in which a Task becomes immutable, i.e. no further
+// changes to the Task are permitted.
+func (ts TaskState) Terminal() bool {
+	return ts == TaskStateCompleted ||
+		ts == TaskStateCanceled ||
+		ts == TaskStateFailed ||
+		ts == TaskStateRejected
+}
 
 // Task represents a single, stateful operation or conversation between a client and an agent.
 type Task struct {
@@ -263,7 +273,7 @@ type TaskStatusUpdateEvent struct {
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
-func NewStatusUpdateEvent(task Task, state TaskState, msg *Message) *TaskStatusUpdateEvent {
+func NewStatusUpdateEvent(task *Task, state TaskState, msg *Message) *TaskStatusUpdateEvent {
 	now := time.Now()
 	return &TaskStatusUpdateEvent{
 		ContextID: task.ContextID,
@@ -332,6 +342,12 @@ type Part interface {
 func (TextPart) isPart() {}
 func (FilePart) isPart() {}
 func (DataPart) isPart() {}
+
+func init() {
+	gob.Register(TextPart{})
+	gob.Register(FilePart{})
+	gob.Register(DataPart{})
+}
 
 // TextPart represents a text segment within a message or artifact.
 type TextPart struct {
@@ -426,6 +442,11 @@ type FilePartContent interface{ isFilePartContent() }
 
 func (FileBytes) isFilePartContent() {}
 func (FileURI) isFilePartContent()   {}
+
+func init() {
+	gob.Register(FileBytes{})
+	gob.Register(FileURI{})
+}
 
 // FileMeta represents file metadata of a file part.
 type FileMeta struct {

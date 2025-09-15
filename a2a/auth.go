@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 )
@@ -86,7 +87,7 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// SecuritySchemeSpec is a sealed discriminated type union for supported security schemes.
+// SecurityScheme is a sealed discriminated type union for supported security schemes.
 type SecurityScheme interface {
 	isSecurityScheme()
 }
@@ -96,6 +97,14 @@ func (HTTPAuthSecurityScheme) isSecurityScheme()      {}
 func (OpenIDConnectSecurityScheme) isSecurityScheme() {}
 func (MutualTLSSecurityScheme) isSecurityScheme()     {}
 func (OAuth2SecurityScheme) isSecurityScheme()        {}
+
+func init() {
+	gob.Register(APIKeySecurityScheme{})
+	gob.Register(HTTPAuthSecurityScheme{})
+	gob.Register(OpenIDConnectSecurityScheme{})
+	gob.Register(MutualTLSSecurityScheme{})
+	gob.Register(OAuth2SecurityScheme{})
+}
 
 // APIKeySecurityScheme defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
