@@ -22,6 +22,7 @@ import (
 	"iter"
 	"net"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -1056,6 +1057,12 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 				if err != nil {
 					t.Fatalf("ListTaskPushNotificationConfig() got unexpected error: %v", err)
 				}
+				sort.Slice(resp.Configs, func(i, j int) bool {
+					return resp.Configs[i].Name < resp.Configs[j].Name
+				})
+				sort.Slice(tt.want.Configs, func(i, j int) bool {
+					return tt.want.Configs[i].Name < tt.want.Configs[j].Name
+				})
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("ListTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
