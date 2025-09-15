@@ -15,6 +15,7 @@
 package taskstore
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"testing"
@@ -22,13 +23,17 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-func mustSave(t *testing.T, store *InMemory, task *a2a.Task) {
+type customMeta struct{ Val int }
+
+func mustSave(t *testing.T, store *Mem, task *a2a.Task) {
+	t.Helper()
 	if err := store.Save(t.Context(), task); err != nil {
 		t.Fatalf("Save() error: %v", err)
 	}
 }
 
-func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
+func mustGet(t *testing.T, store *Mem, id a2a.TaskID) *a2a.Task {
+	t.Helper()
 	got, err := store.Get(t.Context(), id)
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
@@ -37,19 +42,26 @@ func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
 }
 
 func TestInMemoryTaskStore_GetSaved(t *testing.T) {
-	store := NewInMemory()
+	store := NewMem()
+	metaKey := "key"
 
+	meta := customMeta{Val: 42}
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+	task.Metadata = map[string]any{metaKey: meta}
+	gob.Register(customMeta{})
 	mustSave(t, store, task)
 
 	got := mustGet(t, store, task.ID)
 	if task.ContextID != got.ContextID {
-		t.Fatalf("Data mismatch: got = %v, want = %v", task, got)
+		t.Fatalf("Data mismatch: got = %v, want = %v", got, task)
+	}
+	if meta != got.Metadata[metaKey] {
+		t.Fatalf("Metadata mismatch: got = %v, want = %v", got, task)
 	}
 }
 
 func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
-	store := NewInMemory()
+	store := NewMem()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
 	mustSave(t, store, task)
@@ -64,7 +76,7 @@ func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
-	store := NewInMemory()
+	store := NewMem()
 	metaKey := "key"
 
 	task := &a2a.Task{
@@ -92,7 +104,7 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
-	store := NewInMemory()
+	store := NewMem()
 
 	_, err := store.Get(t.Context(), a2a.TaskID("invalid"))
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
