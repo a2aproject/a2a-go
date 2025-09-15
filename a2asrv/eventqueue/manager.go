@@ -25,8 +25,8 @@ import (
 // enabling multiple clients to attach to the same task's event stream.
 type Manager interface {
 	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error)
+	GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error)
 
 	// Destroy closes the queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskId a2a.TaskID) error
+	Destroy(ctx context.Context, taskID a2a.TaskID) error
 }

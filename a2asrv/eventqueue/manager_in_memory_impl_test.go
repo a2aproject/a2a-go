@@ -90,7 +90,7 @@ func TestInMemoryManager_DestroyNonExistent(t *testing.T) {
 	taskID := a2a.TaskID("task-1")
 	ctx := t.Context()
 
-	wantErr := fmt.Sprintf("queue cannot be destroyed as queue for taskId: %s does not exist", taskID)
+	wantErr := fmt.Sprintf("queue cannot be destroyed as queue for taskID: %s does not exist", taskID)
 	err := m.Destroy(ctx, taskID)
 	if err == nil {
 		t.Error("Destroy() on non-existent queue should have returned an error, but got nil")
@@ -109,7 +109,7 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	numTaskIDs := 10
 	created := make(chan struct {
 		queue  Queue
-		taskId a2a.TaskID
+		taskID a2a.TaskID
 	}, numGoroutines)
 
 	for i := 0; i < numGoroutines; i++ {
@@ -128,8 +128,8 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 			}
 			created <- struct {
 				queue  Queue
-				taskId a2a.TaskID
-			}{queue: q, taskId: taskID}
+				taskID a2a.TaskID
+			}{queue: q, taskID: taskID}
 		}(i)
 	}
 
@@ -137,7 +137,7 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	close(created)
 
 	for got := range created {
-		existingQ, err := m.GetOrCreate(ctx, got.taskId)
+		existingQ, err := m.GetOrCreate(ctx, got.taskID)
 		if err != nil {
 			t.Errorf("GetOrCreate() failed after concurrent creation: %v", err)
 		}
