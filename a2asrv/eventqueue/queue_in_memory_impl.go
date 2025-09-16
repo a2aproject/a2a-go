@@ -17,7 +17,6 @@ package eventqueue
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -30,21 +29,22 @@ type semaphore struct {
 
 // Implements Queue interface
 type inMemoryQueue struct {
-	// semaphore plays the role of a mutex for events channel, but provides
-	// acquireInContext method which unblocks if context.Context get canceled.
-	// can be held for a long time if Write() blocks on trying to write to a full channel.
+	// semaphore plays the role of a mutex for events channel, but provides acquireInContext
+	// method which resolves to error if context.Context get canceled.
+	// The semaphore might be held for a long time if Write() blocks on trying to write to a full channel.
 	semaphore *semaphore
-	// events channel is the queue backing mechanism.
+	// events channel is where Write() sends events to and Read() receives events from.
 	events chan a2a.Event
 
 	// closeMu is acquired by Close() for the whole duration of method execution.
 	// If there are concurrent Close() calls the first one to acquire the mutex ensures the queue
-	// is canceled and others wait for it to finish.
+	// is canceled, and other calls wait for it to finish.
 	// We do this to guarantee that no Writes are accepted after Close() exits.
 	closeMu sync.Mutex
 	// closed indicates that the queue has been closed but still can be drained by Read().
-	// We use atomic.Bool because Write() reads closed state without acquiring closeMu.
-	closed atomic.Bool
+	// Close() updates the field and Write() reads it, so it requires both closeMu and semaphore
+	// for the race detector to be happy.
+	closed bool
 	// closeChan is closed by Close() to ensure Write() calls are not blocked on trying to write
 	// to a full events channel, preventing Close() to close it.
 	closeChan chan struct{}
@@ -91,7 +91,7 @@ func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	}
 	defer q.semaphore.release()
 
-	if q.closed.Load() {
+	if q.closed {
 		return ErrQueueClosed
 	}
 
@@ -122,20 +122,17 @@ func (q *inMemoryQueue) Close() error {
 	q.closeMu.Lock()
 	defer q.closeMu.Unlock()
 
-	if q.closed.Load() {
+	if q.closed {
 		return nil
 	}
-	q.closed.Store(true)
 
 	// Ensure there's no Write() holding the semaphore blocked on trying to write to a full channel.
 	close(q.closeChan)
-
-	// It might be blocked here if there is a writer holding the semaphore.
-	// But it's going to be unblocked by the signal we sent.
 	q.semaphore.acquire()
 	defer q.semaphore.release()
 
 	close(q.events)
+	q.closed = true
 
 	return nil
 }

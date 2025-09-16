@@ -21,62 +21,66 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// Saver is used for saving the Task after updating its state.
 type Saver interface {
 	Save(ctx context.Context, task *a2a.Task) error
 }
 
+// Manager is used for processing a2a.Event related to a Task. It updates
+// the Task accordingly and uses Saver to store the new state.
 type Manager struct {
 	Task  *a2a.Task
 	saver Saver
 }
 
+// NewManager creates an initialized update Manager for the provided task.
 func NewManager(saver Saver, task *a2a.Task) *Manager {
 	return &Manager{Task: task, saver: saver}
 }
 
-func (ep *Manager) Process(ctx context.Context, event a2a.Event) error {
-	if _, ok := event.(*a2a.Message); ok {
-		return nil
-	}
-
-	if ep.Task == nil {
+// Process validates that the event is associated with the managed Task and updates the Task accordingly.
+func (mgr *Manager) Process(ctx context.Context, event a2a.Event) error {
+	if mgr.Task == nil {
 		return fmt.Errorf("event processor Task not set")
 	}
 
 	switch v := event.(type) {
+	case *a2a.Message:
+		return nil
+
 	case *a2a.Task:
-		if err := ep.validate(v.ID, v.ContextID); err != nil {
+		if err := mgr.validate(v.ID, v.ContextID); err != nil {
 			return err
 		}
-		if err := ep.saver.Save(ctx, v); err != nil {
+		if err := mgr.saver.Save(ctx, v); err != nil {
 			return err
 		}
-		ep.Task = v
+		mgr.Task = v
 		return nil
 
 	case *a2a.TaskArtifactUpdateEvent:
-		if err := ep.validate(v.TaskID, v.ContextID); err != nil {
+		if err := mgr.validate(v.TaskID, v.ContextID); err != nil {
 			return err
 		}
-		return ep.updateArtifact(ctx, v)
+		return mgr.updateArtifact(ctx, v)
 
 	case *a2a.TaskStatusUpdateEvent:
-		if err := ep.validate(v.TaskID, v.ContextID); err != nil {
+		if err := mgr.validate(v.TaskID, v.ContextID); err != nil {
 			return err
 		}
-		return ep.updateStatus(ctx, v)
+		return mgr.updateStatus(ctx, v)
 
 	default:
-		return fmt.Errorf("unexpected event type")
+		return fmt.Errorf("unexpected event type %T", v)
 	}
 }
 
-func (ep *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) error {
+func (mgr *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (ep *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) error {
-	task := ep.Task
+func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) error {
+	task := mgr.Task
 
 	if task.Status.Message != nil {
 		task.History = append(task.History, task.Status.Message)
@@ -93,16 +97,16 @@ func (ep *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdate
 
 	task.Status = event.Status
 
-	return ep.saver.Save(ctx, task)
+	return mgr.saver.Save(ctx, task)
 }
 
-func (ep *Manager) validate(taskID a2a.TaskID, contextID string) error {
-	if ep.Task.ID != taskID {
-		return fmt.Errorf("task IDs don't match: %s != %s", ep.Task.ID, taskID)
+func (mgr *Manager) validate(taskID a2a.TaskID, contextID string) error {
+	if mgr.Task.ID != taskID {
+		return fmt.Errorf("task IDs don't match: %s != %s", mgr.Task.ID, taskID)
 	}
 
-	if ep.Task.ContextID != contextID {
-		return fmt.Errorf("context IDs don't match: %s != %s", ep.Task.ContextID, contextID)
+	if mgr.Task.ContextID != contextID {
+		return fmt.Errorf("context IDs don't match: %s != %s", mgr.Task.ContextID, contextID)
 	}
 
 	return nil
