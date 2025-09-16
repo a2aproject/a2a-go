@@ -1147,7 +1147,7 @@ func TestToProtoConversion(t *testing.T) {
 			{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Content: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
 		}
 
-		a2aArtifacts := []a2a.Artifact{
+		a2aArtifacts := []*a2a.Artifact{
 			{ID: a2aArtifactID, Name: "artifact1", Parts: []a2a.Part{a2a.TextPart{Text: "artifact content"}}},
 		}
 		pArtifacts := []*a2apb.Artifact{
@@ -1219,7 +1219,7 @@ func TestToProtoConversion(t *testing.T) {
 					ID:        a2aTaskID,
 					ContextID: a2aContextID,
 					Status:    a2aStatus,
-					Artifacts: []a2a.Artifact{
+					Artifacts: []*a2a.Artifact{
 						{Metadata: map[string]any{"bad": func() {}}},
 					},
 					History:  a2aHistory,
@@ -1790,7 +1790,7 @@ func TestToProtoResponses(t *testing.T) {
 		a2aArtifactEvent := &a2a.TaskArtifactUpdateEvent{
 			TaskID:    "test-task",
 			ContextID: "test-ctx",
-			Artifact:  a2a.Artifact{ID: "art1"},
+			Artifact:  &a2a.Artifact{ID: "art1"},
 		}
 		pArtifactEvent := &a2apb.StreamResponse_ArtifactUpdate{
 			ArtifactUpdate: &a2apb.TaskArtifactUpdateEvent{

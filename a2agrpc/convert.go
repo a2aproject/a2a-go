@@ -485,7 +485,10 @@ func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
 	return pStatus, nil
 }
 
-func toProtoArtifact(artifact a2a.Artifact) (*a2apb.Artifact, error) {
+func toProtoArtifact(artifact *a2a.Artifact) (*a2apb.Artifact, error) {
+	if artifact == nil {
+		return nil, nil
+	}
 	var metadata *structpb.Struct
 	if artifact.Metadata != nil {
 		var err error
@@ -508,14 +511,16 @@ func toProtoArtifact(artifact a2a.Artifact) (*a2apb.Artifact, error) {
 	}, nil
 }
 
-func toProtoArtifacts(artifacts []a2a.Artifact) ([]*a2apb.Artifact, error) {
+func toProtoArtifacts(artifacts []*a2a.Artifact) ([]*a2apb.Artifact, error) {
 	result := make([]*a2apb.Artifact, len(artifacts))
 	for i, artifact := range artifacts {
 		pArtifact, err := toProtoArtifact(artifact)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert artifact: %w", err)
 		}
-		result[i] = pArtifact
+		if pArtifact != nil {
+			result[i] = pArtifact
+		}
 	}
 	return result, nil
 }
