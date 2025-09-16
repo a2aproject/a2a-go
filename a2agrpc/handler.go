@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/a2aproject/a2a-go/a2apb/pbconv"
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
@@ -48,7 +49,7 @@ func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 	if req.GetRequest() == nil {
 		return nil, status.Error(codes.InvalidArgument, "request message is missing")
 	}
-	params, err := fromProtoSendMessageRequest(req)
+	params, err := pbconv.FromProtoSendMessageRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -58,7 +59,7 @@ func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 		return nil, toGRPCError(err)
 	}
 
-	result, err := toProtoSendMessageResponse(resp)
+	result, err := pbconv.ToProtoSendMessageResponse(resp)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert response: %v", err)
 	}
@@ -70,7 +71,7 @@ func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 	if req.GetRequest() == nil {
 		return status.Error(codes.InvalidArgument, "request message is missing")
 	}
-	params, err := fromProtoSendMessageRequest(req)
+	params, err := pbconv.FromProtoSendMessageRequest(req)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -79,7 +80,7 @@ func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 		if err != nil {
 			return toGRPCError(err)
 		}
-		resp, err := toProtoStreamResponse(event)
+		resp, err := pbconv.ToProtoStreamResponse(event)
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
@@ -93,7 +94,7 @@ func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 }
 
 func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
-	params, err := fromProtoGetTaskRequest(req)
+	params, err := pbconv.FromProtoGetTaskRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -101,7 +102,7 @@ func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := toProtoTask(&task)
+	result, err := pbconv.ToProtoTask(&task)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
 	}
@@ -109,7 +110,7 @@ func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 }
 
 func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
-	taskID, err := extractTaskID(req.GetName())
+	taskID, err := pbconv.ExtractTaskID(req.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
@@ -117,7 +118,7 @@ func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := toProtoTask(&task)
+	result, err := pbconv.ToProtoTask(&task)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
 	}
@@ -125,7 +126,7 @@ func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 }
 
 func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
-	taskID, err := extractTaskID(req.GetName())
+	taskID, err := pbconv.ExtractTaskID(req.GetName())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
@@ -133,7 +134,7 @@ func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 		if err != nil {
 			return toGRPCError(err)
 		}
-		resp, err := toProtoStreamResponse(event)
+		resp, err := pbconv.ToProtoStreamResponse(event)
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to convert response: %v", err)
 		}
@@ -146,7 +147,7 @@ func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 }
 
 func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
-	params, err := fromProtoCreateTaskPushConfigRequest(req)
+	params, err := pbconv.FromProtoCreateTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -154,7 +155,7 @@ func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := toProtoTaskPushConfig(&config)
+	result, err := pbconv.ToProtoTaskPushConfig(&config)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
 	}
@@ -162,7 +163,7 @@ func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 }
 
 func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
-	params, err := fromProtoGetTaskPushConfigRequest(req)
+	params, err := pbconv.FromProtoGetTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -170,7 +171,7 @@ func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := toProtoTaskPushConfig(&config)
+	result, err := pbconv.ToProtoTaskPushConfig(&config)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
 	}
@@ -178,7 +179,7 @@ func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 }
 
 func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
-	taskID, err := extractTaskID(req.GetParent())
+	taskID, err := pbconv.ExtractTaskID(req.GetParent())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
@@ -187,7 +188,7 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := toProtoListTaskPushConfig(configs)
+	result, err := pbconv.ToProtoListTaskPushConfig(configs)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert list of push configs: %v", err)
 	}
@@ -199,7 +200,7 @@ func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardR
 		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
 	}
 	card := h.cardProducer.Card()
-	result, err := toProtoAgentCard(card)
+	result, err := pbconv.ToProtoAgentCard(card)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert agent card: %v", err)
 	}
@@ -207,7 +208,7 @@ func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardR
 }
 
 func (h *GRPCHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
-	params, err := fromProtoDeleteTaskPushConfigRequest(req)
+	params, err := pbconv.FromProtoDeleteTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}

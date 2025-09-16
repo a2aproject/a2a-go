@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2agrpc
+package pbconv
 
 import (
 	"reflect"
@@ -61,7 +61,7 @@ func TestPathExtractors(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := extractTaskID(tt.path)
+				got, err := ExtractTaskID(tt.path)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("extractTaskID() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -418,7 +418,7 @@ func TestFromProtoRequests(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := fromProtoSendMessageRequest(tt.req)
+				got, err := FromProtoSendMessageRequest(tt.req)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("fromProtoSendMessageRequest() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -468,7 +468,7 @@ func TestFromProtoRequests(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := fromProtoGetTaskRequest(tt.req)
+				got, err := FromProtoGetTaskRequest(tt.req)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("fromProtoGetTaskRequest() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -528,7 +528,7 @@ func TestFromProtoRequests(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := fromProtoCreateTaskPushConfigRequest(tt.req)
+				got, err := FromProtoCreateTaskPushConfigRequest(tt.req)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("fromProtoCreateTaskPushConfigRequest() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -574,7 +574,7 @@ func TestFromProtoRequests(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := fromProtoGetTaskPushConfigRequest(tt.req)
+				got, err := FromProtoGetTaskPushConfigRequest(tt.req)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("fromProtoGetTaskPushConfigRequest() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -620,7 +620,7 @@ func TestFromProtoRequests(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := fromProtoDeleteTaskPushConfigRequest(tt.req)
+				got, err := FromProtoDeleteTaskPushConfigRequest(tt.req)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("fromProtoDeleteTaskPushConfigRequest() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1064,7 +1064,7 @@ func TestToProtoConversion(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoTaskPushConfig(tt.config)
+				got, err := ToProtoTaskPushConfig(tt.config)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1081,8 +1081,8 @@ func TestToProtoConversion(t *testing.T) {
 			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
 			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 		}
-		pConf1, _ := toProtoTaskPushConfig(&configs[0])
-		pConf2, _ := toProtoTaskPushConfig(&configs[1])
+		pConf1, _ := ToProtoTaskPushConfig(&configs[0])
+		pConf2, _ := ToProtoTaskPushConfig(&configs[1])
 
 		tests := []struct {
 			name    string
@@ -1115,7 +1115,7 @@ func TestToProtoConversion(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoListTaskPushConfig(tt.configs)
+				got, err := ToProtoListTaskPushConfig(tt.configs)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoListTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1255,7 +1255,7 @@ func TestToProtoConversion(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoTask(tt.task)
+				got, err := ToProtoTask(tt.task)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoTask() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1430,7 +1430,7 @@ func TestToProtoConversion(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoAgentCard(tt.card)
+				got, err := ToProtoAgentCard(tt.card)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoAgentCard() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1746,7 +1746,7 @@ func TestToProtoResponses(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoSendMessageResponse(tt.result)
+				got, err := ToProtoSendMessageResponse(tt.result)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoSendMessageResponse() error = %v, wantErr %v", err, tt.wantErr)
 					return
@@ -1766,7 +1766,7 @@ func TestToProtoResponses(t *testing.T) {
 		a2aMsg := &a2a.Message{ID: "test-message"}
 		pMsg, _ := toProtoMessage(a2aMsg)
 		a2aTask := &a2a.Task{ID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
-		pTask, _ := toProtoTask(a2aTask)
+		pTask, _ := ToProtoTask(a2aTask)
 		a2aStatusEvent := &a2a.TaskStatusUpdateEvent{
 			TaskID:    "test-task",
 			ContextID: "test-ctx",
@@ -1867,7 +1867,7 @@ func TestToProtoResponses(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got, err := toProtoStreamResponse(tt.event)
+				got, err := ToProtoStreamResponse(tt.event)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("toProtoStreamResponse() error = %v, wantErr %v", err, tt.wantErr)
 					return

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2agrpc
+package pbconv
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ var (
 	configIDRegex = regexp.MustCompile(`pushConfigs/([^/]+)`)
 )
 
-func extractTaskID(name string) (a2a.TaskID, error) {
+func ExtractTaskID(name string) (a2a.TaskID, error) {
 	matches := taskIDRegex.FindStringSubmatch(name)
 	if len(matches) < 2 {
 		return "", fmt.Errorf("invalid or missing task ID in name: %q", name)
@@ -45,7 +45,7 @@ func extractConfigID(name string) (string, error) {
 	return matches[1], nil
 }
 
-func fromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSendParams, error) {
+func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSendParams, error) {
 	msg, err := fromProtoMessage(req.GetRequest())
 	if err != nil {
 		return a2a.MessageSendParams{}, err
@@ -182,9 +182,9 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 	return result, nil
 }
 
-func fromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, error) {
+func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, error) {
 	// TODO: consider throwing an error when the path - req.GetName() is unexpected, e.g. tasks/taskID/someExtraText
-	taskID, err := extractTaskID(req.GetName())
+	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
 		return a2a.TaskQueryParams{}, fmt.Errorf("failed to extract task id: %w", err)
 	}
@@ -198,7 +198,7 @@ func fromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, er
 	return params, nil
 }
 
-func fromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (a2a.TaskPushConfig, error) {
+func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (a2a.TaskPushConfig, error) {
 	config := req.GetConfig()
 	if config == nil || config.GetPushNotificationConfig() == nil {
 		return a2a.TaskPushConfig{}, fmt.Errorf("invalid config")
@@ -207,7 +207,7 @@ func fromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 	if err != nil {
 		return a2a.TaskPushConfig{}, fmt.Errorf("failed to convert push config: %w", err)
 	}
-	taskID, err := extractTaskID(req.GetParent())
+	taskID, err := ExtractTaskID(req.GetParent())
 	if err != nil {
 		return a2a.TaskPushConfig{}, fmt.Errorf("failed to extract task id: %w", err)
 	}
@@ -218,8 +218,8 @@ func fromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 	}, nil
 }
 
-func fromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (a2a.GetTaskPushConfigParams, error) {
-	taskID, err := extractTaskID(req.GetName())
+func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (a2a.GetTaskPushConfigParams, error) {
+	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
 		return a2a.GetTaskPushConfigParams{}, fmt.Errorf("failed to extract task id: %w", err)
 	}
@@ -233,8 +233,8 @@ func fromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigR
 	}, nil
 }
 
-func fromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (a2a.DeleteTaskPushConfigParams, error) {
-	taskID, err := extractTaskID(req.GetName())
+func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (a2a.DeleteTaskPushConfigParams, error) {
+	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
 		return a2a.DeleteTaskPushConfigParams{}, fmt.Errorf("failed to extract task id: %w", err)
 	}
@@ -248,7 +248,7 @@ func fromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationC
 	}, nil
 }
 
-func toProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessageResponse, error) {
+func ToProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessageResponse, error) {
 	resp := &a2apb.SendMessageResponse{}
 	switch r := result.(type) {
 	case *a2a.Message:
@@ -258,7 +258,7 @@ func toProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessag
 		}
 		resp.Payload = &a2apb.SendMessageResponse_Msg{Msg: pMsg}
 	case *a2a.Task:
-		pTask, err := toProtoTask(r)
+		pTask, err := ToProtoTask(r)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +269,7 @@ func toProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessag
 	return resp, nil
 }
 
-func toProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
+func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 	resp := &a2apb.StreamResponse{}
 	switch e := event.(type) {
 	case *a2a.Message:
@@ -279,7 +279,7 @@ func toProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		}
 		resp.Payload = &a2apb.StreamResponse_Msg{Msg: pMsg}
 	case *a2a.Task:
-		pTask, err := toProtoTask(e)
+		pTask, err := ToProtoTask(e)
 		if err != nil {
 			return nil, err
 		}
@@ -525,7 +525,7 @@ func toProtoArtifacts(artifacts []*a2a.Artifact) ([]*a2apb.Artifact, error) {
 	return result, nil
 }
 
-func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
+func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	if task == nil {
 		return nil, fmt.Errorf("task is nil")
 	}
@@ -568,7 +568,7 @@ func toProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	return result, nil
 }
 
-func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
+func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	if config == nil || config.Config.ID == "" {
 		return nil, fmt.Errorf("invalid config")
 	}
@@ -592,10 +592,10 @@ func toProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 	}, nil
 }
 
-func toProtoListTaskPushConfig(configs []a2a.TaskPushConfig) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func ToProtoListTaskPushConfig(configs []a2a.TaskPushConfig) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
 	pConfigs := make([]*a2apb.TaskPushNotificationConfig, len(configs))
 	for i, config := range configs {
-		pConfig, err := toProtoTaskPushConfig(&config)
+		pConfig, err := ToProtoTaskPushConfig(&config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
@@ -834,7 +834,7 @@ func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
 	return pSkills
 }
 
-func toProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
+func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	if card == nil {
 		return nil, fmt.Errorf("agent card not found")
 	}

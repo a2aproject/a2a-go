@@ -27,6 +27,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/a2apb/pbconv"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1135,7 +1136,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		ProtocolVersion: "1.0",
 		Name:            "Test Agent",
 	}
-	pCard, err := toProtoAgentCard(a2aCard)
+	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
 	}
