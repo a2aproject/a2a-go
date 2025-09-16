@@ -91,6 +91,7 @@ func validateMetaRecursive(value any, processing map[string]struct{}) error {
 	}
 
 	switch value.(type) {
+	// Exclude uint because unsigned types won't play well with the spec
 	case bool, int, int8, int16, int32, int64, float32, float64, string:
 		return nil
 	}
