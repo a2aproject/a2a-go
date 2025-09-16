@@ -30,7 +30,7 @@ type Processor interface {
 	Process(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
 }
 
-// Executor implementation starts an agent execution. 
+// Executor implementation starts an agent execution.
 type Executor interface {
 	Processor
 	// Start starts publishing events to the queue. Called in a separate goroutine.
