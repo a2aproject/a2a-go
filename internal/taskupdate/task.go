@@ -23,7 +23,7 @@ func NewSubmittedTask(msg *a2a.Message) *a2a.Task {
 	history[0] = msg
 
 	contextID := msg.ContextID
-	if len(contextID) == 0 {
+	if contextID == "" {
 		contextID = a2a.NewContextID()
 	}
 
