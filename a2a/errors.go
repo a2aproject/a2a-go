@@ -16,7 +16,26 @@ package a2a
 
 import "errors"
 
+// https://a2a-protocol.org/latest/specification/#8-error-handling
 var (
+	// ErrParseError indicates that server received payload that was not well-formed.
+	ErrParseError = errors.New("parse error")
+
+	// ErrInvalidRequest indicates that server received a well-formed payload which was not a valid request.
+	ErrInvalidRequest = errors.New("invalid request")
+
+	// ErrMethodNotFound indicates that a method does not exist or is not supported.
+	ErrMethodNotFound = errors.New("method not found")
+
+	// ErrInvalidParams indicates that params provided for the method were invalid (e.g., wrong type, missing required field).
+	ErrInvalidParams = errors.New("invalid params")
+
+	// ErrInternalError indicates an unexpected error occurred on the server during processing.
+	ErrInternalError = errors.New("internal error")
+
+	// ErrServerError reserved for implementation-defined server-errors.
+	ErrServerError = errors.New("server error")
+
 	// ErrTaskNotFound indicates that a task with the provided ID was not found.
 	ErrTaskNotFound = errors.New("task not found")
 
@@ -36,9 +55,6 @@ var (
 	// ErrInvalidAgentResponse indicates that the agent returned a response that
 	// does not conform to the specification for the current method.
 	ErrInvalidAgentResponse = errors.New("invalid agent response")
-
-	// ErrInvalidRequest indicates that the received request was invalid.
-	ErrInvalidRequest = errors.New("invalid request")
 
 	// ErrAuthenticatedExtendedCardNotConfigured indicates that the agent does not have an Authenticated
 	// Extended Card configured.
