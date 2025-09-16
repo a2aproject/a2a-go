@@ -16,6 +16,8 @@ package a2aclient
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -31,24 +33,86 @@ type Factory struct {
 
 // CreateFromCard returns a Client configured to communicate with the agent described by
 // the provided AgentCard or fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (Client, error) {
+func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
-		extended := WithAdditionalOptions(*f, opts...)
+		extended := WithAdditionalOptions(f, opts...)
 		return extended.CreateFromCard(ctx, card)
 	}
 
-	return Client{}, ErrNotImplemented
+	serverPrefs := make([]a2a.AgentInterface, 1+len(card.AdditionalInterfaces))
+	serverPrefs[0] = a2a.AgentInterface{Transport: card.PreferredTransport, URL: card.URL}
+	copy(serverPrefs[1:], card.AdditionalInterfaces)
+
+	transport, connInfo, err := f.selectTransport(serverPrefs)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := transport.Create(ctx, connInfo.URL, card)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open a connection: %w", err)
+	}
+
+	return &Client{
+		Config:       f.config,
+		transport:    conn,
+		interceptors: f.interceptors,
+	}, nil
 }
 
 // CreateFromURL returns a Client configured to communicate with provided URL using
 // one of the provided protocols, or fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromURL(ctx context.Context, url string, protocols []string, opts ...FactoryOption) (Client, error) {
+func (f *Factory) CreateFromURL(ctx context.Context, url string, protocols []a2a.TransportProtocol, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
-		extended := WithAdditionalOptions(*f, opts...)
+		extended := WithAdditionalOptions(f, opts...)
 		return extended.CreateFromURL(ctx, url, protocols)
 	}
 
-	return Client{}, ErrNotImplemented
+	serverPrefs := make([]a2a.AgentInterface, len(protocols))
+	for i, protocol := range protocols {
+		serverPrefs[i] = a2a.AgentInterface{Transport: protocol, URL: url}
+	}
+
+	transport, connInfo, err := f.selectTransport(serverPrefs)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := transport.Create(ctx, connInfo.URL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open a connection: %w", err)
+	}
+
+	return &Client{
+		Config:       f.config,
+		transport:    conn,
+		interceptors: f.interceptors,
+	}, nil
+}
+
+func (f *Factory) selectTransport(available []a2a.AgentInterface) (TransportFactory, a2a.AgentInterface, error) {
+	if len(f.config.PreferredTransports) == 0 {
+		for _, opt := range available {
+			if t, ok := f.transports[opt.Transport]; ok {
+				return t, opt, nil
+			}
+		}
+		return nil, a2a.AgentInterface{}, makeNoCompatibleTransportsError(available)
+	}
+
+	for _, clientPref := range f.config.PreferredTransports {
+		t, ok := f.transports[clientPref]
+		if !ok {
+			continue
+		}
+		for _, opt := range available {
+			if clientPref == opt.Transport {
+				return t, opt, nil
+			}
+		}
+	}
+
+	return nil, a2a.AgentInterface{}, makeNoCompatibleTransportsError(available)
 }
 
 // FactoryOption represents a configuration applied to a Factory.
@@ -125,7 +189,7 @@ func NewFactory(options ...FactoryOption) *Factory {
 }
 
 // WithAdditionalOptions creates a new Factory with the additionally provided options.
-func WithAdditionalOptions(f Factory, opts ...FactoryOption) *Factory {
+func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 	options := []FactoryOption{
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
@@ -135,4 +199,12 @@ func WithAdditionalOptions(f Factory, opts ...FactoryOption) *Factory {
 		options = append(options, WithTransport(k, v))
 	}
 	return NewFactory(append(options, opts...)...)
+}
+
+func makeNoCompatibleTransportsError(available []a2a.AgentInterface) error {
+	protocols := make([]string, len(available))
+	for i, a := range available {
+		protocols[i] = string(a.Transport)
+	}
+	return fmt.Errorf("no compatible transports found: [%s]", strings.Join(protocols, ","))
 }
