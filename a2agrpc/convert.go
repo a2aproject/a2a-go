@@ -174,6 +174,7 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 		result.PushConfig = pConf
 	}
 
+	// TODO: consider the approach after resolving https://github.com/a2aproject/A2A/issues/1072
 	if conf.HistoryLength > 0 {
 		hl := int(conf.HistoryLength)
 		result.HistoryLength = &hl
@@ -182,6 +183,7 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 }
 
 func fromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, error) {
+	// TODO: consider throwing an error when the path - req.GetName() is unexpected, e.g. tasks/taskID/someExtraText
 	taskID, err := extractTaskID(req.GetName())
 	if err != nil {
 		return a2a.TaskQueryParams{}, fmt.Errorf("failed to extract task id: %w", err)

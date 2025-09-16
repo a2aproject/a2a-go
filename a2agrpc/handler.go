@@ -27,24 +27,24 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
-type GrpcHandler struct {
+type GRPCHandler struct {
 	a2apb.UnimplementedA2AServiceServer
 	cardProducer a2asrv.AgentCardProducer
 	handler      a2asrv.RequestHandler
 }
 
-func (h *GrpcHandler) RegisterWith(s *grpc.Server) {
+func (h *GRPCHandler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
-func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GrpcHandler {
-	return &GrpcHandler{
+func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GRPCHandler {
+	return &GRPCHandler{
 		cardProducer: cardProducer,
 		handler:      handler,
 	}
 }
 
-func (h *GrpcHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
+func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
 	if req.GetRequest() == nil {
 		return nil, status.Error(codes.InvalidArgument, "request message is missing")
 	}
@@ -55,7 +55,7 @@ func (h *GrpcHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 
 	resp, err := h.handler.OnSendMessage(ctx, params)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 
 	result, err := toProtoSendMessageResponse(resp)
@@ -66,7 +66,7 @@ func (h *GrpcHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 	return result, nil
 }
 
-func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	if req.GetRequest() == nil {
 		return status.Error(codes.InvalidArgument, "request message is missing")
 	}
@@ -77,7 +77,7 @@ func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 
 	for event, err := range h.handler.OnSendMessageStream(stream.Context(), params) {
 		if err != nil {
-			return status.Errorf(codes.Internal, "handler failed: %v", err)
+			return toGRPCError(err)
 		}
 		resp, err := toProtoStreamResponse(event)
 		if err != nil {
@@ -92,14 +92,14 @@ func (h *GrpcHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 	return nil
 }
 
-func (h *GrpcHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
+func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
 	params, err := fromProtoGetTaskRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 	task, err := h.handler.OnGetTask(ctx, params)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	result, err := toProtoTask(&task)
 	if err != nil {
@@ -108,14 +108,14 @@ func (h *GrpcHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 	return result, nil
 }
 
-func (h *GrpcHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
+func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
 	taskID, err := extractTaskID(req.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
 	task, err := h.handler.OnCancelTask(ctx, a2a.TaskIDParams{ID: taskID})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	result, err := toProtoTask(&task)
 	if err != nil {
@@ -124,14 +124,14 @@ func (h *GrpcHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 	return result, nil
 }
 
-func (h *GrpcHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	taskID, err := extractTaskID(req.GetName())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
 	for event, err := range h.handler.OnResubscribeToTask(stream.Context(), a2a.TaskIDParams{ID: taskID}) {
 		if err != nil {
-			return status.Errorf(codes.Internal, "handler failed: %v", err)
+			return toGRPCError(err)
 		}
 		resp, err := toProtoStreamResponse(event)
 		if err != nil {
@@ -145,14 +145,14 @@ func (h *GrpcHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 	return nil
 }
 
-func (h *GrpcHandler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
+func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	params, err := fromProtoCreateTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 	config, err := h.handler.OnSetTaskPushConfig(ctx, params)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	result, err := toProtoTaskPushConfig(&config)
 	if err != nil {
@@ -161,14 +161,14 @@ func (h *GrpcHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 	return result, nil
 }
 
-func (h *GrpcHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
+func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	params, err := fromProtoGetTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 	config, err := h.handler.OnGetTaskPushConfig(ctx, params)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	result, err := toProtoTaskPushConfig(&config)
 	if err != nil {
@@ -177,7 +177,7 @@ func (h *GrpcHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 	return result, nil
 }
 
-func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
 	taskID, err := extractTaskID(req.GetParent())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
@@ -185,7 +185,7 @@ func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 	// todo: handling pagination
 	configs, err := h.handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{TaskID: taskID})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	result, err := toProtoListTaskPushConfig(configs)
 	if err != nil {
@@ -194,7 +194,7 @@ func (h *GrpcHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 	return result, nil
 }
 
-func (h *GrpcHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
+func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
 	if h.cardProducer == nil {
 		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
 	}
@@ -206,13 +206,13 @@ func (h *GrpcHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardR
 	return result, err
 }
 
-func (h *GrpcHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
+func (h *GRPCHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
 	params, err := fromProtoDeleteTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 	if err := h.handler.OnDeleteTaskPushConfig(ctx, params); err != nil {
-		return nil, status.Errorf(codes.Internal, "handler failed: %v", err)
+		return nil, toGRPCError(err)
 	}
 	return &emptypb.Empty{}, nil
 }

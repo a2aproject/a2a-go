@@ -250,8 +250,10 @@ type OAuthFlows struct {
 	// ClientCredentials is a configuration for the OAuth Client Credentials flow. Previously called
 	// application in OpenAPI 2.0.
 	ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty" mapstructure:"clientCredentials,omitempty"`
+
 	// Implicit is a configuration for the OAuth Implicit flow.
 	Implicit *ImplicitOAuthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty" mapstructure:"implicit,omitempty"`
+
 	// Password is a configuration for the OAuth Resource Owner Password flow.
 	Password *PasswordOAuthFlow `json:"password,omitempty" yaml:"password,omitempty" mapstructure:"password,omitempty"`
 }

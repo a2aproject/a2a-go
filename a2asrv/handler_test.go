@@ -220,10 +220,10 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	handler := NewHandler(&mockAgentExecutor{})
 	ctx := t.Context()
 
-	if _, err := handler.OnGetTask(ctx, a2a.TaskQueryParams{}); !errors.Is(err, errUnimplemented) {
+	if _, err := handler.OnGetTask(ctx, a2a.TaskQueryParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTask: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnCancelTask(ctx, a2a.TaskIDParams{}); !errors.Is(err, errUnimplemented) {
+	if _, err := handler.OnCancelTask(ctx, a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
 	}
 	if seq := handler.OnResubscribeToTask(ctx, a2a.TaskIDParams{}); seq != nil {
@@ -232,16 +232,16 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	if seq := handler.OnSendMessageStream(ctx, a2a.MessageSendParams{}); seq != nil {
 		t.Error("OnSendMessageStream: expected nil iterator, got non-nil")
 	}
-	if _, err := handler.OnGetTaskPushConfig(ctx, a2a.GetTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+	if _, err := handler.OnGetTaskPushConfig(ctx, a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+	if _, err := handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnListTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnSetTaskPushConfig(ctx, a2a.TaskPushConfig{}); !errors.Is(err, errUnimplemented) {
+	if _, err := handler.OnSetTaskPushConfig(ctx, a2a.TaskPushConfig{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnSetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if err := handler.OnDeleteTaskPushConfig(ctx, a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, errUnimplemented) {
+	if err := handler.OnDeleteTaskPushConfig(ctx, a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnDeleteTaskPushConfig: expected unimplemented error, got %v", err)
 	}
 }
