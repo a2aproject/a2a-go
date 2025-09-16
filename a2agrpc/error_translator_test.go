@@ -15,6 +15,7 @@
 package a2agrpc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -90,6 +91,16 @@ func TestToGRPCError(t *testing.T) {
 			name: "ErrUnimplemented",
 			err:  a2asrv.ErrUnimplemented,
 			want: status.Error(codes.Unimplemented, a2asrv.ErrUnimplemented.Error()),
+		},
+		{
+			name: "context canceled",
+			err:  context.Canceled,
+			want: status.Error(codes.Canceled, context.Canceled.Error()),
+		},
+		{
+			name: "context deadline exceeded",
+			err:  context.DeadlineExceeded,
+			want: status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
 		},
 		{
 			name: "unknown error",

@@ -15,6 +15,7 @@
 package a2agrpc
 
 import (
+	"context"
 	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -51,6 +52,10 @@ func toGRPCError(err error) error {
 		code = codes.Internal
 	case errors.Is(err, a2asrv.ErrUnimplemented):
 		code = codes.Unimplemented
+	case errors.Is(err, context.Canceled):
+		code = codes.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		code = codes.DeadlineExceeded
 	default:
 		code = codes.Internal
 	}
