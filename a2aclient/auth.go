@@ -43,7 +43,7 @@ type AuthInterceptor struct {
 
 // CredentialsService is used by auth interceptor for resolving credentials.
 type CredentialsService interface {
-	Get(ctx context.Context, sid SessionID, scheme string) (AuthCredential, error)
+	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)
 }
 
 type SessionCredentials map[a2a.SecuritySchemeName]AuthCredential
