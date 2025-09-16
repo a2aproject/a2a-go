@@ -12,21 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventqueue
-
-import (
-	"context"
-
-	"github.com/a2aproject/a2a-go/a2a"
-)
-
-// Manager manages event queues on a per-task basis.
-// It provides lifecycle management for task-specific event queues,
-// enabling multiple clients to attach to the same task's event stream.
-type Manager interface {
-	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error)
-
-	// Destroy closes the queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskID a2a.TaskID) error
-}
+// Package pbconv provides conversion functions between A2A protobufs and native Go types.
+package pbconv

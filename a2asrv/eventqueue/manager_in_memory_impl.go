@@ -35,25 +35,25 @@ func NewInMemoryManager() Manager {
 	}
 }
 
-func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskId a2a.TaskID) (Queue, error) {
+func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.queues[taskId]; !ok {
+	if _, ok := m.queues[taskID]; !ok {
 		queue := NewInMemoryQueue(defaultMaxQueueSize)
-		m.queues[taskId] = queue
+		m.queues[taskID] = queue
 	}
-	return m.queues[taskId], nil
+	return m.queues[taskID], nil
 }
 
-func (m *inMemoryManager) Destroy(ctx context.Context, taskId a2a.TaskID) error {
+func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.queues[taskId]; !ok {
+	if _, ok := m.queues[taskID]; !ok {
 		// todo: consider not failing when it already has desired state
-		return fmt.Errorf("queue cannot be destroyed as queue for taskId: %s does not exist", taskId)
+		return fmt.Errorf("queue cannot be destroyed as queue for taskID: %s does not exist", taskID)
 	}
-	queue := m.queues[taskId]
+	queue := m.queues[taskID]
 	_ = queue.Close() // in memory queue close never fails
-	delete(m.queues, taskId)
+	delete(m.queues, taskID)
 	return nil
 }
