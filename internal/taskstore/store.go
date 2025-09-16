@@ -29,6 +29,11 @@ type Mem struct {
 	tasks map[a2a.TaskID]*a2a.Task
 }
 
+func init() {
+	gob.Register(map[string]any{})
+	gob.Register([]any{})
+}
+
 // NewMem creates an empty Mem store.
 func NewMem() *Mem {
 	return &Mem{
@@ -37,6 +42,10 @@ func NewMem() *Mem {
 }
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
+	if err := validateTask(task); err != nil {
+		return err
+	}
+
 	copy, err := deepCopy(task)
 	if err != nil {
 		return err
