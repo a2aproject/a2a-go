@@ -29,17 +29,25 @@ type semaphore struct {
 
 // Implements Queue interface
 type inMemoryQueue struct {
-	// struct{}{} needs to be written to a semaphore's tokens before interacting with events
-	// to limit the number inflight of goroutines that are writing to it.
+	// semaphore plays the role of a mutex for events channel, but provides acquireInContext
+	// method which resolves to error if context.Context get canceled.
+	// The semaphore might be held for a long time if Write() blocks on trying to write to a full channel.
 	semaphore *semaphore
-	// Channel to keep all events related to a specific task.
+	// events channel is where Write() sends events to and Read() receives events from.
 	events chan a2a.Event
 
+	// closeMu is acquired by Close() for the whole duration of method execution.
+	// If there are concurrent Close() calls the first one to acquire the mutex ensures the queue
+	// is canceled, and other calls wait for it to finish.
+	// We do this to guarantee that no Writes are accepted after Close() exits.
 	closeMu sync.Mutex
-	// Indicates that the queue has been closed but still can be drained by Read().
+	// closed indicates that the queue has been closed but still can be drained by Read().
+	// Close() updates the field and Write() reads it, so it requires both closeMu and semaphore
+	// for the race detector to be happy.
 	closed bool
-	// struct{}{} needs to be written to closeChan before trying to acquire a semaphore for closing events.
-	closeChan chan any
+	// closeChan is closed by Close() to ensure Write() calls are not blocked on trying to write
+	// to a full events channel, preventing Close() to close it.
+	closeChan chan struct{}
 }
 
 func newSemaphore(count int) *semaphore {
@@ -73,7 +81,7 @@ func NewInMemoryQueue(size int) Queue {
 		// https://github.com/modelcontextprotocol/go-sdk/blob/a76bae3a11c008d59488083185d05a74b86f429c/mcp/transport.go#L305
 		// https://github.com/golang/net/blob/master/quic/queue.go
 		events:    make(chan a2a.Event, size),
-		closeChan: make(chan any, 1),
+		closeChan: make(chan struct{}),
 	}
 }
 
@@ -117,16 +125,14 @@ func (q *inMemoryQueue) Close() error {
 	if q.closed {
 		return nil
 	}
-	q.closed = true
 
+	// Ensure there's no Write() holding the semaphore blocked on trying to write to a full channel.
 	close(q.closeChan)
-
-	// It might be blocked here if there is a writer holding the semaphore.
-	// But it's going to be unblocked by the signal we sent.
 	q.semaphore.acquire()
 	defer q.semaphore.release()
 
 	close(q.events)
+	q.closed = true
 
 	return nil
 }
