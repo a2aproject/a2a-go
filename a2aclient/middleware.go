@@ -71,6 +71,10 @@ func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 	return meta, ok
 }
 
+func WithCallMeta(ctx context.Context, meta CallMeta) context.Context {
+	return context.WithValue(ctx, callMetaKey{}, meta)
+}
+
 // CallContextFrom allows CallInterceptors to get additional information about the intercepted request.
 func CallContextFrom(ctx context.Context) (CallContext, bool) {
 	callCtx, ok := ctx.Value(callContextKey{}).(CallContext)
@@ -85,8 +89,16 @@ func WithSessionID(ctx context.Context, sid SessionID) context.Context {
 		return context.WithValue(ctx, callContextKey{}, callCtx)
 	}
 
-	callCtx := CallContext{SessionID: sid}
-	return context.WithValue(ctx, callContextKey{}, callCtx)
+	return context.WithValue(ctx, callContextKey{}, CallContext{SessionID: sid})
+}
+
+func withMethod(ctx context.Context, method string) context.Context {
+	if callCtx, ok := CallContextFrom(ctx); ok {
+		callCtx.Method = method
+		return context.WithValue(ctx, callContextKey{}, callCtx)
+	}
+
+	return context.WithValue(ctx, callContextKey{}, CallContext{Method: method})
 }
 
 // PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.

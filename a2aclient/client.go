@@ -55,50 +55,224 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 
 // A2A protocol methods
 
-func (c *Client) GetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrNotImplemented
+func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	ctx = withMethod(ctx, "GetTask")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, query)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.GetTask(ctx, query)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) CancelTask(ctx context.Context, id a2a.TaskIDParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrNotImplemented
+func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+	ctx = withMethod(ctx, "CancelTask")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, id)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.CancelTask(ctx, id)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) SendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	return &a2a.Task{}, ErrNotImplemented
+func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	ctx = withMethod(ctx, "SendMessage")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, message)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.SendMessage(ctx, message)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) ResubscribeToTask(ctx context.Context, id a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(&a2a.Message{}, ErrNotImplemented)
+		ctx = withMethod(ctx, "ResubscribeToTask")
+
+		ctx, err := interceptBefore(ctx, c.interceptors, id)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		for resp, err := range c.transport.ResubscribeToTask(ctx, id) {
+			if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+				yield(nil, err)
+				return
+			}
+
+			if !yield(resp, nil) {
+				return
+			}
+		}
 	}
 }
 
-func (c *Client) SendStreamingMessage(ctx context.Context, message a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(&a2a.Message{}, ErrNotImplemented)
+		ctx = withMethod(ctx, "SendStreamingMessage")
+
+		ctx, err := interceptBefore(ctx, c.interceptors, message)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		for resp, err := range c.transport.SendStreamingMessage(ctx, message) {
+			if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+				yield(nil, err)
+				return
+			}
+
+			if !yield(resp, nil) {
+				return
+			}
+		}
 	}
 }
 
-func (c *Client) GetTaskPushConfig(ctx context.Context, params a2a.GetTaskPushConfigParams) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *Client) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	ctx = withMethod(ctx, "GetTaskPushConfig")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.GetTaskPushConfig(ctx, params)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) ListTaskPushConfig(ctx context.Context, params a2a.ListTaskPushConfigParams) ([]a2a.TaskPushConfig, error) {
-	return []a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	ctx = withMethod(ctx, "ListTaskPushConfig")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.ListTaskPushConfig(ctx, params)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) SetTaskPushConfig(ctx context.Context, params a2a.TaskPushConfig) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	ctx = withMethod(ctx, "SetTaskPushConfig")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.SetTaskPushConfig(ctx, params)
+
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (c *Client) DeleteTaskPushConfig(ctx context.Context, params a2a.DeleteTaskPushConfigParams) error {
-	return ErrNotImplemented
+func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	ctx = withMethod(ctx, "DeleteTaskPushConfig")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, params)
+	if err != nil {
+		return err
+	}
+
+	err = c.transport.DeleteTaskPushConfig(ctx, params)
+
+	if err := interceptAfter(ctx, c.interceptors, nil, err); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return &a2a.AgentCard{}, ErrNotImplemented
+	ctx = withMethod(ctx, "GetAgentCard")
+
+	ctx, err := interceptBefore(ctx, c.interceptors, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.GetAgentCard(ctx)
+	if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 func (c *Client) Destroy() error {
 	return c.transport.Destroy()
+}
+
+func interceptBefore(ctx context.Context, interceptors []CallInterceptor, payload any) (context.Context, error) {
+	req := Request{Meta: CallMeta{}, Payload: payload}
+	if payload == nil { // set interface to nil if method does not take any parameters
+		req.Payload = nil
+	}
+
+	for _, interceptor := range interceptors {
+		localCtx, err := interceptor.Before(ctx, &req)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = localCtx
+	}
+
+	return WithCallMeta(ctx, req.Meta), nil
+}
+
+func interceptAfter(ctx context.Context, interceptors []CallInterceptor, payload any, err error) error {
+	meta, ok := CallMetaFrom(ctx)
+	if !ok {
+		meta = CallMeta{}
+	}
+
+	resp := Response{Meta: meta, Payload: payload, Err: err}
+	if payload == nil { // set interface to nil if method does not return any value
+		resp.Payload = nil
+	}
+
+	for _, interceptor := range interceptors {
+		if err := interceptor.After(ctx, &resp); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
