@@ -1,0 +1,530 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package a2aclient
+
+import (
+	"context"
+	"errors"
+	"github.com/a2aproject/a2a-go/a2a"
+	"iter"
+	"testing"
+)
+
+type testTransport struct {
+	GetTaskFn              func(context.Context, *a2a.TaskQueryParams) (*a2a.Task, error)
+	CancelTaskFn           func(context.Context, *a2a.TaskIDParams) (*a2a.Task, error)
+	SendMessageFn          func(context.Context, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
+	ResubscribeToTaskFn    func(context.Context, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
+	SendStreamingMessageFn func(context.Context, *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
+	GetTaskPushConfigFn    func(context.Context, *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
+	ListTaskPushConfigFn   func(context.Context, *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
+	SetTaskPushConfigFn    func(context.Context, *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
+	DeleteTaskPushConfigFn func(context.Context, *a2a.DeleteTaskPushConfigParams) error
+	GetAgentCardFn         func(context.Context) (*a2a.AgentCard, error)
+}
+
+func (t *testTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	return t.GetTaskFn(ctx, query)
+}
+
+func (t *testTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+	return t.CancelTaskFn(ctx, id)
+}
+
+func (t *testTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	return t.SendMessageFn(ctx, message)
+}
+
+func (t *testTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	return t.ResubscribeToTaskFn(ctx, id)
+}
+
+func (t *testTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	return t.SendStreamingMessageFn(ctx, message)
+}
+
+func (t *testTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return t.GetTaskPushConfigFn(ctx, params)
+}
+
+func (t *testTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	return t.ListTaskPushConfigFn(ctx, params)
+}
+
+func (t *testTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return t.SetTaskPushConfigFn(ctx, params)
+}
+
+func (t *testTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	return t.DeleteTaskPushConfigFn(ctx, params)
+}
+
+func (t *testTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return t.GetAgentCardFn(ctx)
+}
+
+func (t *testTransport) Destroy() error {
+	return nil
+}
+
+func makeEventSeq2(events []a2a.Event) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		for _, event := range events {
+			if !yield(event, nil) {
+				break
+			}
+		}
+	}
+}
+
+type testInterceptor struct {
+	lastCallCtx *CallContext
+	lastReq     *Request
+	lastResp    *Response
+	BeforeFn    func(context.Context, *Request) (context.Context, error)
+	AfterFn     func(context.Context, *Response) error
+}
+
+func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+	if callCtx, ok := CallContextFrom(ctx); ok {
+		ti.lastCallCtx = &callCtx
+	} else {
+		ti.lastCallCtx = nil
+	}
+	ti.lastReq = req
+	if ti.BeforeFn != nil {
+		return ti.BeforeFn(ctx, req)
+	}
+	return ctx, nil
+}
+
+func (ti *testInterceptor) After(ctx context.Context, resp *Response) error {
+	ti.lastResp = resp
+	if ti.AfterFn != nil {
+		return ti.AfterFn(ctx, resp)
+	}
+	return nil
+}
+
+func newTestClient(transport Transport, interceptor CallInterceptor) *Client {
+	return &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
+}
+
+func TestClient_InterceptorModifiesRequest(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	var receivedMeta map[string]any
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			receivedMeta = tqp.Metadata
+			return task, nil
+		},
+	}
+	metaKey, metaVal := "answer", 42
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+			typed := r.Payload.(*a2a.TaskQueryParams)
+			typed.Metadata = map[string]any{metaKey: metaVal}
+			return ctx, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
+		t.Fatalf("expected call to succeed, got %v", err)
+	}
+	if receivedMeta[metaKey] != metaVal {
+		t.Fatalf("expected meta[%s]=%d, got %v", metaKey, metaVal, receivedMeta[metaKey])
+	}
+}
+
+func TestClient_InterceptorModifiesResponse(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			return task, nil
+		},
+	}
+	metaKey, metaVal := "answer", 42
+	interceptor := &testInterceptor{
+		AfterFn: func(ctx context.Context, r *Response) error {
+			typed := r.Payload.(*a2a.Task)
+			typed.Metadata = map[string]any{metaKey: metaVal}
+			return nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	task, err := client.GetTask(ctx, &a2a.TaskQueryParams{})
+	if err != nil {
+		t.Fatalf("expected call to succeed, got %v", err)
+	}
+	if task.Metadata[metaKey] != metaVal {
+		t.Fatalf("expected meta[%s]=%d, got %v", metaKey, metaVal, task.Metadata[metaKey])
+	}
+}
+
+func TestClient_InterceptorRejectsRequest(t *testing.T) {
+	ctx := t.Context()
+	called := false
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			called = true
+			return &a2a.Task{}, nil
+		},
+	}
+	wantErr := errors.New("failed")
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+			return ctx, wantErr
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	if task, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected call to fail with %v, got %v, %v", wantErr, task, err)
+	}
+	if called {
+		t.Fatalf("expected transport to not be called")
+	}
+}
+
+func TestClient_InterceptorRejectsResponse(t *testing.T) {
+	ctx := t.Context()
+	called := false
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			called = true
+			return &a2a.Task{}, nil
+		},
+	}
+	wantErr := errors.New("failed")
+	interceptor := &testInterceptor{
+		AfterFn: func(ctx context.Context, r *Response) error {
+			return wantErr
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	if task, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected call to fail with %v, got %v, %v", wantErr, task, err)
+	}
+	if !called {
+		t.Fatalf("expected transport to be called")
+	}
+}
+
+func TestClient_InterceptorMethodsDataSharing(t *testing.T) {
+	ctx := t.Context()
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			return &a2a.Task{}, nil
+		},
+	}
+	type ctxKey struct{}
+	val := 42
+	var receivedVal int
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+			return context.WithValue(ctx, ctxKey{}, val), nil
+		},
+		AfterFn: func(ctx context.Context, r *Response) error {
+			receivedVal = ctx.Value(ctxKey{}).(int)
+			return nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
+		t.Fatalf("expected call to succeed, got %v", err)
+	}
+
+	if receivedVal != val {
+		t.Fatalf("expected transport to not be called")
+	}
+}
+
+func TestClient_InterceptGetTask(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			return task, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.TaskQueryParams{}
+	resp, err := client.GetTask(ctx, req)
+	if interceptor.lastCallCtx.Method != "GetTask" {
+		t.Fatalf("expected method to be GetTask, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || resp != task {
+		t.Fatalf("expected %v, got %v, %v", task, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != task {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", task, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptCancelTask(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	transport := &testTransport{
+		CancelTaskFn: func(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+			return task, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.TaskIDParams{}
+	resp, err := client.CancelTask(ctx, req)
+	if interceptor.lastCallCtx.Method != "CancelTask" {
+		t.Fatalf("expected method to be CancelTask, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || resp != task {
+		t.Fatalf("expected %v, got %v, %v", task, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != task {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", task, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptSendMessage(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	transport := &testTransport{
+		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			return task, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.MessageSendParams{}
+	resp, err := client.SendMessage(ctx, req)
+	if interceptor.lastCallCtx.Method != "SendMessage" {
+		t.Fatalf("expected method to be SendMessage, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || resp != task {
+		t.Fatalf("expected %v, got %v, %v", task, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != task {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", task, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptResubscribeToTask(t *testing.T) {
+	ctx := t.Context()
+	events := []a2a.Event{
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+	}
+	transport := &testTransport{
+		ResubscribeToTaskFn: func(ctx context.Context, ti *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+			return makeEventSeq2(events)
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.TaskIDParams{}
+	eventI := 0
+	for resp, err := range client.ResubscribeToTask(ctx, req) {
+		if err != nil || resp != events[eventI] {
+			t.Fatalf("expected %v, got %v, %v", events[eventI], resp, err)
+		}
+		if interceptor.lastResp.Payload != events[eventI] {
+			t.Fatalf("expected interceptor.After to intercept %dth %v, got %v", eventI, events[eventI], interceptor.lastResp.Payload)
+		}
+		eventI += 1
+	}
+	if interceptor.lastCallCtx.Method != "ResubscribeToTask" {
+		t.Fatalf("expected method to be ResubscribeToTask, got %v", interceptor.lastCallCtx)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+}
+
+func TestClient_InterceptSendStreamingMessage(t *testing.T) {
+	ctx := t.Context()
+	events := []a2a.Event{
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+	}
+	transport := &testTransport{
+		SendStreamingMessageFn: func(ctx context.Context, ti *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+			return makeEventSeq2(events)
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.MessageSendParams{}
+	eventI := 0
+	for resp, err := range client.SendStreamingMessage(ctx, req) {
+		if err != nil || resp != events[eventI] {
+			t.Fatalf("expected %v, got %v, %v", events[eventI], resp, err)
+		}
+		if interceptor.lastResp.Payload != events[eventI] {
+			t.Fatalf("expected interceptor.After to intercept %dth %v, got %v", eventI, events[eventI], interceptor.lastResp.Payload)
+		}
+		eventI += 1
+	}
+	if interceptor.lastCallCtx.Method != "SendStreamingMessage" {
+		t.Fatalf("expected method to be SendStreamingMessage, got %v", interceptor.lastCallCtx)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+}
+
+func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	config := &a2a.TaskPushConfig{}
+	transport := &testTransport{
+		GetTaskPushConfigFn: func(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+			return config, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.GetTaskPushConfigParams{}
+	resp, err := client.GetTaskPushConfig(ctx, req)
+	if interceptor.lastCallCtx.Method != "GetTaskPushConfig" {
+		t.Fatalf("expected method to be GetTaskPushConfig, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || resp != config {
+		t.Fatalf("expected %v, got %v, %v", config, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != config {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", config, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptListTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	config := &a2a.TaskPushConfig{}
+	transport := &testTransport{
+		ListTaskPushConfigFn: func(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+			return []*a2a.TaskPushConfig{config}, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.ListTaskPushConfigParams{}
+	resp, err := client.ListTaskPushConfig(ctx, req)
+	if interceptor.lastCallCtx.Method != "ListTaskPushConfig" {
+		t.Fatalf("expected method to be ListTaskPushConfig, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || len(resp) != 1 || resp[0] != config {
+		t.Fatalf("expected %v, got %v, %v", config, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload.([]*a2a.TaskPushConfig)[0] != config {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", config, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptSetTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	config := &a2a.TaskPushConfig{}
+	transport := &testTransport{
+		SetTaskPushConfigFn: func(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+			return config, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.TaskPushConfig{}
+	resp, err := client.SetTaskPushConfig(ctx, req)
+	if interceptor.lastCallCtx.Method != "SetTaskPushConfig" {
+		t.Fatalf("expected method to be SetTaskPushConfig, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil || resp != config {
+		t.Fatalf("expected %v, got %v, %v", config, resp, err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != config {
+		t.Fatalf("expected interceptor.After to intercept %v, got %v", config, interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	transport := &testTransport{
+		DeleteTaskPushConfigFn: func(ctx context.Context, dtpcp *a2a.DeleteTaskPushConfigParams) error {
+			return nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.DeleteTaskPushConfigParams{}
+	err := client.DeleteTaskPushConfig(ctx, req)
+	if interceptor.lastCallCtx.Method != "DeleteTaskPushConfig" {
+		t.Fatalf("expected method to be DeleteTaskPushConfig, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != nil {
+		t.Fatalf("expected interceptor.After to intercept nil, got %v", interceptor.lastResp.Payload)
+	}
+}
+
+func TestClient_InterceptGetAgentCard(t *testing.T) {
+	ctx := t.Context()
+	card := &a2a.AgentCard{}
+	transport := &testTransport{
+		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+			return card, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	resp, err := client.GetAgentCard(ctx)
+	if interceptor.lastCallCtx.Method != "GetAgentCard" {
+		t.Fatalf("expected method to be GetAgentCard, got %v", interceptor.lastCallCtx)
+	}
+	if err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
+	}
+	if interceptor.lastReq.Payload != nil {
+		t.Fatalf("expected interceptor.Before to intercept nil, got %v", interceptor.lastReq.Payload)
+	}
+	if interceptor.lastResp.Payload != resp {
+		t.Fatalf("expected interceptor.After to intercept nil, got %v", interceptor.lastResp.Payload)
+	}
+}
