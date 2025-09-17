@@ -24,17 +24,17 @@ import (
 // about task state changes to external endpoints.
 type PushNotifier interface {
 	// SendPush sends a push notification containing the latest task state.
-	SendPush(ctx context.Context, task a2a.Task) error
+	SendPush(ctx context.Context, task *a2a.Task) error
 }
 
 // PushConfigStore manages push notification configurations for tasks.
 type PushConfigStore interface {
 	// Save creates or updates a push notification configuration for a task.
 	// PushConfig has an ID and a Task can have multiple associated configurations.
-	Save(ctx context.Context, taskID a2a.TaskID, config a2a.PushConfig) error
+	Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) error
 
 	// Get retrieves all registered push configurations for a Task.
-	Get(ctx context.Context, taskID a2a.TaskID) ([]a2a.PushConfig, error)
+	Get(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
 
 	// Delete removes a push configuration registered for a Task with the given configID.
 	Delete(ctx context.Context, taskID a2a.TaskID, configID string) error
@@ -46,8 +46,8 @@ type PushConfigStore interface {
 // TaskStore provides storage for A2A tasks.
 type TaskStore interface {
 	// Save stores a task.
-	Save(ctx context.Context, task a2a.Task) error
+	Save(ctx context.Context, task *a2a.Task) error
 
 	// Get retrieves a task by ID.
-	Get(ctx context.Context, taskID a2a.TaskID) (a2a.Task, error)
+	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error)
 }

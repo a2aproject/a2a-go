@@ -350,7 +350,7 @@ func TestFromProtoRequests(t *testing.T) {
 		tests := []struct {
 			name    string
 			req     *a2apb.SendMessageRequest
-			want    a2a.MessageSendParams
+			want    *a2a.MessageSendParams
 			wantErr bool
 		}{
 			{
@@ -360,8 +360,8 @@ func TestFromProtoRequests(t *testing.T) {
 					Configuration: pConf,
 					Metadata:      pMeta,
 				},
-				want: a2a.MessageSendParams{
-					Message:  a2aMsg,
+				want: &a2a.MessageSendParams{
+					Message:  &a2aMsg,
 					Config:   a2aConf,
 					Metadata: a2aMeta,
 				},
@@ -372,8 +372,8 @@ func TestFromProtoRequests(t *testing.T) {
 					Request:       pMsg,
 					Configuration: pConf,
 				},
-				want: a2a.MessageSendParams{
-					Message: a2aMsg,
+				want: &a2a.MessageSendParams{
+					Message: &a2aMsg,
 					Config:  a2aConf,
 				},
 			},
@@ -383,8 +383,8 @@ func TestFromProtoRequests(t *testing.T) {
 					Request:  pMsg,
 					Metadata: pMeta,
 				},
-				want: a2a.MessageSendParams{
-					Message:  a2aMsg,
+				want: &a2a.MessageSendParams{
+					Message:  &a2aMsg,
 					Metadata: a2aMeta,
 				},
 			},
@@ -435,7 +435,7 @@ func TestFromProtoRequests(t *testing.T) {
 		tests := []struct {
 			name    string
 			req     *a2apb.GetTaskRequest
-			want    a2a.TaskQueryParams
+			want    *a2a.TaskQueryParams
 			wantErr bool
 		}{
 			{
@@ -444,7 +444,7 @@ func TestFromProtoRequests(t *testing.T) {
 					Name:          "tasks/test",
 					HistoryLength: 10,
 				},
-				want: a2a.TaskQueryParams{
+				want: &a2a.TaskQueryParams{
 					ID:            "test",
 					HistoryLength: &historyLen,
 				},
@@ -454,7 +454,7 @@ func TestFromProtoRequests(t *testing.T) {
 				req: &a2apb.GetTaskRequest{
 					Name: "tasks/test",
 				},
-				want: a2a.TaskQueryParams{
+				want: &a2a.TaskQueryParams{
 					ID: "test",
 				},
 			},
@@ -484,7 +484,7 @@ func TestFromProtoRequests(t *testing.T) {
 		tests := []struct {
 			name    string
 			req     *a2apb.CreateTaskPushNotificationConfigRequest
-			want    a2a.TaskPushConfig
+			want    *a2a.TaskPushConfig
 			wantErr bool
 		}{
 			{
@@ -493,7 +493,7 @@ func TestFromProtoRequests(t *testing.T) {
 					Parent: "tasks/test",
 					Config: &a2apb.TaskPushNotificationConfig{PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"}},
 				},
-				want: a2a.TaskPushConfig{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
+				want: &a2a.TaskPushConfig{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
 			},
 			{
 				name: "nil config",
@@ -544,7 +544,7 @@ func TestFromProtoRequests(t *testing.T) {
 		tests := []struct {
 			name    string
 			req     *a2apb.GetTaskPushNotificationConfigRequest
-			want    a2a.GetTaskPushConfigParams
+			want    *a2a.GetTaskPushConfigParams
 			wantErr bool
 		}{
 			{
@@ -552,7 +552,7 @@ func TestFromProtoRequests(t *testing.T) {
 				req: &a2apb.GetTaskPushNotificationConfigRequest{
 					Name: "tasks/test-task/pushConfigs/test-config",
 				},
-				want: a2a.GetTaskPushConfigParams{
+				want: &a2a.GetTaskPushConfigParams{
 					TaskID:   "test-task",
 					ConfigID: "test-config",
 				},
@@ -590,7 +590,7 @@ func TestFromProtoRequests(t *testing.T) {
 		tests := []struct {
 			name    string
 			req     *a2apb.DeleteTaskPushNotificationConfigRequest
-			want    a2a.DeleteTaskPushConfigParams
+			want    *a2a.DeleteTaskPushConfigParams
 			wantErr bool
 		}{
 			{
@@ -598,7 +598,7 @@ func TestFromProtoRequests(t *testing.T) {
 				req: &a2apb.DeleteTaskPushNotificationConfigRequest{
 					Name: "tasks/test-task/pushConfigs/test-config",
 				},
-				want: a2a.DeleteTaskPushConfigParams{
+				want: &a2a.DeleteTaskPushConfigParams{
 					TaskID:   "test-task",
 					ConfigID: "test-config",
 				},
@@ -1077,16 +1077,16 @@ func TestToProtoConversion(t *testing.T) {
 	})
 
 	t.Run("toProtoListTaskPushConfig", func(t *testing.T) {
-		configs := []a2a.TaskPushConfig{
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
+		configs := []*a2a.TaskPushConfig{
+			&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
+			&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 		}
-		pConf1, _ := ToProtoTaskPushConfig(&configs[0])
-		pConf2, _ := ToProtoTaskPushConfig(&configs[1])
+		pConf1, _ := ToProtoTaskPushConfig(configs[0])
+		pConf2, _ := ToProtoTaskPushConfig(configs[1])
 
 		tests := []struct {
 			name    string
-			configs []a2a.TaskPushConfig
+			configs []*a2a.TaskPushConfig
 			want    *a2apb.ListTaskPushNotificationConfigResponse
 			wantErr bool
 		}{
@@ -1099,15 +1099,15 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name:    "empty slice",
-				configs: []a2a.TaskPushConfig{},
+				configs: []*a2a.TaskPushConfig{},
 				want: &a2apb.ListTaskPushNotificationConfigResponse{
 					Configs: []*a2apb.TaskPushNotificationConfig{},
 				},
 			},
 			{
 				name: "conversion error",
-				configs: []a2a.TaskPushConfig{
-					{TaskID: "test-task", Config: a2a.PushConfig{}},
+				configs: []*a2a.TaskPushConfig{
+					&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{}},
 				},
 				wantErr: true,
 			},

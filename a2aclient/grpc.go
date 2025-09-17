@@ -55,43 +55,42 @@ type grpcTransport struct {
 
 // A2A protocol methods
 
-func (c *grpcTransport) GetTask(ctx context.Context, query a2a.TaskQueryParams) (*a2a.Task, error) {
+func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	return &a2a.Task{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) CancelTask(ctx context.Context, id a2a.TaskIDParams) (*a2a.Task, error) {
+func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	return &a2a.Task{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) SendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+func (c *grpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	return &a2a.Task{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		yield(&a2a.Message{}, ErrNotImplemented)
 	}
 }
 
-func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(&a2a.Message{}, ErrNotImplemented)
 	}
 }
 
-func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2a.GetTaskPushConfigParams) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params a2a.ListTaskPushConfigParams) ([]a2a.TaskPushConfig, error) {
-	return []a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	return []*a2a.TaskPushConfig{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params a2a.TaskPushConfig) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrNotImplemented
+func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrNotImplemented
 }
 
-func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2a.DeleteTaskPushConfigParams) error {
+func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	return ErrNotImplemented
 }
 

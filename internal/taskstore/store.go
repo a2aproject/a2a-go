@@ -58,9 +58,9 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	return nil
 }
 
-func (s *Mem) Get(ctx context.Context, taskId a2a.TaskID) (*a2a.Task, error) {
+func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 	s.mu.RLock()
-	task, ok := s.tasks[taskId]
+	task, ok := s.tasks[taskID]
 	s.mu.RUnlock()
 
 	if !ok {
