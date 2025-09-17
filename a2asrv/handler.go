@@ -107,15 +107,15 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	return h
 }
 
-func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query a2a.TaskQueryParams) (a2a.Task, error) {
-	return a2a.Task{}, ErrUnimplemented
+func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	return &a2a.Task{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id a2a.TaskIDParams) (a2a.Task, error) {
-	return a2a.Task{}, ErrUnimplemented
+func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+	return &a2a.Task{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	taskID := message.Message.TaskID
 	if taskID == "" {
 		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
@@ -152,18 +152,18 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, message
 	return nil
 }
 
-func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params a2a.GetTaskPushConfigParams) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrUnimplemented
+func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params a2a.ListTaskPushConfigParams) ([]a2a.TaskPushConfig, error) {
+func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
 	return nil, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params a2a.TaskPushConfig) (a2a.TaskPushConfig, error) {
-	return a2a.TaskPushConfig{}, ErrUnimplemented
+func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params a2a.DeleteTaskPushConfigParams) error {
+func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	return ErrUnimplemented
 }

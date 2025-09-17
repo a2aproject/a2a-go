@@ -45,16 +45,16 @@ func extractConfigID(name string) (string, error) {
 	return matches[1], nil
 }
 
-func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSendParams, error) {
+func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.MessageSendParams, error) {
 	msg, err := fromProtoMessage(req.GetRequest())
 	if err != nil {
-		return a2a.MessageSendParams{}, err
+		return nil, err
 	}
 	config, err := fromProtoSendMessageConfig(req.GetConfiguration())
 	if err != nil {
-		return a2a.MessageSendParams{}, err
+		return nil, err
 	}
-	params := a2a.MessageSendParams{
+	params := &a2a.MessageSendParams{
 		Message: msg,
 		Config:  config,
 	}
@@ -64,19 +64,19 @@ func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (a2a.MessageSend
 	return params, nil
 }
 
-func fromProtoMessage(pMsg *a2apb.Message) (a2a.Message, error) {
+func fromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	if pMsg == nil {
-		return a2a.Message{}, fmt.Errorf("proto message is nil")
+		return nil, fmt.Errorf("proto message is nil")
 	}
 	parts := make([]a2a.Part, len(pMsg.GetContent()))
 	for i, p := range pMsg.GetContent() {
 		part, err := fromProtoPart(p)
 		if err != nil {
-			return a2a.Message{}, fmt.Errorf("failed to convert part: %w", err)
+			return nil, fmt.Errorf("failed to convert part: %w", err)
 		}
 		parts[i] = part
 	}
-	msg := a2a.Message{
+	msg := &a2a.Message{
 		ID:         pMsg.GetMessageId(),
 		ContextID:  pMsg.GetContextId(),
 		Extensions: pMsg.GetExtensions(),
@@ -182,13 +182,13 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 	return result, nil
 }
 
-func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, error) {
+func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.TaskQueryParams, error) {
 	// TODO: consider throwing an error when the path - req.GetName() is unexpected, e.g. tasks/taskID/someExtraText
 	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
-		return a2a.TaskQueryParams{}, fmt.Errorf("failed to extract task id: %w", err)
+		return nil, fmt.Errorf("failed to extract task id: %w", err)
 	}
-	params := a2a.TaskQueryParams{
+	params := &a2a.TaskQueryParams{
 		ID: taskID,
 	}
 	if req.GetHistoryLength() > 0 {
@@ -198,51 +198,51 @@ func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (a2a.TaskQueryParams, er
 	return params, nil
 }
 
-func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (a2a.TaskPushConfig, error) {
+func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.TaskPushConfig, error) {
 	config := req.GetConfig()
 	if config == nil || config.GetPushNotificationConfig() == nil {
-		return a2a.TaskPushConfig{}, fmt.Errorf("invalid config")
+		return nil, fmt.Errorf("invalid config")
 	}
 	pConf, err := fromProtoPushConfig(config.GetPushNotificationConfig())
 	if err != nil {
-		return a2a.TaskPushConfig{}, fmt.Errorf("failed to convert push config: %w", err)
+		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 	taskID, err := ExtractTaskID(req.GetParent())
 	if err != nil {
-		return a2a.TaskPushConfig{}, fmt.Errorf("failed to extract task id: %w", err)
+		return nil, fmt.Errorf("failed to extract task id: %w", err)
 	}
 
-	return a2a.TaskPushConfig{
+	return &a2a.TaskPushConfig{
 		TaskID: taskID,
 		Config: *pConf,
 	}, nil
 }
 
-func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (a2a.GetTaskPushConfigParams, error) {
+func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (*a2a.GetTaskPushConfigParams, error) {
 	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
-		return a2a.GetTaskPushConfigParams{}, fmt.Errorf("failed to extract task id: %w", err)
+		return nil, fmt.Errorf("failed to extract task id: %w", err)
 	}
 	configID, err := extractConfigID(req.GetName())
 	if err != nil {
-		return a2a.GetTaskPushConfigParams{}, fmt.Errorf("failed to extract config id: %w", err)
+		return nil, fmt.Errorf("failed to extract config id: %w", err)
 	}
-	return a2a.GetTaskPushConfigParams{
+	return &a2a.GetTaskPushConfigParams{
 		TaskID:   taskID,
 		ConfigID: configID,
 	}, nil
 }
 
-func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (a2a.DeleteTaskPushConfigParams, error) {
+func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (*a2a.DeleteTaskPushConfigParams, error) {
 	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
-		return a2a.DeleteTaskPushConfigParams{}, fmt.Errorf("failed to extract task id: %w", err)
+		return nil, fmt.Errorf("failed to extract task id: %w", err)
 	}
 	configID, err := extractConfigID(req.GetName())
 	if err != nil {
-		return a2a.DeleteTaskPushConfigParams{}, fmt.Errorf("failed to extract config id: %w", err)
+		return nil, fmt.Errorf("failed to extract config id: %w", err)
 	}
-	return a2a.DeleteTaskPushConfigParams{
+	return &a2a.DeleteTaskPushConfigParams{
 		TaskID:   taskID,
 		ConfigID: configID,
 	}, nil
@@ -592,10 +592,10 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 	}, nil
 }
 
-func ToProtoListTaskPushConfig(configs []a2a.TaskPushConfig) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func ToProtoListTaskPushConfig(configs []*a2a.TaskPushConfig) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
 	pConfigs := make([]*a2apb.TaskPushNotificationConfig, len(configs))
 	for i, config := range configs {
-		pConfig, err := ToProtoTaskPushConfig(&config)
+		pConfig, err := ToProtoTaskPushConfig(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}

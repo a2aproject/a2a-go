@@ -102,7 +102,7 @@ func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := pbconv.ToProtoTask(&task)
+	result, err := pbconv.ToProtoTask(task)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
 	}
@@ -114,11 +114,11 @@ func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
-	task, err := h.handler.OnCancelTask(ctx, a2a.TaskIDParams{ID: taskID})
+	task, err := h.handler.OnCancelTask(ctx, &a2a.TaskIDParams{ID: taskID})
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := pbconv.ToProtoTask(&task)
+	result, err := pbconv.ToProtoTask(task)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert task: %v", err)
 	}
@@ -130,7 +130,7 @@ func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
-	for event, err := range h.handler.OnResubscribeToTask(stream.Context(), a2a.TaskIDParams{ID: taskID}) {
+	for event, err := range h.handler.OnResubscribeToTask(stream.Context(), &a2a.TaskIDParams{ID: taskID}) {
 		if err != nil {
 			return toGRPCError(err)
 		}
@@ -155,7 +155,7 @@ func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := pbconv.ToProtoTaskPushConfig(&config)
+	result, err := pbconv.ToProtoTaskPushConfig(config)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
 	}
@@ -171,7 +171,7 @@ func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
-	result, err := pbconv.ToProtoTaskPushConfig(&config)
+	result, err := pbconv.ToProtoTaskPushConfig(config)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert push config: %v", err)
 	}
@@ -184,7 +184,7 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
 	}
 	// todo: handling pagination
-	configs, err := h.handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{TaskID: taskID})
+	configs, err := h.handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{TaskID: taskID})
 	if err != nil {
 		return nil, toGRPCError(err)
 	}

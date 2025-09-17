@@ -95,7 +95,7 @@ func NewMessage(role MessageRole, parts ...Part) *Message {
 }
 
 // NewMessageForTask creates a new message with a random identifier that references the provided Task.
-func NewMessageForTask(role MessageRole, task Task, parts ...Part) *Message {
+func NewMessageForTask(role MessageRole, task *Task, parts ...Part) *Message {
 	return &Message{
 		ID:        NewMessageID(),
 		Role:      role,
@@ -229,7 +229,7 @@ type TaskArtifactUpdateEvent struct {
 }
 
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
-func NewArtifactEvent(task Task, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactEvent(task *Task, parts ...Part) *TaskArtifactUpdateEvent {
 	return &TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
@@ -241,7 +241,7 @@ func NewArtifactEvent(task Task, parts ...Part) *TaskArtifactUpdateEvent {
 }
 
 // NewArtifactUpdateEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
-func NewArtifactUpdateEvent(task Task, id ArtifactID, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactUpdateEvent(task *Task, id ArtifactID, parts ...Part) *TaskArtifactUpdateEvent {
 	return &TaskArtifactUpdateEvent{
 		ContextID: task.ContextID,
 		TaskID:    task.ID,
@@ -531,7 +531,7 @@ type MessageSendParams struct {
 	Config *MessageSendConfig `json:"configuration,omitempty" yaml:"configuration,omitempty" mapstructure:"configuration,omitempty"`
 
 	// Message is the message object being sent to the agent.
-	Message Message `json:"message" yaml:"message" mapstructure:"message"`
+	Message *Message `json:"message" yaml:"message" mapstructure:"message"`
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`

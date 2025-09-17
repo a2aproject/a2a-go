@@ -136,50 +136,50 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	tests := []struct {
 		name      string
-		message   a2a.MessageSendParams
+		message   *a2a.MessageSendParams
 		wantEvent a2a.Event
 		wantErr   error
 	}{
 		{
 			name: "success with TaskID",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
 			wantEvent: &a2a.Message{TaskID: taskID, ID: "test-message"},
 		},
 		{
 			name: "missing TaskID",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{ID: "test-message"},
 			},
 			wantErr: errors.New("message is missing TaskID"),
 		},
 		{
 			name: "type assertion fails",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
 			wantEvent: &a2a.TaskStatusUpdateEvent{TaskID: taskID},
 			wantErr:   errors.New("unexpected event type: *a2a.TaskStatusUpdateEvent"),
 		},
 		{
 			name: "GetOrCreate() fails",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: getOrCreateFailTaskID, ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: getOrCreateFailTaskID, ID: "test-message"},
 			},
 			wantErr: errors.New("failed to retrieve queue: get or create failed"),
 		},
 		{
 			name: "executor Execute() fails",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: executeFailTaskID, ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: executeFailTaskID, ID: "test-message"},
 			},
 			wantErr: errors.New("execute failed"),
 		},
 		{
 			name: "queue Read() fails",
-			message: a2a.MessageSendParams{
-				Message: a2a.Message{TaskID: taskID, ID: "test-message"},
+			message: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: taskID, ID: "test-message"},
 			},
 			wantErr: errors.New("failed to read event from queue: The number of ReadFunc exceeded the number of events: 0"),
 		},
@@ -220,28 +220,28 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	handler := NewHandler(&mockAgentExecutor{})
 	ctx := t.Context()
 
-	if _, err := handler.OnGetTask(ctx, a2a.TaskQueryParams{}); !errors.Is(err, ErrUnimplemented) {
+	if _, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTask: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnCancelTask(ctx, a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
+	if _, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
 	}
-	if seq := handler.OnResubscribeToTask(ctx, a2a.TaskIDParams{}); seq != nil {
+	if seq := handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{}); seq != nil {
 		t.Error("OnResubscribeToTask: expected nil iterator, got non-nil")
 	}
-	if seq := handler.OnSendMessageStream(ctx, a2a.MessageSendParams{}); seq != nil {
+	if seq := handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{}); seq != nil {
 		t.Error("OnSendMessageStream: expected nil iterator, got non-nil")
 	}
-	if _, err := handler.OnGetTaskPushConfig(ctx, a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
+	if _, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnListTaskPushConfig(ctx, a2a.ListTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
+	if _, err := handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnListTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnSetTaskPushConfig(ctx, a2a.TaskPushConfig{}); !errors.Is(err, ErrUnimplemented) {
+	if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnSetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
-	if err := handler.OnDeleteTaskPushConfig(ctx, a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
+	if err := handler.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnDeleteTaskPushConfig: expected unimplemented error, got %v", err)
 	}
 }

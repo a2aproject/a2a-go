@@ -16,7 +16,6 @@ package a2aclient
 
 import (
 	"context"
-	"errors"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
