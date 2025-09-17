@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventqueue
+package taskupdate
 
-import (
-	"context"
+import "github.com/a2aproject/a2a-go/a2a"
 
-	"github.com/a2aproject/a2a-go/a2a"
-)
+// NewSubmittedTask is a utility for converting a Message sent by the user to a new Task
+// the Agent will be working on.
+func NewSubmittedTask(msg *a2a.Message) *a2a.Task {
+	history := make([]*a2a.Message, 1)
+	history[0] = msg
 
-// Manager manages event queues on a per-task basis.
-// It provides lifecycle management for task-specific event queues,
-// enabling multiple clients to attach to the same task's event stream.
-type Manager interface {
-	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error)
+	contextID := msg.ContextID
+	if contextID == "" {
+		contextID = a2a.NewContextID()
+	}
 
-	// Destroy closes the queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskID a2a.TaskID) error
+	return &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: contextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+		History:   history,
+	}
 }

@@ -39,7 +39,7 @@ var (
 	// ErrTaskNotFound indicates that a task with the provided ID was not found.
 	ErrTaskNotFound = errors.New("task not found")
 
-	// ErrTaskNotCancelable indicates that the task was in a state where it could not be cancelled.
+	// ErrTaskNotCancelable indicates that the task was in a state where it could not be canceled.
 	ErrTaskNotCancelable = errors.New("task cannot be canceled")
 
 	// ErrPushNotificationNotSupported indicates that the agent does not support push notifications.

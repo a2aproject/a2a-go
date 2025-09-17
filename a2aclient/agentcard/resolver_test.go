@@ -19,9 +19,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 func mustMarshal(t *testing.T, data any) []byte {
@@ -64,18 +66,19 @@ func TestResolver_DefaultPath(t *testing.T) {
 		t.Fatalf("Resolve() failed with: %v", err)
 	}
 
-	if want != got {
-		t.Errorf("Resolve() card returned %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
 
 func TestResolver_CustomPath(t *testing.T) {
+	ctx := t.Context()
 	path := "/custom/agent.json"
 	want := &a2a.AgentCard{Name: "TestResolver_DefaultPath"}
 	url := mustServe(t, path, mustMarshal(t, want), nil)
 
 	resolver := Resolver{BaseURL: url}
-	got, err := resolver.Resolve(t.Context())
+	got, err := resolver.Resolve(ctx)
 	var httpErr *ErrStatusNotOK
 	if err == nil || !errors.As(err, &httpErr) {
 		t.Fatalf("expected Resolve() to fail with ErrStatusNotOK, got %v, %v", got, err)
@@ -84,13 +87,14 @@ func TestResolver_CustomPath(t *testing.T) {
 		t.Fatalf("expected Resolve() to fail with 404, got %v", httpErr)
 	}
 
-	got, err = resolver.Resolve(t.Context(), WithPath(path))
-	if err != nil {
-		t.Fatalf("Resolve() failed with %v", err)
-	}
-
-	if want != got {
-		t.Errorf("Resolve() card returned %v, want %v", got, want)
+	for _, p := range []string{path, strings.TrimPrefix(path, "/")} {
+		got, err = resolver.Resolve(ctx, WithPath(p))
+		if err != nil {
+			t.Fatalf("Resolve(%s) failed with %v", p, err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
+		}
 	}
 }
 

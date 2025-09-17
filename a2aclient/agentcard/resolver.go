@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// ErrStatusNotOK is an error returned by Resolver when HTTP request returned a non-OK status.
 type ErrStatusNotOK struct {
 	StatusCode int
 	Status     string
@@ -57,14 +59,12 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 		o(reqSpec)
 	}
 
-	url := strings.TrimSuffix(r.BaseURL, "/")
-	if strings.HasPrefix(reqSpec.path, "/") {
-		url += reqSpec.path
-	} else {
-		url += "/" + reqSpec.path
+	reqUrl, err := url.JoinPath(r.BaseURL, reqSpec.path)
+	if err != nil {
+		return nil, fmt.Errorf("url construction failed: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct a request: %w", err)
 	}
@@ -72,11 +72,15 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 		req.Header.Add(h, val)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("card request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// TODO(yarolegovich): log error
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, &ErrStatusNotOK{StatusCode: resp.StatusCode, Status: resp.Status}
