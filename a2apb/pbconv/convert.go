@@ -48,11 +48,11 @@ func extractConfigID(name string) (string, error) {
 func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.MessageSendParams, error) {
 	msg, err := fromProtoMessage(req.GetRequest())
 	if err != nil {
-		return &a2a.MessageSendParams{}, err
+		return nil, err
 	}
 	config, err := fromProtoSendMessageConfig(req.GetConfiguration())
 	if err != nil {
-		return &a2a.MessageSendParams{}, err
+		return nil, err
 	}
 	params := &a2a.MessageSendParams{
 		Message: msg,
