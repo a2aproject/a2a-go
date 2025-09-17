@@ -25,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// ErrStatusNotOK is an error returned by Resolver when HTTP request returned a non-OK status.
 type ErrStatusNotOK struct {
 	StatusCode int
 	Status     string
