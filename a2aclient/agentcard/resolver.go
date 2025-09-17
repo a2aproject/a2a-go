@@ -76,7 +76,10 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 	if err != nil {
 		return nil, fmt.Errorf("card request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// TODO(yarolegovich): log error
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, &ErrStatusNotOK{StatusCode: resp.StatusCode, Status: resp.Status}
