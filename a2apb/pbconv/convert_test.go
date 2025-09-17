@@ -1277,7 +1277,7 @@ func TestToProtoConversion(t *testing.T) {
 			URL:                "https://example.com/agent",
 			PreferredTransport: a2a.TransportProtocolGRPC,
 			AdditionalInterfaces: []a2a.AgentInterface{
-				{Transport: string(a2a.TransportProtocolJSONRPC), URL: "https://example.com/agent/jsonrpc"},
+				{Transport: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc"},
 			},
 			Provider: &a2a.AgentProvider{
 				Org: "Test Org",
