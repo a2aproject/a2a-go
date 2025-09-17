@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 func mustMarshal(t *testing.T, data any) []byte {
@@ -64,8 +65,8 @@ func TestResolver_DefaultPath(t *testing.T) {
 		t.Fatalf("Resolve() failed with: %v", err)
 	}
 
-	if want != got {
-		t.Errorf("Resolve() card returned %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
 
@@ -89,8 +90,8 @@ func TestResolver_CustomPath(t *testing.T) {
 		t.Fatalf("Resolve() failed with %v", err)
 	}
 
-	if want != got {
-		t.Errorf("Resolve() card returned %v, want %v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
 
