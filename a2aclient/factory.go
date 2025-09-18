@@ -148,7 +148,7 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 // compatible transport protocols. If config.PreferredTransports is set the result is ordered
 // based on the provided client preferences.
 func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCandidate, error) {
-	candidates := make([]transportCandidate, 0)
+	candidates := make([]transportCandidate, 0, len(available))
 
 	for _, opt := range available {
 		if tf, ok := f.transports[opt.Transport]; ok {

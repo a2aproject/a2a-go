@@ -146,14 +146,14 @@ func TestFactory_TransportSelection(t *testing.T) {
 		}
 
 		t.Run(tc.name, func(t *testing.T) {
-			selectedProtcol := ""
+			selectedProtocol := ""
 			options := make([]FactoryOption, len(tc.clientSupports))
 			for i, protocol := range tc.clientSupports {
 				options[i] = WithTransport(a2a.TransportProtocol(protocol), TransportFactoryFn(func(context.Context, string, *a2a.AgentCard) (Transport, error) {
 					if slices.Contains(tc.connectFails, protocol) {
 						return nil, fmt.Errorf("connection failed")
 					}
-					selectedProtcol = protocol
+					selectedProtocol = protocol
 					return UnimplementedTransport{}, nil
 				}))
 			}
@@ -173,23 +173,23 @@ func TestFactory_TransportSelection(t *testing.T) {
 				t.Fatalf("CreateFromCard() failed with %v", err)
 			}
 			if err == nil && tc.wantErr {
-				t.Fatalf("expected CreateFromCard() to fail, got %v", selectedProtcol)
+				t.Fatalf("expected CreateFromCard() to fail, got %v", selectedProtocol)
 			}
-			if selectedProtcol != tc.want {
-				t.Fatalf("expected CreateFromCard() to select %q, got %q", tc.want, selectedProtcol)
+			if selectedProtocol != tc.want {
+				t.Fatalf("expected CreateFromCard() to select %q, got %q", tc.want, selectedProtocol)
 			}
 
 			// CreateFromEndpoints
-			selectedProtcol = ""
+			selectedProtocol = ""
 			_, err = factory.CreateFromEndpoints(ctx, makeEndpoints(tc.serverSupports))
 			if err != nil && !tc.wantErr {
 				t.Fatalf("CreateFromURL() failed with %v", err)
 			}
 			if err == nil && tc.wantErr {
-				t.Fatalf("expected CreateFromURL() to fail, got %v", selectedProtcol)
+				t.Fatalf("expected CreateFromURL() to fail, got %v", selectedProtocol)
 			}
-			if selectedProtcol != tc.want {
-				t.Fatalf("expected CreateFromURL() to select %q, got %q", tc.want, selectedProtcol)
+			if selectedProtocol != tc.want {
+				t.Fatalf("expected CreateFromURL() to select %q, got %q", tc.want, selectedProtocol)
 			}
 		})
 	}
