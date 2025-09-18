@@ -69,7 +69,7 @@ func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -86,7 +86,7 @@ func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Tas
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -103,7 +103,7 @@ func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
@@ -166,7 +166,7 @@ func (c *Client) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushC
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
@@ -183,7 +183,7 @@ func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPus
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
@@ -200,7 +200,7 @@ func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConf
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
@@ -217,7 +217,7 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTas
 		return err
 	}
 
-	return nil
+	return err
 }
 
 func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
@@ -233,7 +233,7 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 		return nil, err
 	}
 
-	return resp, nil
+	return resp, err
 }
 
 func (c *Client) Destroy() error {
