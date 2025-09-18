@@ -16,7 +16,9 @@ package a2aclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -31,8 +33,39 @@ type Factory struct {
 	transports   map[a2a.TransportProtocol]TransportFactory
 }
 
+// transportCandidate represents an Agent endpoint with the protocol supported by the Client
+// and is used during the best compatible transport selection.
+type transportCandidate struct {
+	factory  TransportFactory
+	endpoint a2a.AgentInterface
+	// priority if determined by the index of endpoint.Transport in Config.PreferredTransports
+	// or is set to len(Config.PreferredTransports) if Transport is not present in the config
+	priority int
+}
+
+// defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
+var defaultOptions = []FactoryOption{WithGRPCTransport()}
+
+var defaultFactory *Factory = NewFactory()
+
+// CreateFromCard is a helper for creating a Client configured without creating a factory.
+// It is equivalent to calling CreateFromCard on a Factory created without any options.
+func CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
+	return defaultFactory.CreateFromCard(ctx, card, opts...)
+}
+
+// CreateFromEndpoints is a helper for creating a Client configured without creating a factory.
+// It is equivalent to calling CreateFromEndpoints on a Factory created without any options.
+func CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
+	return defaultFactory.CreateFromEndpoints(ctx, endpoints, opts...)
+}
+
 // CreateFromCard returns a Client configured to communicate with the agent described by
 // the provided AgentCard or fails if we couldn't establish a compatible transport.
+// Config PreferredTransports will be used to determine the order of connection attempts.
+// If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
+// and proceed in the order specified by the AdditionalInterfaces.
+// The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
 		extended := WithAdditionalOptions(f, opts...)
@@ -43,12 +76,12 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts 
 	serverPrefs[0] = a2a.AgentInterface{Transport: card.PreferredTransport, URL: card.URL}
 	copy(serverPrefs[1:], card.AdditionalInterfaces)
 
-	transport, connInfo, err := f.selectTransport(serverPrefs)
+	candidates, err := f.selectTransport(serverPrefs)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := transport.Create(ctx, connInfo.URL, card)
+	conn, err := createTransport(ctx, candidates, card)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
@@ -60,25 +93,22 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts 
 	}, nil
 }
 
-// CreateFromURL returns a Client configured to communicate with provided URL using
-// one of the provided protocols, or fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromURL(ctx context.Context, url string, protocols []a2a.TransportProtocol, opts ...FactoryOption) (*Client, error) {
+// CreateFromEndpoints returns a Client configured to communicate with one of the provided endpoints.
+// Config PreferredTransports will be used to determine the order of connection attempts.
+// If PreferredTransports were not provided, we attempt to establish using the provided endpoint order.
+// The method fails if we couldn't establish a compatible transport.
+func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
 		extended := WithAdditionalOptions(f, opts...)
-		return extended.CreateFromURL(ctx, url, protocols)
+		return extended.CreateFromEndpoints(ctx, endpoints)
 	}
 
-	serverPrefs := make([]a2a.AgentInterface, len(protocols))
-	for i, protocol := range protocols {
-		serverPrefs[i] = a2a.AgentInterface{Transport: protocol, URL: url}
-	}
-
-	transport, connInfo, err := f.selectTransport(serverPrefs)
+	candidates, err := f.selectTransport(endpoints)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := transport.Create(ctx, connInfo.URL, nil)
+	conn, err := createTransport(ctx, candidates, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
@@ -90,29 +120,64 @@ func (f *Factory) CreateFromURL(ctx context.Context, url string, protocols []a2a
 	}, nil
 }
 
-func (f *Factory) selectTransport(available []a2a.AgentInterface) (TransportFactory, a2a.AgentInterface, error) {
-	if len(f.config.PreferredTransports) == 0 {
-		for _, opt := range available {
-			if t, ok := f.transports[opt.Transport]; ok {
-				return t, opt, nil
-			}
+// createTransport returns once is succeeds to open a connection using one of the provided
+// transports or fails if all candidates failed.
+func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard) (Transport, error) {
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("empty list of transport candidates was provided")
+	}
+	var transport Transport
+	var failures []error
+	for _, tc := range candidates {
+		conn, err := tc.factory.Create(ctx, tc.endpoint.URL, card)
+		if err == nil {
+			transport = conn
+			break
 		}
-		return nil, a2a.AgentInterface{}, makeNoCompatibleTransportsError(available)
+		err = fmt.Errorf("failed to connect to %s: %w", tc.endpoint.URL, err)
+		failures = append(failures, err)
+	}
+	if transport == nil {
+		return nil, errors.Join(failures...)
+	}
+	// TODO(yarolegovich): log failures
+	return transport, nil
+}
+
+// selectTransport filters the list of available endpoints leaving only those with
+// compatible transport protocols. If config.PreferredTransports is set the result is ordered
+// based on the provided client preferences.
+func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCandidate, error) {
+	candidates := make([]transportCandidate, 0, len(available))
+
+	for _, opt := range available {
+		if tf, ok := f.transports[opt.Transport]; ok {
+			priority := len(f.config.PreferredTransports)
+			for i, clientPref := range f.config.PreferredTransports {
+				if clientPref == opt.Transport {
+					priority = i
+					break
+				}
+			}
+			candidates = append(candidates, transportCandidate{tf, opt, priority})
+		}
 	}
 
-	for _, clientPref := range f.config.PreferredTransports {
-		t, ok := f.transports[clientPref]
-		if !ok {
-			continue
+	if len(candidates) == 0 {
+		protocols := make([]string, len(available))
+		for i, a := range available {
+			protocols[i] = string(a.Transport)
 		}
-		for _, opt := range available {
-			if clientPref == opt.Transport {
-				return t, opt, nil
-			}
-		}
+		return nil, fmt.Errorf("no compatible transports found: [%s]", strings.Join(protocols, ","))
 	}
 
-	return nil, a2a.AgentInterface{}, makeNoCompatibleTransportsError(available)
+	if len(f.config.PreferredTransports) > 0 {
+		slices.SortFunc(candidates, func(c1, c2 transportCandidate) int {
+			return c1.priority - c2.priority
+		})
+	}
+
+	return candidates, nil
 }
 
 // FactoryOption represents a configuration applied to a Factory.
@@ -156,9 +221,6 @@ func (defaultsDisabledOpt) apply(f *Factory) {}
 func WithDefaultsDisabled() FactoryOption {
 	return defaultsDisabledOpt{}
 }
-
-// defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
-var defaultOptions = []FactoryOption{WithGRPCTransport()}
 
 // NewFactory creates a new Factory applying the provided configurations.
 func NewFactory(options ...FactoryOption) *Factory {
