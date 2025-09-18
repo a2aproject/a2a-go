@@ -71,6 +71,9 @@ func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 	return meta, ok
 }
 
+// WithCallMeta allows CallInterceptors to attach information like auth credentials
+// to a request. Transport implementations will attach these to the call in
+// a transport-specific way (eg. headers in HTTP).
 func WithCallMeta(ctx context.Context, meta CallMeta) context.Context {
 	return context.WithValue(ctx, callMetaKey{}, meta)
 }
