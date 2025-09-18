@@ -22,6 +22,19 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
+var defaultOptions = []FactoryOption{WithGRPCTransport()}
+
+var defaultFactory *Factory = NewFactory()
+
+func CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
+	return defaultFactory.CreateFromCard(ctx, card, opts...)
+}
+
+func CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
+	return defaultFactory.CreateFromEndpoints(ctx, endpoints, opts...)
+}
+
 // Factory provides an API for creating Clients compatible with the requested transports.
 // Factory is immutable, but the configuration can be extended using WithAdditionalOptions(f, opts...) call.
 // Additional configurations can be applied at the moment of Client creation.
@@ -33,6 +46,10 @@ type Factory struct {
 
 // CreateFromCard returns a Client configured to communicate with the agent described by
 // the provided AgentCard or fails if we couldn't establish a compatible transport.
+// Config PreferredTransports will be used to determine the order of connection attempts.
+// If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
+// and proceed in the order specified by the AdditionalInterfaces.
+// The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
 		extended := WithAdditionalOptions(f, opts...)
@@ -60,20 +77,17 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts 
 	}, nil
 }
 
-// CreateFromURL returns a Client configured to communicate with provided URL using
-// one of the provided protocols, or fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromURL(ctx context.Context, url string, protocols []a2a.TransportProtocol, opts ...FactoryOption) (*Client, error) {
+// CreateFromEndpoints returns a Client configured to communicate with one of the provided endpoints.
+// Config PreferredTransports will be used to determine the order of connection attempts.
+// If PreferredTransports were not provided, we attempt to establish using the provided endpoint order.
+// The method fails if we couldn't establish a compatible transport.
+func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
 	if len(opts) > 0 {
 		extended := WithAdditionalOptions(f, opts...)
-		return extended.CreateFromURL(ctx, url, protocols)
+		return extended.CreateFromEndpoints(ctx, endpoints)
 	}
 
-	serverPrefs := make([]a2a.AgentInterface, len(protocols))
-	for i, protocol := range protocols {
-		serverPrefs[i] = a2a.AgentInterface{Transport: protocol, URL: url}
-	}
-
-	transport, connInfo, err := f.selectTransport(serverPrefs)
+	transport, connInfo, err := f.selectTransport(endpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +170,6 @@ func (defaultsDisabledOpt) apply(f *Factory) {}
 func WithDefaultsDisabled() FactoryOption {
 	return defaultsDisabledOpt{}
 }
-
-// defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
-var defaultOptions = []FactoryOption{WithGRPCTransport()}
 
 // NewFactory creates a new Factory applying the provided configurations.
 func NewFactory(options ...FactoryOption) *Factory {

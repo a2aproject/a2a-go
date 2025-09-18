@@ -16,6 +16,14 @@ func makeProtocols(in []string) []a2a.TransportProtocol {
 	return out
 }
 
+func makeEndpoints(protocols []string) []a2a.AgentInterface {
+	out := make([]a2a.AgentInterface, len(protocols))
+	for i, protocol := range protocols {
+		out[i] = a2a.AgentInterface{Transport: a2a.TransportProtocol(protocol), URL: "https://agent.com"}
+	}
+	return out
+}
+
 func TestFactory_WithAdditionalOptions(t *testing.T) {
 	f1 := NewFactory(WithConfig(Config{AcceptedOutputModes: []string{"application/json"}}))
 	f2 := WithAdditionalOptions(f1, WithInterceptors(PassthroughInterceptor{}))
@@ -124,7 +132,7 @@ func TestFactory_TransportSelection(t *testing.T) {
 
 		// CreateFromURL
 		selectedProtcol = ""
-		_, err = factory.CreateFromURL(ctx, "https://agent.com", makeProtocols(tc.serverSupports))
+		_, err = factory.CreateFromEndpoints(ctx, makeEndpoints(tc.serverSupports))
 		if err != nil && !tc.wantErr {
 			t.Fatalf("CreateFromURL() failed at %d with %v", i, err)
 		}
