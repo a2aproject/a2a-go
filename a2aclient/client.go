@@ -274,5 +274,5 @@ func interceptAfter(ctx context.Context, interceptors []CallInterceptor, payload
 		}
 	}
 
-	return nil
+	return resp.Err
 }

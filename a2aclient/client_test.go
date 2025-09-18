@@ -124,6 +124,22 @@ func newTestClient(transport Transport, interceptors ...CallInterceptor) *Client
 	return &Client{transport: transport, interceptors: interceptors}
 }
 
+func TestClient_CallFails(t *testing.T) {
+	ctx := t.Context()
+	wantErr := errors.New("call failed")
+
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			return nil, wantErr
+		},
+	}
+	client := newTestClient(transport)
+
+	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); !errors.Is(err, wantErr) {
+		t.Fatalf("expected call to fail with %v, got %v", wantErr, err)
+	}
+}
+
 func TestClient_InterceptorModifiesRequest(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
