@@ -17,9 +17,11 @@ package a2aclient
 import (
 	"context"
 	"errors"
-	"github.com/a2aproject/a2a-go/a2a"
 	"iter"
+	"reflect"
 	"testing"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 type testTransport struct {
@@ -118,8 +120,8 @@ func (ti *testInterceptor) After(ctx context.Context, resp *Response) error {
 	return nil
 }
 
-func newTestClient(transport Transport, interceptor CallInterceptor) *Client {
-	return &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
+func newTestClient(transport Transport, interceptors ...CallInterceptor) *Client {
+	return &Client{transport: transport, interceptors: interceptors}
 }
 
 func TestClient_InterceptorModifiesRequest(t *testing.T) {
@@ -147,6 +149,41 @@ func TestClient_InterceptorModifiesRequest(t *testing.T) {
 	}
 	if receivedMeta[metaKey] != metaVal {
 		t.Fatalf("expected meta[%s]=%d, got %v", metaKey, metaVal, receivedMeta[metaKey])
+	}
+}
+
+func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
+	ctx := t.Context()
+
+	var receivedCallMeta CallMeta
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+			receivedCallMeta, _ = CallMetaFrom(ctx)
+			return &a2a.Task{}, nil
+		},
+	}
+
+	k1, v1, k2, v2 := "Authorization", "Basic ABCD", "X-Custom", "test"
+	interceptor1 := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+			r.Meta[k1] = v1
+			return ctx, nil
+		},
+	}
+	interceptor2 := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+			r.Meta[k2] = v2
+			return ctx, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor1, interceptor2)
+	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
+		t.Fatalf("expected call to succeed, got %v", err)
+	}
+	wantCallMeta := CallMeta{k1: v1, k2: v2}
+	if !reflect.DeepEqual(receivedCallMeta, wantCallMeta) {
+		t.Fatalf("expected meta to be %v, got %v", wantCallMeta, receivedCallMeta)
 	}
 }
 

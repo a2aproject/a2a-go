@@ -254,7 +254,7 @@ func interceptBefore(ctx context.Context, interceptors []CallInterceptor, payloa
 		ctx = localCtx
 	}
 
-	return WithCallMeta(ctx, req.Meta), nil
+	return withCallMeta(ctx, req.Meta), nil
 }
 
 func interceptAfter(ctx context.Context, interceptors []CallInterceptor, payload any, err error) error {
