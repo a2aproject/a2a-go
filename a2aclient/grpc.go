@@ -56,7 +56,7 @@ type grpcTransport struct {
 // A2A protocol methods
 
 func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrNotImplemented
+	return nil, ErrNotImplemented
 }
 
 func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
