@@ -71,7 +71,7 @@ func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 	return meta, ok
 }
 
-func WithCallMeta(ctx context.Context, meta CallMeta) context.Context {
+func withCallMeta(ctx context.Context, meta CallMeta) context.Context {
 	return context.WithValue(ctx, callMetaKey{}, meta)
 }
 
