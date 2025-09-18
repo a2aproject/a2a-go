@@ -122,6 +122,11 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 				return
 			}
 
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+
 			if !yield(resp, nil) {
 				return
 			}
@@ -141,6 +146,11 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 
 		for resp, err := range c.transport.SendStreamingMessage(ctx, message) {
 			if err := interceptAfter(ctx, c.interceptors, resp, err); err != nil {
+				yield(nil, err)
+				return
+			}
+
+			if err != nil {
 				yield(nil, err)
 				return
 			}
