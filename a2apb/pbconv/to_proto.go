@@ -115,6 +115,20 @@ func ToProtoGetTaskRequest(params *a2a.TaskQueryParams) (*a2apb.GetTaskRequest, 
 	return req, nil
 }
 
+func ToProtoCancelTaskRequest(params *a2a.TaskIDParams) (*a2apb.CancelTaskRequest, error) {
+	if params == nil {
+		return nil, nil
+	}
+	return &a2apb.CancelTaskRequest{Name: MakeTaskName(params.ID)}, nil
+}
+
+func ToProtoTaskSubscriptionRequest(params *a2a.TaskIDParams) (*a2apb.TaskSubscriptionRequest, error) {
+	if params == nil {
+		return nil, nil
+	}
+	return &a2apb.TaskSubscriptionRequest{Name: MakeTaskName(params.ID)}, nil
+}
+
 func ToProtoCreateTaskPushConfigRequest(config *a2a.TaskPushConfig) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
 	if config == nil {
 		return nil, nil
@@ -470,6 +484,13 @@ func ToProtoListTaskPushConfig(configs []*a2a.TaskPushConfig) (*a2apb.ListTaskPu
 		Configs:       pConfigs,
 		NextPageToken: "", // todo: add pagination
 	}, nil
+}
+
+func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigParams) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+	return &a2apb.ListTaskPushNotificationConfigRequest{Parent: MakeTaskName(req.TaskID)}, nil
 }
 
 func toProtoAdditionalInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentInterface {

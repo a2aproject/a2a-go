@@ -426,7 +426,7 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	return result, nil
 }
 
-func fromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2a.TaskPushConfig, error) {
+func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2a.TaskPushConfig, error) {
 	if pTaskConfig == nil {
 		return nil, nil
 	}
@@ -458,14 +458,14 @@ func fromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	return &a2a.TaskPushConfig{TaskID: taskID, Config: *config}, nil
 }
 
-func fromProtoListTaskPushConfig(resp *a2apb.ListTaskPushNotificationConfigResponse) ([]*a2a.TaskPushConfig, error) {
+func FromProtoListTaskPushConfig(resp *a2apb.ListTaskPushNotificationConfigResponse) ([]*a2a.TaskPushConfig, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("response is nil")
 	}
 
 	configs := make([]*a2a.TaskPushConfig, len(resp.Configs))
 	for i, pConfig := range resp.Configs {
-		config, err := fromProtoTaskPushConfig(pConfig)
+		config, err := FromProtoTaskPushConfig(pConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
