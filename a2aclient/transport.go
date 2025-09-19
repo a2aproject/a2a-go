@@ -73,6 +73,7 @@ func (fn TransportFactoryFn) Create(ctx context.Context, url string, card *a2a.A
 type UnimplementedTransport struct{}
 
 func (UnimplementedTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	
 	return nil, ErrNotImplemented
 }
 

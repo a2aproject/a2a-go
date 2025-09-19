@@ -26,103 +26,9 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestPathExtractors(t *testing.T) {
-	t.Run("extractTaskID", func(t *testing.T) {
-		tests := []struct {
-			name    string
-			path    string
-			want    a2a.TaskID
-			wantErr bool
-		}{
-			{
-				name: "simple path",
-				path: "tasks/12345",
-				want: "12345",
-			},
-			{
-				name: "complex path",
-				path: "projects/p/locations/l/tasks/abc-def",
-				want: "abc-def",
-			},
-			{
-				name:    "missing value",
-				path:    "tasks/",
-				wantErr: true,
-			},
-			{
-				name:    "missing keyword in path",
-				path:    "configs/123",
-				wantErr: true,
-			},
-			{
-				name:    "empty path",
-				wantErr: true,
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				got, err := ExtractTaskID(tt.path)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("extractTaskID() error = %v, wantErr %v", err, tt.wantErr)
-					return
-				}
-				if got != tt.want {
-					t.Errorf("extractTaskID() = %v, want %v", got, tt.want)
-				}
-			})
-		}
-	})
-
-	t.Run("extractConfigID", func(t *testing.T) {
-		tests := []struct {
-			name    string
-			path    string
-			want    string
-			wantErr bool
-		}{
-			{
-				name: "simple path",
-				path: "pushConfigs/abc-123",
-				want: "abc-123",
-			},
-			{
-				name: "complex path",
-				path: "tasks/12345/pushConfigs/abc-123",
-				want: "abc-123",
-			},
-			{
-				name:    "missing value",
-				path:    "pushConfigs/",
-				wantErr: true,
-			},
-			{
-				name:    "missing keyword in path",
-				path:    "tasks/123",
-				wantErr: true,
-			},
-			{
-				name:    "empty path",
-				wantErr: true,
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				got, err := extractConfigID(tt.path)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("extractConfigID() error = %v, wantErr %v", err, tt.wantErr)
-					return
-				}
-				if got != tt.want {
-					t.Errorf("extractConfigID() = %v, want %v", got, tt.want)
-				}
-			})
-		}
-	})
-}
-
 func TestFromProtoConversion(t *testing.T) {
 	t.Run("fromProtoPart", func(t *testing.T) {
-		pData, _ := structpb.NewStruct(map[string]interface{}{"key": "value"})
+		pData, _ := structpb.NewStruct(map[string]any{"key": "value"})
 		tests := []struct {
 			name    string
 			p       *a2apb.Part
@@ -137,7 +43,7 @@ func TestFromProtoConversion(t *testing.T) {
 			{
 				name: "data",
 				p:    &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
-				want: a2a.DataPart{Data: map[string]interface{}{"key": "value"}},
+				want: a2a.DataPart{Data: map[string]any{"key": "value"}},
 			},
 			{
 				name: "file with bytes",
@@ -344,8 +250,8 @@ func TestFromProtoRequests(t *testing.T) {
 			},
 		}
 
-		pMeta, _ := structpb.NewStruct(map[string]interface{}{"meta_key": "meta_val"})
-		a2aMeta := map[string]interface{}{"meta_key": "meta_val"}
+		pMeta, _ := structpb.NewStruct(map[string]any{"meta_key": "meta_val"})
+		a2aMeta := map[string]any{"meta_key": "meta_val"}
 
 		tests := []struct {
 			name    string
@@ -368,25 +274,13 @@ func TestFromProtoRequests(t *testing.T) {
 			},
 			{
 				name: "missing metadata",
-				req: &a2apb.SendMessageRequest{
-					Request:       pMsg,
-					Configuration: pConf,
-				},
-				want: &a2a.MessageSendParams{
-					Message: &a2aMsg,
-					Config:  a2aConf,
-				},
+				req:  &a2apb.SendMessageRequest{Request: pMsg, Configuration: pConf},
+				want: &a2a.MessageSendParams{Message: &a2aMsg, Config: a2aConf},
 			},
 			{
 				name: "missing config",
-				req: &a2apb.SendMessageRequest{
-					Request:  pMsg,
-					Metadata: pMeta,
-				},
-				want: &a2a.MessageSendParams{
-					Message:  &a2aMsg,
-					Metadata: a2aMeta,
-				},
+				req:  &a2apb.SendMessageRequest{Request: pMsg, Metadata: pMeta},
+				want: &a2a.MessageSendParams{Message: &a2aMsg, Metadata: a2aMeta},
 			},
 			{
 				name:    "nil request message",
@@ -397,9 +291,7 @@ func TestFromProtoRequests(t *testing.T) {
 				name: "nil part in message",
 				req: &a2apb.SendMessageRequest{
 					Request: &a2apb.Message{
-						Content: []*a2apb.Part{
-							{Part: nil},
-						},
+						Content: []*a2apb.Part{{Part: nil}},
 					},
 				},
 				wantErr: true,
@@ -440,29 +332,17 @@ func TestFromProtoRequests(t *testing.T) {
 		}{
 			{
 				name: "with history",
-				req: &a2apb.GetTaskRequest{
-					Name:          "tasks/test",
-					HistoryLength: 10,
-				},
-				want: &a2a.TaskQueryParams{
-					ID:            "test",
-					HistoryLength: &historyLen,
-				},
+				req:  &a2apb.GetTaskRequest{Name: "tasks/test", HistoryLength: 10},
+				want: &a2a.TaskQueryParams{ID: "test", HistoryLength: &historyLen},
 			},
 			{
 				name: "without history",
-				req: &a2apb.GetTaskRequest{
-					Name: "tasks/test",
-				},
-				want: &a2a.TaskQueryParams{
-					ID: "test",
-				},
+				req:  &a2apb.GetTaskRequest{Name: "tasks/test"},
+				want: &a2a.TaskQueryParams{ID: "test"},
 			},
 			{
-				name: "invalid name",
-				req: &a2apb.GetTaskRequest{
-					Name: "invalid/test",
-				},
+				name:    "invalid name",
+				req:     &a2apb.GetTaskRequest{Name: "invalid/test"},
 				wantErr: true,
 			},
 		}
@@ -491,7 +371,9 @@ func TestFromProtoRequests(t *testing.T) {
 				name: "success",
 				req: &a2apb.CreateTaskPushNotificationConfigRequest{
 					Parent: "tasks/test",
-					Config: &a2apb.TaskPushNotificationConfig{PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"}},
+					Config: &a2apb.TaskPushNotificationConfig{
+						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
+					},
 				},
 				want: &a2a.TaskPushConfig{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
 			},
@@ -521,7 +403,9 @@ func TestFromProtoRequests(t *testing.T) {
 				name: "bad push config conversion",
 				req: &a2apb.CreateTaskPushNotificationConfigRequest{
 					Parent: "tasks/t1",
-					Config: &a2apb.TaskPushNotificationConfig{PushNotificationConfig: &a2apb.PushNotificationConfig{Id: ""}},
+					Config: &a2apb.TaskPushNotificationConfig{
+						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: ""},
+					},
 				},
 				wantErr: true,
 			},
@@ -635,7 +519,7 @@ func TestFromProtoRequests(t *testing.T) {
 
 func TestToProtoConversion(t *testing.T) {
 	t.Run("toProtoMessage", func(t *testing.T) {
-		a2aMeta := map[string]interface{}{"key": "value"}
+		a2aMeta := map[string]any{"key": "value"}
 		pMeta, _ := structpb.NewStruct(a2aMeta)
 
 		tests := []struct {
@@ -746,7 +630,7 @@ func TestToProtoConversion(t *testing.T) {
 	})
 
 	t.Run("toProtoPart", func(t *testing.T) {
-		pData, _ := structpb.NewStruct(map[string]interface{}{"key": "value"})
+		pData, _ := structpb.NewStruct(map[string]any{"key": "value"})
 		tests := []struct {
 			name    string
 			p       a2a.Part
@@ -760,7 +644,7 @@ func TestToProtoConversion(t *testing.T) {
 			},
 			{
 				name: "data",
-				p:    a2a.DataPart{Data: map[string]interface{}{"key": "value"}},
+				p:    a2a.DataPart{Data: map[string]any{"key": "value"}},
 				want: &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
 			},
 			{
@@ -801,7 +685,7 @@ func TestToProtoConversion(t *testing.T) {
 			{
 				name: "bad data",
 				p: a2a.DataPart{
-					Data: map[string]interface{}{"bad": func() {}},
+					Data: map[string]any{"bad": func() {}},
 				},
 				wantErr: true,
 			},
@@ -1078,8 +962,8 @@ func TestToProtoConversion(t *testing.T) {
 
 	t.Run("toProtoListTaskPushConfig", func(t *testing.T) {
 		configs := []*a2a.TaskPushConfig{
-			&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
-			&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
+			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
+			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 		}
 		pConf1, _ := ToProtoTaskPushConfig(configs[0])
 		pConf2, _ := ToProtoTaskPushConfig(configs[1])
@@ -1105,10 +989,8 @@ func TestToProtoConversion(t *testing.T) {
 				},
 			},
 			{
-				name: "conversion error",
-				configs: []*a2a.TaskPushConfig{
-					&a2a.TaskPushConfig{TaskID: "test-task", Config: a2a.PushConfig{}},
-				},
+				name:    "conversion error",
+				configs: []*a2a.TaskPushConfig{{TaskID: "test-task", Config: a2a.PushConfig{}}},
 				wantErr: true,
 			},
 		}
@@ -1137,7 +1019,7 @@ func TestToProtoConversion(t *testing.T) {
 		a2aMsgID := "msg-test"
 		a2aArtifactID := a2a.ArtifactID("art-abc")
 
-		a2aMeta := map[string]interface{}{"task_key": "task_val"}
+		a2aMeta := map[string]any{"task_key": "task_val"}
 		pMeta, _ := structpb.NewStruct(a2aMeta)
 
 		a2aHistory := []*a2a.Message{
