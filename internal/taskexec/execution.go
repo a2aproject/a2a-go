@@ -62,7 +62,7 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 		defer func() {
 			err := e.Unsubscribe(ctx, eventChan)
 			// TODO(yarolegovich): else log
-			if !stopped {
+			if !stopped && err != nil {
 				yield(nil, err)
 			}
 		}()
