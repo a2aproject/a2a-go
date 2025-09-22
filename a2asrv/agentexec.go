@@ -68,7 +68,8 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	// TODO(yarolegovich): handle pushes
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
-		return nil, nil
+		err := p.updateManager.Process(ctx, event)
+		return nil, err
 	}
 
 	if statusUpdate, ok := event.(*a2a.TaskStatusUpdateEvent); ok {
