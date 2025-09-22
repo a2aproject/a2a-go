@@ -22,6 +22,9 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/taskexec"
+	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
 
 var ErrUnimplemented = errors.New("unimplemented")
@@ -58,9 +61,12 @@ type RequestHandler interface {
 
 // Implements a2asrv.RequestHandler
 type defaultRequestHandler struct {
-	pushNotifier    PushNotifier
-	executor        AgentExecutor
-	queueManager    eventqueue.Manager
+	agentExecutor AgentExecutor
+	taskExecutor  *taskexec.Manager
+
+	pushNotifier PushNotifier
+	queueManager eventqueue.Manager
+
 	pushConfigStore PushConfigStore
 	taskStore       TaskStore
 }
@@ -98,12 +104,14 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		executor:     executor,
-		queueManager: eventqueue.NewInMemoryManager(),
+		agentExecutor: executor,
+		queueManager:  eventqueue.NewInMemoryManager(),
+		taskStore:     taskstore.NewMem(),
 	}
 	for _, option := range options {
 		option(h)
 	}
+	h.taskExecutor = taskexec.NewManager(h.queueManager)
 	return h
 }
 
@@ -115,37 +123,54 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskID
 	return &a2a.Task{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	taskID := message.Message.TaskID
-	if taskID == "" {
-		// todo: generate task id - https://github.com/a2aproject/a2a-go/issues/18
-		return nil, fmt.Errorf("message is missing TaskID")
-	}
-	queue, err := h.queueManager.GetOrCreate(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve queue: %w", err)
-	}
-	if err := h.executor.Execute(ctx, RequestContext{
-		Request: message,
-		TaskID:  taskID,
-	}, queue); err != nil {
-		return nil, err
-	}
-	event, err := queue.Read(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read event from queue: %w", err)
+func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	if params.Message == nil {
+		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
-	// todo: handle returned update event
-	if _, ok := event.(a2a.SendMessageResult); !ok {
-		return nil, fmt.Errorf("unexpected event type: %T", event)
+	var task *a2a.Task
+	if len(params.Message.TaskID) == 0 {
+		task = taskupdate.NewSubmittedTask(params.Message)
+	} else {
+		localResult, err := h.taskStore.Get(ctx, params.Message.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		task = localResult
 	}
 
-	return event.(a2a.SendMessageResult), nil
+	reqCtx := RequestContext{Request: params, TaskID: task.ID}
+	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
+	executor := &executor{
+		agent:     h.agentExecutor,
+		reqCtx:    reqCtx,
+		processor: processor,
+	}
+	execution, err := h.taskExecutor.Execute(ctx, task.ID, executor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute: %w", err)
+	}
+
+	for event, err := range execution.GetEvents(ctx) {
+		if err != nil {
+			return nil, err
+		}
+		if shouldInterrupt(event) {
+			return event.(a2a.SendMessageResult), nil
+		}
+	}
+
+	return execution.Result(ctx)
 }
 
-func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return nil
+func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	exec, ok := h.taskExecutor.GetExecution(params.ID)
+	if !ok {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(nil, a2a.ErrTaskNotFound)
+		}
+	}
+	return exec.GetEvents(ctx)
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
@@ -166,4 +191,9 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	return ErrUnimplemented
+}
+
+// TODO(yarolegovich): handle auth-required state
+func shouldInterrupt(_ a2a.Event) bool {
+	return false
 }
