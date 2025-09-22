@@ -266,6 +266,11 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
+		if tt.input != nil {
+			input = tt.input
+		}
+
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			var qm eventqueue.Manager
@@ -276,14 +281,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			}
 			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
-			handler := newTestHandler(
-				WithEventQueueManager(qm),
-				WithTaskStore(store),
-			)
-			input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
-			if tt.input != nil {
-				input = tt.input
-			}
+			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
 
 			result, gotErr := handler.OnSendMessage(ctx, input)
 			if tt.wantErr == nil {
@@ -300,6 +298,52 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				if gotErr.Error() != tt.wantErr.Error() {
 					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
+			}
+		})
+
+		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			ctx := t.Context()
+			var qm eventqueue.Manager
+			if tt.agentEvents == nil {
+				qm = newEventReplayQueueManager()
+			} else {
+				qm = newEventReplayQueueManager(tt.agentEvents...)
+			}
+			store := taskstore.NewMem()
+			_ = store.Save(ctx, taskSeed)
+			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
+
+			eventI := 0
+			var wantErr error
+			for got, gotErr := range handler.OnSendMessageStream(ctx, input) {
+				var want a2a.Event
+				if eventI < len(tt.agentEvents) {
+					want = tt.agentEvents[eventI]
+				} else if wantErr != nil {
+					t.Errorf("expected stream close after %v, got %v, %v", eventI, got, gotErr)
+				} else if tt.wantErr != nil {
+					wantErr = tt.wantErr
+				} else {
+					t.Errorf("expected error after %d-th event, got %v, %v", eventI, got, gotErr)
+				}
+
+				if wantErr == nil {
+					if gotErr != nil {
+						t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+					}
+					if !reflect.DeepEqual(got, want) {
+						t.Errorf("OnSendMessageStream() got = %v, want %v", got, want)
+					}
+				} else {
+					if gotErr == nil {
+						t.Fatalf("OnSendMessageStream() error = nil, wantErr %q", wantErr)
+					}
+					if gotErr.Error() != tt.wantErr.Error() {
+						t.Errorf("OnSendMessageStream() error = %v, wantErr %v", gotErr, wantErr)
+					}
+				}
+
+				eventI += 1
 			}
 		})
 	}
@@ -348,9 +392,6 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	}
 	if _, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
-	}
-	if seq := handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{}); seq != nil {
-		t.Error("OnSendMessageStream: expected nil iterator, got non-nil")
 	}
 	if _, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
