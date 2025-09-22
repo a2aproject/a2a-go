@@ -12,24 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventqueue
+package taskexec
 
 import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-// Manager manages event queues on a per-task basis.
-// It provides lifecycle management for task-specific event queues,
-// enabling multiple clients to attach to the same task's event stream.
-type Manager interface {
-	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error)
+func readQueueToChannels(ctx context.Context, queue eventqueue.Reader, eventChan chan a2a.Event, errorChan chan error) {
+	for {
+		event, err := queue.Read(ctx)
+		if err != nil {
+			select {
+			case errorChan <- err:
+			case <-ctx.Done():
+			}
+			return
+		}
 
-	// Get returns an existing queue if one exists.
-	Get(ctx context.Context, taskId a2a.TaskID) (Queue, bool)
-
-	// Destroy closes the queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskID a2a.TaskID) error
+		select {
+		case eventChan <- event:
+		case <-ctx.Done():
+			return
+		}
+	}
 }

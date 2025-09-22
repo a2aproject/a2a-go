@@ -48,6 +48,36 @@ func TestInMemoryManager_GetOrCreate(t *testing.T) {
 	}
 }
 
+func TestInMemoryManager_Get(t *testing.T) {
+	t.Parallel()
+	m := NewInMemoryManager()
+	taskID := a2a.TaskID("task-1")
+	ctx := t.Context()
+
+	// no queue
+	if got, ok := m.Get(ctx, taskID); ok || got != nil {
+		t.Fatalf("expected Get() to return nothing, got %v, %v", got, ok)
+	}
+
+	q, err := m.GetOrCreate(ctx, taskID)
+	if q == nil || err != nil {
+		t.Fatalf("GetOrCreate() failed to create a queue, got %v, %v", q, err)
+	}
+
+	// same as created
+	if got, ok := m.Get(ctx, taskID); !ok || q != got {
+		t.Fatalf("expected Get() to return %v, got %v, %v", q, got, err)
+	}
+
+	// no queue after destroy
+	if err := m.Destroy(ctx, taskID); err != nil {
+		t.Fatalf("Destroy() failed: %v", err)
+	}
+	if got, ok := m.Get(ctx, taskID); ok || got != nil {
+		t.Fatalf("expected Get() to return nothing after a queue was destroyed, got %v, %v", got, ok)
+	}
+}
+
 func TestInMemoryManager_DestroyExisting(t *testing.T) {
 	t.Parallel()
 	m := NewInMemoryManager()
