@@ -16,10 +16,25 @@ package agentcard
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
+
+// ErrStatusNotOK is an error returned by Resolver when HTTP request returned a non-OK status.
+type ErrStatusNotOK struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *ErrStatusNotOK) Error() string {
+	return fmt.Sprintf("card request failed, status: %s", e.Status)
+}
 
 const defaultAgentCardPath = "/.well-known/agent-card.json"
 
@@ -39,12 +54,49 @@ type resolveRequest struct {
 // Resolve fetches an AgentCard from the provided URL.
 // By default fetches from the  /.well-known/agent-card.json path.
 func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.AgentCard, error) {
-	req := &resolveRequest{path: defaultAgentCardPath}
+	reqSpec := &resolveRequest{path: defaultAgentCardPath, headers: make(map[string]string)}
 	for _, o := range opts {
-		o(req)
+		o(reqSpec)
 	}
 
-	return &a2a.AgentCard{}, fmt.Errorf("not implemented")
+	reqUrl, err := url.JoinPath(r.BaseURL, reqSpec.path)
+	if err != nil {
+		return nil, fmt.Errorf("url construction failed: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqUrl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct a request: %w", err)
+	}
+	for h, val := range reqSpec.headers {
+		req.Header.Add(h, val)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("card request failed: %w", err)
+	}
+	defer func() {
+		// TODO(yarolegovich): log error
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &ErrStatusNotOK{StatusCode: resp.StatusCode, Status: resp.Status}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read card response: %w", err)
+	}
+
+	var card a2a.AgentCard
+	if err := json.Unmarshal(body, &card); err != nil {
+		return nil, fmt.Errorf("card parsing failed: %w", err)
+	}
+
+	return &card, nil
 }
 
 // WithPath makes Resolve fetch from the provided path relative to BaseURL.
@@ -55,10 +107,8 @@ func WithPath(path string) ResolveOption {
 }
 
 // WithRequestHeader makes Resolve perform fetch attaching the provided HTTP headers.
-func WithRequestHeaders(headers map[string]string) ResolveOption {
+func WithRequestHeader(name string, val string) ResolveOption {
 	return func(r *resolveRequest) {
-		for k, v := range headers {
-			r.headers[k] = v
-		}
+		r.headers[name] = val
 	}
 }

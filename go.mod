@@ -3,6 +3,7 @@ module github.com/a2aproject/a2a-go
 go 1.24.4
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	golang.org/x/sync v0.15.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250715232539-7130f93afb79

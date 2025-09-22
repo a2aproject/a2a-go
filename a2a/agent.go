@@ -169,7 +169,7 @@ type AgentExtension struct {
 // This allows agents to expose the same functionality over multiple transport mechanisms.
 type AgentInterface struct {
 	// Transport is the transport protocol supported at this URL.
-	Transport string `json:"transport" yaml:"transport" mapstructure:"transport"`
+	Transport TransportProtocol `json:"transport" yaml:"transport" mapstructure:"transport"`
 
 	// URL is the URL where this interface is available.
 	// Must be a valid absolute HTTPS URL in production.
