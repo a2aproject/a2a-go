@@ -363,6 +363,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				var want a2a.Event
 				if eventI < len(tt.agentEvents) {
 					want = tt.agentEvents[eventI]
+					eventI += 1
 				} else if streamErr {
 					t.Errorf("expected stream close after %v, got %v, %v", eventI, got, gotErr)
 				} else if tt.wantErr != nil {
@@ -386,8 +387,9 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 						t.Errorf("OnSendMessageStream() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					}
 				}
-
-				eventI += 1
+			}
+			if tt.wantErr == nil && eventI != len(tt.agentEvents) {
+				t.Errorf("OnSendMessageStream() received %d events, want %d", eventI, len(tt.agentEvents))
 			}
 		})
 	}

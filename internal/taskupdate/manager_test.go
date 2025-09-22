@@ -179,7 +179,6 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 
 	testCases := []struct {
 		name   string
-		only   bool
 		events []*a2a.TaskArtifactUpdateEvent
 		want   []*a2a.Artifact
 	}{
@@ -194,7 +193,6 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("Hello")}},
 		},
 		{
-			only: true,
 			name: "create multiple artifacts",
 			events: []*a2a.TaskArtifactUpdateEvent{
 				{
