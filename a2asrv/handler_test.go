@@ -18,13 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/google/go-cmp/cmp"
 )
 
 var fixedTime = time.Now()
@@ -158,7 +158,14 @@ func newTaskWithMeta(task *a2a.Task, meta map[string]any) *a2a.Task {
 	return &a2a.Task{ID: task.ID, ContextID: task.ContextID, Metadata: meta}
 }
 
+func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2a.TaskArtifactUpdateEvent {
+	ev := a2a.NewArtifactEvent(task, parts...)
+	ev.Artifact.ID = aid
+	return ev
+}
+
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
+	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 
 	tests := []struct {
@@ -255,6 +262,43 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
 		},
 		{
+			name: "task artifact streaming",
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+				a2a.NewArtifactUpdateEvent(taskSeed, artifactID, a2a.TextPart{Text: ", world!"}),
+				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        taskSeed.ID,
+				ContextID: taskSeed.ContextID,
+				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+				History:   []*a2a.Message{newAgentMessage("Ack")},
+				Artifacts: []*a2a.Artifact{
+					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}, a2a.TextPart{Text: ", world!"}}},
+				},
+			},
+		},
+		{
+			name: "task with multiple artifacts",
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+				newArtifactEvent(taskSeed, artifactID+"2", a2a.TextPart{Text: "World"}),
+				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        taskSeed.ID,
+				ContextID: taskSeed.ContextID,
+				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+				History:   []*a2a.Message{newAgentMessage("Ack")},
+				Artifacts: []*a2a.Artifact{
+					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}}},
+					{ID: artifactID + "2", Parts: a2a.ContentParts{a2a.TextPart{Text: "World"}}},
+				},
+			},
+		},
+		{
 			name:    "fails on non-existent task reference",
 			input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 			wantErr: a2a.ErrTaskNotFound,
@@ -288,8 +332,8 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				if gotErr != nil {
 					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
-				if !reflect.DeepEqual(result, tt.wantResult) {
-					t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantResult)
+				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
+					t.Errorf("OnSendMessage() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -314,32 +358,32 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
 
 			eventI := 0
-			var wantErr error
+			var streamErr bool
 			for got, gotErr := range handler.OnSendMessageStream(ctx, input) {
 				var want a2a.Event
 				if eventI < len(tt.agentEvents) {
 					want = tt.agentEvents[eventI]
-				} else if wantErr != nil {
+				} else if streamErr {
 					t.Errorf("expected stream close after %v, got %v, %v", eventI, got, gotErr)
 				} else if tt.wantErr != nil {
-					wantErr = tt.wantErr
+					streamErr = true
 				} else {
 					t.Errorf("expected error after %d-th event, got %v, %v", eventI, got, gotErr)
 				}
 
-				if wantErr == nil {
+				if streamErr {
+					if gotErr == nil {
+						t.Fatalf("OnSendMessageStream() error = nil, wantErr %q", tt.wantErr)
+					}
+					if gotErr.Error() != tt.wantErr.Error() {
+						t.Errorf("OnSendMessageStream() error = %v, wantErr %v", gotErr, tt.wantErr)
+					}
+				} else {
 					if gotErr != nil {
 						t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
 					}
-					if !reflect.DeepEqual(got, want) {
-						t.Errorf("OnSendMessageStream() got = %v, want %v", got, want)
-					}
-				} else {
-					if gotErr == nil {
-						t.Fatalf("OnSendMessageStream() error = nil, wantErr %q", wantErr)
-					}
-					if gotErr.Error() != tt.wantErr.Error() {
-						t.Errorf("OnSendMessageStream() error = %v, wantErr %v", gotErr, wantErr)
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Errorf("OnSendMessageStream() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					}
 				}
 
