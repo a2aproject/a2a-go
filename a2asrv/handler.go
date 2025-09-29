@@ -194,7 +194,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		task = localResult
 	}
 
-	reqCtx := RequestContext{Request: params, TaskID: task.ID}
+	reqCtx := RequestContext{Request: params, TaskID: task.ID, ContextID: task.ContextID}
 	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
 	executor := &executor{
 		agent:     h.agentExecutor,
