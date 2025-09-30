@@ -254,12 +254,16 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	// subscribe ${consumerCount} consumers to execution events
 	consumerCount := 3
 	var waitSubscribed sync.WaitGroup
+	var waitStopped sync.WaitGroup
 	var waitConsumed sync.WaitGroup
 	var mu sync.Mutex
 	consumed := map[int][]a2a.Event{}
 	for consumerI := range consumerCount {
 		waitSubscribed.Add(1)
+		waitStopped.Add(1)
 		go func() {
+			defer waitStopped.Done()
+
 			sub, _ := newSubscription(t.Context(), execution)
 			waitSubscribed.Done()
 			defer func() {
@@ -298,6 +302,8 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			}
 		}
 	}
+
+	waitStopped.Wait()
 }
 
 func TestManager_CancelActiveExecution(t *testing.T) {

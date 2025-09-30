@@ -133,12 +133,13 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.executions, execution.tid)
+		execution.result.signalDone()
 		m.mu.Unlock()
 	}()
 
 	queue, err := m.queueManager.GetOrCreate(ctx, execution.tid)
 	if err != nil {
-		execution.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		execution.result.setError(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
 	defer m.destroyQueue(ctx, execution.tid)
@@ -168,12 +169,13 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancelation) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.tid)
+		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
 	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
 	if err != nil {
-		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		cancel.result.setError(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
 	defer m.destroyQueue(ctx, cancel.tid)
@@ -200,13 +202,14 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancelation) {
 func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *Execution) {
 	defer func() {
 		if r := recover(); r != nil {
-			cancel.result.reject(fmt.Errorf("task cancelation panic: %v", r))
+			cancel.result.setError(fmt.Errorf("task cancelation panic: %v", r))
 		}
 	}()
 
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.tid)
+		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
@@ -218,18 +221,18 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
 	if queue, ok := m.queueManager.Get(ctx, cancel.tid); ok {
 		if err := cancel.canceler.Cancel(ctx, queue); err != nil {
-			cancel.result.reject(err)
+			cancel.result.setError(err)
 			return
 		}
 	}
 
 	result, err := run.Result(ctx)
 	if err != nil {
-		cancel.result.reject(err)
+		cancel.result.setError(err)
 		return
 	}
 
-	cancel.result.resolve(result)
+	cancel.result.setResult(result)
 }
 
 type eventHandlerFn func(context.Context) (a2a.SendMessageResult, error)
@@ -252,16 +255,16 @@ func handleEvents(ctx context.Context, group *errgroup.Group, r *promise, handle
 	})
 
 	if err := group.Wait(); err != nil {
-		r.reject(err)
+		r.setError(err)
 		return
 	}
 
 	if result == nil {
-		r.reject(fmt.Errorf("bug: no error returned, but result unset"))
+		r.setError(fmt.Errorf("bug: no error returned, but result unset"))
 		return
 	}
 
-	r.resolve(*result)
+	r.setResult(*result)
 }
 
 func (m *Manager) destroyQueue(ctx context.Context, tid a2a.TaskID) {

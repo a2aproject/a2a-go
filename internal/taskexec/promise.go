@@ -31,13 +31,18 @@ func newPromise() *promise {
 	return &promise{done: make(chan struct{})}
 }
 
-func (p *promise) resolve(value a2a.SendMessageResult) {
+// setResult sets a value to which wait() resolves to after signalDone() is called.
+func (p *promise) setResult(value a2a.SendMessageResult) {
 	p.value = value
-	close(p.done)
 }
 
-func (p *promise) reject(err error) {
+// setError sets an error to which wait() resolves to after signalDone() is called.
+func (p *promise) setError(err error) {
 	p.err = err
+}
+
+// signalDone is called after resolve or reject to unblock wait()-callers.
+func (p *promise) signalDone() {
 	close(p.done)
 }
 
