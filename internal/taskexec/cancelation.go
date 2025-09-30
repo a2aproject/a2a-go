@@ -56,27 +56,19 @@ func (c *cancelation) wait(ctx context.Context) (*a2a.Task, error) {
 }
 
 func (c *cancelation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
-	eventChan, errorChan := make(chan a2a.Event), make(chan error)
-	go readQueueToChannels(ctx, queue, eventChan, errorChan)
-
 	for {
-		select {
-		case event := <-eventChan:
-			res, err := c.canceler.Process(ctx, event)
-
-			if err != nil {
-				return nil, err
-			}
-
-			if res != nil {
-				return *res, nil
-			}
-
-		case <-ctx.Done():
-			return nil, ctx.Err()
-
-		case err := <-errorChan:
+		event, err := queue.Read(ctx)
+		if err != nil {
 			return nil, err
+		}
+
+		res, err := c.canceler.Process(ctx, event)
+		if err != nil {
+			return nil, err
+		}
+
+		if res != nil {
+			return *res, nil
 		}
 	}
 }
