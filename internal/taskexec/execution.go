@@ -102,7 +102,10 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 	}()
 
 	eventChan, errorChan := make(chan a2a.Event), make(chan error)
-	go readQueueToChannels(ctx, queue, eventChan, errorChan)
+
+	queueReadCtx, cancelCtx := context.WithCancel(ctx)
+	defer cancelCtx()
+	go readQueueToChannels(queueReadCtx, queue, eventChan, errorChan)
 
 	for {
 		select {

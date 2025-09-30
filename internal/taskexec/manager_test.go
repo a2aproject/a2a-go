@@ -264,7 +264,7 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			waitSubscribed.Done()
 			defer func() {
 				if err := sub.cancel(t.Context()); err != nil {
-					t.Errorf("Unsubscribe() failed with %v", err)
+					t.Errorf("subscription cancel() failed with %v", err)
 				}
 			}()
 
