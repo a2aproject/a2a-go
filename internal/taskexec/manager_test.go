@@ -260,15 +260,15 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	for consumerI := range consumerCount {
 		waitSubscribed.Add(1)
 		go func() {
-			sub, _ := execution.Subscribe(t.Context())
+			sub, _ := newSubscription(t.Context(), execution)
 			waitSubscribed.Done()
 			defer func() {
-				if err := execution.Unsubscribe(t.Context(), sub); err != nil {
+				if err := sub.cancel(t.Context()); err != nil {
 					t.Errorf("Unsubscribe() failed with %v", err)
 				}
 			}()
 
-			for event := range sub {
+			for event := range sub.events {
 				mu.Lock()
 				consumed[consumerI] = append(consumed[consumerI], event)
 				mu.Unlock()

@@ -48,11 +48,11 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 	}
 }
 
-// GetEvents subscribes to the events the agent is producing during an active Execution.
+// Events subscribes to the events the agent is producing during an active Execution.
 // If the Execution was finished the sequence will be empty.
-func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
+func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		eventChan, err := e.Subscribe(ctx)
+		subscription, err := newSubscription(ctx, e)
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
@@ -60,7 +60,7 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 
 		stopped := false
 		defer func() {
-			err := e.Unsubscribe(ctx, eventChan)
+			err := subscription.cancel(ctx)
 			// TODO(yarolegovich): else log
 			if !stopped {
 				yield(nil, err)
@@ -74,7 +74,7 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 				yield(nil, err)
 				return
 
-			case event, ok := <-eventChan:
+			case event, ok := <-subscription.events:
 				if !ok {
 					return
 				}
@@ -90,38 +90,6 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 // Result resolves immediately for the finished Execution or blocks until it is complete.
 func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
-}
-
-// Subscribe creates and returns a channel to which agent events will be written after processing.
-// The can be many subscriptions active at the same time. The channel is closed once Execution is finished.
-func (e *Execution) Subscribe(ctx context.Context) (chan a2a.Event, error) {
-	ch := make(chan a2a.Event)
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case e.subscribeChan <- ch:
-		return ch, nil
-
-	case <-e.result.done:
-		close(ch)
-		return ch, nil
-	}
-}
-
-// Unsubscribe removes the channel from the list of execution event subscribers.
-func (e *Execution) Unsubscribe(ctx context.Context, ch chan a2a.Event) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-
-	case e.unsubscribeChan <- ch:
-		return nil
-
-	case <-e.result.done:
-		return nil
-	}
 }
 
 func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
