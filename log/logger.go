@@ -38,7 +38,7 @@ func WithLogger(ctx context.Context, logger Logger) context.Context {
 	return context.WithValue(ctx, loggerKey{}, logger)
 }
 
-// WithLogger creates a new Context with the provided Logger attached.
+// FromContext returns the Logger associated with the context, or false if no logger is available.
 func FromContext(ctx context.Context) (Logger, bool) {
 	logger, ok := ctx.Value(loggerKey{}).(Logger)
 	return logger, ok

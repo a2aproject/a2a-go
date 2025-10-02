@@ -29,7 +29,7 @@ func FromSlog(logger *slog.Logger) Logger {
 }
 
 func (s *slogLogger) V(ctx context.Context, level Level) bool {
-	return s.logger.Enabled(context.Background(), slog.Level(level))
+	return s.logger.Enabled(ctx, slog.Level(level))
 }
 
 func (s *slogLogger) Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
@@ -43,7 +43,7 @@ func (s *slogLogger) Info(ctx context.Context, msg string, keyValArgs ...any) {
 }
 
 func (s *slogLogger) Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
-	s.logger.ErrorContext(ctx, msg, append([]any{"error", err.Error()}, keyValArgs...)...)
+	s.logger.ErrorContext(ctx, msg, append([]any{"error", err}, keyValArgs...)...)
 }
 
 func (s *slogLogger) With(keyValArgs ...any) Logger {

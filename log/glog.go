@@ -36,7 +36,7 @@ func (*glogLogger) V(_ context.Context, level Level) bool {
 
 func (l *glogLogger) Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
 	if glog.V(glog.Level(level)) {
-		l.Info(ctx, msg, keyValArgs)
+		l.Info(ctx, msg, keyValArgs...)
 	}
 }
 
@@ -45,7 +45,7 @@ func (l *glogLogger) Info(ctx context.Context, msg string, keyValArgs ...any) {
 }
 
 func (l *glogLogger) Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
-	glog.ErrorContext(ctx, slices.Concat([]any{msg, "error", err.Error()}, keyValArgs, l.scopeAttrs)...)
+	glog.ErrorContext(ctx, slices.Concat([]any{msg, "error", err}, keyValArgs, l.scopeAttrs)...)
 }
 
 func (l *glogLogger) With(keyValArgs ...any) Logger {

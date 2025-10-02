@@ -113,9 +113,15 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		executor:     executor,
 		queueManager: eventqueue.NewInMemoryManager(),
 	}
+
 	for _, option := range options {
 		option(h)
 	}
+
+	if h.logger == nil {
+		h.logger = log.Glog()
+	}
+
 	return h
 }
 

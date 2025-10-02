@@ -62,9 +62,9 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 		stopped := false
 		defer func() {
 			err := subscription.cancel(ctx)
-			if !stopped {
+			if !stopped && err != nil {
 				yield(nil, err)
-			} else {
+			} else if err != nil {
 				log.Error(ctx, "failed to cancel a subscription", err)
 			}
 		}()
