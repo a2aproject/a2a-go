@@ -49,8 +49,5 @@ func (l *glogLogger) Error(ctx context.Context, msg string, err error, keyValArg
 }
 
 func (l *glogLogger) With(attrs ...any) Logger {
-	if l.scopeAttrs == nil {
-		return &glogLogger{scopeAttrs: attrs}
-	}
 	return &glogLogger{scopeAttrs: slices.Concat(attrs, l.scopeAttrs)}
 }
