@@ -48,6 +48,6 @@ func (l *glogLogger) Error(ctx context.Context, msg string, err error, keyValArg
 	glog.ErrorContext(ctx, slices.Concat([]any{msg, "error", err.Error()}, keyValArgs, l.scopeAttrs)...)
 }
 
-func (l *glogLogger) With(attrs ...any) Logger {
-	return &glogLogger{scopeAttrs: slices.Concat(attrs, l.scopeAttrs)}
+func (l *glogLogger) With(keyValArgs ...any) Logger {
+	return &glogLogger{scopeAttrs: slices.Concat(keyValArgs, l.scopeAttrs)}
 }

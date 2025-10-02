@@ -28,7 +28,7 @@ type Logger interface {
 	Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any)
 	Info(ctx context.Context, msg string, keyValArgs ...any)
 	Error(ctx context.Context, msg string, err error, keyValArgs ...any)
-	With(args ...any) Logger
+	With(keyValArgs ...any) Logger
 }
 
 type loggerKey struct{}

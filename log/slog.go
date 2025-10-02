@@ -46,6 +46,6 @@ func (s *slogLogger) Error(ctx context.Context, msg string, err error, keyValArg
 	s.logger.ErrorContext(ctx, msg, append([]any{"error", err.Error()}, keyValArgs...)...)
 }
 
-func (s *slogLogger) With(attrs ...any) Logger {
-	return &slogLogger{logger: s.logger.With(attrs...)}
+func (s *slogLogger) With(keyValArgs ...any) Logger {
+	return &slogLogger{logger: s.logger.With(keyValArgs...)}
 }
