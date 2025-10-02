@@ -129,3 +129,67 @@ func TestReadQueueToChannels_StopsErrorWriteWhenContextCanceled(t *testing.T) {
 
 	// Expect readQueueToChannels exist without errChan reader
 }
+
+func TestRunProducerConsumer(t *testing.T) {
+	panicFn := func() error { panic("panic") }
+	msg := a2a.NewMessage(a2a.MessageRoleUser)
+
+	testCases := []struct {
+		name     string
+		producer eventProducerFn
+		consumer eventConsumerFn
+		wantErr  bool
+	}{
+		{
+			name:     "success",
+			producer: func(ctx context.Context) error { return nil },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
+		},
+		{
+			name:     "producer panic",
+			producer: func(ctx context.Context) error { return panicFn() },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
+			wantErr:  true,
+		},
+		{
+			name:     "consumer panic",
+			producer: func(ctx context.Context) error { return nil },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, panicFn() },
+			wantErr:  true,
+		},
+		{
+			name:     "producer error",
+			producer: func(ctx context.Context) error { return fmt.Errorf("error") },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
+			wantErr:  true,
+		},
+		{
+			name:     "consumer error",
+			producer: func(ctx context.Context) error { return nil },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, fmt.Errorf("error") },
+			wantErr:  true,
+		},
+		{
+			name:     "nil consumer result",
+			producer: func(ctx context.Context) error { return nil },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, nil },
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error, got %v", result)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected result, got %v, %v", result, err)
+			}
+			if result == nil && err == nil {
+				t.Fatalf("expected non-nil error when result is nil")
+			}
+		})
+	}
+
+}

@@ -31,8 +31,8 @@ func newPromise() *promise {
 	return &promise{done: make(chan struct{})}
 }
 
-// setResult sets a value to which wait() resolves to after signalDone() is called.
-func (p *promise) setResult(value a2a.SendMessageResult) {
+// setValue sets a value to which wait() resolves to after signalDone() is called.
+func (p *promise) setValue(value a2a.SendMessageResult) {
 	p.value = value
 }
 
