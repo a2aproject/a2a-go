@@ -16,6 +16,9 @@ package taskexec
 
 import (
 	"context"
+	"fmt"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -38,4 +41,46 @@ func readQueueToChannels(ctx context.Context, queue eventqueue.Reader, eventChan
 			return
 		}
 	}
+}
+
+type eventProducerFn func(context.Context) error
+type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
+
+// runProducerConsumer starts producer and consumer goroutines in an error group and waits
+// for both of them to finish or one of them to fail. If both complete successfuly and consumer produces a result,
+// the result is returned, otherwise an error is returned.
+func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer eventConsumerFn) (a2a.SendMessageResult, error) {
+	group, ctx := errgroup.WithContext(ctx)
+
+	group.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("event producer panic: %v", r)
+			}
+		}()
+		err = producer(ctx)
+		return
+	})
+
+	var result *a2a.SendMessageResult
+	group.Go(func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("event consumer panic: %v", r)
+			}
+		}()
+		localResult, err := consumer(ctx)
+		result = &localResult
+		return
+	})
+
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	if *result == nil {
+		return nil, fmt.Errorf("bug: no error returned, but result unset")
+	}
+
+	return *result, nil
 }

@@ -22,11 +22,14 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
-	ErrExecutionInProgress   = errors.New("task execution is already in progress")
+	// ErrExecutionInProgress is returned when a caller attempts to start an execution for
+	// a Task concurrently with another execution.
+	ErrExecutionInProgress = errors.New("task execution is already in progress")
+	// ErrCancelationInProgress is returned when a caller attempts to start an execution for
+	// a Task concurrently with its cancelation.
 	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
@@ -47,6 +50,7 @@ type Manager struct {
 	cancelations map[a2a.TaskID]*cancelation
 }
 
+// NewManager creates an initialized Manager instance.
 func NewManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
 		queueManager: queueManager,
@@ -121,38 +125,34 @@ func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceler Canceler)
 }
 
 // Uses an errogroup to start two goroutines.
-// Execution is started in on of them. Another is processing events until a result or error
+// Execution is started in one of them. Another is processing events until a result or error
 // is returned.
 // The returned value is set as Execution result.
 func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.executions, execution.tid)
+		execution.result.signalDone()
 		m.mu.Unlock()
 	}()
 
 	queue, err := m.queueManager.GetOrCreate(ctx, execution.tid)
 	if err != nil {
-		execution.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		execution.result.setError(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
 	defer m.destroyQueue(ctx, execution.tid)
 
-	group, ctx := errgroup.WithContext(ctx)
-
-	group.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("task execution panic: %v", r)
-			}
-		}()
-		err = execution.controller.Execute(ctx, queue)
+	result, err := runProducerConsumer(
+		ctx,
+		func(ctx context.Context) error { return execution.controller.Execute(ctx, queue) },
+		func(ctx context.Context) (a2a.SendMessageResult, error) { return execution.processEvents(ctx, queue) },
+	)
+	if err != nil {
+		execution.result.setError(err)
 		return
-	})
-
-	handleEvents(ctx, group, execution.result, func(context.Context) (a2a.SendMessageResult, error) {
-		return execution.processEvents(ctx, queue)
-	})
+	}
+	execution.result.setValue(result)
 }
 
 // Uses an errogroup to start two goroutines.
@@ -163,31 +163,27 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancelation) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.tid)
+		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
 	queue, err := m.queueManager.GetOrCreate(ctx, cancel.tid)
 	if err != nil {
-		cancel.result.reject(fmt.Errorf("queue creation failed: %w", err))
+		cancel.result.setError(fmt.Errorf("queue creation failed: %w", err))
 		return
 	}
 	defer m.destroyQueue(ctx, cancel.tid)
 
-	group, ctx := errgroup.WithContext(ctx)
-
-	group.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("task cancelation panic: %v", r)
-			}
-		}()
-		err = cancel.canceler.Cancel(ctx, queue)
+	result, err := runProducerConsumer(
+		ctx,
+		func(ctx context.Context) error { return cancel.canceler.Cancel(ctx, queue) },
+		func(ctx context.Context) (a2a.SendMessageResult, error) { return cancel.processEvents(ctx, queue) },
+	)
+	if err != nil {
+		cancel.result.setError(err)
 		return
-	})
-
-	handleEvents(ctx, group, cancel.result, func(context.Context) (a2a.SendMessageResult, error) {
-		return cancel.processEvents(ctx, queue)
-	})
+	}
+	cancel.result.setValue(result)
 }
 
 // Sends a cancelation request on the queue which is being used by an active execution.
@@ -195,13 +191,14 @@ func (m *Manager) handleCancel(ctx context.Context, cancel *cancelation) {
 func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *Execution) {
 	defer func() {
 		if r := recover(); r != nil {
-			cancel.result.reject(fmt.Errorf("task cancelation panic: %v", r))
+			cancel.result.setError(fmt.Errorf("task cancelation panic: %v", r))
 		}
 	}()
 
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.tid)
+		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
@@ -213,50 +210,18 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
 	if queue, ok := m.queueManager.Get(ctx, cancel.tid); ok {
 		if err := cancel.canceler.Cancel(ctx, queue); err != nil {
-			cancel.result.reject(err)
+			cancel.result.setError(err)
 			return
 		}
 	}
 
 	result, err := run.Result(ctx)
 	if err != nil {
-		cancel.result.reject(err)
+		cancel.result.setError(err)
 		return
 	}
 
-	cancel.result.resolve(result)
-}
-
-type eventHandlerFn func(context.Context) (a2a.SendMessageResult, error)
-
-// Event producer is supposed to be started by the caller.
-// Starts an event-processor goroutine in the provided error group and consumes events
-// until a result is returned.
-// The result is on the provided promise once group.Wait() returns.
-func handleEvents(ctx context.Context, group *errgroup.Group, r *promise, handler eventHandlerFn) {
-	var result *a2a.SendMessageResult
-	group.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("task event consumer panic: %v", r)
-			}
-		}()
-		localResult, err := handler(ctx)
-		result = &localResult
-		return
-	})
-
-	if err := group.Wait(); err != nil {
-		r.reject(err)
-		return
-	}
-
-	if result == nil {
-		r.reject(fmt.Errorf("bug: no error returned, but result unset"))
-		return
-	}
-
-	r.resolve(*result)
+	cancel.result.setValue(result)
 }
 
 func (m *Manager) destroyQueue(ctx context.Context, tid a2a.TaskID) {

@@ -23,6 +23,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+// Execution represents an agent invocation in a context of the referenced task.
+// If the invocation was finished Result() will resolve immediately, otherwise it will block.
 type Execution struct {
 	tid        a2a.TaskID
 	controller Executor
@@ -46,9 +48,11 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 	}
 }
 
-func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
+// Events subscribes to the events the agent is producing during an active Execution.
+// If the Execution was finished the sequence will be empty.
+func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		eventChan, err := e.Subscribe(ctx)
+		subscription, err := newSubscription(ctx, e)
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
@@ -56,64 +60,30 @@ func (e *Execution) GetEvents(ctx context.Context) iter.Seq2[a2a.Event, error] {
 
 		stopped := false
 		defer func() {
-			err := e.Unsubscribe(ctx, eventChan)
+			err := subscription.cancel(ctx)
 			// TODO(yarolegovich): else log
-			if !stopped {
+			if err != nil && !stopped {
 				yield(nil, err)
 			}
 		}()
 
-		for {
-			select {
-			case <-ctx.Done():
+		for event, err := range subscription.events(ctx) {
+			if err != nil {
 				stopped = true
 				yield(nil, err)
 				return
-
-			case event, ok := <-eventChan:
-				if !ok {
-					return
-				}
-				if !yield(event, nil) {
-					stopped = true
-					return
-				}
+			}
+			if !yield(event, nil) {
+				stopped = true
+				return
 			}
 		}
 	}
 }
 
+// Result resolves immediately for the finished Execution or blocks until it is complete.
 func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
-}
-
-func (e *Execution) Subscribe(ctx context.Context) (chan a2a.Event, error) {
-	ch := make(chan a2a.Event)
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case e.subscribeChan <- ch:
-		return ch, nil
-
-	case <-e.result.done:
-		close(ch)
-		return ch, nil
-	}
-}
-
-func (e *Execution) Unsubscribe(ctx context.Context, ch chan a2a.Event) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-
-	case e.unsubscribeChan <- ch:
-		return nil
-
-	case <-e.result.done:
-		return nil
-	}
 }
 
 func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
@@ -126,7 +96,10 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 	}()
 
 	eventChan, errorChan := make(chan a2a.Event), make(chan error)
-	go readQueueToChannels(ctx, queue, eventChan, errorChan)
+
+	queueReadCtx, cancelCtx := context.WithCancel(ctx)
+	defer cancelCtx()
+	go readQueueToChannels(queueReadCtx, queue, eventChan, errorChan)
 
 	for {
 		select {

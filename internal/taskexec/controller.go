@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+// Processor implementation handles events produced during AgentExecution.
 type Processor interface {
 	// Process is called for each event produced by the started Execution.
 	// Execution finishes when either a non-nil result or a non-nil error is returned.
@@ -29,12 +30,14 @@ type Processor interface {
 	Process(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
 }
 
+// Executor implementation starts an agent execution.
 type Executor interface {
 	Processor
 	// Start starts publishing events to the queue. Called in a separate goroutine.
 	Execute(context.Context, eventqueue.Queue) error
 }
 
+// Canceler implementation sends a Task cancelation signal.
 type Canceler interface {
 	Processor
 	// Cancel attempts to cancel a Task.

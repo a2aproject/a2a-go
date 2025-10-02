@@ -17,6 +17,7 @@ package taskexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -125,12 +126,14 @@ func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error
 }
 
 func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
+	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed with: %v", err)
 	}
 }
 
 func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
+	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed with: %v", err)
 	}
@@ -252,21 +255,25 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	// subscribe ${consumerCount} consumers to execution events
 	consumerCount := 3
 	var waitSubscribed sync.WaitGroup
+	var waitStopped sync.WaitGroup
 	var waitConsumed sync.WaitGroup
 	var mu sync.Mutex
 	consumed := map[int][]a2a.Event{}
 	for consumerI := range consumerCount {
 		waitSubscribed.Add(1)
+		waitStopped.Add(1)
 		go func() {
-			sub, _ := execution.Subscribe(t.Context())
+			defer waitStopped.Done()
+
+			sub, _ := newSubscription(t.Context(), execution)
 			waitSubscribed.Done()
 			defer func() {
-				if err := execution.Unsubscribe(t.Context(), sub); err != nil {
-					t.Errorf("Unsubscribe() failed with %v", err)
+				if err := sub.cancel(t.Context()); err != nil {
+					t.Errorf("subscription cancel() failed with %v", err)
 				}
 			}()
 
-			for event := range sub {
+			for event := range sub.events(ctx) {
 				mu.Lock()
 				consumed[consumerI] = append(consumed[consumerI], event)
 				mu.Unlock()
@@ -296,6 +303,8 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			}
 		}
 	}
+
+	waitStopped.Wait()
 }
 
 func TestManager_CancelActiveExecution(t *testing.T) {
@@ -325,6 +334,35 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 	execResult, err := execution.Result(ctx)
 	if err != nil || execResult != want {
 		t.Fatalf("expected execution result to be %v, got %v, %v", want, execResult, err)
+	}
+}
+
+func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
+	t.Parallel()
+	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
+
+	executor := newExecutor()
+	executor.nextEventTerminal = true
+	execution, err := manager.Execute(ctx, tid, executor)
+	if err != nil {
+		t.Fatalf("Execute() failed: %v", err)
+	}
+
+	<-executor.executeCalled
+	want := &a2a.Task{ID: tid}
+	executor.mustWrite(t, want)
+
+	if got, err := execution.Result(ctx); err != nil || got != want {
+		t.Fatalf("expected Result() to return %v, got %v, %v", want, got, err)
+	}
+
+	eventCount := 0
+	for v, err := range execution.Events(ctx) {
+		fmt.Println(v, err)
+		eventCount++
+	}
+	if eventCount != 0 {
+		t.Fatalf("expected to receive 0 events after execution completes, got %d", eventCount)
 	}
 }
 
