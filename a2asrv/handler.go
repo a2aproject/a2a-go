@@ -122,28 +122,14 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 		return task, nil
 	}
 
-	historyLength := *query.HistoryLength
+	if query.HistoryLength != nil {
+		historyLength := *query.HistoryLength
 
-	var limitedHistory []*a2a.Message
-
-	if historyLength <= 0 {
-		limitedHistory = make([]*a2a.Message, 0)
-	} else {
-		if historyLength > len(task.History) {
-			historyLength = len(task.History)
+		if historyLength <= 0 {
+			task.History = []*a2a.Message{}
+		} else if historyLength < len(task.History) {
+			task.History = task.History[len(task.History)-historyLength:]
 		}
-
-		limitedHistory = make([]*a2a.Message, historyLength)
-		copy(limitedHistory, task.History[len(task.History)-historyLength:])
-	}
-
-	task = &a2a.Task{
-		ID:        task.ID,
-		ContextID: task.ContextID,
-		Status:    task.Status,
-		Artifacts: task.Artifacts,
-		History:   limitedHistory,
-		Metadata:  task.Metadata,
 	}
 
 	return task, nil
