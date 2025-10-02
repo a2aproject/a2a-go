@@ -62,26 +62,20 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 		defer func() {
 			err := subscription.cancel(ctx)
 			// TODO(yarolegovich): else log
-			if !stopped {
+			if err != nil && !stopped {
 				yield(nil, err)
 			}
 		}()
 
-		for {
-			select {
-			case <-ctx.Done():
+		for event, err := range subscription.events(ctx) {
+			if err != nil {
 				stopped = true
 				yield(nil, err)
 				return
-
-			case event, ok := <-subscription.events:
-				if !ok {
-					return
-				}
-				if !yield(event, nil) {
-					stopped = true
-					return
-				}
+			}
+			if !yield(event, nil) {
+				stopped = true
+				return
 			}
 		}
 	}

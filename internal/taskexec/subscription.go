@@ -16,14 +16,15 @@ package taskexec
 
 import (
 	"context"
+	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // subscription encapsulates the logic of subscribing a channel to Execution events and canceling the subscription.
 type subscription struct {
-	events    chan a2a.Event
-	execution *Execution
+	eventsChan chan a2a.Event
+	execution  *Execution
 }
 
 // newSubscription tries to subscribe a channel to Execution events. If the Execution ends,
@@ -36,17 +37,40 @@ func newSubscription(ctx context.Context, e *Execution) (*subscription, error) {
 		return nil, ctx.Err()
 
 	case e.subscribeChan <- ch:
-		return &subscription{events: ch, execution: e}, nil
+		return &subscription{eventsChan: ch, execution: e}, nil
 
 	case <-e.result.done:
 		return &subscription{}, nil
 	}
 }
 
+func (s *subscription) events(ctx context.Context) iter.Seq2[a2a.Event, error] {
+	if s.eventsChan == nil || s.execution == nil {
+		return func(yield func(a2a.Event, error) bool) {}
+	}
+	return func(yield func(a2a.Event, error) bool) {
+		for {
+			select {
+			case <-ctx.Done():
+				yield(nil, ctx.Err())
+				return
+
+			case event, ok := <-s.eventsChan:
+				if !ok {
+					return
+				}
+				if !yield(event, nil) {
+					return
+				}
+			}
+		}
+	}
+}
+
 // cancel unsubscribe events channel from Execution events. If the Execution ends,
 // the operation is a no-op.
 func (s *subscription) cancel(ctx context.Context) error {
-	if s.events == nil || s.execution == nil {
+	if s.eventsChan == nil || s.execution == nil {
 		return nil
 	}
 
@@ -54,7 +78,7 @@ func (s *subscription) cancel(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 
-	case s.execution.unsubscribeChan <- s.events:
+	case s.execution.unsubscribeChan <- s.eventsChan:
 		return nil
 
 	case <-s.execution.result.done:
