@@ -40,19 +40,19 @@ type RequestHandler interface {
 	// OnResubscribeToTask handles the `tasks/resubscribe` protocol method.
 	OnResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
 
-	// OnMessageSendStream handles the 'message/stream' protocol method (streaming).
+	// OnSendMessageStream handles the 'message/stream' protocol method (streaming).
 	OnSendMessageStream(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
 
-	// OnGetTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/get` protocol method.
+	// OnGetTaskPushConfig handles the `tasks/pushNotificationConfig/get` protocol method.
 	OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
 
-	// OnListTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/list` protocol method.
+	// OnListTaskPushConfig handles the `tasks/pushNotificationConfig/list` protocol method.
 	OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
 
 	// OnSetTaskPushConfig handles the `tasks/pushNotificationConfig/set` protocol method.
 	OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
 
-	// OnDeleteTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
+	// OnDeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
 }
 
@@ -108,11 +108,84 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 }
 
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrUnimplemented
+	taskID := query.ID
+	if taskID == "" {
+		return nil, fmt.Errorf("missing TaskID")
+	}
+
+	task, err := h.taskStore.Get(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task: %w", err)
+	}
+
+	if query.HistoryLength == nil {
+		return task, nil
+	}
+
+	historyLength := *query.HistoryLength
+
+	var limitedHistory []*a2a.Message
+
+	if historyLength <= 0 {
+		limitedHistory = make([]*a2a.Message, 0)
+	} else {
+		if historyLength > len(task.History) {
+			historyLength = len(task.History)
+		}
+
+		limitedHistory = make([]*a2a.Message, historyLength)
+		copy(limitedHistory, task.History[len(task.History)-historyLength:])
+	}
+
+	task = &a2a.Task{
+		ID:        task.ID,
+		ContextID: task.ContextID,
+		Status:    task.Status,
+		Artifacts: task.Artifacts,
+		History:   limitedHistory,
+		Metadata:  task.Metadata,
+	}
+
+	return task, nil
 }
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrUnimplemented
+	taskID := id.ID
+	if taskID == "" {
+		return nil, fmt.Errorf("missing TaskID")
+	}
+
+	task, err := h.taskStore.Get(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task: %w", err)
+	}
+
+	if task.Status.State.Terminal() {
+		return nil, fmt.Errorf("task cannot be canceled cause of current state: %s", task.Status.State)
+	}
+
+	queue, err := h.queueManager.GetOrCreate(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve queue: %w", err)
+	}
+
+	if err = h.executor.Cancel(ctx, RequestContext{
+		TaskID:    taskID,
+		ContextID: task.ContextID,
+		Task:      task,
+	}, queue); err != nil {
+		return nil, err
+	}
+	event, err := queue.Read(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read event from queue: %w", err)
+	}
+
+	if _, ok := event.(*a2a.Task); !ok {
+		return nil, fmt.Errorf("unexpected event type: %T", event)
+	}
+
+	return event.(*a2a.Task), nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
