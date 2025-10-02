@@ -21,6 +21,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // Execution represents an agent invocation in a context of the referenced task.
@@ -61,9 +62,10 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 		stopped := false
 		defer func() {
 			err := subscription.cancel(ctx)
-			// TODO(yarolegovich): else log
 			if !stopped {
 				yield(nil, err)
+			} else {
+				log.Error(ctx, "failed to cancel a subscription", err)
 			}
 		}()
 
