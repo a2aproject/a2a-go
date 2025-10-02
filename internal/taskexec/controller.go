@@ -21,7 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-// Processor implementation hanldes events produced during AgentExecution.
+// Processor implementation handles events produced during AgentExecution.
 type Processor interface {
 	// Process is called for each event produced by the started Execution.
 	// Execution finishes when either a non-nil result or a non-nil error is returned.

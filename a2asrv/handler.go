@@ -151,7 +151,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		return nil, fmt.Errorf("failed to execute: %w", err)
 	}
 
-	for event, err := range execution.GetEvents(ctx) {
+	for event, err := range execution.Events(ctx) {
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +170,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			yield(nil, a2a.ErrTaskNotFound)
 		}
 	}
-	return exec.GetEvents(ctx)
+	return exec.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
