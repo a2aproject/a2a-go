@@ -25,26 +25,108 @@ import (
 
 type executor struct {
 	*processor
-	agent  AgentExecutor
-	reqCtx RequestContext
+	taskID          a2a.TaskID
+	taskStore       TaskStore
+	pushConfigStore PushConfigStore
+	agent           AgentExecutor
+	params          *a2a.MessageSendParams
+	interceptor     RequestContextInterceptor
 }
 
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
-	return e.agent.Execute(ctx, e.reqCtx, q)
+	reqCtx, err := e.loadExecRequestContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	e.processor = &processor{updateManager: taskupdate.NewManager(e.taskStore, reqCtx.Task)}
+
+	ctx, err = e.interceptor.Intercept(ctx, reqCtx)
+	if err != nil {
+		return fmt.Errorf("interceptor failed: %w", err)
+	}
+
+	return e.agent.Execute(ctx, reqCtx, q)
+}
+
+func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, error) {
+	params, msg := e.params, e.params.Message
+
+	var task *a2a.Task
+	if msg.TaskID == "" {
+		task = taskupdate.NewSubmittedTask(e.taskID, msg)
+	} else {
+		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("task loading failed: %w", err)
+		}
+
+		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
+			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
+		}
+
+		if storedTask.Status.State.Terminal() {
+			return nil, fmt.Errorf("task in a terminal state %s: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
+		}
+
+		task = storedTask
+	}
+
+	if params.Config != nil && params.Config.PushConfig != nil {
+		if e.pushConfigStore == nil {
+			return nil, a2a.ErrPushNotificationNotSupported
+		}
+		if err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
+			return nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
+		}
+	}
+
+	return &RequestContext{
+		Message:   params.Message,
+		Task:      task,
+		TaskID:    task.ID,
+		ContextID: task.ContextID,
+		Metadata:  params.Message.Metadata,
+	}, nil
 }
 
 type canceler struct {
 	*processor
-	agent AgentExecutor
-	task  *a2a.Task
+	agent       AgentExecutor
+	taskStore   TaskStore
+	taskID      a2a.TaskID
+	params      *a2a.TaskIDParams
+	interceptor RequestContextInterceptor
 }
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
-	reqCtx := RequestContext{
-		TaskID:    c.task.ID,
-		ContextID: c.task.ContextID,
-		Task:      c.task,
+	task, err := c.taskStore.Get(ctx, c.taskID)
+	if err != nil {
+		return fmt.Errorf("failed to load a task: %w", err)
 	}
+
+	if task.Status.State == a2a.TaskStateCanceled {
+		return q.Write(ctx, task)
+	}
+
+	if task.Status.State.Terminal() {
+		return fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+	}
+
+	c.processor = &processor{updateManager: taskupdate.NewManager(c.taskStore, task)}
+
+	reqCtx := &RequestContext{
+		TaskID:    c.taskID,
+		ContextID: task.ContextID,
+		Task:      task,
+		Metadata:  c.params.Metadata,
+	}
+
+	ctx, err = c.interceptor.Intercept(ctx, reqCtx)
+	if err != nil {
+		return fmt.Errorf("interceptor failed: %w", err)
+	}
+
 	return c.agent.Cancel(ctx, reqCtx, q)
 }
 
@@ -80,7 +162,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown task state")
+		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
 	}
 
 	if task.Status.State.Terminal() || task.Status.State == a2a.TaskStateInputRequired {
