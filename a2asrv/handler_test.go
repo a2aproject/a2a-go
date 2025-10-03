@@ -31,18 +31,18 @@ var fixedTime = time.Now()
 
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
-	ExecuteFunc func(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
-	CancelFunc  func(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
+	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+	CancelFunc  func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
 
-func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error {
+func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, reqCtx, queue)
 	}
 	return nil
 }
 
-func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error {
+func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
 	if m.CancelFunc != nil {
 		return m.CancelFunc(ctx, reqCtx, queue)
 	}
@@ -126,7 +126,7 @@ func newEventReplayQueueManager(toSend ...a2a.Event) eventqueue.Manager {
 
 func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 	mockExec := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
 			return nil
 		},
 	}
@@ -416,7 +416,7 @@ func TestDefaultRequestHandler_OnSendMessage_AgentExecutionFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
 			return wantErr
 		},
 	}
