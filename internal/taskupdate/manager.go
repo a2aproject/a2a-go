@@ -17,6 +17,7 @@ package taskupdate
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -75,8 +76,37 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) error {
 	}
 }
 
-func (mgr *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) error {
-	return fmt.Errorf("not implemented")
+func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) error {
+	task := mgr.Task
+
+	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
+		return a.ID == event.Artifact.ID
+	})
+
+	if updateIdx < 0 {
+		if event.Append {
+			// TODO(yarolegovich): log "artifact for update not found" as Python does
+			return nil
+		}
+		task.Artifacts = append(task.Artifacts, event.Artifact)
+		return mgr.saver.Save(ctx, task)
+	}
+
+	if !event.Append {
+		task.Artifacts[updateIdx] = event.Artifact
+		return mgr.saver.Save(ctx, task)
+	}
+
+	toUpdate := task.Artifacts[updateIdx]
+	toUpdate.Parts = append(toUpdate.Parts, event.Artifact.Parts...)
+	if toUpdate.Metadata == nil && event.Artifact.Metadata != nil {
+		toUpdate.Metadata = event.Artifact.Metadata
+	} else {
+		for k, v := range event.Artifact.Metadata {
+			toUpdate.Metadata[k] = v
+		}
+	}
+	return mgr.saver.Save(ctx, task)
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) error {
