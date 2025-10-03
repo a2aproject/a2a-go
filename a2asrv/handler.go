@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/log/logger"
 )
 
 var ErrUnimplemented = errors.New("unimplemented")
@@ -119,7 +120,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	}
 
 	if h.logger == nil {
-		h.logger = log.Glog()
+		h.logger = logger.Glog()
 	}
 
 	return h

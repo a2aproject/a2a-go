@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package log
+package logger
 
 import (
 	"context"
+	"github.com/a2aproject/a2a-go/log"
 	"log/slog"
 )
 
@@ -24,15 +25,15 @@ type slogLogger struct {
 }
 
 // FromSlog creates a new Logger implementation backed by the provided log/slog logger.
-func FromSlog(logger *slog.Logger) Logger {
+func FromSlog(logger *slog.Logger) log.Logger {
 	return &slogLogger{logger}
 }
 
-func (s *slogLogger) V(ctx context.Context, level Level) bool {
+func (s *slogLogger) V(ctx context.Context, level log.Level) bool {
 	return s.logger.Enabled(ctx, slog.Level(level))
 }
 
-func (s *slogLogger) Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
+func (s *slogLogger) Verbose(ctx context.Context, level log.Level, msg string, keyValArgs ...any) {
 	if s.logger.Enabled(ctx, slog.Level(level)) {
 		s.logger.InfoContext(ctx, msg, keyValArgs...)
 	}
@@ -46,6 +47,6 @@ func (s *slogLogger) Error(ctx context.Context, msg string, err error, keyValArg
 	s.logger.ErrorContext(ctx, msg, append([]any{"error", err}, keyValArgs...)...)
 }
 
-func (s *slogLogger) With(keyValArgs ...any) Logger {
+func (s *slogLogger) With(keyValArgs ...any) log.Logger {
 	return &slogLogger{logger: s.logger.With(keyValArgs...)}
 }

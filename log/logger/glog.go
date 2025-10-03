@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package log
+package logger
 
 import (
 	"context"
 	"slices"
 
+	"github.com/a2aproject/a2a-go/log"
 	"github.com/golang/glog"
 )
 
@@ -26,15 +27,15 @@ type glogLogger struct {
 }
 
 // Glog creates a new Logger implementation based on github.com/golang/glog.
-func Glog() Logger {
+func Glog() log.Logger {
 	return &glogLogger{}
 }
 
-func (*glogLogger) V(_ context.Context, level Level) bool {
+func (*glogLogger) V(_ context.Context, level log.Level) bool {
 	return bool(glog.V(glog.Level(level)))
 }
 
-func (l *glogLogger) Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
+func (l *glogLogger) Verbose(ctx context.Context, level log.Level, msg string, keyValArgs ...any) {
 	if glog.V(glog.Level(level)) {
 		l.Info(ctx, msg, keyValArgs...)
 	}
@@ -48,6 +49,6 @@ func (l *glogLogger) Error(ctx context.Context, msg string, err error, keyValArg
 	glog.ErrorContext(ctx, slices.Concat([]any{msg, "error", err}, keyValArgs, l.scopeAttrs)...)
 }
 
-func (l *glogLogger) With(keyValArgs ...any) Logger {
+func (l *glogLogger) With(keyValArgs ...any) log.Logger {
 	return &glogLogger{scopeAttrs: slices.Concat(keyValArgs, l.scopeAttrs)}
 }
