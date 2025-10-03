@@ -24,7 +24,7 @@ import (
 // that contain the information needed by AgentExecutor implementations to process incoming requests.
 type RequestContextInterceptor interface {
 	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.Execute.
-	Intercept(ctx context.Context, reqCtx *RequestContext) error
+	Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error)
 }
 
 // RequestContext provides information about an incoming A2A request to AgentExecutor.
@@ -44,5 +44,34 @@ type RequestContext struct {
 }
 
 type DefaultRequestContextInterceptor struct {
+	taskStore TaskStore
+
 	LoadReferencedTasks bool
+}
+
+func (ri *DefaultRequestContextInterceptor) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+	msg := reqCtx.Message
+	if ri.taskStore == nil || msg == nil {
+		return ctx, nil
+	}
+
+	if !ri.LoadReferencedTasks || len(msg.ReferenceTasks) == 0 {
+		return ctx, nil
+	}
+
+	tasks := make([]*a2a.Task, 0, len(msg.ReferenceTasks))
+	for _, taskID := range msg.ReferenceTasks {
+		task, err := ri.taskStore.Get(ctx, taskID)
+		if err != nil {
+			// TODO(yarolegovich): log task not found
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+
+	if len(tasks) > 0 {
+		reqCtx.RelatedTasks = tasks
+	}
+
+	return ctx, nil
 }

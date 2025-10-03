@@ -30,6 +30,7 @@ type executor struct {
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams
+	interceptor     RequestContextInterceptor
 }
 
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
@@ -39,6 +40,11 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	}
 
 	e.processor = &processor{updateManager: taskupdate.NewManager(e.taskStore, reqCtx.Task)}
+
+	ctx, err = e.interceptor.Intercept(ctx, reqCtx)
+	if err != nil {
+		return fmt.Errorf("interceptor failed: %w", err)
+	}
 
 	return e.agent.Execute(ctx, reqCtx, q)
 }
@@ -50,20 +56,20 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	if msg.TaskID == "" {
 		task = taskupdate.NewSubmittedTask(e.taskID, msg)
 	} else {
-		localResult, err := e.taskStore.Get(ctx, msg.TaskID)
+		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
-			return nil, fmt.Errorf("request context loading failed: %w", err)
+			return nil, fmt.Errorf("task loading failed: %w", err)
 		}
 
-		if msg.ContextID != "" && msg.ContextID != localResult.ContextID {
+		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
 			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
 		}
 
-		if localResult.Status.State.Terminal() {
-			return nil, fmt.Errorf("message referenced a task in a terminal state, state = %s: %w", task.Status.State, a2a.ErrInvalidRequest)
+		if storedTask.Status.State.Terminal() {
+			return nil, fmt.Errorf("task in a terminal state %s: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
 		}
 
-		task = localResult
+		task = storedTask
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
@@ -86,10 +92,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 
 type canceler struct {
 	*processor
-	agent     AgentExecutor
-	taskStore TaskStore
-	taskID    a2a.TaskID
-	params    *a2a.TaskIDParams
+	agent       AgentExecutor
+	taskStore   TaskStore
+	taskID      a2a.TaskID
+	params      *a2a.TaskIDParams
+	interceptor RequestContextInterceptor
 }
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
@@ -113,6 +120,11 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 		ContextID: task.ContextID,
 		Task:      task,
 		Metadata:  c.params.Metadata,
+	}
+
+	ctx, err = c.interceptor.Intercept(ctx, reqCtx)
+	if err != nil {
+		return fmt.Errorf("interceptor failed: %w", err)
 	}
 
 	return c.agent.Cancel(ctx, reqCtx, q)

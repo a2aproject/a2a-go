@@ -66,8 +66,9 @@ type defaultRequestHandler struct {
 	pushNotifier PushNotifier
 	queueManager eventqueue.Manager
 
-	pushConfigStore PushConfigStore
-	taskStore       TaskStore
+	pushConfigStore       PushConfigStore
+	taskStore             TaskStore
+	reqContextInterceptor RequestContextInterceptor
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -100,17 +101,31 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 	}
 }
 
+// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.reqContextInterceptor = interceptor
+	}
+}
+
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		agentExecutor: executor,
-		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewMem(),
+		agentExecutor:         executor,
+		queueManager:          eventqueue.NewInMemoryManager(),
+		taskStore:             taskstore.NewMem(),
+		reqContextInterceptor: &DefaultRequestContextInterceptor{},
 	}
+
 	for _, option := range options {
 		option(h)
 	}
+
 	h.execManager = taskexec.NewManager(h.queueManager)
+	if interceptor, ok := h.reqContextInterceptor.(*DefaultRequestContextInterceptor); ok {
+		interceptor.taskStore = h.taskStore
+	}
+
 	return h
 }
 
@@ -121,9 +136,11 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 // TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	canceler := &canceler{
-		agent:     h.agentExecutor,
-		taskStore: h.taskStore,
-		taskID:    params.ID,
+		agent:       h.agentExecutor,
+		taskStore:   h.taskStore,
+		taskID:      params.ID,
+		interceptor: h.reqContextInterceptor,
+		params:      params,
 	}
 
 	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
@@ -190,6 +207,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		pushConfigStore: h.pushConfigStore,
 		taskID:          taskID,
 		params:          params,
+		interceptor:     h.reqContextInterceptor,
 	})
 }
 
