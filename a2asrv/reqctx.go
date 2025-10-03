@@ -20,17 +20,17 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// RequestContextBuilder defines an extension point for constructing request contexts
+// RequestContextInterceptor defines an extension point for modifying request contexts
 // that contain the information needed by AgentExecutor implementations to process incoming requests.
-type RequestContextBuilder interface {
-	// Build constructs a RequestContext from the provided parameters.
-	Build(ctx context.Context, p *a2a.MessageSendParams, t *a2a.Task) *RequestContext
+type RequestContextInterceptor interface {
+	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.Execute.
+	Intercept(ctx context.Context, reqCtx *RequestContext) error
 }
 
 // RequestContext provides information about an incoming A2A request to AgentExecutor.
 type RequestContext struct {
-	// Request which triggered the execution.
-	Request *a2a.MessageSendParams
+	// A message which triggered the execution. nil for cancelation request.
+	Message *a2a.Message
 	// TaskID is an ID of the task or a newly generated UUIDv4 in case Message did not reference any Task.
 	TaskID a2a.TaskID
 	// Task is present if request message specified a TaskID.
@@ -39,4 +39,10 @@ type RequestContext struct {
 	RelatedTasks []*a2a.Task
 	// ContextID is a server-generated identifier for maintaining context across multiple related tasks or interactions. Matches the Task ContextID.
 	ContextID string
+	// Metadata of the request which triggered the call.
+	Metadata map[string]any
+}
+
+type DefaultRequestContextInterceptor struct {
+	LoadReferencedTasks bool
 }

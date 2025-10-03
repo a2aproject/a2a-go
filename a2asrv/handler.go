@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
-	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
 
 var ErrUnimplemented = errors.New("unimplemented")
@@ -62,7 +61,7 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	taskExecutor  *taskexec.Manager
+	execManager   *taskexec.Manager
 
 	pushNotifier PushNotifier
 	queueManager eventqueue.Manager
@@ -111,33 +110,27 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	for _, option := range options {
 		option(h)
 	}
-	h.taskExecutor = taskexec.NewManager(h.queueManager)
+	h.execManager = taskexec.NewManager(h.queueManager)
 	return h
 }
 
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrUnimplemented
+	return nil, ErrUnimplemented
 }
 
 // TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
-	// TODO(yarolegovich): Move to canceler and add validations https://github.com/a2aproject/a2a-go/issues/18
-	task, err := h.taskStore.Get(ctx, params.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
 	canceler := &canceler{
 		agent:     h.agentExecutor,
-		task:      task,
-		processor: processor,
+		taskStore: h.taskStore,
+		taskID:    params.ID,
 	}
 
-	result, err := h.taskExecutor.Cancel(ctx, params.ID, canceler)
+	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
+
 	return result, nil
 }
 
@@ -166,12 +159,11 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 			yield(nil, err)
 		}
 	}
-
 	return execution.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	exec, ok := h.taskExecutor.GetExecution(params.ID)
+	exec, ok := h.execManager.GetExecution(params.ID)
 	if !ok {
 		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, a2a.ErrTaskNotFound)
@@ -185,30 +177,24 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
-	var task *a2a.Task
+	var taskID a2a.TaskID
 	if len(params.Message.TaskID) == 0 {
-		task = taskupdate.NewSubmittedTask(params.Message)
+		taskID = a2a.NewTaskID()
 	} else {
-		localResult, err := h.taskStore.Get(ctx, params.Message.TaskID)
-		if err != nil {
-			return nil, err
-		}
-		task = localResult
+		taskID = params.Message.TaskID
 	}
 
-	// TODO(yarolegovich): move to task-locked section in executor https://github.com/a2aproject/a2a-go/issues/18
-	reqCtx := RequestContext{Request: params, TaskID: task.ID, ContextID: task.ContextID}
-	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
-	executor := &executor{
-		agent:     h.agentExecutor,
-		reqCtx:    reqCtx,
-		processor: processor,
-	}
-	return h.taskExecutor.Execute(ctx, task.ID, executor)
+	return h.execManager.Execute(ctx, taskID, &executor{
+		agent:           h.agentExecutor,
+		taskStore:       h.taskStore,
+		pushConfigStore: h.pushConfigStore,
+		taskID:          taskID,
+		params:          params,
+	})
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
+	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
@@ -216,7 +202,7 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
+	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
