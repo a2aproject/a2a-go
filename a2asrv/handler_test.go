@@ -436,9 +436,6 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	if _, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTask: expected unimplemented error, got %v", err)
 	}
-	if _, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
-		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
-	}
 	if _, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
 	}

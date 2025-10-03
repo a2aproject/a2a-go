@@ -376,14 +376,14 @@ func TestManager_IDValidationFailure(t *testing.T) {
 		&a2a.TaskStatusUpdateEvent{TaskID: task.ID, ContextID: ""},
 
 		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID + "1", ContextID: task.ContextID},
-		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: task.ContextID},
+		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: task.ContextID + "1"},
 		&a2a.TaskArtifactUpdateEvent{TaskID: "", ContextID: task.ContextID},
 		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: ""},
 	}
 
-	for _, event := range testCases {
+	for i, event := range testCases {
 		if err := m.Process(t.Context(), event); err == nil {
-			t.Fatalf("expected ID validation to fail")
+			t.Fatalf("expected ID validation to fail for %d-th event: %+v", i, event)
 		}
 	}
 }

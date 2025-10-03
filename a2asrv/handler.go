@@ -119,8 +119,26 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 	return &a2a.Task{}, ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrUnimplemented
+// TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
+func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+	// TODO(yarolegovich): Move to canceler and add validations https://github.com/a2aproject/a2a-go/issues/18
+	task, err := h.taskStore.Get(ctx, params.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
+	canceler := &canceler{
+		agent:     h.agentExecutor,
+		task:      task,
+		processor: processor,
+	}
+
+	result, err := h.taskExecutor.Cancel(ctx, params.ID, canceler)
+	if err != nil {
+		return nil, fmt.Errorf("failed to cancel: %w", err)
+	}
+	return result, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -129,7 +147,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		return nil, err
 	}
 
-	for event, err := range execution.GetEvents(ctx) {
+	for event, err := range execution.Events(ctx) {
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +167,7 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 		}
 	}
 
-	return execution.GetEvents(ctx)
+	return execution.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
@@ -159,23 +177,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			yield(nil, a2a.ErrTaskNotFound)
 		}
 	}
-	return exec.GetEvents(ctx)
-}
-
-func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
-}
-
-func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return nil, ErrUnimplemented
-}
-
-func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
-}
-
-func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	return ErrUnimplemented
+	return exec.Events(ctx)
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
@@ -194,7 +196,8 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		task = localResult
 	}
 
-	reqCtx := RequestContext{Request: params, TaskID: task.ID}
+	// TODO(yarolegovich): move to task-locked section in executor https://github.com/a2aproject/a2a-go/issues/18
+	reqCtx := RequestContext{Request: params, TaskID: task.ID, ContextID: task.ContextID}
 	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
 	executor := &executor{
 		agent:     h.agentExecutor,
@@ -202,6 +205,22 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		processor: processor,
 	}
 	return h.taskExecutor.Execute(ctx, task.ID, executor)
+}
+
+func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrUnimplemented
+}
+
+func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	return nil, ErrUnimplemented
+}
+
+func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return &a2a.TaskPushConfig{}, ErrUnimplemented
+}
+
+func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	return ErrUnimplemented
 }
 
 // TODO(yarolegovich): handle auth-required state
