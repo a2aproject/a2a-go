@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // ErrStatusNotOK is an error returned by Resolver when HTTP request returned a non-OK status.
@@ -78,8 +79,9 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 		return nil, fmt.Errorf("card request failed: %w", err)
 	}
 	defer func() {
-		// TODO(yarolegovich): log error
-		_ = resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close response body", err, "from", reqUrl)
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
