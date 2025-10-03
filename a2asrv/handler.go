@@ -135,12 +135,16 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 
 // TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+	if params == nil {
+		return nil, a2a.ErrInvalidRequest
+	}
+
 	canceler := &canceler{
+		processor:   newProcessor(),
 		agent:       h.agentExecutor,
 		taskStore:   h.taskStore,
-		taskID:      params.ID,
-		interceptor: h.reqContextInterceptor,
 		params:      params,
+		interceptor: h.reqContextInterceptor,
 	}
 
 	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
@@ -202,6 +206,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	}
 
 	return h.execManager.Execute(ctx, taskID, &executor{
+		processor:       newProcessor(),
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,

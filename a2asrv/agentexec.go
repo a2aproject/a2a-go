@@ -17,7 +17,6 @@ package a2asrv
 import (
 	"context"
 	"fmt"
-
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
@@ -38,8 +37,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return err
 	}
-
-	e.processor = &processor{updateManager: taskupdate.NewManager(e.taskStore, reqCtx.Task)}
+	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
 
 	ctx, err = e.interceptor.Intercept(ctx, reqCtx)
 	if err != nil {
@@ -57,6 +55,9 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		task = taskupdate.NewSubmittedTask(e.taskID, msg)
 	} else {
 		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+		if storedTask == nil {
+			return nil, a2a.ErrTaskNotFound
+		}
 		if err != nil {
 			return nil, fmt.Errorf("task loading failed: %w", err)
 		}
@@ -94,16 +95,19 @@ type canceler struct {
 	*processor
 	agent       AgentExecutor
 	taskStore   TaskStore
-	taskID      a2a.TaskID
 	params      *a2a.TaskIDParams
 	interceptor RequestContextInterceptor
 }
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
-	task, err := c.taskStore.Get(ctx, c.taskID)
+	task, err := c.taskStore.Get(ctx, c.params.ID)
+	if task == nil {
+		return a2a.ErrTaskNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
 	}
+	c.processor.init(taskupdate.NewManager(c.taskStore, task))
 
 	if task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, task)
@@ -113,12 +117,10 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 		return fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
-	c.processor = &processor{updateManager: taskupdate.NewManager(c.taskStore, task)}
-
 	reqCtx := &RequestContext{
-		TaskID:    c.taskID,
-		ContextID: task.ContextID,
+		TaskID:    task.ID,
 		Task:      task,
+		ContextID: task.ContextID,
 		Metadata:  c.params.Metadata,
 	}
 
@@ -131,10 +133,26 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 }
 
 type processor struct {
+	// Processor is running in event consumer goroutine, but request context loading
+	// happens in event consumer goroutine. Once request context is loaded and validate the processor
+	// gets initialized. A channel is used here for establishing "init() happens-before consumer
+	// starts processing the first event.
+	initialized   chan struct{}
 	updateManager *taskupdate.Manager
 }
 
+func newProcessor() *processor {
+	return &processor{initialized: make(chan struct{})}
+}
+
+func (p *processor) init(um *taskupdate.Manager) {
+	p.updateManager = um
+	close(p.initialized)
+}
+
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
+	<-p.initialized
+
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {
 		var result a2a.SendMessageResult = msg

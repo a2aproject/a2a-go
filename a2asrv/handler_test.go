@@ -204,7 +204,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 		{
 			name:        "fails if unknown task state",
 			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateUnknown, "...")},
-			wantErr:     fmt.Errorf("unknown task state"),
+			wantErr:     fmt.Errorf("unknown task state: unknown"),
 		},
 		{
 			name: "final task overwrites intermediate task events",
