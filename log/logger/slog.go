@@ -16,8 +16,9 @@ package logger
 
 import (
 	"context"
-	"github.com/a2aproject/a2a-go/log"
 	"log/slog"
+
+	"github.com/a2aproject/a2a-go/log"
 )
 
 type slogLogger struct {
