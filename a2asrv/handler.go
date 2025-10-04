@@ -171,7 +171,12 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskID
 		return nil, fmt.Errorf("unexpected event type: %T", event)
 	}
 
-	return event.(*a2a.Task), nil
+	task, _ = event.(*a2a.Task)
+	if task.Status.State != a2a.TaskStateCanceled {
+		return nil, fmt.Errorf("task cannot be canceled cause of current state: %s", task.Status.State)
+	}
+
+	return task, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
