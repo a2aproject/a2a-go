@@ -372,7 +372,7 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 		{
 			name:      "success with TaskID",
 			id:        &a2a.TaskIDParams{ID: "test-task"},
-			wantEvent: &a2a.Task{ID: "test-task"},
+			wantEvent: &a2a.Task{ID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
 		{
 			name:    "missing TaskID",
