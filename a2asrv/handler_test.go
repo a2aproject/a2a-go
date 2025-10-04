@@ -410,6 +410,12 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 			wantEvent: &a2a.TaskStatusUpdateEvent{TaskID: taskID},
 			wantErr:   errors.New("unexpected event type: *a2a.TaskStatusUpdateEvent"),
 		},
+		{
+			name:      "unexpected task state",
+			id:        &a2a.TaskIDParams{ID: "test-task"},
+			wantEvent: &a2a.Task{ID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateFailed}},
+			wantErr:   errors.New("task cannot be canceled cause of current state: failed"),
+		},
 	}
 
 	for _, tt := range tests {
