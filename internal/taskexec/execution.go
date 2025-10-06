@@ -78,6 +78,13 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 				return
 			}
 		}
+
+		// subscription events are published from consumer goroutine only, so producer errors won't be reported
+		_, err = e.Result(ctx)
+		if err != nil {
+			stopped = true
+			yield(nil, err)
+		}
 	}
 }
 
