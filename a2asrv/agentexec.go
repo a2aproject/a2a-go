@@ -57,11 +57,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		task = taskupdate.NewSubmittedTask(e.taskID, msg)
 	} else {
 		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
-		if storedTask == nil {
-			return nil, a2a.ErrTaskNotFound
-		}
 		if err != nil {
 			return nil, fmt.Errorf("task loading failed: %w", err)
+		}
+		if storedTask == nil {
+			return nil, a2a.ErrTaskNotFound
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
@@ -103,11 +103,11 @@ type canceler struct {
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	task, err := c.taskStore.Get(ctx, c.params.ID)
-	if task == nil {
-		return a2a.ErrTaskNotFound
-	}
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
+	}
+	if task == nil {
+		return a2a.ErrTaskNotFound
 	}
 	c.processor.init(taskupdate.NewManager(c.taskStore, task))
 
