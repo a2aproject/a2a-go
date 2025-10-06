@@ -43,25 +43,25 @@ type RequestContext struct {
 	Metadata map[string]any
 }
 
-type DefaultRequestContextInterceptor struct {
-	taskStore TaskStore
-
-	LoadReferencedTasks bool
+// ReferencedTasksLoader implements RequestContextInterceptor. It populates RelatedTasks field of RequestContext
+// with Tasks referenced in the ReferenceTasks field of the Message which triggered the agent execution.
+type ReferencedTasksLoader struct {
+	Store TaskStore
 }
 
-func (ri *DefaultRequestContextInterceptor) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
 	msg := reqCtx.Message
-	if ri.taskStore == nil || msg == nil {
+	if msg == nil {
 		return ctx, nil
 	}
 
-	if !ri.LoadReferencedTasks || len(msg.ReferenceTasks) == 0 {
+	if len(msg.ReferenceTasks) == 0 {
 		return ctx, nil
 	}
 
 	tasks := make([]*a2a.Task, 0, len(msg.ReferenceTasks))
 	for _, taskID := range msg.ReferenceTasks {
-		task, err := ri.taskStore.Get(ctx, taskID)
+		task, err := ri.Store.Get(ctx, taskID)
 		if err != nil {
 			// TODO(yarolegovich): log task not found
 			continue

@@ -29,7 +29,7 @@ type executor struct {
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams
-	interceptor     RequestContextInterceptor
+	interceptors    []RequestContextInterceptor
 }
 
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
@@ -39,9 +39,11 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	}
 	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
 
-	ctx, err = e.interceptor.Intercept(ctx, reqCtx)
-	if err != nil {
-		return fmt.Errorf("interceptor failed: %w", err)
+	for _, interceptor := range e.interceptors {
+		ctx, err = interceptor.Intercept(ctx, reqCtx)
+		if err != nil {
+			return fmt.Errorf("interceptor failed: %w", err)
+		}
 	}
 
 	return e.agent.Execute(ctx, reqCtx, q)
@@ -63,11 +65,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
+			return nil, fmt.Errorf("%w: message contextID different from task contextID", a2a.ErrInvalidRequest)
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %s: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
+			return nil, fmt.Errorf("%w: task in a terminal state %q", a2a.ErrInvalidRequest, storedTask.Status.State)
 		}
 
 		task = storedTask
@@ -93,10 +95,10 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 
 type canceler struct {
 	*processor
-	agent       AgentExecutor
-	taskStore   TaskStore
-	params      *a2a.TaskIDParams
-	interceptor RequestContextInterceptor
+	agent        AgentExecutor
+	taskStore    TaskStore
+	params       *a2a.TaskIDParams
+	interceptors []RequestContextInterceptor
 }
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
@@ -124,9 +126,11 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 		Metadata:  c.params.Metadata,
 	}
 
-	ctx, err = c.interceptor.Intercept(ctx, reqCtx)
-	if err != nil {
-		return fmt.Errorf("interceptor failed: %w", err)
+	for _, interceptor := range c.interceptors {
+		ctx, err = interceptor.Intercept(ctx, reqCtx)
+		if err != nil {
+			return fmt.Errorf("interceptor failed: %w", err)
+		}
 	}
 
 	return c.agent.Cancel(ctx, reqCtx, q)
@@ -151,7 +155,11 @@ func (p *processor) init(um *taskupdate.Manager) {
 }
 
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
-	<-p.initialized
+	select {
+	case <-p.initialized:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("processor init canceled: %w", ctx.Err())
+	}
 
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {

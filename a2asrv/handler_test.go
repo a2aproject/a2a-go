@@ -29,6 +29,12 @@ import (
 
 var fixedTime = time.Now()
 
+type interceptReqCtxFn func(context.Context, *RequestContext) (context.Context, error)
+
+func (fn interceptReqCtxFn) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+	return fn(ctx, reqCtx)
+}
+
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
 	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
@@ -167,6 +173,7 @@ func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	completedTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 
 	tests := []struct {
 		name        string
@@ -304,8 +311,30 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			wantErr: a2a.ErrTaskNotFound,
 		},
 		{
-			name:    "queue read fails",
-			wantErr: fmt.Errorf("The number of ReadFunc exceeded the number of events: 0"),
+			name: "fails if contextID not equal to task contextID",
+			input: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: taskSeed.ContextID + "1", ID: "test-message"},
+			},
+			wantErr: a2a.ErrInvalidRequest,
+		},
+		{
+			name: "fails if message references non-existent task",
+			input: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: taskSeed.ID + "1", ContextID: taskSeed.ContextID, ID: "test-message"},
+			},
+			wantErr: a2a.ErrTaskNotFound,
+		},
+		{
+			name: "fails if message references completed task",
+			input: &a2a.MessageSendParams{
+				Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
+			},
+			wantErr: fmt.Errorf("%w: task in a terminal state %q", a2a.ErrInvalidRequest, a2a.TaskStateCompleted),
+		},
+		{
+			name:        "queue read fails",
+			agentEvents: []a2a.Event{},
+			wantErr:     fmt.Errorf("The number of ReadFunc exceeded the number of events: 0"),
 		},
 	}
 
@@ -319,12 +348,13 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			ctx := t.Context()
 			var qm eventqueue.Manager
 			if tt.agentEvents == nil {
-				qm = newEventReplayQueueManager()
+				qm = eventqueue.NewInMemoryManager()
 			} else {
 				qm = newEventReplayQueueManager(tt.agentEvents...)
 			}
 			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
+			_ = store.Save(ctx, completedTaskSeed)
 			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
 
 			result, gotErr := handler.OnSendMessage(ctx, input)
@@ -339,7 +369,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				if gotErr == nil {
 					t.Fatalf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
 				}
-				if gotErr.Error() != tt.wantErr.Error() {
+				if gotErr.Error() != tt.wantErr.Error() && !errors.Is(gotErr, tt.wantErr) {
 					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 			}
@@ -409,6 +439,91 @@ func TestDefaultRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
 
 	if result != nil || !errors.Is(err, wantErr) {
 		t.Fatalf("expected OnSendMessage() to fail with %v, got: %v, %v", wantErr, result, err)
+	}
+}
+
+func TestDefaultRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
+	existingTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	ctx := t.Context()
+	store := taskstore.NewMem()
+	_ = store.Save(ctx, existingTask)
+	var capturedReqContext *RequestContext
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			capturedReqContext = reqCtx
+			return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"}))
+		},
+	}
+	handler := NewHandler(executor, WithRequestContextInterceptor(&ReferencedTasksLoader{Store: store}))
+
+	request := &a2a.MessageSendParams{Message: &a2a.Message{ReferenceTasks: []a2a.TaskID{a2a.NewTaskID(), existingTask.ID}}}
+	_, err := handler.OnSendMessage(ctx, request)
+	if err != nil {
+		t.Fatalf("OnSendMessage() failed with %v", err)
+	}
+
+	if len(capturedReqContext.RelatedTasks) != 1 || capturedReqContext.RelatedTasks[0].ID != existingTask.ID {
+		t.Fatalf("expected to load existing task %v, got %v", existingTask, capturedReqContext.RelatedTasks)
+	}
+}
+
+func TestDefaultRequestHandler_MultipleRequestContextInterceptors(t *testing.T) {
+	ctx := t.Context()
+	var capturedContext context.Context
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			capturedContext = ctx
+			return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"}))
+		},
+	}
+	type key1Type struct{}
+	key1, val1 := key1Type{}, 2
+	interceptor1 := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+		return context.WithValue(ctx, key1, val1), nil
+	})
+	type key2Type struct{}
+	key2, val2 := key2Type{}, 43
+	interceptor2 := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+		return context.WithValue(ctx, key2, val2), nil
+	})
+	handler := NewHandler(
+		executor,
+		WithRequestContextInterceptor(interceptor1),
+		WithRequestContextInterceptor(interceptor2),
+	)
+
+	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
+	if err != nil {
+		t.Fatalf("OnSendMessage() failed with %v", err)
+	}
+
+	if capturedContext.Value(key1) != val1 || capturedContext.Value(key2) != val2 {
+		t.Fatalf("expected to find interceptor-attached values, got %v", capturedContext)
+	}
+}
+
+func TestDefaultRequestHandler_RequestContextInterceptorRejectsRequest(t *testing.T) {
+	ctx := t.Context()
+	var executeCalled bool
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			executeCalled = true
+			return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"}))
+		},
+	}
+	wantErr := errors.New("rejected")
+	interceptor := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+		return ctx, wantErr
+	})
+	handler := NewHandler(executor, WithRequestContextInterceptor(interceptor))
+
+	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected OnSendMessage to failed with %v, got %v", wantErr, err)
+	}
+	if executeCalled {
+		t.Fatalf("expected agent executor to no be called")
 	}
 }
 

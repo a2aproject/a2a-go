@@ -66,9 +66,9 @@ type defaultRequestHandler struct {
 	pushNotifier PushNotifier
 	queueManager eventqueue.Manager
 
-	pushConfigStore       PushConfigStore
-	taskStore             TaskStore
-	reqContextInterceptor RequestContextInterceptor
+	pushConfigStore        PushConfigStore
+	taskStore              TaskStore
+	reqContextInterceptors []RequestContextInterceptor
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -104,17 +104,16 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 // WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
-		h.reqContextInterceptor = interceptor
+		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
 	}
 }
 
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		agentExecutor:         executor,
-		queueManager:          eventqueue.NewInMemoryManager(),
-		taskStore:             taskstore.NewMem(),
-		reqContextInterceptor: &DefaultRequestContextInterceptor{},
+		agentExecutor: executor,
+		queueManager:  eventqueue.NewInMemoryManager(),
+		taskStore:     taskstore.NewMem(),
 	}
 
 	for _, option := range options {
@@ -122,9 +121,6 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	}
 
 	h.execManager = taskexec.NewManager(h.queueManager)
-	if interceptor, ok := h.reqContextInterceptor.(*DefaultRequestContextInterceptor); ok {
-		interceptor.taskStore = h.taskStore
-	}
 
 	return h
 }
@@ -140,11 +136,11 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 	}
 
 	canceler := &canceler{
-		processor:   newProcessor(),
-		agent:       h.agentExecutor,
-		taskStore:   h.taskStore,
-		params:      params,
-		interceptor: h.reqContextInterceptor,
+		processor:    newProcessor(),
+		agent:        h.agentExecutor,
+		taskStore:    h.taskStore,
+		params:       params,
+		interceptors: h.reqContextInterceptors,
 	}
 
 	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
@@ -212,7 +208,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		pushConfigStore: h.pushConfigStore,
 		taskID:          taskID,
 		params:          params,
-		interceptor:     h.reqContextInterceptor,
+		interceptors:    h.reqContextInterceptors,
 	})
 }
 
