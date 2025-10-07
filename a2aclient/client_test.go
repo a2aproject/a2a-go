@@ -92,19 +92,13 @@ func makeEventSeq2(events []a2a.Event) iter.Seq2[a2a.Event, error] {
 }
 
 type testInterceptor struct {
-	lastCallCtx *CallContext
-	lastReq     *Request
-	lastResp    *Response
-	BeforeFn    func(context.Context, *Request) (context.Context, error)
-	AfterFn     func(context.Context, *Response) error
+	lastReq  *Request
+	lastResp *Response
+	BeforeFn func(context.Context, *Request) (context.Context, error)
+	AfterFn  func(context.Context, *Response) error
 }
 
 func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
-	if callCtx, ok := CallContextFrom(ctx); ok {
-		ti.lastCallCtx = &callCtx
-	} else {
-		ti.lastCallCtx = nil
-	}
 	ti.lastReq = req
 	if ti.BeforeFn != nil {
 		return ti.BeforeFn(ctx, req)
@@ -322,8 +316,8 @@ func TestClient_InterceptGetTask(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskQueryParams{}
 	resp, err := client.GetTask(ctx, req)
-	if interceptor.lastCallCtx.Method != "GetTask" {
-		t.Fatalf("expected method to be GetTask, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "GetTask" {
+		t.Fatalf("expected method to be GetTask, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || resp != task {
 		t.Fatalf("expected %v, got %v, %v", task, resp, err)
@@ -348,8 +342,8 @@ func TestClient_InterceptCancelTask(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskIDParams{}
 	resp, err := client.CancelTask(ctx, req)
-	if interceptor.lastCallCtx.Method != "CancelTask" {
-		t.Fatalf("expected method to be CancelTask, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "CancelTask" {
+		t.Fatalf("expected method to be CancelTask, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || resp != task {
 		t.Fatalf("expected %v, got %v, %v", task, resp, err)
@@ -374,8 +368,8 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.MessageSendParams{}
 	resp, err := client.SendMessage(ctx, req)
-	if interceptor.lastCallCtx.Method != "SendMessage" {
-		t.Fatalf("expected method to be SendMessage, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "SendMessage" {
+		t.Fatalf("expected method to be SendMessage, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || resp != task {
 		t.Fatalf("expected %v, got %v, %v", task, resp, err)
@@ -413,8 +407,8 @@ func TestClient_InterceptResubscribeToTask(t *testing.T) {
 		}
 		eventI += 1
 	}
-	if interceptor.lastCallCtx.Method != "ResubscribeToTask" {
-		t.Fatalf("expected method to be ResubscribeToTask, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "ResubscribeToTask" {
+		t.Fatalf("expected method to be ResubscribeToTask, got %v", interceptor.lastReq.Method())
 	}
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
@@ -446,8 +440,8 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		}
 		eventI += 1
 	}
-	if interceptor.lastCallCtx.Method != "SendStreamingMessage" {
-		t.Fatalf("expected method to be SendStreamingMessage, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "SendStreamingMessage" {
+		t.Fatalf("expected method to be SendStreamingMessage, got %v", interceptor.lastReq.Method())
 	}
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("expected interceptor.Before to intercept %v, got %v", req, interceptor.lastReq.Payload)
@@ -466,8 +460,8 @@ func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.GetTaskPushConfigParams{}
 	resp, err := client.GetTaskPushConfig(ctx, req)
-	if interceptor.lastCallCtx.Method != "GetTaskPushConfig" {
-		t.Fatalf("expected method to be GetTaskPushConfig, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "GetTaskPushConfig" {
+		t.Fatalf("expected method to be GetTaskPushConfig, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || resp != config {
 		t.Fatalf("expected %v, got %v, %v", config, resp, err)
@@ -492,8 +486,8 @@ func TestClient_InterceptListTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.ListTaskPushConfigParams{}
 	resp, err := client.ListTaskPushConfig(ctx, req)
-	if interceptor.lastCallCtx.Method != "ListTaskPushConfig" {
-		t.Fatalf("expected method to be ListTaskPushConfig, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "ListTaskPushConfig" {
+		t.Fatalf("expected method to be ListTaskPushConfig, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || len(resp) != 1 || resp[0] != config {
 		t.Fatalf("expected %v, got %v, %v", config, resp, err)
@@ -518,8 +512,8 @@ func TestClient_InterceptSetTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskPushConfig{}
 	resp, err := client.SetTaskPushConfig(ctx, req)
-	if interceptor.lastCallCtx.Method != "SetTaskPushConfig" {
-		t.Fatalf("expected method to be SetTaskPushConfig, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "SetTaskPushConfig" {
+		t.Fatalf("expected method to be SetTaskPushConfig, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil || resp != config {
 		t.Fatalf("expected %v, got %v, %v", config, resp, err)
@@ -543,8 +537,8 @@ func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.DeleteTaskPushConfigParams{}
 	err := client.DeleteTaskPushConfig(ctx, req)
-	if interceptor.lastCallCtx.Method != "DeleteTaskPushConfig" {
-		t.Fatalf("expected method to be DeleteTaskPushConfig, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "DeleteTaskPushConfig" {
+		t.Fatalf("expected method to be DeleteTaskPushConfig, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil {
 		t.Fatalf("expected delete to succeed, got %v", err)
@@ -568,8 +562,8 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	interceptor := &testInterceptor{}
 	client := newTestClient(transport, interceptor)
 	resp, err := client.GetAgentCard(ctx)
-	if interceptor.lastCallCtx.Method != "GetAgentCard" {
-		t.Fatalf("expected method to be GetAgentCard, got %v", interceptor.lastCallCtx)
+	if interceptor.lastReq.Method() != "GetAgentCard" {
+		t.Fatalf("expected method to be GetAgentCard, got %v", interceptor.lastReq.Method())
 	}
 	if err != nil {
 		t.Fatalf("expected delete to succeed, got %v", err)

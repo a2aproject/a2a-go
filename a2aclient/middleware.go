@@ -18,9 +18,6 @@ import (
 	"context"
 )
 
-// Used to store a CallContext in context.Context.
-type callContextKey struct{}
-
 // Used to store CallMeta in context.Context after all the interceptors were applied.
 type callMetaKey struct{}
 
@@ -28,21 +25,31 @@ type callMetaKey struct{}
 // In jsonrpc it is passed as HTTP headers, in gRPC becomes a part of context.Context.
 // Custom protocol implementations can use CallMetaFrom to access this data and
 // perform the operations necessary for attaching it to the request.
-type CallMeta map[string]string
+type CallMeta map[string][]string
 
 // Request represents a transport-agnostic request to be sent to A2A server.
 // Payload is one of a2a package core types.
 type Request struct {
+	method  string
 	Meta    CallMeta
 	Payload any
+}
+
+func (r *Request) Method() string {
+	return r.method
 }
 
 // Response represents a transport-agnostic result received from A2A server.
 // Payload is one of a2a package core types.
 type Response struct {
+	method  string
 	Err     error
 	Meta    CallMeta
 	Payload any
+}
+
+func (r *Response) Method() string {
+	return r.method
 }
 
 // CallInterceptor can be attached to an a2aclient.Client.
@@ -58,12 +65,6 @@ type CallInterceptor interface {
 	After(ctx context.Context, resp *Response) error
 }
 
-// CallContext holds additional information about the intercepted request.
-type CallContext struct {
-	Method    string
-	SessionID SessionID
-}
-
 // CallMetaFrom allows Transport implementations to access CallMeta after all
 // the interceptors were applied.
 func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
@@ -73,32 +74,6 @@ func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 
 func withCallMeta(ctx context.Context, meta CallMeta) context.Context {
 	return context.WithValue(ctx, callMetaKey{}, meta)
-}
-
-// CallContextFrom allows CallInterceptors to get additional information about the intercepted request.
-func CallContextFrom(ctx context.Context) (CallContext, bool) {
-	callCtx, ok := ctx.Value(callContextKey{}).(CallContext)
-	return callCtx, ok
-}
-
-// WithSessionID allows callers to attach a random session identifier to the request.
-// CallInterceptor can access this identifier through CallContext.
-func WithSessionID(ctx context.Context, sid SessionID) context.Context {
-	if callCtx, ok := CallContextFrom(ctx); ok {
-		callCtx.SessionID = sid
-		return context.WithValue(ctx, callContextKey{}, callCtx)
-	}
-
-	return context.WithValue(ctx, callContextKey{}, CallContext{SessionID: sid})
-}
-
-func withMethod(ctx context.Context, method string) context.Context {
-	if callCtx, ok := CallContextFrom(ctx); ok {
-		callCtx.Method = method
-		return context.WithValue(ctx, callContextKey{}, callCtx)
-	}
-
-	return context.WithValue(ctx, callContextKey{}, CallContext{Method: method})
 }
 
 // PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
