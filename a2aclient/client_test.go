@@ -176,13 +176,13 @@ func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
 	k1, v1, k2, v2 := "Authorization", "Basic ABCD", "X-Custom", "test"
 	interceptor1 := &testInterceptor{
 		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			r.Meta[k1] = v1
+			r.Meta[k1] = []string{v1}
 			return ctx, nil
 		},
 	}
 	interceptor2 := &testInterceptor{
 		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			r.Meta[k2] = v2
+			r.Meta[k2] = []string{v2}
 			return ctx, nil
 		},
 	}
@@ -191,7 +191,7 @@ func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
 		t.Fatalf("expected call to succeed, got %v", err)
 	}
-	wantCallMeta := CallMeta{k1: v1, k2: v2}
+	wantCallMeta := CallMeta{k1: []string{v1}, k2: []string{v2}}
 	if !reflect.DeepEqual(receivedCallMeta, wantCallMeta) {
 		t.Fatalf("expected meta to be %v, got %v", wantCallMeta, receivedCallMeta)
 	}
