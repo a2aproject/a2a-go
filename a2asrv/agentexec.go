@@ -59,11 +59,10 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return &result, nil
 	}
 
-	if err := p.updateManager.Process(ctx, event); err != nil {
+	task, err := p.updateManager.Process(ctx, event)
+	if err != nil {
 		return nil, err
 	}
-
-	task := p.updateManager.Task
 
 	// TODO(yarolegovich): handle pushes
 

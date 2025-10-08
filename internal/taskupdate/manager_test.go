@@ -54,24 +54,23 @@ func TestManager_TaskSaved(t *testing.T) {
 
 	newState := a2a.TaskStateCanceled
 	updated := &a2a.Task{
-		ID:        m.Task.ID,
-		ContextID: m.Task.ContextID,
+		ID:        m.task.ID,
+		ContextID: m.task.ContextID,
 		Status:    a2a.TaskStatus{State: newState},
 	}
-	task.ID = m.Task.ID
-	task.ContextID = m.Task.ContextID
-	if err := m.Process(t.Context(), updated); err != nil {
+	result, err := m.Process(t.Context(), updated)
+	if err != nil {
 		t.Fatalf("failed to save task: %v", err)
 	}
 
 	if updated != saver.saved {
 		t.Fatalf("task not saved, want: %v, got: %v", updated, saver.saved)
 	}
-	if updated != m.Task {
-		t.Fatalf("manager task not updated, want: %v, got: %v", updated, m.Task)
+	if updated != result {
+		t.Fatalf("manager task not updated, want: %v, got: %v", updated, result)
 	}
-	if m.Task.Status.State != newState {
-		t.Fatalf("task state not updated, want: %v, got: %v", newState, m.Task.Status.State)
+	if result.Status.State != newState {
+		t.Fatalf("task state not updated, want: %v, got: %v", newState, result.Status.State)
 	}
 }
 
@@ -81,7 +80,7 @@ func TestManager_SaverError(t *testing.T) {
 
 	wantErr := errors.New("saver failed")
 	saver.fail = wantErr
-	if err := m.Process(t.Context(), m.Task); !errors.Is(err, wantErr) {
+	if _, err := m.Process(t.Context(), m.task); !errors.Is(err, wantErr) {
 		t.Fatalf("want Process() to fail with %v, got %v", wantErr, err)
 	}
 }
@@ -89,18 +88,19 @@ func TestManager_SaverError(t *testing.T) {
 func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
-	m.Task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
+	m.task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
 	for _, state := range states {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		event.Status.State = state
 
-		if err := m.Process(t.Context(), event); err != nil {
+		task, err := m.Process(t.Context(), event)
+		if err != nil {
 			t.Fatalf("Process() failed to set state %s: %v", state, err)
 		}
-		if m.Task.Status.State != state {
-			t.Fatalf("task state not updated, want: %v, got: %v", state, m.Task.Status.State)
+		if task.Status.State != state {
+			t.Fatalf("task state not updated, want: %v, got: %v", state, task.Status.State)
 		}
 	}
 }
@@ -109,25 +109,28 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
 
+	var lastResult *a2a.Task
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		textPart := a2a.TextPart{Text: msg}
 		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
 
-		if err := m.Process(t.Context(), event); err != nil {
+		result, err := m.Process(t.Context(), event)
+		if err != nil {
 			t.Fatalf("Process() failed to set status %d-th time: %v", i, err)
 		}
+		lastResult = result
 	}
 
-	status := getText(m.Task.Status.Message)
+	status := getText(lastResult.Status.Message)
 	if status != messages[len(messages)-1] {
 		t.Fatalf("want %s status text, got %s", messages[len(messages)-1], status)
 	}
-	if len(m.Task.History) != len(messages)-1 {
-		t.Fatalf("want %d history messages, got %d", len(messages)-1, len(m.Task.History))
+	if len(lastResult.History) != len(messages)-1 {
+		t.Fatalf("want %d history messages, got %d", len(messages)-1, len(lastResult.History))
 	}
-	for i, msg := range m.Task.History {
+	for i, msg := range lastResult.History {
 		if getText(msg) != messages[i] {
 			t.Fatalf("wanted %s history text, got %s", messages[i], getText(msg))
 		}
@@ -144,16 +147,19 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 		{"one": "two"},
 	}
 
+	var lastResult *a2a.Task
 	for i, metadata := range updates {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		event.Metadata = metadata
 
-		if err := m.Process(t.Context(), event); err != nil {
+		result, err := m.Process(t.Context(), event)
+		if err != nil {
 			t.Fatalf("Process() failed to set %d-th metadata: %v", i, err)
 		}
+		lastResult = result
 	}
 
-	got := m.Task.Metadata
+	got := lastResult.Metadata
 	want := map[string]any{"foo": "bar2", "one": "two", "hello": "world"}
 	if len(got) != len(want) {
 		t.Fatalf("want %d metadata keys, got %d", len(want), len(got))
@@ -187,7 +193,7 @@ func TestManager_IDValidationFailure(t *testing.T) {
 	}
 
 	for _, event := range testCases {
-		if err := m.Process(t.Context(), event); err == nil {
+		if _, err := m.Process(t.Context(), event); err == nil {
 			t.Fatalf("expected ID validation to fail")
 		}
 	}
