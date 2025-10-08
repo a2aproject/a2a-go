@@ -63,24 +63,23 @@ func TestManager_TaskSaved(t *testing.T) {
 
 	newState := a2a.TaskStateCanceled
 	updated := &a2a.Task{
-		ID:        m.Task.ID,
-		ContextID: m.Task.ContextID,
+		ID:        m.task.ID,
+		ContextID: m.task.ContextID,
 		Status:    a2a.TaskStatus{State: newState},
 	}
-	task.ID = m.Task.ID
-	task.ContextID = m.Task.ContextID
-	if err := m.Process(t.Context(), updated); err != nil {
-		t.Fatalf("failed to save task: %v", err)
+	result, err := m.Process(t.Context(), updated)
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
 
 	if updated != saver.saved {
-		t.Fatalf("task not saved, want: %v, got: %v", updated, saver.saved)
+		t.Fatalf("task not saved: got = %v, want = %v", saver.saved, updated)
 	}
-	if updated != m.Task {
-		t.Fatalf("manager task not updated, want: %v, got: %v", updated, m.Task)
+	if updated != result {
+		t.Fatalf("manager task not updated: got = %v, want = %v", result, updated)
 	}
-	if m.Task.Status.State != newState {
-		t.Fatalf("task state not updated, want: %v, got: %v", newState, m.Task.Status.State)
+	if result.Status.State != newState {
+		t.Fatalf("task state not updated: got = %v, want = %v", result.Status.State, newState)
 	}
 }
 
@@ -90,26 +89,27 @@ func TestManager_SaverError(t *testing.T) {
 
 	wantErr := errors.New("saver failed")
 	saver.fail = wantErr
-	if err := m.Process(t.Context(), m.Task); !errors.Is(err, wantErr) {
-		t.Fatalf("want Process() to fail with %v, got %v", wantErr, err)
+	if _, err := m.Process(t.Context(), m.task); !errors.Is(err, wantErr) {
+		t.Fatalf("m.Process() = %v, want %v", err, wantErr)
 	}
 }
 
 func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
-	m.Task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
+	m.task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
 	for _, state := range states {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		event.Status.State = state
 
-		if err := m.Process(t.Context(), event); err != nil {
-			t.Fatalf("Process() failed to set state %s: %v", state, err)
+		task, err := m.Process(t.Context(), event)
+		if err != nil {
+			t.Fatalf("m.Process() failed to set state %q: %v", state, err)
 		}
-		if m.Task.Status.State != state {
-			t.Fatalf("task state not updated, want: %v, got: %v", state, m.Task.Status.State)
+		if task.Status.State != state {
+			t.Fatalf("task state not updated: got = %v, want = %v", state, task.Status.State)
 		}
 	}
 }
@@ -118,27 +118,30 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
 
+	var lastResult *a2a.Task
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		textPart := a2a.TextPart{Text: msg}
 		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
 
-		if err := m.Process(t.Context(), event); err != nil {
-			t.Fatalf("Process() failed to set status %d-th time: %v", i, err)
+		result, err := m.Process(t.Context(), event)
+		if err != nil {
+			t.Fatalf("m.Process() failed to set status %d-th time: %v", i, err)
 		}
+		lastResult = result
 	}
 
-	status := getText(m.Task.Status.Message)
+	status := getText(lastResult.Status.Message)
 	if status != messages[len(messages)-1] {
-		t.Fatalf("want %s status text, got %s", messages[len(messages)-1], status)
+		t.Fatalf("wrong status text: got = %q, want = %q", status, messages[len(messages)-1])
 	}
-	if len(m.Task.History) != len(messages)-1 {
-		t.Fatalf("want %d history messages, got %d", len(messages)-1, len(m.Task.History))
+	if len(lastResult.History) != len(messages)-1 {
+		t.Fatalf("wrong history length: got = %d, want = %d", len(lastResult.History), len(messages)-1)
 	}
-	for i, msg := range m.Task.History {
+	for i, msg := range lastResult.History {
 		if getText(msg) != messages[i] {
-			t.Fatalf("wanted %s history text, got %s", messages[i], getText(msg))
+			t.Fatalf("wrong history text: got = %q, want = %q", getText(msg), messages[i])
 		}
 	}
 }
@@ -153,23 +156,26 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 		{"one": "two"},
 	}
 
+	var lastResult *a2a.Task
 	for i, metadata := range updates {
-		event := newStatusUpdate(m.Task)
+		event := newStatusUpdate(m.task)
 		event.Metadata = metadata
 
-		if err := m.Process(t.Context(), event); err != nil {
-			t.Fatalf("Process() failed to set %d-th metadata: %v", i, err)
+		result, err := m.Process(t.Context(), event)
+		if err != nil {
+			t.Fatalf("m.Process() failed to set %d-th metadata: %v", i, err)
 		}
+		lastResult = result
 	}
 
-	got := m.Task.Metadata
+	got := lastResult.Metadata
 	want := map[string]any{"foo": "bar2", "one": "two", "hello": "world"}
 	if len(got) != len(want) {
-		t.Fatalf("want %d metadata keys, got %d", len(want), len(got))
+		t.Fatalf("wrong metadata size: got = %d, want = %d", len(got), len(want))
 	}
 	for k, v := range got {
 		if v != want[k] {
-			t.Fatalf("want %s=%s metadata keys, got %s=%s", k, want[k], k, v)
+			t.Fatalf("wrong metadata kv: got = %s=%s, want %s=%s", k, v, k, want[k])
 		}
 	}
 }
@@ -335,7 +341,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 					Artifact: &a2a.Artifact{Parts: makeTextParts("Hello")},
 				},
 			},
-			want: []*a2a.Artifact{},
+			want: nil,
 		},
 	}
 
@@ -344,17 +350,29 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			saver := &testSaver{}
 			task := &a2a.Task{ID: tid, ContextID: ctxid}
 			m := NewManager(saver, task)
+
+			var lastResult *a2a.Task
 			for _, ev := range tc.events {
-				if err := m.Process(t.Context(), ev); err != nil {
-					t.Errorf("event processing failed: %v", err)
+				result, err := m.Process(t.Context(), ev)
+				if err != nil {
+					t.Errorf("m.Process() failed: %v", err)
 				}
+				lastResult = result
 			}
-			got := []*a2a.Artifact{}
+
+			var saved []*a2a.Artifact
 			if saver.saved != nil {
-				got = saver.saved.Artifacts
+				saved = saver.saved.Artifacts
+			}
+			var got []*a2a.Artifact
+			if lastResult != nil {
+				got = lastResult.Artifacts
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("unexpected artifacts state (-want,+got)\nwant = %v\ngot = %v\ndiff=%s", tc.want, got, diff)
+				t.Errorf("wrong result (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", got, tc.want, diff)
+			}
+			if diff := cmp.Diff(tc.want, saved); diff != "" {
+				t.Errorf("wrong artifacts saved (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", saved, tc.want, diff)
 			}
 		})
 	}
@@ -382,8 +400,8 @@ func TestManager_IDValidationFailure(t *testing.T) {
 	}
 
 	for i, event := range testCases {
-		if err := m.Process(t.Context(), event); err == nil {
-			t.Fatalf("expected ID validation to fail for %d-th event: %+v", i, event)
+		if _, err := m.Process(t.Context(), event); err == nil {
+			t.Fatalf("want ID validation to fail for %d-th event: %+v", i, event)
 		}
 	}
 }
