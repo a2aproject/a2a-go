@@ -401,7 +401,7 @@ func TestManager_IDValidationFailure(t *testing.T) {
 
 	for i, event := range testCases {
 		if _, err := m.Process(t.Context(), event); err == nil {
-			t.Fatalf("expected ID validation to fail for %d-th event: %+v", i, event)
+			t.Fatalf("want ID validation to fail for %d-th event: %+v", i, event)
 		}
 	}
 }

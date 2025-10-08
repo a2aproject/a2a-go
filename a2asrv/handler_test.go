@@ -333,7 +333,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
-					t.Errorf("OnSendMessage() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
+					t.Errorf("OnSendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -384,7 +384,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 						t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
 					}
 					if diff := cmp.Diff(want, got); diff != "" {
-						t.Errorf("OnSendMessageStream() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+						t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					}
 				}
 			}
