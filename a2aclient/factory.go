@@ -120,8 +120,8 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.Agent
 	}, nil
 }
 
-// createTransport returns once is succeeds to open a connection using one of the provided
-// transports or fails if all candidates failed.
+// createTransport attempts to connect using the provided transports, returning the first
+// one that succeeds. If all transports fail, it returns an error.
 func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard) (Transport, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("empty list of transport candidates was provided")
@@ -168,7 +168,7 @@ func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCa
 		for i, a := range available {
 			protocols[i] = string(a.Transport)
 		}
-		return nil, fmt.Errorf("no compatible transports found: [%s]", strings.Join(protocols, ","))
+		return nil, fmt.Errorf("no compatible transports found: available transports - [%s]", strings.Join(protocols, ","))
 	}
 
 	if len(f.config.PreferredTransports) > 0 {
