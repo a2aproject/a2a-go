@@ -345,7 +345,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
-					t.Errorf("OnSendMessage() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
+					t.Errorf("OnSendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -369,7 +369,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			var streamErr error
 			for got, gotErr := range handler.OnSendMessageStream(ctx, input) {
 				if streamErr != nil {
-					t.Errorf("expected no events after error got %v, %v", got, gotErr)
+					t.Errorf("handler.OnSendMessageStream() got (%v, %v) after error, want stream end", got, gotErr)
 				}
 
 				if gotErr != nil && tt.wantErr == nil {
@@ -386,7 +386,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					eventI++
 				}
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("OnSendMessageStream() (-want,+got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+					t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 				}
 			}
 			if tt.wantErr == nil && eventI != len(tt.agentEvents) {

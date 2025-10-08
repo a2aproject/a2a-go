@@ -154,6 +154,9 @@ func (p *processor) init(um *taskupdate.Manager) {
 	close(p.initialized)
 }
 
+// Process implements taskexec.Processor interface.
+// A (nil, nil) result means the processing should continue.
+// A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
 	select {
 	case <-p.initialized:
@@ -167,11 +170,10 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return &result, nil
 	}
 
-	if err := p.updateManager.Process(ctx, event); err != nil {
+	task, err := p.updateManager.Process(ctx, event)
+	if err != nil {
 		return nil, err
 	}
-
-	task := p.updateManager.Task
 
 	// TODO(yarolegovich): handle pushes
 
