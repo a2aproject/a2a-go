@@ -69,6 +69,7 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	reqContextInterceptors []RequestContextInterceptor
+	callInterceptors       []CallInterceptor
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -108,6 +109,13 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 	}
 }
 
+// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.callInterceptors = append(h.callInterceptors, interceptor)
+	}
+}
+
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
@@ -126,11 +134,29 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 }
 
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnGetTask")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.interceptAfter(ctx, callCtx, nil, ErrUnimplemented); err != nil {
+		return nil, err
+	}
+
 	return nil, ErrUnimplemented
 }
 
 // TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnCancelTask")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return nil, err
+	}
+
 	if params == nil {
 		return nil, a2a.ErrInvalidRequest
 	}
@@ -143,15 +169,26 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 		interceptors: h.reqContextInterceptors,
 	}
 
-	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
+	response, err := h.execManager.Cancel(ctx, params.ID, canceler)
+	if err := h.interceptAfter(ctx, callCtx, response, err); err != nil {
+		return nil, err
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
 
-	return result, nil
+	return response, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnSendMessage")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return nil, err
+	}
+
 	execution, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
@@ -166,27 +203,44 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		}
 	}
 
-	return execution.Result(ctx)
+	response, err := execution.Result(ctx)
+	if err := h.interceptAfter(ctx, callCtx, response, err); err != nil {
+		return nil, err
+	}
+
+	return response, err
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	ctx, callCtx := withMethodCallContext(ctx, "OnSendMessageStream")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return errorToSeq2[a2a.Event](err)
+	}
+
 	execution, err := h.handleSendMessage(ctx, params)
 	if err != nil {
-		return func(yield func(a2a.Event, error) bool) {
-			yield(nil, err)
-		}
+		return errorToSeq2[a2a.Event](err)
 	}
-	return execution.Events(ctx)
+
+	return h.interceptAfterEach(ctx, callCtx, execution.Events(ctx))
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	ctx, callCtx := withMethodCallContext(ctx, "OnResubscribeToTask")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return errorToSeq2[a2a.Event](err)
+	}
+
 	exec, ok := h.execManager.GetExecution(params.ID)
 	if !ok {
-		return func(yield func(a2a.Event, error) bool) {
-			yield(nil, a2a.ErrTaskNotFound)
-		}
+		return errorToSeq2[a2a.Event](a2a.ErrTaskNotFound)
 	}
-	return exec.Events(ctx)
+
+	return h.interceptAfterEach(ctx, callCtx, exec.Events(ctx))
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
@@ -213,19 +267,113 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnGetTaskPushConfig")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.interceptAfter(ctx, callCtx, nil, ErrUnimplemented); err != nil {
+		return nil, err
+	}
+
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnListTaskPushConfig")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.interceptAfter(ctx, callCtx, nil, ErrUnimplemented); err != nil {
+		return nil, err
+	}
+
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnSetTaskPushConfig")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.interceptAfter(ctx, callCtx, nil, ErrUnimplemented); err != nil {
+		return nil, err
+	}
+
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	ctx, callCtx := withMethodCallContext(ctx, "OnDeleteTaskPushConfig")
+
+	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	if err != nil {
+		return err
+	}
+
+	if err := h.interceptAfter(ctx, callCtx, nil, ErrUnimplemented); err != nil {
+		return err
+	}
+
 	return ErrUnimplemented
+}
+
+func (h *defaultRequestHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {
+	request := &Request{Payload: payload}
+
+	for _, interceptor := range h.callInterceptors {
+		localCtx, err := interceptor.Before(ctx, callCtx, request)
+		if err != nil {
+			return ctx, err
+		}
+		ctx = localCtx
+	}
+
+	return ctx, nil
+}
+
+func (h *defaultRequestHandler) interceptAfter(ctx context.Context, callCtx *CallContext, payload any, responseErr error) error {
+	response := &Response{Payload: payload, Err: responseErr}
+
+	for _, interceptor := range h.callInterceptors {
+		if err := interceptor.After(ctx, callCtx, response); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *defaultRequestHandler) interceptAfterEach(ctx context.Context, callCtx *CallContext, seq iter.Seq2[a2a.Event, error]) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		for event, err := range seq {
+			response := &Response{Payload: event, Err: err}
+
+			for _, interceptor := range h.callInterceptors {
+				if err := interceptor.After(ctx, callCtx, response); err != nil {
+					yield(nil, err)
+					return
+				}
+			}
+
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+
+			if !yield(event, nil) {
+				return
+			}
+		}
+	}
 }
 
 // TODO(yarolegovich): handle auth-required state
