@@ -46,18 +46,16 @@ type transportCandidate struct {
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
 var defaultOptions = []FactoryOption{WithGRPCTransport()}
 
-var defaultFactory *Factory = NewFactory()
-
 // CreateFromCard is a helper for creating a Client configured without creating a factory.
 // It is equivalent to calling CreateFromCard on a Factory created without any options.
 func CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
-	return defaultFactory.CreateFromCard(ctx, card, opts...)
+	return NewFactory(opts...).CreateFromCard(ctx, card)
 }
 
 // CreateFromEndpoints is a helper for creating a Client configured without creating a factory.
 // It is equivalent to calling CreateFromEndpoints on a Factory created without any options.
 func CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
-	return defaultFactory.CreateFromEndpoints(ctx, endpoints, opts...)
+	return NewFactory(opts...).CreateFromEndpoints(ctx, endpoints)
 }
 
 // CreateFromCard returns a Client configured to communicate with the agent described by
@@ -66,12 +64,7 @@ func CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, op
 // If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
 // and proceed in the order specified by the AdditionalInterfaces.
 // The method fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
-	if len(opts) > 0 {
-		extended := WithAdditionalOptions(f, opts...)
-		return extended.CreateFromCard(ctx, card)
-	}
-
+func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
 	serverPrefs := make([]a2a.AgentInterface, 1+len(card.AdditionalInterfaces))
 	serverPrefs[0] = a2a.AgentInterface{Transport: card.PreferredTransport, URL: card.URL}
 	copy(serverPrefs[1:], card.AdditionalInterfaces)
@@ -97,12 +90,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts 
 // Config PreferredTransports will be used to determine the order of connection attempts.
 // If PreferredTransports were not provided, we attempt to establish using the provided endpoint order.
 // The method fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
-	if len(opts) > 0 {
-		extended := WithAdditionalOptions(f, opts...)
-		return extended.CreateFromEndpoints(ctx, endpoints)
-	}
-
+func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface) (*Client, error) {
 	candidates, err := f.selectTransport(endpoints)
 	if err != nil {
 		return nil, err
