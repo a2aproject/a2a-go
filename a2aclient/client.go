@@ -65,7 +65,7 @@ func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.
 
 	resp, err := c.transport.GetTask(ctx, query)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -82,7 +82,7 @@ func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Tas
 
 	resp, err := c.transport.CancelTask(ctx, id)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -99,7 +99,7 @@ func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams
 
 	resp, err := c.transport.SendMessage(ctx, message)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -117,7 +117,7 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 		}
 
 		for resp, err := range c.transport.ResubscribeToTask(ctx, id) {
-			if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+			if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 				yield(nil, err)
 				return
 			}
@@ -145,7 +145,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 		}
 
 		for resp, err := range c.transport.SendStreamingMessage(ctx, message) {
-			if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+			if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 				yield(nil, err)
 				return
 			}
@@ -172,7 +172,7 @@ func (c *Client) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushC
 
 	resp, err := c.transport.GetTaskPushConfig(ctx, params)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -189,7 +189,7 @@ func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPus
 
 	resp, err := c.transport.ListTaskPushConfig(ctx, params)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -206,7 +206,7 @@ func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConf
 
 	resp, err := c.transport.SetTaskPushConfig(ctx, params)
 
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
@@ -223,7 +223,7 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTas
 
 	err = c.transport.DeleteTaskPushConfig(ctx, params)
 
-	if err := c.interceptAfter(ctx, method, nil, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, nil, err); errOverride != nil {
 		return err
 	}
 
@@ -239,7 +239,7 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	}
 
 	resp, err := c.transport.GetAgentCard(ctx)
-	if err := c.interceptAfter(ctx, method, resp, err); err != nil {
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 		return nil, err
 	}
 
