@@ -393,7 +393,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				t.Errorf("OnSendMessageStream() received %d events, want %d", eventI, len(tt.agentEvents))
 			}
 			if tt.wantErr != nil && streamErr == nil {
-				t.Errorf("expected OnSendMessageStream() stream to return error %v", tt.wantErr)
+				t.Errorf("OnSendMessageStream() error = nil, want %v", tt.wantErr)
 			}
 			if tt.wantErr != nil && (streamErr.Error() != tt.wantErr.Error() && !errors.Is(streamErr, tt.wantErr)) {
 				t.Errorf("OnSendMessageStream() error = %v, wantErr %v", streamErr, tt.wantErr)
@@ -415,7 +415,7 @@ func TestDefaultRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
 
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("expected OnSendMessage() to fail with %v, got: %v, %v", wantErr, result, err)
+		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
@@ -437,7 +437,7 @@ func TestDefaultRequestHandler_OnSendMessage_QueueReadFails(t *testing.T) {
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
 
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("expected OnSendMessage() to fail with %v, got: %v, %v", wantErr, result, err)
+		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
@@ -452,12 +452,12 @@ func TestDefaultRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 	request := &a2a.MessageSendParams{Message: &a2a.Message{ReferenceTasks: []a2a.TaskID{a2a.NewTaskID(), existingTask.ID}}}
 	_, err := handler.OnSendMessage(ctx, request)
 	if err != nil {
-		t.Fatalf("OnSendMessage() failed with %v", err)
+		t.Fatalf("handler.OnSendMessage() failed: %v", err)
 	}
 
 	capturedReqContext := executor.capturedReqContext
 	if len(capturedReqContext.RelatedTasks) != 1 || capturedReqContext.RelatedTasks[0].ID != existingTask.ID {
-		t.Fatalf("expected to load existing task %v, got %v", existingTask, capturedReqContext.RelatedTasks)
+		t.Fatalf("RequestContext.RelatedTasks = %v, want [%v]", capturedReqContext.RelatedTasks, existingTask)
 	}
 }
 
@@ -482,12 +482,12 @@ func TestDefaultRequestHandler_MultipleRequestContextInterceptors(t *testing.T) 
 
 	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
 	if err != nil {
-		t.Fatalf("OnSendMessage() failed with %v", err)
+		t.Fatalf("handler.OnSendMessage() failed: %v", err)
 	}
 
 	capturedContext := executor.capturedContext
 	if capturedContext.Value(key1) != val1 || capturedContext.Value(key2) != val2 {
-		t.Fatalf("expected to find interceptor-attached values, got %v", capturedContext)
+		t.Fatalf("Execute() context = %+v, want to have interceptor attached values", capturedContext)
 	}
 }
 
@@ -503,10 +503,10 @@ func TestDefaultRequestHandler_RequestContextInterceptorRejectsRequest(t *testin
 	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
 
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("expected OnSendMessage to failed with %v, got %v", wantErr, err)
+		t.Fatalf("handler.OnSendMessage() error = %v, want %v", err, wantErr)
 	}
 	if executor.executeCalled {
-		t.Fatalf("expected agent executor to no be called")
+		t.Fatal("want agent executor to no be called")
 	}
 }
 
@@ -519,7 +519,7 @@ func TestDefaultRequestHandler_OnSendMessage_AgentExecutionFails(t *testing.T) {
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
 
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("expected OnSendMessage() to fail with %v, got: %v, %v", wantErr, result, err)
+		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
