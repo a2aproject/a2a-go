@@ -17,6 +17,7 @@ package taskupdate
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -75,8 +76,47 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*a2a.Task, er
 	}
 }
 
-func (mgr *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
-	return nil, fmt.Errorf("not implemented")
+func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
+	task := mgr.task
+
+	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
+		return a.ID == event.Artifact.ID
+	})
+
+	if updateIdx < 0 {
+		if event.Append {
+			// TODO(yarolegovich): log "artifact for update not found" as Python does
+			return task, nil
+		}
+		task.Artifacts = append(task.Artifacts, event.Artifact)
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	if !event.Append {
+		task.Artifacts[updateIdx] = event.Artifact
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	toUpdate := task.Artifacts[updateIdx]
+	toUpdate.Parts = append(toUpdate.Parts, event.Artifact.Parts...)
+	if toUpdate.Metadata == nil && event.Artifact.Metadata != nil {
+		toUpdate.Metadata = event.Artifact.Metadata
+	} else {
+		for k, v := range event.Artifact.Metadata {
+			toUpdate.Metadata[k] = v
+		}
+	}
+
+	if err := mgr.saver.Save(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
