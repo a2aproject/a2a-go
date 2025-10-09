@@ -29,24 +29,24 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
-type GRPCHandler struct {
+type Handler struct {
 	a2apb.UnimplementedA2AServiceServer
 	cardProducer a2asrv.AgentCardProducer
 	handler      a2asrv.RequestHandler
 }
 
-func (h *GRPCHandler) RegisterWith(s *grpc.Server) {
+func (h *Handler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
-func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GRPCHandler {
-	return &GRPCHandler{
+func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *Handler {
+	return &Handler{
 		cardProducer: cardProducer,
 		handler:      handler,
 	}
 }
 
-func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
+func (h *Handler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
 	if req.GetRequest() == nil {
 		return nil, status.Error(codes.InvalidArgument, "request message is missing")
 	}
@@ -72,7 +72,7 @@ func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageReq
 	return result, nil
 }
 
-func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+func (h *Handler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	if req.GetRequest() == nil {
 		return status.Error(codes.InvalidArgument, "request message is missing")
 	}
@@ -100,7 +100,7 @@ func (h *GRPCHandler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream
 	return nil
 }
 
-func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
+func (h *Handler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
 	params, err := pbconv.FromProtoGetTaskRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
@@ -122,7 +122,7 @@ func (h *GRPCHandler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*
 	return result, nil
 }
 
-func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
+func (h *Handler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
 	taskID, err := pbconv.ExtractTaskID(req.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
@@ -144,7 +144,7 @@ func (h *GRPCHandler) CancelTask(ctx context.Context, req *a2apb.CancelTaskReque
 	return result, nil
 }
 
-func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+func (h *Handler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	taskID, err := pbconv.ExtractTaskID(req.GetName())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
@@ -169,7 +169,7 @@ func (h *GRPCHandler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, strea
 	return nil
 }
 
-func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
+func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	params, err := pbconv.FromProtoCreateTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
@@ -191,7 +191,7 @@ func (h *GRPCHandler) CreateTaskPushNotificationConfig(ctx context.Context, req 
 	return result, nil
 }
 
-func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
+func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	params, err := pbconv.FromProtoGetTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
@@ -213,7 +213,7 @@ func (h *GRPCHandler) GetTaskPushNotificationConfig(ctx context.Context, req *a2
 	return result, nil
 }
 
-func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
 	taskID, err := pbconv.ExtractTaskID(req.GetParent())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
@@ -236,7 +236,7 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 	return result, nil
 }
 
-func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
+func (h *Handler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
 	if h.cardProducer == nil {
 		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
 	}
@@ -248,7 +248,7 @@ func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardR
 	return result, err
 }
 
-func (h *GRPCHandler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
+func (h *Handler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
 	params, err := pbconv.FromProtoDeleteTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
