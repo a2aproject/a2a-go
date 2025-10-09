@@ -216,12 +216,12 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
-		return errorToSeq2[a2a.Event](err)
+		return errorToSeq2(err)
 	}
 
 	execution, err := h.handleSendMessage(ctx, params)
 	if err != nil {
-		return errorToSeq2[a2a.Event](err)
+		return errorToSeq2(err)
 	}
 
 	return h.interceptAfterEach(ctx, callCtx, execution.Events(ctx))
@@ -232,12 +232,12 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
-		return errorToSeq2[a2a.Event](err)
+		return errorToSeq2(err)
 	}
 
 	exec, ok := h.execManager.GetExecution(params.ID)
 	if !ok {
-		return errorToSeq2[a2a.Event](a2a.ErrTaskNotFound)
+		return errorToSeq2(a2a.ErrTaskNotFound)
 	}
 
 	return h.interceptAfterEach(ctx, callCtx, exec.Events(ctx))
@@ -355,13 +355,9 @@ func (h *defaultRequestHandler) interceptAfter(ctx context.Context, callCtx *Cal
 func (h *defaultRequestHandler) interceptAfterEach(ctx context.Context, callCtx *CallContext, seq iter.Seq2[a2a.Event, error]) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		for event, err := range seq {
-			response := &Response{Payload: event, Err: err}
-
-			for _, interceptor := range h.callInterceptors {
-				if err := interceptor.After(ctx, callCtx, response); err != nil {
-					yield(nil, err)
-					return
-				}
+			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+				yield(nil, errOverride)
+				return
 			}
 
 			if err != nil {
