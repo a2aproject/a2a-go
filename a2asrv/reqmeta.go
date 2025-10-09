@@ -9,20 +9,20 @@ import (
 // Custom transport implementations pass the values to WithCallContext to make it accessible
 // in a transport-agnostic way.
 type RequestMeta struct {
-	keyVals map[string][]string
+	kv map[string][]string
 }
 
 // NewRequestMeta creates a new immutable RequestMeta.
-func NewRequestMeta(m map[string][]string) *RequestMeta {
-	if m == nil {
-		return &RequestMeta{keyVals: map[string][]string{}}
+func NewRequestMeta(src map[string][]string) *RequestMeta {
+	if src == nil {
+		return &RequestMeta{kv: map[string][]string{}}
 	}
 
-	keyVals := make(map[string][]string, len(m))
-	for k, v := range keyVals {
-		m[strings.ToLower(k)] = slices.Clone(v)
+	kv := make(map[string][]string, len(src))
+	for k, v := range src {
+		kv[strings.ToLower(k)] = slices.Clone(v)
 	}
-	return &RequestMeta{keyVals: keyVals}
+	return &RequestMeta{kv: kv}
 }
 
 // Get performs a case-insensitive lookup of values for the given key.
@@ -31,6 +31,6 @@ func (rm *RequestMeta) Get(key string) ([]string, bool) {
 		return nil, false
 	}
 
-	val, ok := rm.keyVals[strings.ToLower(key)]
+	val, ok := rm.kv[strings.ToLower(key)]
 	return val, ok
 }

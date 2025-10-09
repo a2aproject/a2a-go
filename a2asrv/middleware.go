@@ -21,17 +21,6 @@ func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *
 	return context.WithValue(ctx, callContextKey{}, callCtx), callCtx
 }
 
-// withMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
-// was passed by a transport implementation or initializes a new CallContext with the provided method.
-func withMethodCallContext(ctx context.Context, method string) (context.Context, *CallContext) {
-	callCtx, ok := CallContextFrom(ctx)
-	if !ok {
-		ctx, callCtx = WithCallContext(ctx, nil)
-	}
-	callCtx.method = method
-	return ctx, callCtx
-}
-
 // CallContext holds information about the current server call scope.
 type CallContext struct {
 	method              string
