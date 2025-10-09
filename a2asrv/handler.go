@@ -185,29 +185,45 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	if params == nil {
-		return errorToSeq2(a2a.ErrInvalidRequest)
-	}
+	return func(yield func(a2a.Event, error) bool) {
+		if params == nil {
+			yield(nil, a2a.ErrInvalidRequest)
+			return
+		}
 
-	execution, err := h.handleSendMessage(ctx, params)
-	if err != nil {
-		return errorToSeq2(err)
-	}
+		execution, err := h.handleSendMessage(ctx, params)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 
-	return execution.Events(ctx)
+		for ev, err := range execution.Events(ctx) {
+			if !yield(ev, err) {
+				return
+			}
+		}
+	}
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	if params == nil {
-		return errorToSeq2(a2a.ErrInvalidRequest)
-	}
+	return func(yield func(a2a.Event, error) bool) {
+		if params == nil {
+			yield(nil, a2a.ErrInvalidRequest)
+			return
+		}
 
-	exec, ok := h.execManager.GetExecution(params.ID)
-	if !ok {
-		return errorToSeq2(a2a.ErrTaskNotFound)
-	}
+		exec, ok := h.execManager.GetExecution(params.ID)
+		if !ok {
+			yield(nil, a2a.ErrTaskNotFound)
+			return
+		}
 
-	return exec.Events(ctx)
+		for ev, err := range exec.Events(ctx) {
+			if !yield(ev, err) {
+				return
+			}
+		}
+	}
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {

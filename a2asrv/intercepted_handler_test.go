@@ -45,22 +45,28 @@ func (h *mockHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSend
 }
 
 func (h *mockHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.OnSendMessageStreamFn != nil {
 		return h.OnSendMessageStreamFn(ctx, params)
 	}
-	if h.resultErr != nil {
-		return errorToSeq2(h.resultErr)
+	return func(yield func(a2a.Event, error) bool) {
+		h.lastCallContext, _ = CallContextFrom(ctx)
+		if h.resultErr != nil {
+			yield(nil, h.resultErr)
+			return
+		}
+		yield(&a2a.Task{}, nil)
 	}
-	return func(yield func(a2a.Event, error) bool) { yield(&a2a.Task{}, nil) }
 }
 
 func (h *mockHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	h.lastCallContext, _ = CallContextFrom(ctx)
-	if h.resultErr != nil {
-		return errorToSeq2(h.resultErr)
+	return func(yield func(a2a.Event, error) bool) {
+		h.lastCallContext, _ = CallContextFrom(ctx)
+		if h.resultErr != nil {
+			yield(nil, h.resultErr)
+			return
+		}
+		yield(&a2a.Task{}, nil)
 	}
-	return func(yield func(a2a.Event, error) bool) { yield(&a2a.Task{}, nil) }
 }
 
 func (h *mockHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {

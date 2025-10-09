@@ -56,23 +56,43 @@ func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.Mess
 }
 
 func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	ctx, callCtx := withMethodCallContext(ctx, "OnSendMessageStream")
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
-	if err != nil {
-		return errorToSeq2(err)
+	return func(yield func(a2a.Event, error) bool) {
+		ctx, callCtx := withMethodCallContext(ctx, "OnSendMessageStream")
+		ctx, err := h.interceptBefore(ctx, callCtx, params)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		for event, err := range h.Handler.OnSendMessageStream(ctx, params) {
+			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+				yield(nil, errOverride)
+				return
+			}
+			if !yield(event, err) {
+				return
+			}
+		}
 	}
-	events := h.Handler.OnSendMessageStream(ctx, params)
-	return h.interceptAfterEach(ctx, callCtx, events)
 }
 
 func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	ctx, callCtx := withMethodCallContext(ctx, "OnResubscribeToTask")
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
-	if err != nil {
-		return errorToSeq2(err)
+	return func(yield func(a2a.Event, error) bool) {
+		ctx, callCtx := withMethodCallContext(ctx, "OnResubscribeToTask")
+		ctx, err := h.interceptBefore(ctx, callCtx, params)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		for event, err := range h.Handler.OnResubscribeToTask(ctx, params) {
+			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+				yield(nil, errOverride)
+				return
+			}
+			if !yield(event, err) {
+				return
+			}
+		}
 	}
-	events := h.Handler.OnResubscribeToTask(ctx, params)
-	return h.interceptAfterEach(ctx, callCtx, events)
 }
 
 func (h *InterceptedHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
@@ -151,26 +171,6 @@ func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallCo
 	}
 
 	return nil
-}
-
-func (h *InterceptedHandler) interceptAfterEach(ctx context.Context, callCtx *CallContext, seq iter.Seq2[a2a.Event, error]) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		for event, err := range seq {
-			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
-			if !yield(event, nil) {
-				return
-			}
-		}
-	}
 }
 
 // withMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
