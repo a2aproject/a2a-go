@@ -87,10 +87,10 @@ type CallInterceptor interface {
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughCallInterceptor struct{}
 
-func (PassthroughCallInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
 	return ctx, nil
 }
 
-func (PassthroughCallInterceptor) After(ctx context.Context, resp *Response) error {
+func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
 	return nil
 }
