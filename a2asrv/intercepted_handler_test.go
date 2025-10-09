@@ -190,6 +190,36 @@ var methodCalls = []struct {
 	},
 }
 
+func TestInterceptedHandler_Auth(t *testing.T) {
+	ctx := t.Context()
+	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
+	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
+
+	var capturedCallCtx *CallContext
+	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+		if callCtx, ok := CallContextFrom(ctx); ok {
+			capturedCallCtx = callCtx
+		}
+		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}), nil
+	}
+
+	type testUser struct{ *AuthenticatedUser }
+
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+		callCtx.User = &testUser{}
+		return ctx, nil
+	}
+
+	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
+
+	if !capturedCallCtx.User.Authenticated() {
+		t.Fatal("CallContext.User.Authenticated() = false, want true")
+	}
+	if _, ok := capturedCallCtx.User.(*testUser); !ok {
+		t.Fatalf("CallContext.User.(type) = %T, want *testUser", capturedCallCtx.User)
+	}
+}
+
 func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	ctx := t.Context()
 	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
@@ -232,7 +262,7 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	}
 }
 
-func TestInterceptedHandler_EachStreamValueIntercepted(t *testing.T) {
+func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 	ctx := t.Context()
 	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}

@@ -13,11 +13,11 @@ type AuthenticatedUser struct {
 	UserName string
 }
 
-func (u AuthenticatedUser) Name() string {
+func (u *AuthenticatedUser) Name() string {
 	return u.UserName
 }
 
-func (u AuthenticatedUser) Authenticated() bool {
+func (u *AuthenticatedUser) Authenticated() bool {
 	return true
 }
 
