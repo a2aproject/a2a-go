@@ -164,7 +164,8 @@ func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallC
 func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallContext, payload any, responseErr error) error {
 	response := &Response{Payload: payload, Err: responseErr}
 
-	for _, interceptor := range h.Interceptors {
+	for i := range len(h.Interceptors) {
+		interceptor := h.Interceptors[len(h.Interceptors)-i-1]
 		if err := interceptor.After(ctx, callCtx, response); err != nil {
 			return err
 		}

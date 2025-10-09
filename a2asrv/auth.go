@@ -21,9 +21,7 @@ func (u *AuthenticatedUser) Authenticated() bool {
 	return true
 }
 
-type unauthenticatedUser struct {
-	UserName string
-}
+type unauthenticatedUser struct{}
 
 func (unauthenticatedUser) Name() string {
 	return ""

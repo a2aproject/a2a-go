@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"reflect"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -259,6 +260,40 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	responsMsg := response.(*a2a.Message)
 	if responsMsg.Metadata[wantRespKey] != wantRespVal {
 		t.Fatalf("OnSendMessage() Response.Metadata[%q] = %v, want %d", wantRespKey, responsMsg.Metadata[wantRespKey], wantRespVal)
+	}
+}
+
+func TestInterceptedHandler_InterceptorOrdering(t *testing.T) {
+	ctx := t.Context()
+	mockHandler := &mockHandler{}
+
+	beforeCalls := []int{}
+	afterCalls := []int{}
+	createInterceptor := func(pos int) *mockInterceptor {
+		return &mockInterceptor{
+			beforeFn: func(ctx context.Context, callCtx *CallContext, resp *Request) (context.Context, error) {
+				beforeCalls = append(beforeCalls, pos)
+				return ctx, nil
+			},
+			afterFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+				afterCalls = append(afterCalls, pos)
+				return nil
+			},
+		}
+	}
+
+	interceptor1, interceptor2 := createInterceptor(1), createInterceptor(2)
+	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{interceptor1, interceptor2}}
+
+	_, _ = handler.OnGetTask(ctx, &a2a.TaskQueryParams{})
+
+	wantBefore := []int{1, 2}
+	if !reflect.DeepEqual(beforeCalls, wantBefore) {
+		t.Errorf("Before() invocation order = %v, want %v", beforeCalls, wantBefore)
+	}
+	wantAfter := []int{2, 1}
+	if !reflect.DeepEqual(afterCalls, wantAfter) {
+		t.Errorf("After() invocation order = %v, want %v", afterCalls, wantAfter)
 	}
 }
 
