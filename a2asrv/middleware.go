@@ -54,8 +54,8 @@ func (cc *CallContext) RequestMeta() *RequestMeta {
 }
 
 // Extensions returns a struct which provides an API for working with extensions in the current call context.
-func (cc *CallContext) Extensions() *ExtensionContext {
-	return &ExtensionContext{callCtx: cc}
+func (cc *CallContext) Extensions() *Extensions {
+	return &Extensions{callCtx: cc}
 }
 
 // Request represents a transport-agnostic request received by the A2A server.
