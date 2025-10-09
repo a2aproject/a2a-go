@@ -108,7 +108,7 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 	}
 }
 
-// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+// WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
 func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		ih.Interceptors = append(ih.Interceptors, interceptor)
