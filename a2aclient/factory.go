@@ -46,15 +46,15 @@ type transportCandidate struct {
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
 var defaultOptions = []FactoryOption{WithGRPCTransport()}
 
-// CreateFromCard is a helper for creating a Client configured without creating a factory.
-// It is equivalent to calling CreateFromCard on a Factory created without any options.
-func CreateFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
+// NewFromCard is a helper for creating a Client configured without creating a factory.
+// It is equivalent to calling NewFromCard on a Factory created without any options.
+func NewFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
 	return NewFactory(opts...).CreateFromCard(ctx, card)
 }
 
-// CreateFromEndpoints is a helper for creating a Client configured without creating a factory.
-// It is equivalent to calling CreateFromEndpoints on a Factory created without any options.
-func CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
+// NewFromEndpoints is a helper for creating a Client configured without creating a factory.
+// It is equivalent to calling NewFromEndpoints on a Factory created without any options.
+func NewFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
 	return NewFactory(opts...).CreateFromEndpoints(ctx, endpoints)
 }
 
