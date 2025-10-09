@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"fmt"
+
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
