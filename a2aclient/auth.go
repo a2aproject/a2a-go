@@ -56,10 +56,6 @@ type AuthInterceptor struct {
 	Service CredentialsService
 }
 
-func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
-	return ctx, nil
-}
-
 // CredentialsService is used by auth interceptor for resolving credentials.
 type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)

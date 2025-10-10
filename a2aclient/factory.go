@@ -250,11 +250,3 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 	}
 	return NewFactory(append(options, opts...)...)
 }
-
-func makeNoCompatibleTransportsError(available []a2a.AgentInterface) error {
-	protocols := make([]string, len(available))
-	for i, a := range available {
-		protocols[i] = string(a.Transport)
-	}
-	return fmt.Errorf("no compatible transports found: [%s]", strings.Join(protocols, ","))
-}
