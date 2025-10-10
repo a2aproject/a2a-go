@@ -287,7 +287,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		{
 			name:    "missing TaskID",
 			query:   &a2a.TaskQueryParams{ID: ""},
-			wantErr: errors.New("missing TaskID"),
+			wantErr: fmt.Errorf("%w: missing TaskID", a2a.ErrInvalidRequest),
 		},
 		{
 			name:    "store Get() fails",
@@ -301,12 +301,12 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		},
 		{
 			name:      "get task with limited HistoryLength",
-			query:     &a2a.TaskQueryParams{ID: "test-task", HistoryLength: ptr(2)},
-			wantEvent: &a2a.Task{ID: "test-task", History: []*a2a.Message{{ID: "test-message-2"}, {ID: "test-message-3"}}},
+			query:     &a2a.TaskQueryParams{ID: "test-task", HistoryLength: ptr(len(history) - 1)},
+			wantEvent: &a2a.Task{ID: "test-task", History: history[1:]},
 		},
 		{
 			name:      "get task with larger than available HistoryLength",
-			query:     &a2a.TaskQueryParams{ID: "test-task", HistoryLength: ptr(5)},
+			query:     &a2a.TaskQueryParams{ID: "test-task", HistoryLength: ptr(len(history) + 1)},
 			wantEvent: &a2a.Task{ID: "test-task", History: history},
 		},
 		{
@@ -330,21 +330,9 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 				if gotErr != nil {
 					t.Fatalf("OnGetTask() error = %v, wantErr nil", gotErr)
 				}
-				task, _ := tt.wantEvent.(*a2a.Task)
-				if result.ID != task.ID {
-					t.Errorf("OnGetTask() ID = %v, want %v", result.ID, task.ID)
-				}
-				if result.Status != task.Status {
-					t.Errorf("OnGetTask() Status = %v, want %v", result.Status, task.Status)
-				}
-				if result.ContextID != task.ContextID {
-					t.Errorf("OnGetTask() ContextID = %v, want %v", result.ContextID, task.ContextID)
-				}
 
-				if diff := cmp.Diff(task.History, result.History, cmp.Comparer(func(a, b *a2a.Message) bool {
-					return a.ID == b.ID
-				})); diff != "" {
-					t.Errorf("OnGetTask() History diff:\n%s", diff)
+				if diff := cmp.Diff(result, tt.wantEvent); diff != "" {
+					t.Errorf("OnGetTask() got = %v, want %v", result, tt.wantEvent)
 				}
 			} else {
 				if gotErr == nil {
