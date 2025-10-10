@@ -38,15 +38,15 @@ func WithLogger(ctx context.Context, logger Logger) context.Context {
 	return context.WithValue(ctx, loggerKey{}, logger)
 }
 
-// GetLogger returns the Logger associated with the context, or false if no logger is available.
-func GetLogger(ctx context.Context) (Logger, bool) {
+// LoggerFrom returns the Logger associated with the context, or false if no logger is available.
+func LoggerFrom(ctx context.Context) (Logger, bool) {
 	logger, ok := ctx.Value(loggerKey{}).(Logger)
 	return logger, ok
 }
 
 // V invokes V on the Logger associated with the provided Context or returns false if there's no Logger attached.
 func V(ctx context.Context, level Level) bool {
-	if logger, ok := GetLogger(ctx); ok {
+	if logger, ok := LoggerFrom(ctx); ok {
 		return logger.V(ctx, level)
 	}
 	return false
@@ -54,21 +54,21 @@ func V(ctx context.Context, level Level) bool {
 
 // Verbose invokes Verbose on the Logger associated with the provided Context or does nothing if there's no Logger attached.
 func Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
-	if logger, ok := GetLogger(ctx); ok {
+	if logger, ok := LoggerFrom(ctx); ok {
 		logger.Verbose(ctx, level, msg, keyValArgs...)
 	}
 }
 
 // Info invokes Info on the Logger associated with the provided Context or does nothing if there's no Logger attached.
 func Info(ctx context.Context, msg string, keyValArgs ...any) {
-	if logger, ok := GetLogger(ctx); ok {
+	if logger, ok := LoggerFrom(ctx); ok {
 		logger.Info(ctx, msg, keyValArgs...)
 	}
 }
 
 // Error invokes Error on the Logger associated with the provided Context or does nothing if there's no Logger attached.
 func Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
-	if logger, ok := GetLogger(ctx); ok {
+	if logger, ok := LoggerFrom(ctx); ok {
 		logger.Error(ctx, msg, err, keyValArgs...)
 	}
 }
