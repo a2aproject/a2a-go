@@ -52,6 +52,9 @@ type processor struct {
 	updateManager *taskupdate.Manager
 }
 
+// Process implements taskexec.Processor interface.
+// A (nil, nil) result means the processing should continue.
+// A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {
@@ -59,11 +62,10 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return &result, nil
 	}
 
-	if err := p.updateManager.Process(ctx, event); err != nil {
+	task, err := p.updateManager.Process(ctx, event)
+	if err != nil {
 		return nil, err
 	}
-
-	task := p.updateManager.Task
 
 	// TODO(yarolegovich): handle pushes
 
