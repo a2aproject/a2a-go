@@ -136,7 +136,7 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 }
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return nil, ErrUnimplemented
+	return &a2a.Task{}, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
