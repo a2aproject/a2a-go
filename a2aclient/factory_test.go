@@ -45,13 +45,13 @@ func TestFactory_WithAdditionalOptions(t *testing.T) {
 	f2 := WithAdditionalOptions(f1, WithInterceptors(PassthroughInterceptor{}))
 
 	if !reflect.DeepEqual(f1.config, f2.config) {
-		t.Fatalf("expected %v to be set on f2, got %v", f1.config, f2.config)
-	}
-	if len(f1.interceptors) != 0 {
-		t.Fatalf("expected len(f1.interceptors) to be 0, got %d", len(f1.interceptors))
+		t.Fatalf("WithAdditionalOptions() factory.config = %v, want %v", f2.config, f1.config)
 	}
 	if len(f2.interceptors) != 1 {
-		t.Fatalf("expected len(f2.interceptors) to be 1, got %d", len(f2.interceptors))
+		t.Fatalf("WithAdditionalOptions() len(factory.interceptors) = %d, want 1", len(f2.interceptors))
+	}
+	if len(f1.interceptors) != 0 {
+		t.Fatalf("WithAdditionalOptions() modified an argument: len(f.interceptors) = %d interceptors, want 0", len(f1.interceptors))
 	}
 }
 
@@ -60,10 +60,10 @@ func TestFactory_WithDefaultsDisabled(t *testing.T) {
 	f2 := NewFactory(WithDefaultsDisabled())
 
 	if len(f1.transports) == 0 {
-		t.Fatalf("expected at least one transport to be registered by default")
+		t.Fatal("want at least one transport to be registered by default")
 	}
 	if len(f2.transports) > 0 {
-		t.Fatalf("expected no transports registered with disabled defaults")
+		t.Fatal("want no transports registered with disabled defaults")
 	}
 }
 
@@ -139,7 +139,7 @@ func TestFactory_TransportSelection(t *testing.T) {
 
 	for _, tc := range testCases {
 		if len(tc.serverSupports) < 1 {
-			t.Fatalf("servers have to specify at least one supported protocol")
+			t.Fatal("servers have to specify at least one supported protocol")
 		}
 		if tc.clientSupports == nil {
 			tc.clientSupports = make([]string, 0)
@@ -170,26 +170,26 @@ func TestFactory_TransportSelection(t *testing.T) {
 			card := &a2a.AgentCard{PreferredTransport: a2a.TransportProtocol(tc.serverSupports[0]), AdditionalInterfaces: additional}
 			_, err := factory.CreateFromCard(ctx, card)
 			if err != nil && !tc.wantErr {
-				t.Fatalf("CreateFromCard() failed with %v", err)
+				t.Fatalf("CreateFromCard() error = %v, want nil", err)
 			}
 			if err == nil && tc.wantErr {
-				t.Fatalf("expected CreateFromCard() to fail, got %v", selectedProtocol)
+				t.Fatalf("CreateFromCard() error = nil, want %v", tc.wantErr)
 			}
 			if selectedProtocol != tc.want {
-				t.Fatalf("expected CreateFromCard() to select %q, got %q", tc.want, selectedProtocol)
+				t.Fatalf("CreateFromCard() = %q, want %q", selectedProtocol, tc.want)
 			}
 
 			// CreateFromEndpoints
 			selectedProtocol = ""
 			_, err = factory.CreateFromEndpoints(ctx, makeEndpoints(tc.serverSupports))
 			if err != nil && !tc.wantErr {
-				t.Fatalf("CreateFromURL() failed with %v", err)
+				t.Fatalf("CreateFromURL() error = %v, want nil", err)
 			}
 			if err == nil && tc.wantErr {
-				t.Fatalf("expected CreateFromURL() to fail, got %v", selectedProtocol)
+				t.Fatalf("CreateFromURL() error = nil, want %v", tc.wantErr)
 			}
 			if selectedProtocol != tc.want {
-				t.Fatalf("expected CreateFromURL() to select %q, got %q", tc.want, selectedProtocol)
+				t.Fatalf("CreateFromURL() = %q, want %q", selectedProtocol, tc.want)
 			}
 		})
 	}

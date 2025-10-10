@@ -29,6 +29,21 @@ var ErrCredentialNotFound = errors.New("credential not found")
 // SessionID is a client-generated identifier used for scoping auth credentials.
 type SessionID string
 
+// Used to store a SessionID in context.Context.
+type sessionIDKey struct{}
+
+// WithSessionID allows callers to attach a session identifier to the request.
+// CallInterceptor can access this identifier through CallContext.
+func WithSessionID(ctx context.Context, sid SessionID) context.Context {
+	return context.WithValue(ctx, sessionIDKey{}, sid)
+}
+
+// SessionIDFrom allows to get a previously attached session identifier from Context.
+func SessionIDFrom(ctx context.Context) (SessionID, bool) {
+	sid, ok := ctx.Value(sessionIDKey{}).(SessionID)
+	return sid, ok
+}
+
 // AuthCredential represents a security-scheme specific credential (eg. a JWT token).
 type AuthCredential string
 
@@ -50,6 +65,7 @@ type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)
 }
 
+// SessionCredentials is a map of auth credentials by scheme name.
 type SessionCredentials map[a2a.SecuritySchemeName]AuthCredential
 
 // InMemoryCredentialsStore implements CredentialsService.

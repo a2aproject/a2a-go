@@ -174,7 +174,7 @@ func printResult(result any) error {
 func createClient(ctx context.Context, url string, useGRPC bool) (*a2aclient.Client, error) {
 	if useGRPC {
 		creds := grpc.WithTransportCredentials(insecure.NewCredentials())
-		return a2aclient.CreateFromEndpoints(
+		return a2aclient.NewFromEndpoints(
 			ctx,
 			[]a2a.AgentInterface{{Transport: a2a.TransportProtocolGRPC, URL: url}},
 			a2aclient.WithGRPCTransport(creds),
@@ -185,7 +185,7 @@ func createClient(ctx context.Context, url string, useGRPC bool) (*a2aclient.Cli
 		if err != nil {
 			return nil, err
 		}
-		return a2aclient.CreateFromCard(ctx, card)
+		return a2aclient.NewFromCard(ctx, card)
 	}
 }
 
