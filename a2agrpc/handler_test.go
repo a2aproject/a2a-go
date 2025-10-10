@@ -1166,7 +1166,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		{
 			name:         "producer returns nil card",
 			cardProducer: &mockAgentCardProducer{card: nil},
-			wantErr:      codes.Internal,
+			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",

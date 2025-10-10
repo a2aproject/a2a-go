@@ -24,6 +24,9 @@ import (
 )
 
 func toProtoMetadata(meta map[string]any) (*structpb.Struct, error) {
+	if meta == nil {
+		return nil, nil
+	}
 	s, err := structpb.NewStruct(meta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
@@ -62,10 +65,6 @@ func ToProtoSendMessageRequest(params *a2a.MessageSendParams) (*a2apb.SendMessag
 func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, error) {
 	if config == nil {
 		return nil, nil
-	}
-
-	if config.ID == "" {
-		return nil, fmt.Errorf("invalid push config")
 	}
 
 	pConf := &a2apb.PushNotificationConfig{
@@ -458,6 +457,10 @@ func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	if config == nil {
 		return nil, nil
+	}
+
+	if config.TaskID == "" {
+		return nil, fmt.Errorf("taskID is required on TaskPushConfig")
 	}
 
 	pConfig, err := toProtoPushConfig(&config.Config)

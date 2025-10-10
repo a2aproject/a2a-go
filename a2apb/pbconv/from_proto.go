@@ -30,6 +30,10 @@ func fromProtoMetadata(meta *structpb.Struct) map[string]any {
 }
 
 func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.MessageSendParams, error) {
+	if req == nil {
+		return nil, nil
+	}
+
 	msg, err := FromProtoMessage(req.GetRequest())
 	if err != nil {
 		return nil, err
@@ -121,10 +125,6 @@ func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, 
 		return nil, nil
 	}
 
-	if pConf.GetId() == "" {
-		return nil, fmt.Errorf("invalid push config")
-	}
-
 	result := &a2a.PushConfig{
 		ID:    pConf.GetId(),
 		URL:   pConf.GetUrl(),
@@ -164,6 +164,10 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 }
 
 func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.TaskQueryParams, error) {
+	if req == nil {
+		return nil, nil
+	}
+
 	// TODO: consider throwing an error when the path - req.GetName() is unexpected, e.g. tasks/taskID/someExtraText
 	taskID, err := ExtractTaskID(req.GetName())
 	if err != nil {
