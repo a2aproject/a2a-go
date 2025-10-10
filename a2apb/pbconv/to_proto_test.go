@@ -412,7 +412,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name: "tasks/t1/pushConfigs/c1",
+				Name: "tasks/t1/pushNotificationConfigs/c1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:    "c1",
 					Url:   "http://a.com",
@@ -431,7 +431,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{ID: "c1", URL: "http://a.com"},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name: "tasks/t1/pushConfigs/c1",
+				Name: "tasks/t1/pushNotificationConfigs/c1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:  "c1",
 					Url: "http://a.com",
@@ -450,7 +450,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name:                   "tasks/test-task/pushConfigs/",
+				Name:                   "tasks/test-task/pushNotificationConfigs/",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{},
 			},
 		},

@@ -1,8 +1,9 @@
 package pbconv
 
 import (
-	"github.com/a2aproject/a2a-go/a2a"
 	"testing"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 func TestPathExtractors(t *testing.T) {
@@ -61,18 +62,18 @@ func TestPathExtractors(t *testing.T) {
 		}{
 			{
 				name: "simple path",
-				path: "pushConfigs/abc-123",
+				path: "pushNotificationConfigs/abc-123",
 				want: "abc-123",
 			},
 			{
 				name: "complex path",
-				path: "tasks/12345/pushConfigs/abc-123",
+				path: "tasks/12345/pushNotificationConfigs/abc-123",
 				want: "abc-123",
 			},
 			{
-				name:    "missing value",
-				path:    "pushConfigs/",
-				wantErr: true,
+				name: "missing value", // push notification config ID is optional
+				path: "pushNotificationConfigs/",
+				want: "",
 			},
 			{
 				name:    "missing keyword in path",

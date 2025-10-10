@@ -9,7 +9,7 @@ import (
 
 var (
 	taskIDRegex   = regexp.MustCompile(`tasks/([^/]+)`)
-	configIDRegex = regexp.MustCompile(`pushConfigs/([^/]+)`)
+	configIDRegex = regexp.MustCompile(`pushNotificationConfigs/([^/]*)`)
 )
 
 func ExtractTaskID(name string) (a2a.TaskID, error) {
@@ -33,5 +33,5 @@ func ExtractConfigID(name string) (string, error) {
 }
 
 func MakeConfigName(taskID a2a.TaskID, configID string) string {
-	return MakeTaskName(taskID) + "/pushConfigs/" + configID
+	return MakeTaskName(taskID) + "/pushNotificationConfigs/" + configID
 }

@@ -424,7 +424,7 @@ func TestFromProto_fromProtoGetTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "success",
 			req: &a2apb.GetTaskPushNotificationConfigRequest{
-				Name: "tasks/test-task/pushConfigs/test-config",
+				Name: "tasks/test-task/pushNotificationConfigs/test-config",
 			},
 			want: &a2a.GetTaskPushConfigParams{
 				TaskID:   "test-task",
@@ -434,7 +434,7 @@ func TestFromProto_fromProtoGetTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "bad keyword for task id",
 			req: &a2apb.GetTaskPushNotificationConfigRequest{
-				Name: "foo/test-task/pushConfigs/test-config",
+				Name: "foo/test-task/pushNotificationConfigs/test-config",
 			},
 			wantErr: true,
 		},
@@ -470,7 +470,7 @@ func TestFromProto_fromProtoDeleteTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "success",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: "tasks/test-task/pushConfigs/test-config",
+				Name: "tasks/test-task/pushNotificationConfigs/test-config",
 			},
 			want: &a2a.DeleteTaskPushConfigParams{
 				TaskID:   "test-task",
@@ -480,7 +480,7 @@ func TestFromProto_fromProtoDeleteTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "bad keyword for task id",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: "foo/test-task/pushConfigs/test-config",
+				Name: "foo/test-task/pushNotificationConfigs/test-config",
 			},
 			wantErr: true,
 		},
