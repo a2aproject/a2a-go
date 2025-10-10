@@ -1,0 +1,28 @@
+sequenceDiagram
+    participant C as Client
+    participant EM as taskexec.Manager
+    participant EG as ExecutionGoroutine
+    participant AEG as AgentExecuteGoroutine
+    participant EQ as EventQueue
+    participant EHG as EventHandlerGoroutine
+    participant P as Processor
+
+    C->>+EM: Execute(Processor)
+    EM->>+EG: start in detached ctx
+    EM-->>-C: return execution
+
+    EG->>AEG: start in errgroup
+    EG->>EHG: start in errgroup
+
+    C-->>EHG: join with execution.subscribe()
+
+    loop Event Processing
+        AEG->>EQ: Write
+        EHG->>EQ: Read
+        EHG->>P: Invoke
+        EHG-->>C: Notify through subscribed channel
+    end
+
+    EHG->>EG: complete
+    EG-->>-EM: unregister self
+    EHG-->>C: result delivered through agentExecution.wait()
