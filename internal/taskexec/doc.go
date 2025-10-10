@@ -14,5 +14,19 @@
 
 // Package taskexec provides a concurrent agent invocation manager.
 // The manager enforces concurrency control on task level and guarantees that at any given moment
-// there's only one goroutine which is mutating the state of the Task.
+// there's only one goroutine which is mutating the state of an [a2a.Task].
+//
+// For every [Execution] the [Manager] start two goroutines in an [errgroup.Group]:
+//   - One calls [Executor] and starts producing events writing them to an [eventqueue.Queue].
+//   - The second one reads events in a loop and passes them through [Processor] responsible for deciding when to stop.
+//
+// For cancelations the handling is different depending on whether there exists a concurrent execution:
+//   - When a concurrent execution exists, only one goroutine is started which calls [Canceler]. It writes an event to the same queue
+//     the execution is using and expects the concurrently-running event consumer to handle it.
+//   - When there's no concurrent execution, the mechanism is the same as for the execution: one goroutine which calls cancel and the second one
+//     which processes events.
+//
+// Event consumer continues to run waiting for a terminal event to be produced, even if execution goroutine finished.
+//
+// [Diagram]: https://github.com/a2aproject/a2a-go/docs/diagrams/task-execution/task_execution.png
 package taskexec
