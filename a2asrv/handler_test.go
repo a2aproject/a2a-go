@@ -362,8 +362,8 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	handler := NewHandler(&mockAgentExecutor{})
 	ctx := t.Context()
 
-	if _, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{}); err != nil {
-		t.Error("OnResubscribeToTask: expected nil iterator, got non-nil")
+	if _, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{}); !errors.Is(err, ErrUnimplemented) {
+		t.Errorf("OnCancelTask: expected unimplemented error, got %v", err)
 	}
 	if seq := handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{}); seq != nil {
 		t.Error("OnResubscribeToTask: expected nil iterator, got non-nil")
