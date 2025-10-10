@@ -16,12 +16,14 @@ package a2aclient
 
 import (
 	"context"
+	"io"
 	"iter"
 
 	"google.golang.org/grpc"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/a2apb/pbconv"
 )
 
 // WithGRPCTransport returns a Client factory configuration option that if applied will
@@ -56,46 +58,167 @@ type grpcTransport struct {
 // A2A protocol methods
 
 func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrNotImplemented
+	req, err := pbconv.ToProtoGetTaskRequest(query)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.GetTask(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoTask(pResp)
 }
 
 func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return &a2a.Task{}, ErrNotImplemented
+	req, err := pbconv.ToProtoCancelTaskRequest(id)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.CancelTask(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoTask(pResp)
 }
 
 func (c *grpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	return &a2a.Task{}, ErrNotImplemented
+	req, err := pbconv.ToProtoSendMessageRequest(message)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.SendMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoSendMessageResponse(pResp)
 }
 
 func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(&a2a.Message{}, ErrNotImplemented)
+		req, err := pbconv.ToProtoTaskSubscriptionRequest(id)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		stream, err := c.client.TaskSubscription(ctx, req)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		drainEventStream(stream, yield)
 	}
 }
 
 func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
+		req, err := pbconv.ToProtoSendMessageRequest(message)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		stream, err := c.client.SendStreamingMessage(ctx, req)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		drainEventStream(stream, yield)
+	}
+}
+
+func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], yield func(a2a.Event, error) bool) {
+	for {
+		pResp, err := stream.Recv()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		resp, err := pbconv.FromProtoStreamResponse(pResp)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		if !yield(resp, nil) {
+			return
+		}
 	}
 }
 
 func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrNotImplemented
+	req, err := pbconv.ToProtoGetTaskPushConfigRequest(params)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.GetTaskPushNotificationConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoTaskPushConfig(pResp)
 }
 
 func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return []*a2a.TaskPushConfig{}, ErrNotImplemented
+	req, err := pbconv.ToProtoListTaskPushConfigRequest(params)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.ListTaskPushNotificationConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoListTaskPushConfig(pResp)
 }
 
 func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrNotImplemented
+	req, err := pbconv.ToProtoCreateTaskPushConfigRequest(params)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.CreateTaskPushNotificationConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoTaskPushConfig(pResp)
 }
 
 func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	return ErrNotImplemented
+	req, err := pbconv.ToProtoDeleteTaskPushConfigRequest(params)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.client.DeleteTaskPushNotificationConfig(ctx, req)
+
+	return err
 }
 
 func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return &a2a.AgentCard{}, ErrNotImplemented
+	pCard, err := c.client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pbconv.FromProtoAgentCard(pCard)
 }
 
 func (c *grpcTransport) Destroy() error {
