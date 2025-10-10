@@ -139,7 +139,11 @@ func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], y
 	for {
 		pResp, err := stream.Recv()
 		if err == io.EOF {
-			break
+			return
+		}
+		if err != nil {
+			yield(nil, err)
+			return
 		}
 
 		resp, err := pbconv.FromProtoStreamResponse(pResp)
