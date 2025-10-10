@@ -60,7 +60,7 @@ type grpcTransport struct {
 func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	req, err := pbconv.ToProtoGetTaskRequest(query)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.GetTask(ctx, req)
@@ -74,7 +74,7 @@ func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams)
 func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	req, err := pbconv.ToProtoCancelTaskRequest(id)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.CancelTask(ctx, req)
@@ -88,7 +88,7 @@ func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*
 func (c *grpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	req, err := pbconv.ToProtoSendMessageRequest(message)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.SendMessage(ctx, req)
@@ -113,22 +113,7 @@ func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDPar
 			return
 		}
 
-		for {
-			pResp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
-
-			resp, err := pbconv.FromProtoStreamResponse(pResp)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
-			if !yield(resp, nil) {
-				return
-			}
-		}
+		drainEventStream(stream, yield)
 	}
 }
 
@@ -146,21 +131,25 @@ func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.M
 			return
 		}
 
-		for {
-			pResp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
+		drainEventStream(stream, yield)
+	}
+}
 
-			resp, err := pbconv.FromProtoStreamResponse(pResp)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
+func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], yield func(a2a.Event, error) bool) {
+	for {
+		pResp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
 
-			if !yield(resp, nil) {
-				return
-			}
+		resp, err := pbconv.FromProtoStreamResponse(pResp)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		if !yield(resp, nil) {
+			return
 		}
 	}
 }
@@ -168,7 +157,7 @@ func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.M
 func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
 	req, err := pbconv.ToProtoGetTaskPushConfigRequest(params)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.GetTaskPushNotificationConfig(ctx, req)
@@ -182,7 +171,7 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTa
 func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
 	req, err := pbconv.ToProtoListTaskPushConfigRequest(params)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.ListTaskPushNotificationConfig(ctx, req)
@@ -196,7 +185,7 @@ func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.List
 func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
 	req, err := pbconv.ToProtoCreateTaskPushConfigRequest(params)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	pResp, err := c.client.CreateTaskPushNotificationConfig(ctx, req)
@@ -210,7 +199,7 @@ func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskP
 func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	req, err := pbconv.ToProtoDeleteTaskPushConfigRequest(params)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	_, err = c.client.DeleteTaskPushNotificationConfig(ctx, req)
