@@ -22,7 +22,7 @@ import (
 type callMetaKey struct{}
 
 // CallMeta holds things like auth headers, signatures etc.
-// In jsonrpc it is passed as HTTP headers, in gRPC becomes a part of context.Context.
+// In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of context.Context.
 // Custom protocol implementations can use CallMetaFrom to access this data and
 // perform the operations necessary for attaching it to the request.
 type CallMeta map[string][]string
