@@ -30,9 +30,8 @@ var (
 	taskID                = a2a.TaskID("test-task")
 	getOrCreateFailTaskID = a2a.TaskID("get-or-create-fails")
 	executeFailTaskID     = a2a.TaskID("execute-fails")
-	cancelFailTaskID      = a2a.TaskID("cancel-fails")
 	storeGetFailTaskID    = a2a.TaskID("store-get-fails")
-	terminalStateTaskID   = a2a.TaskID("terminal-state")
+	notExistsTaskID       = a2a.TaskID("not-exists")
 )
 
 // mockAgentExecutor is a mock of AgentExecutor.
@@ -157,19 +156,17 @@ func newTaskStore(history ...*a2a.Message) TaskStore {
 	return &mockTaskStore{
 		GetFunc: func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 			if taskID == storeGetFailTaskID {
-				return nil, errors.New("task not found")
+				return nil, errors.New("store get failed")
 			}
 
-			task := &a2a.Task{
+			if taskID == notExistsTaskID {
+				return nil, nil
+			}
+
+			return &a2a.Task{
 				ID:      taskID,
 				History: history,
-			}
-
-			if taskID == terminalStateTaskID {
-				task.Status.State = a2a.TaskStateCanceled
-			}
-
-			return task, nil
+			}, nil
 		},
 	}
 }
@@ -179,12 +176,6 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 		ExecuteFunc: func(ctx context.Context, reqCtx RequestContext, q eventqueue.Queue) error {
 			if reqCtx.TaskID == executeFailTaskID {
 				return errors.New("execute failed")
-			}
-			return nil
-		},
-		CancelFunc: func(ctx context.Context, reqCtx RequestContext, q eventqueue.Queue) error {
-			if reqCtx.TaskID == cancelFailTaskID {
-				return errors.New("cancel failed")
 			}
 			return nil
 		},
@@ -301,7 +292,12 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		{
 			name:    "store Get() fails",
 			query:   &a2a.TaskQueryParams{ID: storeGetFailTaskID},
-			wantErr: errors.New("failed to get task: task not found"),
+			wantErr: errors.New("failed to get task: store get failed"),
+		},
+		{
+			name:    "task not found",
+			query:   &a2a.TaskQueryParams{ID: notExistsTaskID},
+			wantErr: a2a.ErrTaskNotFound,
 		},
 		{
 			name:      "get task with limited HistoryLength",
