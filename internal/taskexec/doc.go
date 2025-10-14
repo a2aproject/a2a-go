@@ -28,5 +28,7 @@
 //
 // Event consumer continues to run waiting for a terminal event to be produced, even if execution goroutine finished.
 //
-// [Diagram]: https://github.com/a2aproject/a2a-go/docs/diagrams/task-execution/task_execution.png
+// [Sequence diagram].
+//
+// [Sequence diagram]: https://github.com/a2aproject/a2a-go/docs/diagrams/task-execution/task_execution.png
 package taskexec
