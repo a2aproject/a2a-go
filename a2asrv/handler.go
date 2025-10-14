@@ -110,7 +110,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	taskID := query.ID
 	if taskID == "" {
-		return nil, fmt.Errorf("%w: missing TaskID", a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
 	}
 
 	task, err := h.taskStore.Get(ctx, taskID)
