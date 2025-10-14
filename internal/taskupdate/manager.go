@@ -105,11 +105,13 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 
 	toUpdate := task.Artifacts[updateIdx]
 	toUpdate.Parts = append(toUpdate.Parts, event.Artifact.Parts...)
-	if toUpdate.Metadata == nil && event.Artifact.Metadata != nil {
-		toUpdate.Metadata = event.Artifact.Metadata
-	} else {
-		for k, v := range event.Artifact.Metadata {
-			toUpdate.Metadata[k] = v
+	if event.Artifact.Metadata != nil {
+		if toUpdate.Metadata == nil {
+			toUpdate.Metadata = event.Artifact.Metadata
+		} else {
+			for k, v := range event.Artifact.Metadata {
+				toUpdate.Metadata[k] = v
+			}
 		}
 	}
 
