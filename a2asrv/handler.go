@@ -126,10 +126,6 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
-	if task == nil {
-		return nil, a2a.ErrTaskNotFound
-	}
-
 	if query.HistoryLength != nil {
 		historyLength := *query.HistoryLength
 

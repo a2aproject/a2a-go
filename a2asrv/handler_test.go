@@ -159,7 +159,7 @@ func newTaskStore(history ...*a2a.Message) TaskStore {
 			}
 
 			if taskID == notExistsTaskID {
-				return nil, nil
+				return nil, a2a.ErrTaskNotFound
 			}
 
 			return &a2a.Task{
@@ -382,7 +382,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		{
 			name:    "task not found",
 			query:   &a2a.TaskQueryParams{ID: notExistsTaskID},
-			wantErr: a2a.ErrTaskNotFound,
+			wantErr: fmt.Errorf("failed to get task: %w", a2a.ErrTaskNotFound),
 		},
 		{
 			name:      "get task with limited HistoryLength",
