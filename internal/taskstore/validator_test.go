@@ -42,10 +42,10 @@ func TestValidateTask(t *testing.T) {
 	for i, tc := range testCases {
 		err := validateTask(tc.task)
 		if tc.valid && err != nil {
-			t.Fatalf("expected Task to be valid for case %d, got %v", i, err)
+			t.Fatalf("validateTask(tasks[%d]) = %v, want pass", i, err)
 		}
 		if !tc.valid && err == nil {
-			t.Fatalf("expected validate Task to fail for case %d", i)
+			t.Fatalf("validateTask(tasks[%d]) = pass, want error", i)
 		}
 	}
 }
@@ -65,10 +65,10 @@ func TestValidateArtifact(t *testing.T) {
 	for i, tc := range testCases {
 		err := validateArtifact(tc.artifact)
 		if tc.valid && err != nil {
-			t.Fatalf("expected Artifact to be valid for case %d, got %v", i, err)
+			t.Fatalf("validateArtifact(artifacts[%d]) = %v, want pass", i, err)
 		}
 		if !tc.valid && err == nil {
-			t.Fatalf("expected validate Artifact to fail for case %d", i)
+			t.Fatalf("validateArtifact(artifacts[%d]) = pass, want error", i)
 		}
 	}
 }
@@ -88,10 +88,10 @@ func TestValidateMessage(t *testing.T) {
 	for i, tc := range testCases {
 		err := validateMessage(tc.msg)
 		if tc.valid && err != nil {
-			t.Fatalf("expected Message to be valid for case %d, got %v", i, err)
+			t.Fatalf("validateMessage(msgs[%d]) = %v, want pass", i, err)
 		}
 		if !tc.valid && err == nil {
-			t.Fatalf("expected validate Message to fail for case %d", i)
+			t.Fatalf("validateMessage(msgs[%d]) = pass, want error", i)
 		}
 	}
 }
@@ -113,10 +113,10 @@ func TestValidateParts(t *testing.T) {
 	for i, tc := range testCases {
 		err := validateParts(tc.parts)
 		if tc.valid && err != nil {
-			t.Fatalf("expected ContentParts to be valid for case %d, got %v", i, err)
+			t.Fatalf("validateParts(parts[%d]) = %v, want pass", i, err)
 		}
 		if !tc.valid && err == nil {
-			t.Fatalf("expected validate ContentParts to fail for case %d", i)
+			t.Fatalf("validateParts(parts[%d]) = pass, want error", i)
 		}
 	}
 }
@@ -124,7 +124,7 @@ func TestValidateParts(t *testing.T) {
 func TestValidateMetaRepeatedRefSuccess(t *testing.T) {
 	arr := make([]any, 1)
 	if err := validateMeta(map[string]any{"a": arr, "b": arr}); err != nil {
-		t.Fatalf("expected validateMeta() success, got %v", err)
+		t.Fatalf("validateMeta() = %v, want pass", err)
 	}
 }
 
@@ -132,19 +132,19 @@ func TestValidateMetaCircularRefFailure(t *testing.T) {
 	arr := make([]any, 1)
 	arr[0] = arr
 	if err := validateMeta(map[string]any{"a": arr}); !isCircularRefErr(err) {
-		t.Fatalf("expected a circular ref error, got %v", err)
+		t.Fatalf("validateMeta() = %v, want a circular ref error", err)
 	}
 
 	m := map[string]any{"foo": "bar"}
 	m["self"] = m
 	if err := validateMeta(map[string]any{"m": m}); !isCircularRefErr(err) {
-		t.Fatalf("expected a circular ref error, got %v", err)
+		t.Fatalf("validateMeta() = %v, want a circular ref error", err)
 	}
 
 	deep := map[string]any{"nested": map[string]any{}}
 	(deep["nested"].(map[string]any))["self"] = deep
 	if err := validateMeta(map[string]any{"d": deep}); !isCircularRefErr(err) {
-		t.Fatalf("expected a circular ref error, got %v", err)
+		t.Fatalf("validateMeta() = %v, want a circular ref error", err)
 	}
 }
 
