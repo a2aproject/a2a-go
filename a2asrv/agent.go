@@ -27,7 +27,7 @@ type AgentExecutor interface {
 	// into A2A events writing them to the provided event queue.
 	//
 	// Returns an error if agent invocation failed.
-	Execute(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
+	Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 
 	// Cancel requests the agent to stop processing an ongoing task.
 	//
@@ -36,7 +36,7 @@ type AgentExecutor interface {
 	// state TaskStateCanceled to the event queue.
 	//
 	// Returns an error if the cancelation request cannot be processed.
-	Cancel(ctx context.Context, reqCtx RequestContext, queue eventqueue.Queue) error
+	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
 
 // AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
