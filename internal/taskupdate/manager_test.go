@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 func newTestTask() *a2a.Task {
@@ -45,6 +46,14 @@ func (s *testSaver) Save(ctx context.Context, task *a2a.Task) error {
 	}
 	s.saved = task
 	return nil
+}
+
+func makeTextParts(texts ...string) a2a.ContentParts {
+	result := make(a2a.ContentParts, len(texts))
+	for i, text := range texts {
+		result[i] = a2a.TextPart{Text: text}
+	}
+	return result
 }
 
 func TestManager_TaskSaved(t *testing.T) {
@@ -171,6 +180,204 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 	}
 }
 
+func TestManager_ArtifactUpdates(t *testing.T) {
+	ctxid, tid, aid := a2a.NewContextID(), a2a.NewTaskID(), a2a.NewArtifactID()
+
+	testCases := []struct {
+		name   string
+		events []*a2a.TaskArtifactUpdateEvent
+		want   []*a2a.Artifact
+	}{
+		{
+			name: "create an artifact",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("Hello")}},
+		},
+		{
+			name: "create multiple artifacts",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid + "2", Parts: makeTextParts("World")},
+				},
+			},
+			want: []*a2a.Artifact{
+				{ID: aid, Parts: makeTextParts("Hello")},
+				{ID: aid + "2", Parts: makeTextParts("World")},
+			},
+		},
+		{
+			name: "replace existing artifact",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("World")},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("World")}},
+		},
+		{
+			name: "update existing artifact",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts(", world!")},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("Hello", ", world!")}},
+		},
+		{
+			name: "update artifact metadata",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"hello": "world", "1": "2"}},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"foo": "bar", "1": "3"}},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Metadata: map[string]any{"hello": "world", "foo": "bar", "1": "3"}}},
+		},
+		{
+			name: "multiple parts in an update",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: a2a.ContentParts{
+						a2a.TextPart{Text: "1"},
+						a2a.TextPart{Text: "2"},
+					}},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: a2a.ContentParts{
+						a2a.FilePart{File: a2a.FileURI{URI: "ftp://..."}},
+						a2a.DataPart{Data: map[string]any{"meta": 42}},
+					}},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Parts: a2a.ContentParts{
+				a2a.TextPart{Text: "1"},
+				a2a.TextPart{Text: "2"},
+				a2a.FilePart{File: a2a.FileURI{URI: "ftp://..."}},
+				a2a.DataPart{Data: map[string]any{"meta": 42}},
+			}}},
+		},
+		{
+			name: "multiple artifact updates",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts(", world!")},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("42")},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("Hello", ", world!", "42")}},
+		},
+		{
+			name: "interleaved artifact updates",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hello")},
+				},
+				{
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid + "2", Parts: makeTextParts("Foo")},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts(", world!")},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid + "2", Parts: makeTextParts("Bar")},
+				},
+			},
+			want: []*a2a.Artifact{
+				{ID: aid, Parts: makeTextParts("Hello", ", world!")},
+				{ID: aid + "2", Parts: makeTextParts("Foo", "Bar")},
+			},
+		},
+		{
+			name: "skip update of non-existent Artifact",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{Parts: makeTextParts("Hello")},
+				},
+			},
+			want: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			saver := &testSaver{}
+			task := &a2a.Task{ID: tid, ContextID: ctxid}
+			m := NewManager(saver, task)
+
+			var lastResult *a2a.Task
+			for _, ev := range tc.events {
+				result, err := m.Process(t.Context(), ev)
+				if err != nil {
+					t.Errorf("m.Process() failed: %v", err)
+				}
+				lastResult = result
+			}
+
+			var saved []*a2a.Artifact
+			if saver.saved != nil {
+				saved = saver.saved.Artifacts
+			}
+			var got []*a2a.Artifact
+			if lastResult != nil {
+				got = lastResult.Artifacts
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("wrong result (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", got, tc.want, diff)
+			}
+			if diff := cmp.Diff(tc.want, saved); diff != "" {
+				t.Errorf("wrong artifacts saved (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", saved, tc.want, diff)
+			}
+		})
+	}
+}
+
 func TestManager_IDValidationFailure(t *testing.T) {
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	m := NewManager(&testSaver{}, task)
@@ -187,14 +394,14 @@ func TestManager_IDValidationFailure(t *testing.T) {
 		&a2a.TaskStatusUpdateEvent{TaskID: task.ID, ContextID: ""},
 
 		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID + "1", ContextID: task.ContextID},
-		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: task.ContextID},
+		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: task.ContextID + "1"},
 		&a2a.TaskArtifactUpdateEvent{TaskID: "", ContextID: task.ContextID},
 		&a2a.TaskArtifactUpdateEvent{TaskID: task.ID, ContextID: ""},
 	}
 
-	for _, event := range testCases {
+	for i, event := range testCases {
 		if _, err := m.Process(t.Context(), event); err == nil {
-			t.Fatalf("expected ID validation to fail")
+			t.Fatalf("want ID validation to fail for %d-th event: %+v", i, event)
 		}
 	}
 }
