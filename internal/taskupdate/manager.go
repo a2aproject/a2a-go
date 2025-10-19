@@ -20,6 +20,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
 // Saver is used for saving the Task after updating its state.
@@ -79,8 +80,15 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*a2a.Task, er
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
 	task := mgr.task
 
+	// The copy is required because the event will be passed to subscriber goroutines, while
+	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
+	artifact, err := utils.DeepCopy(event.Artifact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy artifact: %w", err)
+	}
+
 	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
-		return a.ID == event.Artifact.ID
+		return a.ID == artifact.ID
 	})
 
 	if updateIdx < 0 {
@@ -88,7 +96,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 			// TODO(yarolegovich): log "artifact for update not found" as Python does
 			return task, nil
 		}
-		task.Artifacts = append(task.Artifacts, event.Artifact)
+		task.Artifacts = append(task.Artifacts, artifact)
 		if err := mgr.saver.Save(ctx, task); err != nil {
 			return nil, err
 		}
@@ -96,7 +104,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	}
 
 	if !event.Append {
-		task.Artifacts[updateIdx] = event.Artifact
+		task.Artifacts[updateIdx] = artifact
 		if err := mgr.saver.Save(ctx, task); err != nil {
 			return nil, err
 		}
@@ -104,15 +112,12 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	}
 
 	toUpdate := task.Artifacts[updateIdx]
-	toUpdate.Parts = append(toUpdate.Parts, event.Artifact.Parts...)
-	if event.Artifact.Metadata != nil {
-		if toUpdate.Metadata == nil {
-			toUpdate.Metadata = event.Artifact.Metadata
-		} else {
-			for k, v := range event.Artifact.Metadata {
-				toUpdate.Metadata[k] = v
-			}
-		}
+	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
+	if toUpdate.Metadata == nil && artifact.Metadata != nil {
+		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
+	}
+	for k, v := range artifact.Metadata {
+		toUpdate.Metadata[k] = v
 	}
 
 	if err := mgr.saver.Save(ctx, task); err != nil {
