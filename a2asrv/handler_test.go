@@ -157,22 +157,6 @@ func (m *mockTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, 
 	return nil, errors.New("Get() not implemented")
 }
 
-func newMockTaskStore(history ...*a2a.Message) TaskStore {
-	return &mockTaskStore{
-		GetFunc: func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
-			if taskID == storeGetFailTaskID {
-				return nil, errors.New("store get failed")
-			}
-
-			if taskID == notExistsTaskID {
-				return nil, a2a.ErrTaskNotFound
-			}
-
-			return &a2a.Task{ID: taskID, History: history}, nil
-		},
-	}
-}
-
 func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 	mockExec := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
@@ -191,6 +175,15 @@ func newMemTaskStore(t *testing.T, seed []*a2a.Task) TaskStore {
 		}
 	}
 	return store
+}
+
+func newUserMessage(task *a2a.Task, text string) *a2a.Message {
+	return &a2a.Message{
+		ID:     "message-id",
+		Parts:  []a2a.Part{a2a.TextPart{Text: text}},
+		Role:   a2a.MessageRoleUser,
+		TaskID: task.ID,
+	}
 }
 
 func newAgentMessage(text string) *a2a.Message {
@@ -222,6 +215,65 @@ func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2
 	ev := a2a.NewArtifactEvent(task, parts...)
 	ev.Artifact.ID = aid
 	return ev
+}
+
+func TestDefaultRequestHandler_OnSendMessage_TaskNotCreated(t *testing.T) {
+	ctx := t.Context()
+	getCalled := 0
+	savedCalled := 0
+	mockStore := &mockTaskStore{
+		GetFunc: func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+			getCalled += 1
+			return nil, nil
+		},
+		SaveFunc: func(ctx context.Context, task *a2a.Task) error {
+			savedCalled += 1
+			return nil
+		},
+	}
+	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
+	handler := NewHandler(executor, WithTaskStore(mockStore))
+
+	result, gotErr := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
+	if gotErr != nil {
+		t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+	}
+	if _, ok := result.(*a2a.Message); !ok {
+		t.Errorf("OnSendMessage() = %v, want a2a.Message", result)
+	}
+
+	if getCalled > 0 {
+		t.Errorf("OnSendMessage() TaskStore.Get called %d times, want 0", getCalled)
+	}
+	if savedCalled > 0 {
+		t.Errorf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+	}
+}
+
+func TestDefaultRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
+	ctx := t.Context()
+	mockStore := taskstore.NewMem()
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			event := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			event.Final = true
+			return q.Write(ctx, event)
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(mockStore))
+
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Complete the task!"})
+	result, gotErr := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+	if gotErr != nil {
+		t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+	}
+	if task, ok := result.(*a2a.Task); ok {
+		if diff := cmp.Diff([]*a2a.Message{msg}, task.History); diff != "" {
+			t.Errorf("OnSendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
+		}
+	} else {
+		t.Errorf("OnSendMessage() = %v, want a2a.Task", result)
+	}
 }
 
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
@@ -278,7 +330,8 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "meta lost"),
 		},
 		{
-			name: "event final flag takes precedence over task state",
+			name:  "event final flag takes precedence over task state",
+			input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work")},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Working..."),
 				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Done!"),
@@ -291,11 +344,12 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					Message:   newAgentMessage("Done!"),
 					Timestamp: &fixedTime,
 				},
-				History: []*a2a.Message{newAgentMessage("Working...")},
+				History: []*a2a.Message{newUserMessage(taskSeed, "Work"), newAgentMessage("Working...")},
 			},
 		},
 		{
-			name: "task status update accumulation",
+			name:  "task status update accumulation",
+			input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Syn")},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
@@ -310,13 +364,15 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					Timestamp: &fixedTime,
 				},
 				History: []*a2a.Message{
+					newUserMessage(taskSeed, "Syn"),
 					newAgentMessage("Ack"),
 					newAgentMessage("Working..."),
 				},
 			},
 		},
 		{
-			name: "input-required task status update",
+			name:  "input-required task status update",
+			input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Syn")},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
@@ -331,6 +387,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					Timestamp: &fixedTime,
 				},
 				History: []*a2a.Message{
+					newUserMessage(taskSeed, "Syn"),
 					newAgentMessage("Ack"),
 					newAgentMessage("Working..."),
 				},
@@ -346,7 +403,8 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
 		},
 		{
-			name: "task artifact streaming",
+			name:  "task artifact streaming",
+			input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Syn")},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
 				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
@@ -357,14 +415,15 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				ID:        taskSeed.ID,
 				ContextID: taskSeed.ContextID,
 				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
-				History:   []*a2a.Message{newAgentMessage("Ack")},
+				History:   []*a2a.Message{newUserMessage(taskSeed, "Syn"), newAgentMessage("Ack")},
 				Artifacts: []*a2a.Artifact{
 					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}, a2a.TextPart{Text: ", world!"}}},
 				},
 			},
 		},
 		{
-			name: "task with multiple artifacts",
+			name:  "task with multiple artifacts",
+			input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Syn")},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
 				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
@@ -375,7 +434,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				ID:        taskSeed.ID,
 				ContextID: taskSeed.ContextID,
 				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
-				History:   []*a2a.Message{newAgentMessage("Ack")},
+				History:   []*a2a.Message{newUserMessage(taskSeed, "Syn"), newAgentMessage("Ack")},
 				Artifacts: []*a2a.Artifact{
 					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}}},
 					{ID: artifactID + "2", Parts: a2a.ContentParts{a2a.TextPart{Text: "World"}}},
@@ -385,10 +444,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 		{
 			name: "task continuation",
 			input: &a2a.MessageSendParams{
-				Message: &a2a.Message{
-					TaskID: inputRequiredTaskSeed.ID,
-					Parts:  []a2a.Part{a2a.TextPart{Text: "continue"}},
-				},
+				Message: newUserMessage(inputRequiredTaskSeed, "continue"),
 			},
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(inputRequiredTaskSeed, a2a.TaskStateWorking, "Working..."),
@@ -403,6 +459,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 					Timestamp: &fixedTime,
 				},
 				History: []*a2a.Message{
+					newUserMessage(inputRequiredTaskSeed, "continue"),
 					newAgentMessage("Working..."),
 				},
 			},
@@ -566,8 +623,21 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			handler := newTestHandler(WithTaskStore(newMockTaskStore(history...)))
+			taskStore := &mockTaskStore{
+				GetFunc: func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+					if taskID == storeGetFailTaskID {
+						return nil, errors.New("store get failed")
+					}
+					if taskID == notExistsTaskID {
+						return nil, a2a.ErrTaskNotFound
+					}
+					return &a2a.Task{ID: taskID, History: history}, nil
+				},
+			}
+			handler := newTestHandler(WithTaskStore(taskStore))
+
 			result, gotErr := handler.OnGetTask(ctx, tt.query)
+
 			if tt.wantErr == nil {
 				if gotErr != nil {
 					t.Fatalf("OnGetTask() error = %v, wantErr nil", gotErr)

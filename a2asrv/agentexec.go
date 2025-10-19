@@ -72,6 +72,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 			return nil, fmt.Errorf("%w: task in a terminal state %q", a2a.ErrInvalidRequest, storedTask.Status.State)
 		}
 
+		storedTask.History = append(storedTask.History, msg)
+		if err := e.taskStore.Save(ctx, storedTask); err != nil {
+			return nil, fmt.Errorf("task message history update failed: %w", err)
+		}
+
 		task = storedTask
 	}
 
