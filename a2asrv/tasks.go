@@ -48,6 +48,6 @@ type TaskStore interface {
 	// Save stores a task.
 	Save(ctx context.Context, task *a2a.Task) error
 
-	// Get retrieves a task by ID.
+	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
 	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error)
 }
