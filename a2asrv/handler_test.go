@@ -157,7 +157,7 @@ func (m *mockTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, 
 	return nil, errors.New("Get() not implemented")
 }
 
-func newTaskStore(history ...*a2a.Message) TaskStore {
+func newMockTaskStore(history ...*a2a.Message) TaskStore {
 	return &mockTaskStore{
 		GetFunc: func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 			if taskID == storeGetFailTaskID {
@@ -180,6 +180,17 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 		},
 	}
 	return NewHandler(mockExec, opts...)
+}
+
+func newMemTaskStore(t *testing.T, seed []*a2a.Task) TaskStore {
+	t.Helper()
+	store := taskstore.NewMem()
+	for _, task := range seed {
+		if err := store.Save(t.Context(), task); err != nil {
+			t.Errorf("store.Save() error = %v", err)
+		}
+	}
+	return store
 }
 
 func newAgentMessage(text string) *a2a.Message {
@@ -216,7 +227,9 @@ func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 	completedTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	taskStoreSeed := []*a2a.Task{taskSeed, inputRequiredTaskSeed, completedTaskSeed}
 
 	tests := []struct {
 		name        string
@@ -303,6 +316,27 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			},
 		},
 		{
+			name: "input-required task status update",
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateInputRequired, "Need more input!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        taskSeed.ID,
+				ContextID: taskSeed.ContextID,
+				Status: a2a.TaskStatus{
+					State:     a2a.TaskStateInputRequired,
+					Message:   newAgentMessage("Need more input!"),
+					Timestamp: &fixedTime,
+				},
+				History: []*a2a.Message{
+					newAgentMessage("Ack"),
+					newAgentMessage("Working..."),
+				},
+			},
+		},
+		{
 			name: "final task overwrites intermediate status updates",
 			agentEvents: []a2a.Event{
 				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
@@ -349,6 +383,31 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			},
 		},
 		{
+			name: "task continuation",
+			input: &a2a.MessageSendParams{
+				Message: &a2a.Message{
+					TaskID: inputRequiredTaskSeed.ID,
+					Parts:  []a2a.Part{a2a.TextPart{Text: "continue"}},
+				},
+			},
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(inputRequiredTaskSeed, a2a.TaskStateWorking, "Working..."),
+				newFinalTaskStatusUpdate(inputRequiredTaskSeed, a2a.TaskStateCompleted, "Done!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        inputRequiredTaskSeed.ID,
+				ContextID: inputRequiredTaskSeed.ContextID,
+				Status: a2a.TaskStatus{
+					State:     a2a.TaskStateCompleted,
+					Message:   newAgentMessage("Done!"),
+					Timestamp: &fixedTime,
+				},
+				History: []*a2a.Message{
+					newAgentMessage("Working..."),
+				},
+			},
+		},
+		{
 			name:    "fails on non-existent task reference",
 			input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 			wantErr: a2a.ErrTaskNotFound,
@@ -384,9 +443,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			store := taskstore.NewMem()
-			_ = store.Save(ctx, taskSeed)
-			_ = store.Save(ctx, completedTaskSeed)
+			store := newMemTaskStore(t, taskStoreSeed)
 			executor := newEventReplayAgent(tt.agentEvents, nil)
 			handler := NewHandler(executor, WithTaskStore(store))
 
@@ -410,9 +467,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 
 		t.Run(tt.name+" (streaming)", func(t *testing.T) {
 			ctx := t.Context()
-			store := taskstore.NewMem()
-			_ = store.Save(ctx, taskSeed)
-			_ = store.Save(ctx, completedTaskSeed)
+			store := newMemTaskStore(t, taskStoreSeed)
 			executor := newEventReplayAgent(tt.agentEvents, nil)
 			handler := NewHandler(executor, WithTaskStore(store))
 
@@ -511,7 +566,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			handler := newTestHandler(WithTaskStore(newTaskStore(history...)))
+			handler := newTestHandler(WithTaskStore(newMockTaskStore(history...)))
 			result, gotErr := handler.OnGetTask(ctx, tt.query)
 			if tt.wantErr == nil {
 				if gotErr != nil {
