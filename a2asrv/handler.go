@@ -181,8 +181,12 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		if err != nil {
 			return nil, err
 		}
-		if shouldInterrupt(event) {
-			return event.(a2a.SendMessageResult), nil
+		if taskID, required := isAuthRequired(event); required {
+			task, err := h.taskStore.Get(ctx, taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load task in auth-required state: %w", err)
+			}
+			return task, nil
 		}
 	}
 
@@ -248,7 +252,12 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 	return ErrUnimplemented
 }
 
-// TODO(yarolegovich): handle auth-required state
-func shouldInterrupt(_ a2a.Event) bool {
-	return false
+func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
+	switch v := event.(type) {
+	case *a2a.Task:
+		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
+	case *a2a.TaskStatusUpdateEvent:
+		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
+	}
+	return "", false
 }

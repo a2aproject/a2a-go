@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,7 +218,7 @@ func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2
 	return ev
 }
 
-func TestDefaultRequestHandler_OnSendMessage_TaskNotCreated(t *testing.T) {
+func TestDefaultRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 	ctx := t.Context()
 	getCalled := 0
 	savedCalled := 0
@@ -239,14 +240,14 @@ func TestDefaultRequestHandler_OnSendMessage_TaskNotCreated(t *testing.T) {
 		t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 	}
 	if _, ok := result.(*a2a.Message); !ok {
-		t.Errorf("OnSendMessage() = %v, want a2a.Message", result)
+		t.Fatalf("OnSendMessage() = %v, want a2a.Message", result)
 	}
 
 	if getCalled > 0 {
-		t.Errorf("OnSendMessage() TaskStore.Get called %d times, want 0", getCalled)
+		t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want 0", getCalled)
 	}
 	if savedCalled > 0 {
-		t.Errorf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+		t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
 	}
 }
 
@@ -269,10 +270,10 @@ func TestDefaultRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	}
 	if task, ok := result.(*a2a.Task); ok {
 		if diff := cmp.Diff([]*a2a.Message{msg}, task.History); diff != "" {
-			t.Errorf("OnSendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
+			t.Fatalf("OnSendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
 		}
 	} else {
-		t.Errorf("OnSendMessage() = %v, want a2a.Task", result)
+		t.Fatalf("OnSendMessage() = %v, want a2a.Task", result)
 	}
 }
 
@@ -562,6 +563,91 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				t.Errorf("OnSendMessageStream() error = %v, wantErr %v", streamErr, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestDefaultRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
+	ctx := t.Context()
+	mockStore := taskstore.NewMem()
+	authCredentialsChan := make(chan struct{})
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateAuthRequired, nil)); err != nil {
+				return err
+			}
+			<-authCredentialsChan
+			result := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			result.Final = true
+			return q.Write(ctx, result)
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(mockStore))
+
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "perform protected operation"})
+	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+	if err != nil {
+		t.Fatalf("OnSendMessage() error = %v, wantErr nil", err)
+	}
+	var taskID a2a.TaskID
+	if task, ok := result.(*a2a.Task); ok {
+		if task.Status.State != a2a.TaskStateAuthRequired {
+			t.Fatalf("OnSendMessage() = %v, want a2a.Task in %q state", result, a2a.TaskStateAuthRequired)
+		}
+		msg.TaskID = task.ID
+		taskID = task.ID
+	} else {
+		t.Fatalf("OnSendMessage() = %v, want a2a.Task", result)
+	}
+
+	_, err = handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+	if !strings.Contains(err.Error(), "execution is already in progress") {
+		t.Fatalf("OnSendMessage() error = %v, want err to contain 'execution is already in progress'", err)
+	}
+
+	authCredentialsChan <- struct{}{}
+	time.Sleep(time.Millisecond * 10)
+
+	task, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: taskID})
+	if task.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("handler.OnGetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+	}
+}
+
+func TestDefaultRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
+	ctx := t.Context()
+	mockStore := taskstore.NewMem()
+	authCredentialsChan := make(chan struct{})
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateAuthRequired, nil)); err != nil {
+				return err
+			}
+			<-authCredentialsChan
+			result := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			result.Final = true
+			return q.Write(ctx, result)
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(mockStore))
+
+	var lastEvent a2a.Event
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "perform protected operation"})
+	for event, err := range handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{Message: msg}) {
+		if upd, ok := event.(*a2a.TaskStatusUpdateEvent); ok && upd.Status.State == a2a.TaskStateAuthRequired {
+			go func() { authCredentialsChan <- struct{}{} }()
+		}
+		if err != nil {
+			t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", err)
+		}
+		lastEvent = event
+	}
+
+	if task, ok := lastEvent.(*a2a.TaskStatusUpdateEvent); ok {
+		if task.Status.State != a2a.TaskStateCompleted {
+			t.Fatalf("OnSendMessageStream() = %v, want status update with state %q", lastEvent, a2a.TaskStateAuthRequired)
+		}
+	} else {
+		t.Fatalf("OnSendMessageStream() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
 	}
 }
 
