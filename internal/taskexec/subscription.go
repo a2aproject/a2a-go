@@ -56,7 +56,8 @@ func newDefaultSubscription(e *Execution) *Subscription {
 }
 
 // Events returns a sequence of Events produced during Execution. If Execution resolves to an error
-// the error gets reported.
+// the error gets reported. A sequence can only be consumed once. Subscription gets automatically
+// canceled once event consumption stops.
 func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if s.eventsChan == nil || s.execution == nil {
@@ -100,7 +101,7 @@ func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	}
 }
 
-// Cancel unsubscribes events channel from Execution events. If the Execution ends,
+// cancel unsubscribes events channel from Execution events. If the Execution ends,
 // the operation is a no-op.
 func (s *Subscription) cancel() {
 	if s == nil {
