@@ -17,8 +17,10 @@ package taskupdate
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
 // Saver is used for saving the Task after updating its state.
@@ -75,8 +77,53 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*a2a.Task, er
 	}
 }
 
-func (mgr *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
-	return nil, fmt.Errorf("not implemented")
+func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
+	task := mgr.task
+
+	// The copy is required because the event will be passed to subscriber goroutines, while
+	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
+	artifact, err := utils.DeepCopy(event.Artifact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy artifact: %w", err)
+	}
+
+	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
+		return a.ID == artifact.ID
+	})
+
+	if updateIdx < 0 {
+		if event.Append {
+			// TODO(yarolegovich): log "artifact for update not found" as Python does
+			return task, nil
+		}
+		task.Artifacts = append(task.Artifacts, artifact)
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	if !event.Append {
+		task.Artifacts[updateIdx] = artifact
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	toUpdate := task.Artifacts[updateIdx]
+	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
+	if toUpdate.Metadata == nil && artifact.Metadata != nil {
+		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
+	}
+	for k, v := range artifact.Metadata {
+		toUpdate.Metadata[k] = v
+	}
+
+	if err := mgr.saver.Save(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {

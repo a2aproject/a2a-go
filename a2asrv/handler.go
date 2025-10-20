@@ -162,6 +162,45 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	execution, err := h.handleSendMessage(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	for event, err := range execution.Events(ctx) {
+		if err != nil {
+			return nil, err
+		}
+		if shouldInterrupt(event) {
+			return event.(a2a.SendMessageResult), nil
+		}
+	}
+
+	return execution.Result(ctx)
+}
+
+func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	execution, err := h.handleSendMessage(ctx, params)
+	if err != nil {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(nil, err)
+		}
+	}
+
+	return execution.Events(ctx)
+}
+
+func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	exec, ok := h.taskExecutor.GetExecution(params.ID)
+	if !ok {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(nil, a2a.ErrTaskNotFound)
+		}
+	}
+	return exec.Events(ctx)
+}
+
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
 	if params.Message == nil {
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
@@ -185,35 +224,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		reqCtx:    reqCtx,
 		processor: processor,
 	}
-	execution, err := h.taskExecutor.Execute(ctx, task.ID, executor)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute: %w", err)
-	}
-
-	for event, err := range execution.Events(ctx) {
-		if err != nil {
-			return nil, err
-		}
-		if shouldInterrupt(event) {
-			return event.(a2a.SendMessageResult), nil
-		}
-	}
-
-	return execution.Result(ctx)
-}
-
-func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	exec, ok := h.taskExecutor.GetExecution(params.ID)
-	if !ok {
-		return func(yield func(a2a.Event, error) bool) {
-			yield(nil, a2a.ErrTaskNotFound)
-		}
-	}
-	return exec.Events(ctx)
-}
-
-func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	return nil
+	return h.taskExecutor.Execute(ctx, task.ID, executor)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"testing"
 	"time"
 
@@ -204,7 +203,14 @@ func newTaskWithMeta(task *a2a.Task, meta map[string]any) *a2a.Task {
 	return &a2a.Task{ID: task.ID, ContextID: task.ContextID, Metadata: meta}
 }
 
+func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2a.TaskArtifactUpdateEvent {
+	ev := a2a.NewArtifactEvent(task, parts...)
+	ev.Artifact.ID = aid
+	return ev
+}
+
 func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
+	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 
 	tests := []struct {
@@ -301,6 +307,43 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
 		},
 		{
+			name: "task artifact streaming",
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+				a2a.NewArtifactUpdateEvent(taskSeed, artifactID, a2a.TextPart{Text: ", world!"}),
+				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        taskSeed.ID,
+				ContextID: taskSeed.ContextID,
+				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+				History:   []*a2a.Message{newAgentMessage("Ack")},
+				Artifacts: []*a2a.Artifact{
+					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}, a2a.TextPart{Text: ", world!"}}},
+				},
+			},
+		},
+		{
+			name: "task with multiple artifacts",
+			agentEvents: []a2a.Event{
+				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+				newArtifactEvent(taskSeed, artifactID+"2", a2a.TextPart{Text: "World"}),
+				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+			},
+			wantResult: &a2a.Task{
+				ID:        taskSeed.ID,
+				ContextID: taskSeed.ContextID,
+				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+				History:   []*a2a.Message{newAgentMessage("Ack")},
+				Artifacts: []*a2a.Artifact{
+					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}}},
+					{ID: artifactID + "2", Parts: a2a.ContentParts{a2a.TextPart{Text: "World"}}},
+				},
+			},
+		},
+		{
 			name:    "fails on non-existent task reference",
 			input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 			wantErr: a2a.ErrTaskNotFound,
@@ -312,6 +355,11 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
+		if tt.input != nil {
+			input = tt.input
+		}
+
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			var qm eventqueue.Manager
@@ -322,22 +370,15 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			}
 			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
-			handler := newTestHandler(
-				WithEventQueueManager(qm),
-				WithTaskStore(store),
-			)
-			input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
-			if tt.input != nil {
-				input = tt.input
-			}
+			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
 
 			result, gotErr := handler.OnSendMessage(ctx, input)
 			if tt.wantErr == nil {
 				if gotErr != nil {
 					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
-				if !reflect.DeepEqual(result, tt.wantResult) {
-					t.Errorf("OnSendMessage() got = %v, want %v", result, tt.wantResult)
+				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
+					t.Errorf("OnSendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -346,6 +387,54 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				if gotErr.Error() != tt.wantErr.Error() {
 					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
+			}
+		})
+
+		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			ctx := t.Context()
+			var qm eventqueue.Manager
+			if tt.agentEvents == nil {
+				qm = newEventReplayQueueManager()
+			} else {
+				qm = newEventReplayQueueManager(tt.agentEvents...)
+			}
+			store := taskstore.NewMem()
+			_ = store.Save(ctx, taskSeed)
+			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
+
+			eventI := 0
+			var streamErr bool
+			for got, gotErr := range handler.OnSendMessageStream(ctx, input) {
+				var want a2a.Event
+				if eventI < len(tt.agentEvents) {
+					want = tt.agentEvents[eventI]
+					eventI += 1
+				} else if streamErr {
+					t.Errorf("expected stream close after %v, got %v, %v", eventI, got, gotErr)
+				} else if tt.wantErr != nil {
+					streamErr = true
+				} else {
+					t.Errorf("expected error after %d-th event, got %v, %v", eventI, got, gotErr)
+				}
+
+				if streamErr {
+					if gotErr == nil {
+						t.Fatalf("OnSendMessageStream() error = nil, wantErr %q", tt.wantErr)
+					}
+					if gotErr.Error() != tt.wantErr.Error() {
+						t.Errorf("OnSendMessageStream() error = %v, wantErr %v", gotErr, tt.wantErr)
+					}
+				} else {
+					if gotErr != nil {
+						t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+					}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+					}
+				}
+			}
+			if tt.wantErr == nil && eventI != len(tt.agentEvents) {
+				t.Errorf("OnSendMessageStream() received %d events, want %d", eventI, len(tt.agentEvents))
 			}
 		})
 	}
@@ -469,9 +558,6 @@ func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
 	handler := NewHandler(&mockAgentExecutor{})
 	ctx := t.Context()
 
-	if seq := handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{}); seq != nil {
-		t.Error("OnSendMessageStream: expected nil iterator, got non-nil")
-	}
 	if _, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
 		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
 	}
