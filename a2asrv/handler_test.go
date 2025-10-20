@@ -415,38 +415,37 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			handler := newTestHandler(WithEventQueueManager(qm), WithTaskStore(store))
 
 			eventI := 0
-			var streamErr bool
+			var streamErr error
 			for got, gotErr := range handler.OnSendMessageStream(ctx, input) {
+				if streamErr != nil {
+					t.Errorf("handler.OnSendMessageStream() got (%v, %v) after error, want stream end", got, gotErr)
+				}
+
+				if gotErr != nil && tt.wantErr == nil {
+					t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+				}
+				if gotErr != nil {
+					streamErr = gotErr
+					continue
+				}
+
 				var want a2a.Event
 				if eventI < len(tt.agentEvents) {
 					want = tt.agentEvents[eventI]
-					eventI += 1
-				} else if streamErr {
-					t.Errorf("expected stream close after %v, got %v, %v", eventI, got, gotErr)
-				} else if tt.wantErr != nil {
-					streamErr = true
-				} else {
-					t.Errorf("expected error after %d-th event, got %v, %v", eventI, got, gotErr)
+					eventI++
 				}
-
-				if streamErr {
-					if gotErr == nil {
-						t.Fatalf("OnSendMessageStream() error = nil, wantErr %q", tt.wantErr)
-					}
-					if gotErr.Error() != tt.wantErr.Error() {
-						t.Errorf("OnSendMessageStream() error = %v, wantErr %v", gotErr, tt.wantErr)
-					}
-				} else {
-					if gotErr != nil {
-						t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
-					}
-					if diff := cmp.Diff(want, got); diff != "" {
-						t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
-					}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 				}
 			}
 			if tt.wantErr == nil && eventI != len(tt.agentEvents) {
 				t.Errorf("OnSendMessageStream() received %d events, want %d", eventI, len(tt.agentEvents))
+			}
+			if tt.wantErr != nil && streamErr == nil {
+				t.Errorf("OnSendMessageStream() error = nil, want %v", tt.wantErr)
+			}
+			if tt.wantErr != nil && (streamErr.Error() != tt.wantErr.Error() && !errors.Is(streamErr, tt.wantErr)) {
+				t.Errorf("OnSendMessageStream() error = %v, wantErr %v", streamErr, tt.wantErr)
 			}
 		})
 	}
