@@ -17,6 +17,7 @@ package taskexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -127,14 +128,14 @@ func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error
 func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
 	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
-		t.Fatalf("queue Write() failed with: %v", err)
+		t.Fatalf("queue Write() failed: %v", err)
 	}
 }
 
 func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
 	t.Helper()
 	if err := e.queue.Write(t.Context(), event); err != nil {
-		t.Fatalf("queue Write() failed with: %v", err)
+		t.Fatalf("queue Write() failed: %v", err)
 	}
 }
 
@@ -154,7 +155,7 @@ func TestManager_Execute(t *testing.T) {
 	executor.mustWrite(t, want)
 
 	if got, err := execution.Result(ctx); err != nil || got != want {
-		t.Fatalf("expected Result() to return %v, got %v, %v", want, got, err)
+		t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
 	}
 }
 
@@ -166,14 +167,14 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 	executor.processErr = errors.New("test error")
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
 	executor.mustWrite(t, &a2a.Task{ID: tid})
 
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.processErr) {
-		t.Fatalf("expected Result() to return %v, got %v", executor.processErr, err)
+		t.Fatalf("execution.Result() failed with %v, want %v", err, executor.processErr)
 	}
 }
 
@@ -185,11 +186,11 @@ func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 	executor.executeErr = errors.New("test error")
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.executeErr) {
-		t.Fatalf("expected Result() to return %v, got %v", executor.executeErr, err)
+		t.Fatalf("execution.Result() = %v, want %v", err, executor.executeErr)
 	}
 }
 
@@ -203,7 +204,7 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	executor.testProcessor.block = make(chan struct{})
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
@@ -228,7 +229,7 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	executor.processErr = errors.New("test error")
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
@@ -247,7 +248,7 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	executor := newExecutor()
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 	<-executor.executeCalled
 
@@ -268,11 +269,11 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			waitSubscribed.Done()
 			defer func() {
 				if err := sub.cancel(t.Context()); err != nil {
-					t.Errorf("subscription cancel() failed with %v", err)
+					t.Errorf("subscription.cancel() failed: %v", err)
 				}
 			}()
 
-			for event := range sub.events {
+			for event := range sub.events(ctx) {
 				mu.Lock()
 				consumed[consumerI] = append(consumed[consumerI], event)
 				mu.Unlock()
@@ -293,12 +294,12 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 
 	for i, list := range consumed {
 		if len(list) != len(states) {
-			t.Fatalf("expected %d events, got %d for consumer %d", len(states), len(list), i)
+			t.Fatalf("got %d events for consumer %d, want %d", len(list), i, len(states))
 		}
 		for eventI, event := range list {
 			state := event.(*a2a.Task).Status.State
 			if state != states[eventI] {
-				t.Fatalf("expected event state for consumer %d to be %v, got %v", i, states[eventI], state)
+				t.Fatalf("got %v event state for consumer %d, want %v", state, i, states[eventI])
 			}
 		}
 	}
@@ -314,7 +315,7 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 	executor.nextEventTerminal = true
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 	<-executor.executeCalled
 
@@ -327,12 +328,41 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 
 	task, err := manager.Cancel(ctx, tid, canceler)
 	if err != nil || task != want {
-		t.Fatalf("expected Cancel() to return %v, got %v, %v", want, task, err)
+		t.Fatalf("manager.Cancel() = (%v, %v), want %v", task, err, want)
 	}
 
 	execResult, err := execution.Result(ctx)
 	if err != nil || execResult != want {
-		t.Fatalf("expected execution result to be %v, got %v, %v", want, execResult, err)
+		t.Fatalf("execution.Result = (%v, %v), want %v", execResult, err, want)
+	}
+}
+
+func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
+	t.Parallel()
+	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
+
+	executor := newExecutor()
+	executor.nextEventTerminal = true
+	execution, err := manager.Execute(ctx, tid, executor)
+	if err != nil {
+		t.Fatalf("manager.Execute() failed: %v", err)
+	}
+
+	<-executor.executeCalled
+	want := &a2a.Task{ID: tid}
+	executor.mustWrite(t, want)
+
+	if got, err := execution.Result(ctx); err != nil || got != want {
+		t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
+	}
+
+	eventCount := 0
+	for v, err := range execution.Events(ctx) {
+		fmt.Println(v, err)
+		eventCount++
+	}
+	if eventCount != 0 {
+		t.Fatalf("got %d events after execution finished, want 0", eventCount)
 	}
 }
 
@@ -350,7 +380,7 @@ func TestManager_CancelWithoutActiveExecution(t *testing.T) {
 
 	task, err := manager.Cancel(ctx, tid, canceler)
 	if err != nil || task != want {
-		t.Fatalf("expected Cancel() to return %v, got %v, %v", want, task, err)
+		t.Fatalf("manager.Cancel() = (%v, %v), want %v", task, err, want)
 	}
 }
 
@@ -362,7 +392,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	executor.nextEventTerminal = true
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 	<-executor.executeCalled
 
@@ -372,7 +402,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	go func() {
 		task, err := manager.Cancel(ctx, tid, canceler)
 		if task != nil || err == nil {
-			t.Errorf("expected Cancel() to fail, got %v, %v", task, err)
+			t.Errorf("manager.Cancel() = %v, expected to fail", task)
 		}
 		cancelErr <- err
 	}()
@@ -383,7 +413,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	close(canceler.block)
 
 	if got := <-cancelErr; !errors.Is(got, a2a.ErrTaskNotCancelable) {
-		t.Fatalf("expected Cancel() to fail with %v, got %v", a2a.ErrTaskNotCancelable, got)
+		t.Fatalf("manager.Cancel() = %v, want %v", got, a2a.ErrTaskNotCancelable)
 	}
 }
 
@@ -401,7 +431,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 	go func() {
 		task, err := manager.Cancel(ctx, tid, canceler1)
 		if err != nil {
-			t.Errorf("Cancel() failed: %v", err)
+			t.Errorf("manager.Cancel() failed: %v", err)
 		}
 		results <- task
 		wg.Done()
@@ -415,7 +445,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 		close(ready)
 		task, err := manager.Cancel(ctx, tid, canceler2)
 		if err != nil {
-			t.Errorf("Cancel() failed: %v", err)
+			t.Errorf("manager.Cancel() failed: %v", err)
 		}
 		results <- task
 		wg.Done()
@@ -429,7 +459,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 
 	t1, t2 := <-results, <-results
 	if t1 != want || t2 != want {
-		t.Fatalf("expected task to be %v, got [%v, %v]", want, t1, t2)
+		t.Fatalf("got cancelation results [%v, %v], want both to be %v, ", t1, t2, want)
 	}
 }
 
@@ -449,7 +479,7 @@ func TestManager_NotAllowedToExecuteWhileCanceling(t *testing.T) {
 
 	execution, err := manager.Execute(ctx, tid, newExecutor())
 	if execution != nil || !errors.Is(err, ErrCancelationInProgress) {
-		t.Fatalf("expected Execute() to fail with %v, got %v, %v", ErrCancelationInProgress, execution, err)
+		t.Fatalf("manager.Execute() = (%v, %v), want %v", execution, err, ErrCancelationInProgress)
 	}
 
 	close(canceler.block)
@@ -463,22 +493,22 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	// First cancelation fails
 	canceler := newCanceler()
 	canceler.cancelErr = errors.New("test error")
-	if _, err := manager.Cancel(ctx, tid, canceler); err == nil {
-		t.Fatalf("expected Cancel() to fail, got %v", err)
+	if task, err := manager.Cancel(ctx, tid, canceler); err == nil {
+		t.Fatalf("manager.Cancel() = %v, want error", task)
 	}
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
 	execution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("maanger.Execute() failed with %v", err)
 	}
 
 	<-executor.executeCalled
 	executor.mustWrite(t, &a2a.Task{ID: tid})
 
 	if _, err := execution.Result(ctx); err != nil {
-		t.Fatalf("Result() failed: %v", err)
+		t.Fatalf("execution.Result() wailed with %v", err)
 	}
 }
 
@@ -489,7 +519,7 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	canceler := newCanceler()
 	canceler.cancelErr = errors.New("test error")
 	if task, err := manager.Cancel(ctx, tid, canceler); err == nil {
-		t.Fatalf("expected Cancel() to fail, got %v", task)
+		t.Fatalf("manager.Cancel() = %v, want error", task)
 	}
 
 	// Second cancelation succeeds
@@ -501,7 +531,7 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	}()
 
 	if _, err := manager.Cancel(ctx, tid, canceler); err != nil {
-		t.Errorf("expected Cancel() to succeed, got %v", err)
+		t.Errorf("manager.Cancel() failed with %v", err)
 	}
 }
 
@@ -512,17 +542,17 @@ func TestManager_GetExecution(t *testing.T) {
 	executor.nextEventTerminal = true
 	startedExecution, err := manager.Execute(ctx, tid, executor)
 	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
+		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	execution, ok := manager.GetExecution(tid)
 	if !ok || execution != startedExecution {
-		t.Fatalf("expected active execution, got %v, %v", ok, execution)
+		t.Fatalf("manager.GetExecution() = (%v, %v), want %v", ok, execution, startedExecution)
 	}
 
 	execution, ok = manager.GetExecution(tid + "-2")
 	if ok || execution != nil {
-		t.Fatalf("expected no execution for fake id, got %v, %v", ok, execution)
+		t.Fatalf("manager.GetExecution(fakeID) = (%v, %v), want (nil, false)", ok, execution)
 	}
 
 	<-executor.executeCalled
@@ -531,6 +561,6 @@ func TestManager_GetExecution(t *testing.T) {
 
 	execution, ok = manager.GetExecution(tid)
 	if ok || execution != nil {
-		t.Fatalf("expected finished execution to be removed, got %v, %v", ok, execution)
+		t.Fatalf("manager.GetExecution(finishedID) = (%v, %v), want (nil, false)", ok, execution)
 	}
 }

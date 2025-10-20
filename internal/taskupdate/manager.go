@@ -17,8 +17,10 @@ package taskupdate
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
 // Saver is used for saving the Task after updating its state.
@@ -29,58 +31,103 @@ type Saver interface {
 // Manager is used for processing a2a.Event related to a Task. It updates
 // the Task accordingly and uses Saver to store the new state.
 type Manager struct {
-	Task  *a2a.Task
+	task  *a2a.Task
 	saver Saver
 }
 
 // NewManager creates an initialized update Manager for the provided task.
 func NewManager(saver Saver, task *a2a.Task) *Manager {
-	return &Manager{Task: task, saver: saver}
+	return &Manager{task: task, saver: saver}
 }
 
 // Process validates that the event is associated with the managed Task and updates the Task accordingly.
-func (mgr *Manager) Process(ctx context.Context, event a2a.Event) error {
-	if mgr.Task == nil {
-		return fmt.Errorf("event processor Task not set")
+func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*a2a.Task, error) {
+	if mgr.task == nil {
+		return nil, fmt.Errorf("event processor Task not set")
 	}
 
 	switch v := event.(type) {
 	case *a2a.Message:
-		return nil
+		return mgr.task, nil
 
 	case *a2a.Task:
 		if err := mgr.validate(v.ID, v.ContextID); err != nil {
-			return err
+			return nil, err
 		}
 		if err := mgr.saver.Save(ctx, v); err != nil {
-			return err
+			return nil, err
 		}
-		mgr.Task = v
-		return nil
+		mgr.task = v
+		return v, nil
 
 	case *a2a.TaskArtifactUpdateEvent:
 		if err := mgr.validate(v.TaskID, v.ContextID); err != nil {
-			return err
+			return nil, err
 		}
 		return mgr.updateArtifact(ctx, v)
 
 	case *a2a.TaskStatusUpdateEvent:
 		if err := mgr.validate(v.TaskID, v.ContextID); err != nil {
-			return err
+			return nil, err
 		}
 		return mgr.updateStatus(ctx, v)
 
 	default:
-		return fmt.Errorf("unexpected event type %T", v)
+		return nil, fmt.Errorf("unexpected event type %T", v)
 	}
 }
 
-func (mgr *Manager) updateArtifact(_ context.Context, _ *a2a.TaskArtifactUpdateEvent) error {
-	return fmt.Errorf("not implemented")
+func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
+	task := mgr.task
+
+	// The copy is required because the event will be passed to subscriber goroutines, while
+	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
+	artifact, err := utils.DeepCopy(event.Artifact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy artifact: %w", err)
+	}
+
+	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
+		return a.ID == artifact.ID
+	})
+
+	if updateIdx < 0 {
+		if event.Append {
+			// TODO(yarolegovich): log "artifact for update not found" as Python does
+			return task, nil
+		}
+		task.Artifacts = append(task.Artifacts, artifact)
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	if !event.Append {
+		task.Artifacts[updateIdx] = artifact
+		if err := mgr.saver.Save(ctx, task); err != nil {
+			return nil, err
+		}
+		return task, nil
+	}
+
+	toUpdate := task.Artifacts[updateIdx]
+	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
+	if toUpdate.Metadata == nil && artifact.Metadata != nil {
+		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
+	}
+	for k, v := range artifact.Metadata {
+		toUpdate.Metadata[k] = v
+	}
+
+	if err := mgr.saver.Save(ctx, task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
-func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) error {
-	task := mgr.Task
+func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
+	task := mgr.task
 
 	if task.Status.Message != nil {
 		task.History = append(task.History, task.Status.Message)
@@ -97,16 +144,20 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 
 	task.Status = event.Status
 
-	return mgr.saver.Save(ctx, task)
+	if err := mgr.saver.Save(ctx, task); err != nil {
+		return nil, err
+	}
+
+	return task, nil
 }
 
 func (mgr *Manager) validate(taskID a2a.TaskID, contextID string) error {
-	if mgr.Task.ID != taskID {
-		return fmt.Errorf("task IDs don't match: %s != %s", mgr.Task.ID, taskID)
+	if mgr.task.ID != taskID {
+		return fmt.Errorf("task IDs don't match: %s != %s", mgr.task.ID, taskID)
 	}
 
-	if mgr.Task.ContextID != contextID {
-		return fmt.Errorf("context IDs don't match: %s != %s", mgr.Task.ContextID, contextID)
+	if mgr.task.ContextID != contextID {
+		return fmt.Errorf("context IDs don't match: %s != %s", mgr.task.ContextID, contextID)
 	}
 
 	return nil
