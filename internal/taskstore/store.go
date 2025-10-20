@@ -15,12 +15,12 @@
 package taskstore
 
 import (
-	"bytes"
 	"context"
 	"encoding/gob"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
 // Mem stores deep-copied Tasks in memory.
@@ -46,7 +46,7 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 		return err
 	}
 
-	copy, err := deepCopy(task)
+	copy, err := utils.DeepCopy(task)
 	if err != nil {
 		return err
 	}
@@ -67,23 +67,5 @@ func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 		return nil, a2a.ErrTaskNotFound
 	}
 
-	return deepCopy(task)
-}
-
-// Copy to keep a saved Task unchanged until an explicit Save.
-func deepCopy(task *a2a.Task) (*a2a.Task, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	dec := gob.NewDecoder(&buf)
-
-	if err := enc.Encode(*task); err != nil {
-		return nil, err
-	}
-
-	copy := a2a.Task{}
-	if err := dec.Decode(&copy); err != nil {
-		return nil, err
-	}
-
-	return &copy, nil
+	return utils.DeepCopy(task)
 }
