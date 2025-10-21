@@ -15,8 +15,11 @@ jobs:
     - name: Setup
       uses: ./.github/actions/setup
 
-    - name: Nightly Test
+    - name: Race Detector
       run: go test -race -mod=readonly -v -count=1 -shuffle=on ./...
+
+    - name: Test Loop
+      run: go test -mod=readonly -v -count=100 -shuffle=on ./...
 
   vulncheck:
     runs-on: ubuntu-latest

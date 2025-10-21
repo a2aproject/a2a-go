@@ -218,171 +218,170 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	completedTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 
-	tests := []struct {
+	type testCase struct {
 		name        string
 		input       *a2a.MessageSendParams
 		agentEvents []a2a.Event
-
-		wantResult a2a.SendMessageResult
-		wantErr    error
-	}{
-		{
-			name:        "message returned as a result",
-			agentEvents: []a2a.Event{newAgentMessage("hello")},
-			wantResult:  newAgentMessage("hello"),
-		},
-		{
-			name:        "cancelled",
-			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateCanceled, "cancelled")},
-			wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateCanceled, "cancelled"),
-		},
-		{
-			name:        "failed",
-			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateFailed, "failed")},
-			wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateFailed, "failed"),
-		},
-		{
-			name:        "rejected",
-			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateRejected, "rejected")},
-			wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateRejected, "rejected"),
-		},
-		{
-			name:        "input required",
-			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input")},
-			wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input"),
-		},
-		{
-			name:        "fails if unknown task state",
-			agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateUnknown, "...")},
-			wantErr:     fmt.Errorf("unknown task state: unknown"),
-		},
-		{
-			name: "final task overwrites intermediate task events",
-			agentEvents: []a2a.Event{
-				newTaskWithMeta(taskSeed, map[string]any{"foo": "bar"}),
-				newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "meta lost"),
-			},
-			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "meta lost"),
-		},
-		{
-			name: "event final flag takes precedence over task state",
-			agentEvents: []a2a.Event{
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Working..."),
-				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Done!"),
-			},
-			wantResult: &a2a.Task{
-				ID:        taskSeed.ID,
-				ContextID: taskSeed.ContextID,
-				Status: a2a.TaskStatus{
-					State:     a2a.TaskStateWorking,
-					Message:   newAgentMessage("Done!"),
-					Timestamp: &fixedTime,
-				},
-				History: []*a2a.Message{newAgentMessage("Working...")},
-			},
-		},
-		{
-			name: "task status update accumulation",
-			agentEvents: []a2a.Event{
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
-				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
-			},
-			wantResult: &a2a.Task{
-				ID:        taskSeed.ID,
-				ContextID: taskSeed.ContextID,
-				Status: a2a.TaskStatus{
-					State:     a2a.TaskStateCompleted,
-					Message:   newAgentMessage("Done!"),
-					Timestamp: &fixedTime,
-				},
-				History: []*a2a.Message{
-					newAgentMessage("Ack"),
-					newAgentMessage("Working..."),
-				},
-			},
-		},
-		{
-			name: "final task overwrites intermediate status updates",
-			agentEvents: []a2a.Event{
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
-				newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
-			},
-			wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
-		},
-		{
-			name: "task artifact streaming",
-			agentEvents: []a2a.Event{
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
-				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
-				a2a.NewArtifactUpdateEvent(taskSeed, artifactID, a2a.TextPart{Text: ", world!"}),
-				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
-			},
-			wantResult: &a2a.Task{
-				ID:        taskSeed.ID,
-				ContextID: taskSeed.ContextID,
-				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
-				History:   []*a2a.Message{newAgentMessage("Ack")},
-				Artifacts: []*a2a.Artifact{
-					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}, a2a.TextPart{Text: ", world!"}}},
-				},
-			},
-		},
-		{
-			name: "task with multiple artifacts",
-			agentEvents: []a2a.Event{
-				newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
-				newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
-				newArtifactEvent(taskSeed, artifactID+"2", a2a.TextPart{Text: "World"}),
-				newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
-			},
-			wantResult: &a2a.Task{
-				ID:        taskSeed.ID,
-				ContextID: taskSeed.ContextID,
-				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
-				History:   []*a2a.Message{newAgentMessage("Ack")},
-				Artifacts: []*a2a.Artifact{
-					{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}}},
-					{ID: artifactID + "2", Parts: a2a.ContentParts{a2a.TextPart{Text: "World"}}},
-				},
-			},
-		},
-		{
-			name:    "fails on non-existent task reference",
-			input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
-			wantErr: a2a.ErrTaskNotFound,
-		},
-		{
-			name: "fails if contextID not equal to task contextID",
-			input: &a2a.MessageSendParams{
-				Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: taskSeed.ContextID + "1", ID: "test-message"},
-			},
-			wantErr: a2a.ErrInvalidRequest,
-		},
-		{
-			name: "fails if message references non-existent task",
-			input: &a2a.MessageSendParams{
-				Message: &a2a.Message{TaskID: taskSeed.ID + "1", ContextID: taskSeed.ContextID, ID: "test-message"},
-			},
-			wantErr: a2a.ErrTaskNotFound,
-		},
-		{
-			name: "fails if message references completed task",
-			input: &a2a.MessageSendParams{
-				Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
-			},
-			wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidRequest),
-		},
+		wantResult  a2a.SendMessageResult
+		wantErr     error
 	}
 
-	for _, tt := range tests {
+	createTestCases := func() []testCase {
+		return []testCase{
+			{
+				name:        "message returned as a result",
+				agentEvents: []a2a.Event{newAgentMessage("hello")},
+				wantResult:  newAgentMessage("hello"),
+			},
+			{
+				name:        "cancelled",
+				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateCanceled, "cancelled")},
+				wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateCanceled, "cancelled"),
+			},
+			{
+				name:        "failed",
+				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateFailed, "failed")},
+				wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateFailed, "failed"),
+			},
+			{
+				name:        "rejected",
+				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateRejected, "rejected")},
+				wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateRejected, "rejected"),
+			},
+			{
+				name:        "input required",
+				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input")},
+				wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input"),
+			},
+			{
+				name: "final task overwrites intermediate task events",
+				agentEvents: []a2a.Event{
+					newTaskWithMeta(taskSeed, map[string]any{"foo": "bar"}),
+					newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "meta lost"),
+				},
+				wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "meta lost"),
+			},
+			{
+				name: "event final flag takes precedence over task state",
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Working..."),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status: a2a.TaskStatus{
+						State:     a2a.TaskStateWorking,
+						Message:   newAgentMessage("Done!"),
+						Timestamp: &fixedTime,
+					},
+					History: []*a2a.Message{newAgentMessage("Working...")},
+				},
+			},
+			{
+				name: "task status update accumulation",
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status: a2a.TaskStatus{
+						State:     a2a.TaskStateCompleted,
+						Message:   newAgentMessage("Done!"),
+						Timestamp: &fixedTime,
+					},
+					History: []*a2a.Message{
+						newAgentMessage("Ack"),
+						newAgentMessage("Working..."),
+					},
+				},
+			},
+			{
+				name: "final task overwrites intermediate status updates",
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+					newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
+				},
+				wantResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "no status change history"),
+			},
+			{
+				name: "task artifact streaming",
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+					a2a.NewArtifactUpdateEvent(taskSeed, artifactID, a2a.TextPart{Text: ", world!"}),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+					History:   []*a2a.Message{newAgentMessage("Ack")},
+					Artifacts: []*a2a.Artifact{
+						{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}, a2a.TextPart{Text: ", world!"}}},
+					},
+				},
+			},
+			{
+				name: "task with multiple artifacts",
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newArtifactEvent(taskSeed, artifactID, a2a.TextPart{Text: "Hello"}),
+					newArtifactEvent(taskSeed, artifactID+"2", a2a.TextPart{Text: "World"}),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted, Message: newAgentMessage("Done!"), Timestamp: &fixedTime},
+					History:   []*a2a.Message{newAgentMessage("Ack")},
+					Artifacts: []*a2a.Artifact{
+						{ID: artifactID, Parts: a2a.ContentParts{a2a.TextPart{Text: "Hello"}}},
+						{ID: artifactID + "2", Parts: a2a.ContentParts{a2a.TextPart{Text: "World"}}},
+					},
+				},
+			},
+			{
+				name:    "fails on non-existent task reference",
+				input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
+				wantErr: a2a.ErrTaskNotFound,
+			},
+			{
+				name: "fails if contextID not equal to task contextID",
+				input: &a2a.MessageSendParams{
+					Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: taskSeed.ContextID + "1", ID: "test-message"},
+				},
+				wantErr: a2a.ErrInvalidRequest,
+			},
+			{
+				name: "fails if message references non-existent task",
+				input: &a2a.MessageSendParams{
+					Message: &a2a.Message{TaskID: taskSeed.ID + "1", ContextID: taskSeed.ContextID, ID: "test-message"},
+				},
+				wantErr: a2a.ErrTaskNotFound,
+			},
+			{
+				name: "fails if message references completed task",
+				input: &a2a.MessageSendParams{
+					Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
+				},
+				wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidRequest),
+			},
+		}
+	}
+
+	for _, tt := range createTestCases() {
 		input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
 		if tt.input != nil {
 			input = tt.input
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := t.Context()
 			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
@@ -407,8 +406,16 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				}
 			}
 		})
+	}
+
+	for _, tt := range createTestCases() {
+		input := &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}
+		if tt.input != nil {
+			input = tt.input
+		}
 
 		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			t.Parallel()
 			ctx := t.Context()
 			store := taskstore.NewMem()
 			_ = store.Save(ctx, taskSeed)
