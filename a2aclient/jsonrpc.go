@@ -274,29 +274,28 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.Message
 		return nil, err
 	}
 
-	// Try unmarshaling as Task first (§6.1: MUST have id, contextId, status.state)
-	var task a2a.Task
-	if err := json.Unmarshal(result, &task); err == nil {
-		if task.ID != "" && task.ContextID != "" && task.Status.State != "" {
-			return &task, nil
-		}
+	// unmarshalEvent can distinguish between Task and Message types
+	event, err := unmarshalEvent(result)
+	if err != nil {
+		return nil, fmt.Errorf("result violates A2A spec - could not determine type: %w; data: %s", err, string(result))
 	}
 
-	// Try unmarshaling as Message (§6.2: MUST have id, role, parts)
-	var msg a2a.Message
-	if err := json.Unmarshal(result, &msg); err == nil {
-		if msg.ID != "" && msg.Role != "" && len(msg.Parts) > 0 {
-			return &msg, nil
-		}
+	// SendMessage can return either a Task or a Message
+	switch e := event.(type) {
+	case *a2a.Task:
+		return e, nil
+	case *a2a.Message:
+		return e, nil
+	default:
+		return nil, fmt.Errorf("result violates A2A spec - expected Task or Message, got %T: %s", event, string(result))
 	}
-
-	return nil, fmt.Errorf("result violates A2A spec - neither valid Task nor Message: %s", string(result))
 }
 
-// SendStreamingMessage sends a streaming message to the agent.
-func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+// streamRequestToEvents handles SSE streaming for JSON-RPC methods.
+// It converts the SSE stream into a sequence of A2A events.
+func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params interface{}) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		body, err := t.sendStreamingRequest(ctx, methodMessageStream, message)
+		body, err := t.sendStreamingRequest(ctx, method, params)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -320,6 +319,11 @@ func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2
 			}
 		}
 	}
+}
+
+// SendStreamingMessage sends a streaming message to the agent.
+func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	return t.streamRequestToEvents(ctx, methodMessageStream, message)
 }
 
 // GetTask retrieves the current state of a task.
@@ -354,31 +358,7 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams)
 
 // ResubscribeToTask reconnects to an SSE stream for an ongoing task.
 func (t *jsonrpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		body, err := t.sendStreamingRequest(ctx, methodTasksResubscribe, id)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
-		// parseSSEStream takes ownership of body and will close it
-
-		for result, err := range parseSSEStream(body) {
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
-			event, err := unmarshalEvent(result)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
-			if !yield(event, nil) {
-				return
-			}
-		}
-	}
+	return t.streamRequestToEvents(ctx, methodTasksResubscribe, id)
 }
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
@@ -435,14 +415,15 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a
 // GetAgentCard retrieves the agent's card.
 // If the card supports authenticated extended cards and we haven't fetched it yet,
 // this will call the agent/getAuthenticatedExtendedCard method.
-// This method is safe for concurrent access.
+// This method is safe for concurrent access and returns a copy of the cached card
+// to prevent data races from concurrent modifications.
 func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	// Fast path: check if we have a card that doesn't need extension
 	t.cardMu.RLock()
 	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
-		card := t.agentCard
+		card := *t.agentCard // Return a copy
 		t.cardMu.RUnlock()
-		return card, nil
+		return &card, nil
 	}
 	t.cardMu.RUnlock()
 
@@ -452,7 +433,8 @@ func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, er
 
 	// Double-check: another goroutine may have fetched it
 	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
-		return t.agentCard, nil
+		card := *t.agentCard // Return a copy
+		return &card, nil
 	}
 
 	// No card available
@@ -471,9 +453,10 @@ func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, er
 		return nil, fmt.Errorf("failed to unmarshal extended agent card: %w", err)
 	}
 
-	// Cache the extended card
+	// Cache the extended card and return a copy
 	t.agentCard = &extendedCard
-	return t.agentCard, nil
+	card := extendedCard // Return a copy
+	return &card, nil
 }
 
 // Destroy closes the transport and releases resources.
