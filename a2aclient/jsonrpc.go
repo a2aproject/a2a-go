@@ -176,7 +176,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	if httpResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
@@ -222,7 +222,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		httpResp.Body.Close()
+		_ = httpResp.Body.Close()
 		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
 	}
 
@@ -232,7 +232,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
 func parseSSEStream(body io.ReadCloser) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
-		defer body.Close()
+		defer func() { _ = body.Close() }()
 
 		scanner := bufio.NewScanner(body)
 

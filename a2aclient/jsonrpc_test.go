@@ -57,7 +57,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -101,7 +101,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"messageId":"msg-123","role":"agent","parts":[{"kind":"text","text":"Hello"}]}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -146,7 +146,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -184,7 +184,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 				Message: "Invalid Request",
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -227,7 +227,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 		}
 
 		for _, event := range events {
-			w.Write([]byte(event + "\n"))
+			_, _ = w.Write([]byte(event + "\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -316,7 +316,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 		}
 
 		for _, event := range events {
-			w.Write([]byte(event + "\n"))
+			_, _ = w.Write([]byte(event + "\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -389,7 +389,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 				ID:      req.ID,
 				Result:  json.RawMessage(`{"name":"Test Agent Extended","url":"http://example.com","supportsAuthenticatedExtendedCard":false,"description":"Extended description"}`),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -442,7 +442,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -478,7 +478,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 				ID:      req.ID,
 				Result:  json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -513,7 +513,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 				ID:      req.ID,
 				Result:  json.RawMessage(`[{"taskId":"task-1","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},{"taskId":"task-2","pushNotificationConfig":{"id":"config-2","url":"https://webhook2.example.com"}}]`),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -546,7 +546,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 				ID:      req.ID,
 				Result:  json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -589,7 +589,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 				ID:      req.ID,
 				Result:  json.RawMessage(`{}`),
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -635,7 +635,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -710,7 +710,7 @@ func TestJSONRPCTransport_GetAgentCard_Concurrent(t *testing.T) {
 			ID:      req.ID,
 			Result:  json.RawMessage(`{"name":"Extended Agent","url":"http://example.com","supportsAuthenticatedExtendedCard":false,"description":"Extended card"}`),
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
