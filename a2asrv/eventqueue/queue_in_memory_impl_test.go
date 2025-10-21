@@ -99,7 +99,7 @@ func TestInMemoryQueue_ReadEmpty(t *testing.T) {
 	select {
 	case <-completed:
 		t.Fatal("method should be blocking")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 		// unblock blocked code by writing to queue
 		err := q.Write(ctx, &a2a.Message{ID: "test"})
 		if err != nil {
@@ -130,7 +130,7 @@ func TestInMemoryQueue_WriteFull(t *testing.T) {
 	select {
 	case <-completed:
 		t.Fatal("method should be blocking")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 		// unblock blocked code by realising queue buffer
 		_, err := q.Read(ctx)
 		if err != nil {
@@ -232,7 +232,7 @@ func TestInMemoryQueue_BlockedWriteOnFullQueueThenClose(t *testing.T) {
 		t.Fatal("method should be blocking")
 	case <-completed2:
 		t.Fatal("method should be blocking")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 		// unblock blocked code by closing queue
 		err := q.Close()
 		if err != nil {
