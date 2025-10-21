@@ -51,8 +51,6 @@ func (m *MockQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error
 	return m.Manager.Destroy(ctx, taskID)
 }
 
-type MockQueueManagerOption func(*MockQueueManager)
-
 // WithGetOrCreateMock overrides GetOrCreate execution
 func (m *MockQueueManager) WithGetOrCreateMock(queue eventqueue.Queue, err error) *MockQueueManager {
 	m.GetOrCreateFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
@@ -97,7 +95,7 @@ func (m *MockQueueManager) ClearDestroyMock() *MockQueueManager {
 
 // NewQueueManagerMock allows to mock execution of manager operations.
 // Without any overrides it defaults to in memory implementation.
-func NewQueueManagerMock(options ...MockQueueManagerOption) *MockQueueManager {
+func NewQueueManagerMock() *MockQueueManager {
 	return &MockQueueManager{
 		Manager: eventqueue.NewInMemoryManager(),
 	}

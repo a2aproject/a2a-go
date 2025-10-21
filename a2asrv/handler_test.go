@@ -472,12 +472,22 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 			}
 			handler := NewHandler(executor, WithTaskStore(store))
 
-			got, err := handler.OnCancelTask(ctx, tt.params)
-			if !cmp.Equal(err, tt.wantErr, cmp.Comparer(errors.Is)) && (err == nil || tt.wantErr == nil || err.Error() != tt.wantErr.Error()) {
-				t.Errorf("OnCancelTask() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("OnCancelTask() mismatch (-want +got):\n%s", diff)
+			result, err := handler.OnCancelTask(ctx, tt.params)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("OnCancelTask() error = %v, wantErr nil", err)
+				}
+
+				if diff := cmp.Diff(result, tt.want); diff != "" {
+					t.Errorf("OnCancelTask() got = %v, want %v", result, tt.want)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("OnCancelTask() error = nil, wantErr %q", tt.wantErr)
+				}
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf("OnCancelTask() error = %v, wantErr %v", err, tt.wantErr)
+				}
 			}
 		})
 	}

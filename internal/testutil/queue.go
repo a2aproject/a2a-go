@@ -51,8 +51,6 @@ func (m *MockEventQueue) Close() error {
 	return m.Queue.Close()
 }
 
-type MockEventQueueOption func(*MockEventQueue)
-
 // WithReadMock overrides Read execution
 func (m *MockEventQueue) WithReadMock(event a2a.Event, err error) *MockEventQueue {
 	m.ReadFunc = func(ctx context.Context) (a2a.Event, error) {
@@ -97,7 +95,7 @@ func (m *MockEventQueue) ClearCloseMock() *MockEventQueue {
 
 // NewEventQueueMock allows to mock execution of read, write and close.
 // Without any overrides it defaults to in memory implementation.
-func NewEventQueueMock(options ...MockEventQueueOption) *MockEventQueue {
+func NewEventQueueMock() *MockEventQueue {
 	return &MockEventQueue{
 		Queue: eventqueue.NewInMemoryQueue(512),
 	}
