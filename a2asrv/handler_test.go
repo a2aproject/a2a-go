@@ -492,24 +492,13 @@ func TestDefaultRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done"),
 	}
 
-	firstEventSent := make(chan struct{})
 	ts := testutil.NewTaskStoreMock().WithTask(ctx, taskSeed)
-	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			q.Write(ctx, wantEvents[0])
-			close(firstEventSent) // Signal that the first event is in the queue.
-			for _, event := range wantEvents[1:] {
-				if err := q.Write(ctx, event); err != nil {
-					return err
-				}
-			}
-			return nil
-		},
-	}
+	executor := newEventReplayAgent(wantEvents, nil)
 	handler := NewHandler(executor, WithTaskStore(ts))
 
 	go handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}})
-	<-firstEventSent // Wait for the execution to start and send the first event.
+	// Wait for the execution to start and send the first event.
+	<-executor.firstEventSent
 
 	gotEvents, err := collectEvents(handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{ID: taskSeed.ID}))
 	if err != nil {
@@ -631,6 +620,7 @@ type mockAgentExecutor struct {
 	executeCalled      bool
 	capturedContext    context.Context
 	capturedReqContext *RequestContext
+	firstEventSent     chan struct{}
 
 	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 	CancelFunc  func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
@@ -654,16 +644,21 @@ func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx *RequestContext, 
 }
 
 func newEventReplayAgent(toSend []a2a.Event, err error) *mockAgentExecutor {
-	return &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			for _, event := range toSend {
-				if err := q.Write(ctx, event); err != nil {
-					return err
-				}
-			}
-			return err
-		},
+	m := &mockAgentExecutor{
+		firstEventSent: make(chan struct{}),
 	}
+	m.ExecuteFunc = func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+		for i, event := range toSend {
+			if err := q.Write(ctx, event); err != nil {
+				return err
+			}
+			if i == 0 {
+				close(m.firstEventSent) // Signal that the first event is in the queue.
+			}
+		}
+		return err
+	}
+	return m
 }
 
 func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
