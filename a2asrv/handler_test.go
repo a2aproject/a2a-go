@@ -372,7 +372,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			input: &a2a.MessageSendParams{
 				Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
 			},
-			wantErr: fmt.Errorf("%w: task in a terminal state %q", a2a.ErrInvalidRequest, a2a.TaskStateCompleted),
+			wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidRequest),
 		},
 	}
 
@@ -474,7 +474,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		{
 			name:    "missing TaskID",
 			query:   &a2a.TaskQueryParams{ID: ""},
-			wantErr: fmt.Errorf("%w: missing TaskID", a2a.ErrInvalidRequest),
+			wantErr: fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest),
 		},
 		{
 			name:    "store Get() fails",

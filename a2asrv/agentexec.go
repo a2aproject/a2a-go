@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -66,11 +67,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, fmt.Errorf("%w: message contextID different from task contextID", a2a.ErrInvalidRequest)
+			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("%w: task in a terminal state %q", a2a.ErrInvalidRequest, storedTask.Status.State)
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
 		}
 
 		task = storedTask
@@ -107,9 +108,6 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
 	}
-	if task == nil {
-		return a2a.ErrTaskNotFound
-	}
 	c.processor.init(taskupdate.NewManager(c.taskStore, task))
 
 	if task.Status.State == a2a.TaskStateCanceled {
@@ -140,31 +138,25 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 type processor struct {
 	// Processor is running in event consumer goroutine, but request context loading
 	// happens in event consumer goroutine. Once request context is loaded and validate the processor
-	// gets initialized. A channel is used here for establishing "init() happens-before consumer
-	// starts processing the first event.
-	initialized   chan struct{}
+	// gets initialized.
+	initialize    sync.Once
 	updateManager *taskupdate.Manager
 }
 
 func newProcessor() *processor {
-	return &processor{initialized: make(chan struct{})}
+	return &processor{}
 }
 
 func (p *processor) init(um *taskupdate.Manager) {
-	p.updateManager = um
-	close(p.initialized)
+	p.initialize.Do(func() {
+		p.updateManager = um
+	})
 }
 
 // Process implements taskexec.Processor interface.
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
-	select {
-	case <-p.initialized:
-	case <-ctx.Done():
-		return nil, fmt.Errorf("processor init canceled: %w", ctx.Err())
-	}
-
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {
 		var result a2a.SendMessageResult = msg
