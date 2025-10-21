@@ -132,7 +132,10 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 func TestJSONRPCTransport_GetTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
+		}
 
 		if req.Method != "tasks/get" {
 			t.Errorf("Expected method: tasks/get, got %s", req.Method)
@@ -168,7 +171,10 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
+		}
 
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
@@ -286,7 +292,10 @@ data: {"jsonrpc":"2.0","id":"2","result":{"role":"agent"}}
 func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
+		}
 
 		if req.Method != "tasks/resubscribe" {
 			t.Errorf("Expected method: tasks/resubscribe, got %s", req.Method)
@@ -365,7 +374,10 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	t.Run("extended card support", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req jsonrpcRequest
-			json.NewDecoder(r.Body).Decode(&req)
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("Failed to decode request: %v", err)
+				return
+			}
 
 			if req.Method != "agent/getAuthenticatedExtendedCard" {
 				t.Errorf("Expected method: agent/getAuthenticatedExtendedCard, got %s", req.Method)
@@ -416,7 +428,10 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
+		}
 
 		if req.Method != "tasks/cancel" {
 			t.Errorf("Expected method: tasks/cancel, got %s", req.Method)
@@ -610,7 +625,10 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonrpcRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
+		}
 
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",

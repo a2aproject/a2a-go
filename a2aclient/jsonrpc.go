@@ -301,7 +301,7 @@ func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2
 			yield(nil, err)
 			return
 		}
-		defer body.Close()
+		// parseSSEStream takes ownership of body and will close it
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
@@ -360,7 +360,7 @@ func (t *jsonrpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskID
 			yield(nil, err)
 			return
 		}
-		defer body.Close()
+		// parseSSEStream takes ownership of body and will close it
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
@@ -498,7 +498,7 @@ func unmarshalEvent(data json.RawMessage) (a2a.Event, error) {
 				// This is definitely a Task (has id + status.state)
 				var task a2a.Task
 				if err := json.Unmarshal(data, &task); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
 				}
 				return &task, nil
 			}
@@ -509,7 +509,7 @@ func unmarshalEvent(data json.RawMessage) (a2a.Event, error) {
 	if _, hasRole := eventMap["role"]; hasRole {
 		var msg a2a.Message
 		if err := json.Unmarshal(data, &msg); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
 		}
 		return &msg, nil
 	}
@@ -521,7 +521,7 @@ func unmarshalEvent(data json.RawMessage) (a2a.Event, error) {
 				// This is definitely a TaskStatusUpdateEvent
 				var statusUpdate a2a.TaskStatusUpdateEvent
 				if err := json.Unmarshal(data, &statusUpdate); err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
 				}
 				return &statusUpdate, nil
 			}
@@ -531,7 +531,7 @@ func unmarshalEvent(data json.RawMessage) (a2a.Event, error) {
 		if _, hasArtifact := eventMap["artifact"]; hasArtifact {
 			var artifactUpdate a2a.TaskArtifactUpdateEvent
 			if err := json.Unmarshal(data, &artifactUpdate); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
 			}
 			return &artifactUpdate, nil
 		}
