@@ -145,7 +145,8 @@ func TestManager_Execute(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
@@ -165,7 +166,8 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 
 	executor := newExecutor()
 	executor.processErr = errors.New("test error")
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -184,7 +186,8 @@ func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 
 	executor := newExecutor()
 	executor.executeErr = errors.New("test error")
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -202,7 +205,8 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	executor.executeErr = errors.New("test error")
 	executor.block = make(chan struct{})
 	executor.testProcessor.block = make(chan struct{})
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -227,7 +231,8 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	executor := newExecutor()
 	executor.block = make(chan struct{})
 	executor.processErr = errors.New("test error")
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -246,7 +251,8 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
 
 	executor := newExecutor()
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -267,13 +273,8 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 
 			sub, _ := newSubscription(t.Context(), execution)
 			waitSubscribed.Done()
-			defer func() {
-				if err := sub.cancel(t.Context()); err != nil {
-					t.Errorf("subscription.cancel() failed: %v", err)
-				}
-			}()
 
-			for event := range sub.events(ctx) {
+			for event := range sub.Events(ctx) {
 				mu.Lock()
 				consumed[consumerI] = append(consumed[consumerI], event)
 				mu.Unlock()
@@ -313,7 +314,8 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -343,7 +345,8 @@ func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -390,7 +393,8 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -477,7 +481,7 @@ func TestManager_NotAllowedToExecuteWhileCanceling(t *testing.T) {
 	}()
 	<-canceler.cancelCalled
 
-	execution, err := manager.Execute(ctx, tid, newExecutor())
+	execution, _, err := manager.Execute(ctx, tid, newExecutor())
 	if execution != nil || !errors.Is(err, ErrCancelationInProgress) {
 		t.Fatalf("manager.Execute() = (%v, %v), want %v", execution, err, ErrCancelationInProgress)
 	}
@@ -499,7 +503,8 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	execution, err := manager.Execute(ctx, tid, executor)
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("maanger.Execute() failed with %v", err)
 	}
@@ -540,7 +545,8 @@ func TestManager_GetExecution(t *testing.T) {
 
 	executor := newExecutor()
 	executor.nextEventTerminal = true
-	startedExecution, err := manager.Execute(ctx, tid, executor)
+	startedExecution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
