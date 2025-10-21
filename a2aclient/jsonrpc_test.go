@@ -747,9 +747,8 @@ func TestJSONRPCTransport_GetAgentCard_Concurrent(t *testing.T) {
 		callCount++
 	}
 
-	// The mutex should ensure only one network call is made (or at most a few)
-	// due to the double-check pattern
-	if callCount > 3 {
-		t.Errorf("Expected at most 3 calls to extended card endpoint, got %d", callCount)
+	// The double-checked locking should ensure exactly one network call is made
+	if callCount != 1 {
+		t.Errorf("Expected exactly 1 call to extended card endpoint, got %d", callCount)
 	}
 }

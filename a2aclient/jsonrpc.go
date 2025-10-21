@@ -31,6 +31,30 @@ import (
 	"github.com/google/uuid"
 )
 
+// JSON-RPC 2.0 protocol constants
+const (
+	jsonrpcVersion = "2.0"
+
+	// HTTP headers
+	contentTypeJSON   = "application/json"
+	acceptEventStream = "text/event-stream"
+
+	// JSON-RPC method names per A2A spec §7
+	methodMessageSend              = "message/send"
+	methodMessageStream            = "message/stream"
+	methodTasksGet                 = "tasks/get"
+	methodTasksCancel              = "tasks/cancel"
+	methodTasksResubscribe         = "tasks/resubscribe"
+	methodPushConfigGet            = "tasks/pushNotificationConfig/get"
+	methodPushConfigSet            = "tasks/pushNotificationConfig/set"
+	methodPushConfigList           = "tasks/pushNotificationConfig/list"
+	methodPushConfigDelete         = "tasks/pushNotificationConfig/delete"
+	methodGetAuthenticatedExtended = "agent/getAuthenticatedExtendedCard"
+
+	// SSE data prefix
+	sseDataPrefix = "data: "
+)
+
 // JSONRPCOption configures optional parameters for the JSONRPC transport.
 // Options are applied during NewJSONRPCTransport initialization.
 type JSONRPCOption func(*jsonrpcTransport)
@@ -130,7 +154,7 @@ func (e *jsonrpcError) Error() string {
 // sendRequest sends a non-streaming JSON-RPC request and returns the response.
 func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
 	req := jsonrpcRequest{
-		JSONRPC: "2.0",
+		JSONRPC: jsonrpcVersion,
 		Method:  method,
 		Params:  params,
 		ID:      uuid.New().String(),
@@ -146,7 +170,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", contentTypeJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -173,7 +197,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
 func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params interface{}) (io.ReadCloser, error) {
 	req := jsonrpcRequest{
-		JSONRPC: "2.0",
+		JSONRPC: jsonrpcVersion,
 		Method:  method,
 		Params:  params,
 		ID:      uuid.New().String(),
@@ -189,8 +213,8 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
+	httpReq.Header.Set("Content-Type", contentTypeJSON)
+	httpReq.Header.Set("Accept", acceptEventStream)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -216,8 +240,8 @@ func parseSSEStream(body io.ReadCloser) iter.Seq2[json.RawMessage, error] {
 			line := scanner.Text()
 
 			// SSE data lines start with "data: "
-			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimPrefix(line, "data: ")
+			if strings.HasPrefix(line, sseDataPrefix) {
+				data := strings.TrimPrefix(line, sseDataPrefix)
 
 				var resp jsonrpcResponse
 				if err := json.Unmarshal([]byte(data), &resp); err != nil {
@@ -245,7 +269,7 @@ func parseSSEStream(body io.ReadCloser) iter.Seq2[json.RawMessage, error] {
 
 // SendMessage sends a non-streaming message to the agent.
 func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	result, err := t.sendRequest(ctx, "message/send", message)
+	result, err := t.sendRequest(ctx, methodMessageSend, message)
 	if err != nil {
 		return nil, err
 	}
@@ -272,26 +296,12 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.Message
 // SendStreamingMessage sends a streaming message to the agent.
 func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		// Create done channel and defer close immediately to prevent goroutine leak
-		done := make(chan struct{})
-		defer close(done)
-
-		body, err := t.sendStreamingRequest(ctx, "message/stream", message)
+		body, err := t.sendStreamingRequest(ctx, methodMessageStream, message)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 		defer body.Close()
-
-		// Monitor context cancellation to interrupt blocked reads
-		go func() {
-			select {
-			case <-ctx.Done():
-				// Context canceled - defer will handle cleanup
-			case <-done:
-				// Function exiting normally - cleanup handled by defer
-			}
-		}()
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
@@ -314,7 +324,7 @@ func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2
 
 // GetTask retrieves the current state of a task.
 func (t *jsonrpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, "tasks/get", query)
+	result, err := t.sendRequest(ctx, methodTasksGet, query)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +339,7 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryPara
 
 // CancelTask requests cancellation of a task.
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, "tasks/cancel", id)
+	result, err := t.sendRequest(ctx, methodTasksCancel, id)
 	if err != nil {
 		return nil, err
 	}
@@ -345,26 +355,12 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams)
 // ResubscribeToTask reconnects to an SSE stream for an ongoing task.
 func (t *jsonrpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		// Create done channel and defer close immediately to prevent goroutine leak
-		done := make(chan struct{})
-		defer close(done)
-
-		body, err := t.sendStreamingRequest(ctx, "tasks/resubscribe", id)
+		body, err := t.sendStreamingRequest(ctx, methodTasksResubscribe, id)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 		defer body.Close()
-
-		// Monitor context cancellation to interrupt blocked reads
-		go func() {
-			select {
-			case <-ctx.Done():
-				// Context canceled - defer will handle cleanup
-			case <-done:
-				// Function exiting normally - cleanup handled by defer
-			}
-		}()
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
@@ -387,7 +383,7 @@ func (t *jsonrpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskID
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, "tasks/pushNotificationConfig/get", params)
+	result, err := t.sendRequest(ctx, methodPushConfigGet, params)
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +398,7 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.Ge
 
 // ListTaskPushConfig lists push notification configurations.
 func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, "tasks/pushNotificationConfig/list", params)
+	result, err := t.sendRequest(ctx, methodPushConfigList, params)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +413,7 @@ func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.L
 
 // SetTaskPushConfig sets or updates the push notification configuration for a task.
 func (t *jsonrpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, "tasks/pushNotificationConfig/set", params)
+	result, err := t.sendRequest(ctx, methodPushConfigSet, params)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +428,7 @@ func (t *jsonrpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.Ta
 
 // DeleteTaskPushConfig deletes a push notification configuration.
 func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	_, err := t.sendRequest(ctx, "tasks/pushNotificationConfig/delete", params)
+	_, err := t.sendRequest(ctx, methodPushConfigDelete, params)
 	return err
 }
 
@@ -441,44 +437,31 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a
 // this will call the agent/getAuthenticatedExtendedCard method.
 // This method is safe for concurrent access.
 func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	// Check with read lock first
+	// Fast path: check if we have a card that doesn't need extension
 	t.cardMu.RLock()
 	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
 		card := t.agentCard
 		t.cardMu.RUnlock()
 		return card, nil
 	}
-
-	// Check if we have a card and if it needs extended fetch
-	hasCard := t.agentCard != nil
-	needsExtended := hasCard && t.agentCard.SupportsAuthenticatedExtendedCard
 	t.cardMu.RUnlock()
 
-	// If we don't have a card at all, we can't fetch extended card yet
-	// This shouldn't happen in normal usage as the factory provides the card
-	if !hasCard {
-		return nil, fmt.Errorf("no agent card available")
-	}
-
-	// If we don't need extended card, return the cached one
-	if !needsExtended {
-		t.cardMu.RLock()
-		card := t.agentCard
-		t.cardMu.RUnlock()
-		return card, nil
-	}
-
-	// Acquire write lock to fetch extended card
+	// Slow path: need to fetch extended card (or no card at all)
 	t.cardMu.Lock()
 	defer t.cardMu.Unlock()
 
-	// Double-check after acquiring lock (another goroutine may have fetched it)
+	// Double-check: another goroutine may have fetched it
 	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
 		return t.agentCard, nil
 	}
 
+	// No card available
+	if t.agentCard == nil {
+		return nil, fmt.Errorf("no agent card available")
+	}
+
 	// Fetch authenticated extended card
-	result, err := t.sendRequest(ctx, "agent/getAuthenticatedExtendedCard", nil)
+	result, err := t.sendRequest(ctx, methodGetAuthenticatedExtended, nil)
 	if err != nil {
 		return nil, err
 	}
