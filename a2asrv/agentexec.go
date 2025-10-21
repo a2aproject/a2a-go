@@ -17,7 +17,6 @@ package a2asrv
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -139,7 +138,6 @@ type processor struct {
 	// Processor is running in event consumer goroutine, but request context loading
 	// happens in event consumer goroutine. Once request context is loaded and validate the processor
 	// gets initialized.
-	initialize    sync.Once
 	updateManager *taskupdate.Manager
 }
 
@@ -148,9 +146,7 @@ func newProcessor() *processor {
 }
 
 func (p *processor) init(um *taskupdate.Manager) {
-	p.initialize.Do(func() {
-		p.updateManager = um
-	})
+	p.updateManager = um
 }
 
 // Process implements taskexec.Processor interface.
