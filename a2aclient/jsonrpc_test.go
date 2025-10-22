@@ -55,7 +55,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`),
+			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`),
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -99,7 +99,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  json.RawMessage(`{"messageId":"msg-123","role":"agent","parts":[{"kind":"text","text":"Hello"}]}`),
+			Result:  json.RawMessage(`{"kind":"message","messageId":"msg-123","role":"agent","parts":[{"kind":"text","text":"Hello"}]}`),
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -144,7 +144,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
+			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -218,11 +218,11 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 
 		// Send multiple SSE events
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"id":"task-123","contextId":"ctx-123","status":{"state":"working"}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"working"}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"messageId":"msg-1","role":"agent","parts":[{"kind":"text","text":"Processing..."}]}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"kind":"message","messageId":"msg-1","role":"agent","parts":[{"kind":"text","text":"Processing..."}]}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}}`,
 			``,
 		}
 
@@ -309,9 +309,9 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 
 		// Send task updates via SSE
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"id":"task-123","contextId":"ctx-123","status":{"state":"working"}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"working"}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"taskId":"task-123","contextId":"ctx-123","newStatus":{"state":"completed"}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"kind":"status-update","taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"completed"}}}`,
 			``,
 		}
 
@@ -371,47 +371,26 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 		}
 	})
 
-	t.Run("extended card support", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req jsonrpcRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Errorf("Failed to decode request: %v", err)
-				return
-			}
-
-			if req.Method != "agent/getAuthenticatedExtendedCard" {
-				t.Errorf("Expected method: agent/getAuthenticatedExtendedCard, got %s", req.Method)
-			}
-
-			// Return extended card with more details
-			resp := jsonrpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result:  json.RawMessage(`{"name":"Test Agent Extended","url":"http://example.com","supportsAuthenticatedExtendedCard":false,"description":"Extended description"}`),
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-		}))
-		defer server.Close()
-
+	t.Run("returns provided card", func(t *testing.T) {
 		card := &a2a.AgentCard{
-			Name:                              "Test Agent",
-			URL:                               server.URL,
-			SupportsAuthenticatedExtendedCard: true,
+			Name:        "Test Agent",
+			URL:         "http://example.com",
+			Description: "Test description",
 		}
 
-		transport := NewJSONRPCTransport(server.URL, card)
+		transport := NewJSONRPCTransport("http://example.com", card)
 
 		result, err := transport.GetAgentCard(context.Background())
 		if err != nil {
 			t.Fatalf("GetAgentCard failed: %v", err)
 		}
 
-		if result.Name != "Test Agent Extended" {
-			t.Errorf("Expected extended name, got %s", result.Name)
+		if result.Name != "Test Agent" {
+			t.Errorf("Expected name 'Test Agent', got %s", result.Name)
 		}
 
-		if result.Description != "Extended description" {
-			t.Errorf("Expected extended description, got %s", result.Description)
+		if result.Description != "Test description" {
+			t.Errorf("Expected description 'Test description', got %s", result.Description)
 		}
 	})
 
@@ -440,7 +419,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`),
+			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`),
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -686,41 +665,13 @@ func TestJSONRPCTransport_ErrorMethod(t *testing.T) {
 
 func TestJSONRPCTransport_GetAgentCard_Concurrent(t *testing.T) {
 	// Test that concurrent calls to GetAgentCard don't cause race conditions
-	// and only make one network call for extended card fetch
-
-	var callCount int
-	callChan := make(chan int, 10)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
-		}
-
-		if req.Method != "agent/getAuthenticatedExtendedCard" {
-			t.Errorf("Expected method: agent/getAuthenticatedExtendedCard, got %s", req.Method)
-		}
-
-		// Track how many times this endpoint is called
-		callChan <- 1
-
-		// Return extended card
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"name":"Extended Agent","url":"http://example.com","supportsAuthenticatedExtendedCard":false,"description":"Extended card"}`),
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
 	card := &a2a.AgentCard{
-		Name:                              "Basic Agent",
-		URL:                               server.URL,
-		SupportsAuthenticatedExtendedCard: true,
+		Name:        "Test Agent",
+		URL:         "http://example.com",
+		Description: "Test description",
 	}
 
-	transport := NewJSONRPCTransport(server.URL, card)
+	transport := NewJSONRPCTransport("http://example.com", card)
 
 	// Launch 10 concurrent goroutines calling GetAgentCard
 	const numGoroutines = 10
@@ -749,24 +700,13 @@ func TestJSONRPCTransport_GetAgentCard_Concurrent(t *testing.T) {
 		}
 	}
 
-	// Verify all goroutines got valid extended cards
-	for i, card := range cards {
-		if card.Name != "Extended Agent" {
-			t.Errorf("Goroutine %d: Expected extended name, got %s", i, card.Name)
+	// Verify all goroutines got the same card
+	for i, result := range cards {
+		if result.Name != "Test Agent" {
+			t.Errorf("Goroutine %d: Expected name 'Test Agent', got %s", i, result.Name)
 		}
-		if card.Description != "Extended card" {
-			t.Errorf("Goroutine %d: Expected extended description, got %s", i, card.Description)
+		if result.Description != "Test description" {
+			t.Errorf("Goroutine %d: Expected description 'Test description', got %s", i, result.Description)
 		}
-	}
-
-	// Count the actual number of calls made
-	close(callChan)
-	for range callChan {
-		callCount++
-	}
-
-	// The double-checked locking should ensure exactly one network call is made
-	if callCount != 1 {
-		t.Errorf("Expected exactly 1 call to extended card endpoint, got %d", callCount)
 	}
 }

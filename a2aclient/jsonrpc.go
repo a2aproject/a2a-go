@@ -23,7 +23,6 @@ import (
 	"io"
 	"iter"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -116,15 +115,14 @@ type jsonrpcTransport struct {
 	url        string
 	httpClient *http.Client
 	agentCard  *a2a.AgentCard
-	cardMu     sync.RWMutex // protects agentCard
 }
 
 // jsonrpcRequest represents a JSON-RPC 2.0 request.
 type jsonrpcRequest struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
-	ID      string      `json:"id"`
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+	ID      string `json:"id"`
 }
 
 // jsonrpcResponse represents a JSON-RPC 2.0 response.
@@ -151,7 +149,7 @@ func (e *jsonrpcError) Error() string {
 }
 
 // sendRequest sends a non-streaming JSON-RPC request and returns the response.
-func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	req := jsonrpcRequest{
 		JSONRPC: jsonrpcVersion,
 		Method:  method,
@@ -194,7 +192,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 }
 
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
-func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params interface{}) (io.ReadCloser, error) {
+func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params any) (io.ReadCloser, error) {
 	req := jsonrpcRequest{
 		JSONRPC: jsonrpcVersion,
 		Method:  method,
@@ -229,10 +227,8 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
-func parseSSEStream(body io.ReadCloser) iter.Seq2[json.RawMessage, error] {
+func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
-		defer func() { _ = body.Close() }()
-
 		scanner := bufio.NewScanner(body)
 		prefixBytes := []byte(sseDataPrefix)
 
@@ -274,8 +270,8 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.Message
 		return nil, err
 	}
 
-	// unmarshalEvent can distinguish between Task and Message types
-	event, err := unmarshalEvent(result)
+	// Use a2a.UnmarshalEventJSON to determine the type based on the 'kind' field
+	event, err := a2a.UnmarshalEventJSON(result)
 	if err != nil {
 		return nil, fmt.Errorf("result violates A2A spec - could not determine type: %w; data: %s", err, string(result))
 	}
@@ -293,14 +289,14 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.Message
 
 // streamRequestToEvents handles SSE streaming for JSON-RPC methods.
 // It converts the SSE stream into a sequence of A2A events.
-func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params interface{}) iter.Seq2[a2a.Event, error] {
+func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params any) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		body, err := t.sendStreamingRequest(ctx, method, params)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
-		// parseSSEStream takes ownership of body and will close it
+		defer func() { _ = body.Close() }()
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
@@ -308,7 +304,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 				return
 			}
 
-			event, err := unmarshalEvent(result)
+			event, err := a2a.UnmarshalEventJSON(result)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -413,50 +409,11 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a
 }
 
 // GetAgentCard retrieves the agent's card.
-// If the card supports authenticated extended cards and we haven't fetched it yet,
-// this will call the agent/getAuthenticatedExtendedCard method.
-// This method is safe for concurrent access and returns a copy of the cached card
-// to prevent data races from concurrent modifications.
 func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	// Fast path: check if we have a card that doesn't need extension
-	t.cardMu.RLock()
-	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
-		card := *t.agentCard // Return a copy
-		t.cardMu.RUnlock()
-		return &card, nil
-	}
-	t.cardMu.RUnlock()
-
-	// Slow path: need to fetch extended card (or no card at all)
-	t.cardMu.Lock()
-	defer t.cardMu.Unlock()
-
-	// Double-check: another goroutine may have fetched it
-	if t.agentCard != nil && !t.agentCard.SupportsAuthenticatedExtendedCard {
-		card := *t.agentCard // Return a copy
-		return &card, nil
-	}
-
-	// No card available
 	if t.agentCard == nil {
 		return nil, fmt.Errorf("no agent card available")
 	}
-
-	// Fetch authenticated extended card
-	result, err := t.sendRequest(ctx, methodGetAuthenticatedExtended, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var extendedCard a2a.AgentCard
-	if err := json.Unmarshal(result, &extendedCard); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal extended agent card: %w", err)
-	}
-
-	// Cache the extended card and return a copy
-	t.agentCard = &extendedCard
-	card := extendedCard // Return a copy
-	return &card, nil
+	return t.agentCard, nil
 }
 
 // Destroy closes the transport and releases resources.
@@ -464,61 +421,4 @@ func (t *jsonrpcTransport) Destroy() error {
 	// HTTP client doesn't need explicit cleanup in most cases
 	// If a custom client with cleanup is needed, implement via options
 	return nil
-}
-
-// unmarshalEvent unmarshals a JSON-RPC result into an A2A Event.
-func unmarshalEvent(data json.RawMessage) (a2a.Event, error) {
-	// Try to determine event type by checking specific field combinations
-	var eventMap map[string]interface{}
-	if err := json.Unmarshal(data, &eventMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
-	}
-
-	// Task: has "id" + "status" with "state" field
-	if _, hasID := eventMap["id"]; hasID {
-		if statusMap, hasStatus := eventMap["status"].(map[string]interface{}); hasStatus {
-			if _, hasState := statusMap["state"]; hasState {
-				// This is definitely a Task (has id + status.state)
-				var task a2a.Task
-				if err := json.Unmarshal(data, &task); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
-				}
-				return &task, nil
-			}
-		}
-	}
-
-	// Message: has "role" field (messageId or id + role)
-	if _, hasRole := eventMap["role"]; hasRole {
-		var msg a2a.Message
-		if err := json.Unmarshal(data, &msg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
-		}
-		return &msg, nil
-	}
-
-	// TaskStatusUpdateEvent: has "taskId" + "newStatus"
-	if _, hasTaskID := eventMap["taskId"]; hasTaskID {
-		if newStatusMap, hasNewStatus := eventMap["newStatus"].(map[string]interface{}); hasNewStatus {
-			if _, hasState := newStatusMap["state"]; hasState {
-				// This is definitely a TaskStatusUpdateEvent
-				var statusUpdate a2a.TaskStatusUpdateEvent
-				if err := json.Unmarshal(data, &statusUpdate); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
-				}
-				return &statusUpdate, nil
-			}
-		}
-
-		// TaskArtifactUpdateEvent: has "taskId" + "artifact"
-		if _, hasArtifact := eventMap["artifact"]; hasArtifact {
-			var artifactUpdate a2a.TaskArtifactUpdateEvent
-			if err := json.Unmarshal(data, &artifactUpdate); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
-			}
-			return &artifactUpdate, nil
-		}
-	}
-
-	return nil, fmt.Errorf("unknown event type: %s", string(data))
 }
