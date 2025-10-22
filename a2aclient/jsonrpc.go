@@ -23,7 +23,6 @@ import (
 	"io"
 	"iter"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -235,16 +234,17 @@ func parseSSEStream(body io.ReadCloser) iter.Seq2[json.RawMessage, error] {
 		defer func() { _ = body.Close() }()
 
 		scanner := bufio.NewScanner(body)
+		prefixBytes := []byte(sseDataPrefix)
 
 		for scanner.Scan() {
-			line := scanner.Text()
+			lineBytes := scanner.Bytes()
 
 			// SSE data lines start with "data: "
-			if strings.HasPrefix(line, sseDataPrefix) {
-				data := strings.TrimPrefix(line, sseDataPrefix)
+			if bytes.HasPrefix(lineBytes, prefixBytes) {
+				data := lineBytes[len(prefixBytes):]
 
 				var resp jsonrpcResponse
-				if err := json.Unmarshal([]byte(data), &resp); err != nil {
+				if err := json.Unmarshal(data, &resp); err != nil {
 					yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
 					return
 				}
