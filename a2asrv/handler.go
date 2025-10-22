@@ -24,6 +24,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/log/logger"
 )
 
 var ErrUnimplemented = errors.New("unimplemented")
@@ -69,6 +71,7 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	reqContextInterceptors []RequestContextInterceptor
+	logger                 log.Logger
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -77,6 +80,16 @@ type RequestHandlerOption func(*defaultRequestHandler)
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.taskStore = store
+	}
+}
+
+// WithLogger overrides Logger with a custom implementation. Any injected dependency will be able
+// to access it through either github.com/a2aproject/a2a-go/log package-level functions or directly
+// by getting it FromContext(ctx).
+// If not provided, defaults to github.com/golang/glog based implementation.
+func WithLogger(logger log.Logger) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.logger = logger
 	}
 }
 
@@ -118,6 +131,10 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 
 	for _, option := range options {
 		option(h)
+	}
+
+	if h.logger == nil {
+		h.logger = logger.Glog()
 	}
 
 	h.execManager = taskexec.NewManager(h.queueManager)
@@ -172,6 +189,8 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	// TODO(yarolegovich): attach request context values logger.With("task_id", taskID, ...) and add it to other methods
+	ctx = log.WithLogger(ctx, h.logger)
 	execution, subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
