@@ -44,7 +44,12 @@ type transportCandidate struct {
 }
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
-var defaultOptions = []FactoryOption{WithGRPCTransport()}
+// Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then gRPC.
+// See: https://github.com/a2aproject/a2a-python/blob/main/src/a2a/client/client_factory.py
+//
+//	https://github.com/a2aproject/a2a-java (JSON-RPC included by default)
+//	https://github.com/a2aproject/a2a-js (jsonrpc_transport_handler.ts)
+var defaultOptions = []FactoryOption{WithJSONRPCTransport(), WithGRPCTransport()}
 
 // NewFromCard is a helper for creating a Client configured without creating a factory.
 // It is equivalent to calling NewFromCard on a Factory created without any options.
