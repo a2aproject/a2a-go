@@ -173,6 +173,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
+	// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
 	defer func() { _ = httpResp.Body.Close() }()
 
 	if httpResp.StatusCode != http.StatusOK {
@@ -219,6 +220,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
+		// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
 		_ = httpResp.Body.Close()
 		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
 	}
@@ -296,6 +298,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 			yield(nil, err)
 			return
 		}
+		// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
 		defer func() { _ = body.Close() }()
 
 		for result, err := range parseSSEStream(body) {

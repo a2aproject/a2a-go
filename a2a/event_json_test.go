@@ -16,6 +16,7 @@ package a2a
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,10 +26,10 @@ func TestEventMarshalJSON(t *testing.T) {
 	now := time.Now()
 
 	testCases := []struct {
-		name      string
-		event     Event
-		wantKind  string
-		checkJSON func(t *testing.T, jsonStr string)
+		name           string
+		event          Event
+		wantKind       string
+		wantSubstrings []string
 	}{
 		{
 			name: "Message",
@@ -39,15 +40,8 @@ func TestEventMarshalJSON(t *testing.T) {
 					TextPart{Text: "hello"},
 				},
 			},
-			wantKind: "message",
-			checkJSON: func(t *testing.T, jsonStr string) {
-				if !contains(jsonStr, `"kind":"message"`) {
-					t.Errorf("Expected kind:message in JSON: %s", jsonStr)
-				}
-				if !contains(jsonStr, `"messageId":"msg-123"`) {
-					t.Errorf("Expected messageId in JSON: %s", jsonStr)
-				}
-			},
+			wantKind:       "message",
+			wantSubstrings: []string{`"kind":"message"`, `"messageId":"msg-123"`},
 		},
 		{
 			name: "Task",
@@ -59,15 +53,8 @@ func TestEventMarshalJSON(t *testing.T) {
 					Timestamp: &now,
 				},
 			},
-			wantKind: "task",
-			checkJSON: func(t *testing.T, jsonStr string) {
-				if !contains(jsonStr, `"kind":"task"`) {
-					t.Errorf("Expected kind:task in JSON: %s", jsonStr)
-				}
-				if !contains(jsonStr, `"id":"task-123"`) {
-					t.Errorf("Expected id in JSON: %s", jsonStr)
-				}
-			},
+			wantKind:       "task",
+			wantSubstrings: []string{`"kind":"task"`, `"id":"task-123"`},
 		},
 		{
 			name: "TaskStatusUpdateEvent",
@@ -80,15 +67,8 @@ func TestEventMarshalJSON(t *testing.T) {
 					Timestamp: &now,
 				},
 			},
-			wantKind: "status-update",
-			checkJSON: func(t *testing.T, jsonStr string) {
-				if !contains(jsonStr, `"kind":"status-update"`) {
-					t.Errorf("Expected kind:status-update in JSON: %s", jsonStr)
-				}
-				if !contains(jsonStr, `"taskId":"task-123"`) {
-					t.Errorf("Expected taskId in JSON: %s", jsonStr)
-				}
-			},
+			wantKind:       "status-update",
+			wantSubstrings: []string{`"kind":"status-update"`, `"taskId":"task-123"`},
 		},
 		{
 			name: "TaskArtifactUpdateEvent",
@@ -100,15 +80,8 @@ func TestEventMarshalJSON(t *testing.T) {
 					Parts: ContentParts{TextPart{Text: "result"}},
 				},
 			},
-			wantKind: "artifact-update",
-			checkJSON: func(t *testing.T, jsonStr string) {
-				if !contains(jsonStr, `"kind":"artifact-update"`) {
-					t.Errorf("Expected kind:artifact-update in JSON: %s", jsonStr)
-				}
-				if !contains(jsonStr, `"taskId":"task-123"`) {
-					t.Errorf("Expected taskId in JSON: %s", jsonStr)
-				}
-			},
+			wantKind:       "artifact-update",
+			wantSubstrings: []string{`"kind":"artifact-update"`, `"taskId":"task-123"`},
 		},
 	}
 
@@ -130,12 +103,14 @@ func TestEventMarshalJSON(t *testing.T) {
 			}
 
 			if kindCheck.Kind != tc.wantKind {
-				t.Errorf("Expected kind=%q, got %q", tc.wantKind, kindCheck.Kind)
+				t.Errorf("got kind %q, want %q", kindCheck.Kind, tc.wantKind)
 			}
 
-			// Run custom checks
-			if tc.checkJSON != nil {
-				tc.checkJSON(t, jsonStr)
+			// Check for required substrings
+			for _, substr := range tc.wantSubstrings {
+				if !strings.Contains(jsonStr, substr) {
+					t.Errorf("JSON missing %q: %s", substr, jsonStr)
+				}
 			}
 		})
 	}
@@ -159,10 +134,10 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Fatalf("Expected *Message, got %T", event)
 				}
 				if msg.ID != "msg-123" {
-					t.Errorf("Expected ID=msg-123, got %s", msg.ID)
+					t.Errorf("got ID %s, want msg-123", msg.ID)
 				}
 				if msg.Role != MessageRoleUser {
-					t.Errorf("Expected role=user, got %s", msg.Role)
+					t.Errorf("got role %s, want user", msg.Role)
 				}
 			},
 		},
@@ -176,10 +151,10 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Fatalf("Expected *Task, got %T", event)
 				}
 				if task.ID != "task-123" {
-					t.Errorf("Expected ID=task-123, got %s", task.ID)
+					t.Errorf("got ID %s, want task-123", task.ID)
 				}
 				if task.Status.State != TaskStateSubmitted {
-					t.Errorf("Expected state=submitted, got %s", task.Status.State)
+					t.Errorf("got state %s, want submitted", task.Status.State)
 				}
 			},
 		},
@@ -193,10 +168,10 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Fatalf("Expected *TaskStatusUpdateEvent, got %T", event)
 				}
 				if statusUpdate.TaskID != "task-123" {
-					t.Errorf("Expected taskId=task-123, got %s", statusUpdate.TaskID)
+					t.Errorf("got taskId %s, want task-123", statusUpdate.TaskID)
 				}
 				if statusUpdate.Status.State != TaskStateWorking {
-					t.Errorf("Expected state=working, got %s", statusUpdate.Status.State)
+					t.Errorf("got state %s, want working", statusUpdate.Status.State)
 				}
 			},
 		},
@@ -210,10 +185,10 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Fatalf("Expected *TaskArtifactUpdateEvent, got %T", event)
 				}
 				if artifactUpdate.TaskID != "task-123" {
-					t.Errorf("Expected taskId=task-123, got %s", artifactUpdate.TaskID)
+					t.Errorf("got taskId %s, want task-123", artifactUpdate.TaskID)
 				}
 				if artifactUpdate.Artifact.ID != "art-123" {
-					t.Errorf("Expected artifact ID=art-123, got %s", artifactUpdate.Artifact.ID)
+					t.Errorf("got artifact ID %s, want art-123", artifactUpdate.Artifact.ID)
 				}
 			},
 		},
@@ -268,8 +243,8 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 			if err == nil {
 				t.Fatal("Expected error, got nil")
 			}
-			if !contains(err.Error(), tc.wantErr) {
-				t.Errorf("Expected error containing %q, got: %v", tc.wantErr, err)
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("got error %v, want error containing %q", err, tc.wantErr)
 			}
 		})
 	}
@@ -356,18 +331,4 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 			}
 		})
 	}
-}
-
-// contains checks if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsAt(s, substr))
-}
-
-func containsAt(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

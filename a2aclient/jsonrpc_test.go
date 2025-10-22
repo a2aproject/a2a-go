@@ -32,10 +32,10 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request
 		if r.Method != "POST" {
-			t.Errorf("Expected POST, got %s", r.Method)
+			t.Errorf("got %s, want POST", r.Method)
 		}
 		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("Expected Content-Type: application/json, got %s", r.Header.Get("Content-Type"))
+			t.Errorf("got Content-Type %s, want application/json", r.Header.Get("Content-Type"))
 		}
 
 		// Parse request
@@ -45,10 +45,10 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 		}
 
 		if req.JSONRPC != "2.0" {
-			t.Errorf("Expected jsonrpc: 2.0, got %s", req.JSONRPC)
+			t.Errorf("got jsonrpc %s, want 2.0", req.JSONRPC)
 		}
 		if req.Method != "message/send" {
-			t.Errorf("Expected method: message/send, got %s", req.Method)
+			t.Errorf("got method %s, want message/send", req.Method)
 		}
 
 		// Send response
@@ -75,11 +75,11 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 
 	task, ok := result.(*a2a.Task)
 	if !ok {
-		t.Fatalf("Expected Task result, got %T", result)
+		t.Fatalf("got result type %T, want *Task", result)
 	}
 
 	if task.ID != "task-123" {
-		t.Errorf("Expected task ID task-123, got %s", task.ID)
+		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 		}
 
 		if req.Method != "message/send" {
-			t.Errorf("Expected method: message/send, got %s", req.Method)
+			t.Errorf("got method %s, want message/send", req.Method)
 		}
 
 		// Send Message response (has "role" field, not "status" field)
@@ -117,15 +117,15 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 
 	msg, ok := result.(*a2a.Message)
 	if !ok {
-		t.Fatalf("Expected Message result, got %T", result)
+		t.Fatalf("got result type %T, want *Message", result)
 	}
 
 	if msg.ID != "msg-123" {
-		t.Errorf("Expected message ID msg-123, got %s", msg.ID)
+		t.Errorf("got message ID %s, want msg-123", msg.ID)
 	}
 
 	if msg.Role != a2a.MessageRoleAgent {
-		t.Errorf("Expected role agent, got %s", msg.Role)
+		t.Errorf("got role %s, want agent", msg.Role)
 	}
 }
 
@@ -138,7 +138,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 		}
 
 		if req.Method != "tasks/get" {
-			t.Errorf("Expected method: tasks/get, got %s", req.Method)
+			t.Errorf("got method %s, want tasks/get", req.Method)
 		}
 
 		resp := jsonrpcResponse{
@@ -161,10 +161,10 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 	}
 
 	if task.ID != "task-123" {
-		t.Errorf("Expected task ID task-123, got %s", task.ID)
+		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 	if task.Status.State != a2a.TaskStateCompleted {
-		t.Errorf("Expected status completed, got %s", task.Status.State)
+		t.Errorf("got status %s, want completed", task.Status.State)
 	}
 }
 
@@ -195,23 +195,23 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	})
 
 	if err == nil {
-		t.Fatal("Expected error, got nil")
+		t.Fatal("got nil error, want error")
 	}
 
 	jsonrpcErr, ok := err.(*jsonrpcError)
 	if !ok {
-		t.Fatalf("Expected jsonrpcError, got %T", err)
+		t.Fatalf("got error type %T, want jsonrpcError", err)
 	}
 
 	if jsonrpcErr.Code != -32600 {
-		t.Errorf("Expected error code -32600, got %d", jsonrpcErr.Code)
+		t.Errorf("got error code %d, want -32600", jsonrpcErr.Code)
 	}
 }
 
 func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("Expected Accept: text/event-stream, got %s", r.Header.Get("Accept"))
+			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -248,22 +248,22 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	}
 
 	if len(events) != 3 {
-		t.Errorf("Expected 3 events, got %d", len(events))
+		t.Errorf("got %d events, want 3", len(events))
 	}
 
 	// First event should be a Task
 	if _, ok := events[0].(*a2a.Task); !ok {
-		t.Errorf("Expected first event to be Task, got %T", events[0])
+		t.Errorf("got events[0] type %T, want *Task", events[0])
 	}
 
 	// Second event should be a Message
 	if _, ok := events[1].(*a2a.Message); !ok {
-		t.Errorf("Expected second event to be Message, got %T", events[1])
+		t.Errorf("got events[1] type %T, want *Message", events[1])
 	}
 
 	// Third event should be a Task
 	if _, ok := events[2].(*a2a.Task); !ok {
-		t.Errorf("Expected third event to be Task, got %T", events[2])
+		t.Errorf("got events[2] type %T, want *Task", events[2])
 	}
 }
 
@@ -285,7 +285,7 @@ data: {"jsonrpc":"2.0","id":"2","result":{"role":"agent"}}
 	}
 
 	if len(results) != 2 {
-		t.Errorf("Expected 2 results, got %d", len(results))
+		t.Errorf("got %d results, want 2", len(results))
 	}
 }
 
@@ -298,11 +298,11 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 		}
 
 		if req.Method != "tasks/resubscribe" {
-			t.Errorf("Expected method: tasks/resubscribe, got %s", req.Method)
+			t.Errorf("got method %s, want tasks/resubscribe", req.Method)
 		}
 
 		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("Expected Accept: text/event-stream, got %s", r.Header.Get("Accept"))
+			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -337,17 +337,17 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	}
 
 	if len(events) != 2 {
-		t.Errorf("Expected 2 events, got %d", len(events))
+		t.Errorf("got %d events, want 2", len(events))
 	}
 
 	// First event should be a Task
 	if _, ok := events[0].(*a2a.Task); !ok {
-		t.Errorf("Expected first event to be Task, got %T", events[0])
+		t.Errorf("got events[0] type %T, want *Task", events[0])
 	}
 
 	// Second event should be a TaskStatusUpdateEvent
 	if _, ok := events[1].(*a2a.TaskStatusUpdateEvent); !ok {
-		t.Errorf("Expected second event to be TaskStatusUpdateEvent, got %T", events[1])
+		t.Errorf("got events[1] type %T, want *TaskStatusUpdateEvent", events[1])
 	}
 }
 
@@ -367,7 +367,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 		}
 
 		if result.Name != "Test Agent" {
-			t.Errorf("Expected name 'Test Agent', got %s", result.Name)
+			t.Errorf("got name %s, want Test Agent", result.Name)
 		}
 	})
 
@@ -386,11 +386,11 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 		}
 
 		if result.Name != "Test Agent" {
-			t.Errorf("Expected name 'Test Agent', got %s", result.Name)
+			t.Errorf("got name %s, want Test Agent", result.Name)
 		}
 
 		if result.Description != "Test description" {
-			t.Errorf("Expected description 'Test description', got %s", result.Description)
+			t.Errorf("got description %s, want Test description", result.Description)
 		}
 	})
 
@@ -399,7 +399,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 		_, err := transport.GetAgentCard(context.Background())
 		if err == nil {
-			t.Fatal("Expected error when no card provided, got nil")
+			t.Fatal("got nil error when no card provided, want error")
 		}
 	})
 }
@@ -413,7 +413,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 		}
 
 		if req.Method != "tasks/cancel" {
-			t.Errorf("Expected method: tasks/cancel, got %s", req.Method)
+			t.Errorf("got method %s, want tasks/cancel", req.Method)
 		}
 
 		resp := jsonrpcResponse{
@@ -436,7 +436,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("Expected status canceled, got %s", task.Status.State)
+		t.Errorf("got status %s, want canceled", task.Status.State)
 	}
 }
 
@@ -449,7 +449,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			}
 
 			if req.Method != "tasks/pushNotificationConfig/get" {
-				t.Errorf("Expected method: tasks/pushNotificationConfig/get, got %s", req.Method)
+				t.Errorf("got method %s, want tasks/pushNotificationConfig/get", req.Method)
 			}
 
 			resp := jsonrpcResponse{
@@ -472,7 +472,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}
 
 		if config.TaskID != "task-123" {
-			t.Errorf("Expected taskId task-123, got %s", config.TaskID)
+			t.Errorf("got taskId %s, want task-123", config.TaskID)
 		}
 	})
 
@@ -484,7 +484,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			}
 
 			if req.Method != "tasks/pushNotificationConfig/list" {
-				t.Errorf("Expected method: tasks/pushNotificationConfig/list, got %s", req.Method)
+				t.Errorf("got method %s, want tasks/pushNotificationConfig/list", req.Method)
 			}
 
 			resp := jsonrpcResponse{
@@ -505,7 +505,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}
 
 		if len(configs) != 2 {
-			t.Errorf("Expected 2 configs, got %d", len(configs))
+			t.Errorf("got %d configs, want 2", len(configs))
 		}
 	})
 
@@ -517,7 +517,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			}
 
 			if req.Method != "tasks/pushNotificationConfig/set" {
-				t.Errorf("Expected method: tasks/pushNotificationConfig/set, got %s", req.Method)
+				t.Errorf("got method %s, want tasks/pushNotificationConfig/set", req.Method)
 			}
 
 			resp := jsonrpcResponse{
@@ -544,11 +544,11 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}
 
 		if config.TaskID != "task-123" {
-			t.Errorf("Expected taskId task-123, got %s", config.TaskID)
+			t.Errorf("got taskId %s, want task-123", config.TaskID)
 		}
 
 		if config.Config.URL != "https://webhook.example.com" {
-			t.Errorf("Expected URL https://webhook.example.com, got %s", config.Config.URL)
+			t.Errorf("got URL %s, want https://webhook.example.com", config.Config.URL)
 		}
 	})
 
@@ -560,7 +560,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			}
 
 			if req.Method != "tasks/pushNotificationConfig/delete" {
-				t.Errorf("Expected method: tasks/pushNotificationConfig/delete, got %s", req.Method)
+				t.Errorf("got method %s, want tasks/pushNotificationConfig/delete", req.Method)
 			}
 
 			resp := jsonrpcResponse{
@@ -593,7 +593,7 @@ func TestJSONRPCTransport_DefaultTimeout(t *testing.T) {
 	expectedTimeout := 5 * time.Second
 
 	if jt.httpClient.Timeout != expectedTimeout {
-		t.Errorf("Expected default timeout %v, got %v", expectedTimeout, jt.httpClient.Timeout)
+		t.Errorf("got timeout %v, want %v", jt.httpClient.Timeout, expectedTimeout)
 	}
 }
 
@@ -623,7 +623,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	// Verify custom client is used
 	jt := transport.(*jsonrpcTransport)
 	if jt.httpClient.Timeout != 10*time.Second {
-		t.Errorf("Expected custom timeout 10s, got %v", jt.httpClient.Timeout)
+		t.Errorf("got timeout %v, want 10s", jt.httpClient.Timeout)
 	}
 
 	task, err := transport.GetTask(context.Background(), &a2a.TaskQueryParams{
@@ -635,7 +635,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	}
 
 	if task.ID != "task-123" {
-		t.Errorf("Expected task ID task-123, got %s", task.ID)
+		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 }
 
@@ -703,10 +703,10 @@ func TestJSONRPCTransport_GetAgentCard_Concurrent(t *testing.T) {
 	// Verify all goroutines got the same card
 	for i, result := range cards {
 		if result.Name != "Test Agent" {
-			t.Errorf("Goroutine %d: Expected name 'Test Agent', got %s", i, result.Name)
+			t.Errorf("Goroutine %d: got name %s, want Test Agent", i, result.Name)
 		}
 		if result.Description != "Test description" {
-			t.Errorf("Goroutine %d: Expected description 'Test description', got %s", i, result.Description)
+			t.Errorf("Goroutine %d: got description %s, want Test description", i, result.Description)
 		}
 	}
 }
