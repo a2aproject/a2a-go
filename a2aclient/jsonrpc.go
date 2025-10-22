@@ -134,6 +134,8 @@ type jsonrpcResponse struct {
 }
 
 // jsonrpcError represents a JSON-RPC 2.0 error object.
+// TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
+// This needs to be implemented across all transports (currently not in grpc either).
 type jsonrpcError struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
