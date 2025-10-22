@@ -70,28 +70,29 @@ func (m *Manager) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 
 // Execute starts an AgentExecutor in a separate goroutine with a detached context.
 // There can only be a single active execution per TaskID.
-func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor) (*Execution, error) {
+func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor) (*Execution, *Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// TODO(yarolegovich): handle idempotency once spec establishes the key. We can return
 	// an execution in progress here and decide whether to tap it or not on the caller side.
 	if _, ok := m.executions[tid]; ok {
-		return nil, ErrExecutionInProgress
+		return nil, nil, ErrExecutionInProgress
 	}
 
 	if _, ok := m.cancelations[tid]; ok {
-		return nil, ErrCancelationInProgress
+		return nil, nil, ErrCancelationInProgress
 	}
 
 	execution := newExecution(tid, executor)
+	subscription := newDefaultSubscription(execution)
 	m.executions[tid] = execution
 
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go m.handleExecution(detachedCtx, execution)
 
-	return execution, nil
+	return execution, subscription, nil
 }
 
 // Cancel uses Canceler to finish execution and waits for it to finish.

@@ -21,7 +21,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/log"
 )
 
 // Execution represents an agent invocation in a context of the referenced task.
@@ -30,6 +29,7 @@ type Execution struct {
 	tid        a2a.TaskID
 	controller Executor
 
+	subscribers     map[chan a2a.Event]any
 	subscribeChan   chan chan a2a.Event
 	unsubscribeChan chan chan a2a.Event
 
@@ -42,6 +42,7 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 		tid:        tid,
 		controller: controller,
 
+		subscribers:     make(map[chan a2a.Event]any),
 		subscribeChan:   make(chan chan a2a.Event),
 		unsubscribeChan: make(chan chan a2a.Event),
 
@@ -58,25 +59,12 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
 		}
-
-		stopped := false
-		defer func() {
-			err := subscription.cancel(ctx)
-			if !stopped && err != nil {
-				yield(nil, err)
-			} else if err != nil {
-				log.Error(ctx, "failed to cancel a subscription", err)
-			}
-		}()
-
-		for event, err := range subscription.events(ctx) {
+		for event, err := range subscription.Events(ctx) {
 			if err != nil {
-				stopped = true
 				yield(nil, err)
 				return
 			}
 			if !yield(event, nil) {
-				stopped = true
 				return
 			}
 		}
@@ -89,10 +77,8 @@ func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 }
 
 func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
-	subscribers := make(map[chan a2a.Event]any)
-
 	defer func() {
-		for sub := range subscribers {
+		for sub := range e.subscribers {
 			close(sub)
 		}
 	}()
@@ -112,8 +98,12 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 				return nil, err
 			}
 
-			for subscriber := range subscribers {
-				subscriber <- event
+			for subscriber := range e.subscribers {
+				select {
+				case subscriber <- event:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
 
 			if res != nil {
@@ -127,10 +117,10 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 			return nil, err
 
 		case s := <-e.subscribeChan:
-			subscribers[s] = struct{}{}
+			e.subscribers[s] = struct{}{}
 
 		case s := <-e.unsubscribeChan:
-			delete(subscribers, s)
+			delete(e.subscribers, s)
 		}
 	}
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
-	"github.com/a2aproject/a2a-go/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/log"
 	"github.com/a2aproject/a2a-go/log/logger"
 )
@@ -64,14 +63,15 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	taskExecutor  *taskexec.Manager
+	execManager   *taskexec.Manager
 
 	pushNotifier PushNotifier
 	queueManager eventqueue.Manager
 
-	pushConfigStore PushConfigStore
-	taskStore       TaskStore
-	logger          log.Logger
+	pushConfigStore        PushConfigStore
+	taskStore              TaskStore
+	reqContextInterceptors []RequestContextInterceptor
+	logger                 log.Logger
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -114,6 +114,13 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 	}
 }
 
+// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
+	}
+}
+
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
@@ -130,7 +137,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		h.logger = logger.Glog()
 	}
 
-	h.taskExecutor = taskexec.NewManager(h.queueManager)
+	h.execManager = taskexec.NewManager(h.queueManager)
 
 	return h
 }
@@ -138,7 +145,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	taskID := query.ID
 	if taskID == "" {
-		return nil, fmt.Errorf("%w: missing TaskID", a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
 	}
 
 	task, err := h.taskStore.Get(ctx, taskID)
@@ -161,40 +168,44 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 
 // TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
-	// TODO(yarolegovich): Move to canceler and add validations https://github.com/a2aproject/a2a-go/issues/18
-	task, err := h.taskStore.Get(ctx, params.ID)
-	if err != nil {
-		return nil, err
+	if params == nil {
+		return nil, a2a.ErrInvalidRequest
 	}
 
-	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
 	canceler := &canceler{
-		agent:     h.agentExecutor,
-		task:      task,
-		processor: processor,
+		processor:    newProcessor(),
+		agent:        h.agentExecutor,
+		taskStore:    h.taskStore,
+		params:       params,
+		interceptors: h.reqContextInterceptors,
 	}
 
-	result, err := h.taskExecutor.Cancel(ctx, params.ID, canceler)
+	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
+
 	return result, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	// TODO(yarolegovich): attach request context values logger.With("task_id", taskID, ...) and add it to other methods
 	ctx = log.WithLogger(ctx, h.logger)
-	execution, err := h.handleSendMessage(ctx, params)
+	execution, subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	for event, err := range execution.Events(ctx) {
+	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
 		}
-		if shouldInterrupt(event) {
-			return event.(a2a.SendMessageResult), nil
+		if taskID, required := isAuthRequired(event); required {
+			task, err := h.taskStore.Get(ctx, taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load task in auth-required state: %w", err)
+			}
+			return task, nil
 		}
 	}
 
@@ -202,18 +213,19 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	execution, err := h.handleSendMessage(ctx, params)
+	_, subscription, err := h.handleSendMessage(ctx, params)
+
 	if err != nil {
 		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, err)
 		}
 	}
 
-	return execution.Events(ctx)
+	return subscription.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	exec, ok := h.taskExecutor.GetExecution(params.ID)
+	exec, ok := h.execManager.GetExecution(params.ID)
 	if !ok {
 		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, a2a.ErrTaskNotFound)
@@ -222,35 +234,31 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	return exec.Events(ctx)
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
 	if params.Message == nil {
-		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
-	var task *a2a.Task
+	var taskID a2a.TaskID
 	if len(params.Message.TaskID) == 0 {
-		task = taskupdate.NewSubmittedTask(params.Message)
+		taskID = a2a.NewTaskID()
 	} else {
-		localResult, err := h.taskStore.Get(ctx, params.Message.TaskID)
-		if err != nil {
-			return nil, err
-		}
-		task = localResult
+		taskID = params.Message.TaskID
 	}
 
-	// TODO(yarolegovich): move to task-locked section in executor https://github.com/a2aproject/a2a-go/issues/18
-	reqCtx := RequestContext{Request: params, TaskID: task.ID, ContextID: task.ContextID}
-	processor := &processor{updateManager: taskupdate.NewManager(h.taskStore, task)}
-	executor := &executor{
-		agent:     h.agentExecutor,
-		reqCtx:    reqCtx,
-		processor: processor,
-	}
-	return h.taskExecutor.Execute(ctx, task.ID, executor)
+	return h.execManager.Execute(ctx, taskID, &executor{
+		processor:       newProcessor(),
+		agent:           h.agentExecutor,
+		taskStore:       h.taskStore,
+		pushConfigStore: h.pushConfigStore,
+		taskID:          taskID,
+		params:          params,
+		interceptors:    h.reqContextInterceptors,
+	})
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
+	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
@@ -258,14 +266,19 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return &a2a.TaskPushConfig{}, ErrUnimplemented
+	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	return ErrUnimplemented
 }
 
-// TODO(yarolegovich): handle auth-required state
-func shouldInterrupt(_ a2a.Event) bool {
-	return false
+func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
+	switch v := event.(type) {
+	case *a2a.Task:
+		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
+	case *a2a.TaskStatusUpdateEvent:
+		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
+	}
+	return "", false
 }
