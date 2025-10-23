@@ -60,11 +60,13 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 			name: "file with uri",
 			p: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
+				Name:     "example",
 				File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
 			}}},
 			want: a2a.FilePart{
 				File: a2a.FileURI{
 					FileMeta: a2a.FileMeta{
+						Name:     "example",
 						MimeType: "text/plain",
 					},
 					URI: "http://example.com/file",
@@ -75,6 +77,35 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 			name:    "unsupported",
 			p:       &a2apb.Part{Part: nil},
 			wantErr: true,
+		},
+		{
+			name: "text with meta",
+			p: &a2apb.Part{
+				Part:     &a2apb.Part_Text{Text: "hello"},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+			want: a2a.TextPart{Text: "hello", Metadata: map[string]any{"hello": "world"}},
+		},
+		{
+			name: "data with meta",
+			p: &a2apb.Part{
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+			want: a2a.DataPart{Data: map[string]any{"key": "value"}, Metadata: map[string]any{"hello": "world"}},
+		},
+		{
+			name: "file with meta",
+			p: &a2apb.Part{
+				Part: &a2apb.Part_File{File: &a2apb.FilePart{
+					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+				}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+			want: a2a.FilePart{
+				File:     a2a.FileBytes{Bytes: "content"},
+				Metadata: map[string]any{"hello": "world"},
+			},
 		},
 	}
 
@@ -205,7 +236,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 		MessageId: "test-msg",
 		TaskId:    "test-task",
 		Role:      a2apb.Role_ROLE_USER,
-		Content: []*a2apb.Part{
+		Parts: []*a2apb.Part{
 			{Part: &a2apb.Part_Text{Text: "hello"}},
 		},
 	}
@@ -278,7 +309,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			name: "nil part in message",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{
-					Content: []*a2apb.Part{{Part: nil}},
+					Parts: []*a2apb.Part{{Part: nil}},
 				},
 			},
 			wantErr: true,

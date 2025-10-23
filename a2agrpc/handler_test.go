@@ -457,7 +457,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 					MessageId: "req-msg-123",
 					TaskId:    "test-task-123",
 					Role:      a2apb.Role_ROLE_USER,
-					Content: []*a2apb.Part{
+					Parts: []*a2apb.Part{
 						{
 							Part: &a2apb.Part_Text{Text: "Hello Agent"},
 						},
@@ -470,7 +470,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 						MessageId: "req-msg-123-response",
 						TaskId:    "test-task-123",
 						Role:      a2apb.Role_ROLE_AGENT,
-						Content: []*a2apb.Part{
+						Parts: []*a2apb.Part{
 							{
 								Part: &a2apb.Part_Text{Text: "Hello Agent"},
 							},
@@ -496,7 +496,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{
-					Content: []*a2apb.Part{{Part: nil}},
+					Parts: []*a2apb.Part{{Part: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
@@ -566,7 +566,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					MessageId: msgID,
 					TaskId:    string(taskID),
 					ContextId: contextID,
-					Content:   parts,
+					Parts:     parts,
 					Role:      a2apb.Role_ROLE_USER,
 				},
 			},
@@ -595,7 +595,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 							MessageId: fmt.Sprintf("%s-response", msgID),
 							TaskId:    string(taskID),
 							Role:      a2apb.Role_ROLE_AGENT,
-							Content:   parts,
+							Parts:     parts,
 						},
 					},
 				},
@@ -619,7 +619,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{
-					Content: []*a2apb.Part{{Part: nil}},
+					Parts: []*a2apb.Part{{Part: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
