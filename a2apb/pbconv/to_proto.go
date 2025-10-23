@@ -286,6 +286,7 @@ func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
 		return &a2apb.Part{
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: fc.MimeType,
+				Name:     fc.Name,
 				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
 			}},
 			Metadata: meta,
@@ -294,6 +295,7 @@ func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
 		return &a2apb.Part{
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: fc.MimeType,
+				Name:     fc.Name,
 				File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
 			}},
 			Metadata: meta,

@@ -60,11 +60,13 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 			name: "file with uri",
 			p: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
+				Name:     "example",
 				File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
 			}}},
 			want: a2a.FilePart{
 				File: a2a.FileURI{
 					FileMeta: a2a.FileMeta{
+						Name:     "example",
 						MimeType: "text/plain",
 					},
 					URI: "http://example.com/file",

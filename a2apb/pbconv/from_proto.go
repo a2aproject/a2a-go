@@ -80,7 +80,7 @@ func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.FilePart
 	case *a2apb.FilePart_FileWithBytes:
 		return a2a.FilePart{
 			File: a2a.FileBytes{
-				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType()},
+				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType(), Name: pPart.GetName()},
 				Bytes:    string(f.FileWithBytes),
 			},
 			Metadata: meta,
@@ -88,7 +88,7 @@ func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.FilePart
 	case *a2apb.FilePart_FileWithUri:
 		return a2a.FilePart{
 			File: a2a.FileURI{
-				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType()},
+				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType(), Name: pPart.GetName()},
 				URI:      f.FileWithUri,
 			},
 			Metadata: meta,
