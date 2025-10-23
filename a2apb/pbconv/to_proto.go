@@ -23,7 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func toProtoMetadata(meta map[string]any) (*structpb.Struct, error) {
+func toProtoMap(meta map[string]any) (*structpb.Struct, error) {
 	if meta == nil {
 		return nil, nil
 	}
@@ -203,7 +203,7 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := toProtoMetadata(e.Metadata)
+		metadata, err := toProtoMap(e.Metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -219,7 +219,7 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := toProtoMetadata(e.Metadata)
+		metadata, err := toProtoMap(e.Metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -248,19 +248,27 @@ func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 		return nil, fmt.Errorf("failed to convert parts: %w", err)
 	}
 
-	pMetadata, err := toProtoMetadata(msg.Metadata)
+	pMetadata, err := toProtoMap(msg.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
+	var taskIDs []string
+	if msg.ReferenceTasks != nil {
+		taskIDs = make([]string, len(msg.ReferenceTasks))
+		for i, tid := range msg.ReferenceTasks {
+			taskIDs[i] = string(tid)
+		}
+	}
 
 	return &a2apb.Message{
-		MessageId:  msg.ID,
-		ContextId:  msg.ContextID,
-		Extensions: msg.Extensions,
-		Content:    parts,
-		Role:       toProtoRole(msg.Role),
-		TaskId:     string(msg.TaskID),
-		Metadata:   pMetadata,
+		MessageId:        msg.ID,
+		ContextId:        msg.ContextID,
+		Extensions:       msg.Extensions,
+		Parts:            parts,
+		Role:             toProtoRole(msg.Role),
+		TaskId:           string(msg.TaskID),
+		Metadata:         pMetadata,
+		ReferenceTaskIds: taskIDs,
 	}, nil
 }
 
@@ -277,17 +285,29 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 }
 
 func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
+	meta, err := toProtoMap(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	switch fc := part.File.(type) {
 	case a2a.FileBytes:
-		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: fc.MimeType,
-			File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
-		}}}, nil
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: fc.MimeType,
+				Name:     fc.Name,
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
+			}},
+			Metadata: meta,
+		}, nil
 	case a2a.FileURI:
-		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: fc.MimeType,
-			File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
-		}}}, nil
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: fc.MimeType,
+				Name:     fc.Name,
+				File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
+			}},
+			Metadata: meta,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported FilePartContent type: %T", fc)
 	}
@@ -298,15 +318,24 @@ func toProtoDataPart(part a2a.DataPart) (*a2apb.Part, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
-	return &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{
-		Data: s,
-	}}}, nil
+	meta, err := toProtoMap(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	return &a2apb.Part{
+		Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: s}},
+		Metadata: meta,
+	}, nil
 }
 
 func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
 	switch p := part.(type) {
 	case a2a.TextPart:
-		return &a2apb.Part{Part: &a2apb.Part_Text{Text: p.Text}}, nil
+		meta, err := toProtoMap(p.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		return &a2apb.Part{Part: &a2apb.Part_Text{Text: p.Text}, Metadata: meta}, nil
 	case a2a.DataPart:
 		return toProtoDataPart(p)
 	case a2a.FilePart:
@@ -384,7 +413,7 @@ func toProtoArtifact(artifact *a2a.Artifact) (*a2apb.Artifact, error) {
 		return nil, nil
 	}
 
-	metadata, err := toProtoMetadata(artifact.Metadata)
+	metadata, err := toProtoMap(artifact.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
@@ -438,7 +467,7 @@ func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 		return nil, fmt.Errorf("failed to convert history: %w", err)
 	}
 
-	metadata, err := toProtoMetadata(task.Metadata)
+	metadata, err := toProtoMap(task.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
@@ -538,9 +567,10 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	}
 
 	result := &a2apb.AgentCapabilities{
-		PushNotifications: capabilities.PushNotifications,
-		Streaming:         capabilities.Streaming,
-		Extensions:        extensions,
+		PushNotifications:      capabilities.PushNotifications,
+		Streaming:              capabilities.Streaming,
+		StateTransitionHistory: capabilities.StateTransitionHistory,
+		Extensions:             extensions,
 	}
 	return result, nil
 }
@@ -653,7 +683,13 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 			},
 		}, nil
 	case a2a.MutualTLSSecurityScheme:
-		return nil, nil
+		return &a2apb.SecurityScheme{
+			Scheme: &a2apb.SecurityScheme_MtlsSecurityScheme{
+				MtlsSecurityScheme: &a2apb.MutualTlsSecurityScheme{
+					Description: s.Description,
+				},
+			},
+		}, nil
 	case a2a.OAuth2SecurityScheme:
 		flows, err := toProtoOAuthFlows(s.Flows)
 		if err != nil {
@@ -662,8 +698,9 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
 				Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
-					Flows:       flows,
-					Description: s.Description,
+					Flows:             flows,
+					Description:       s.Description,
+					Oauth2MetadataUrl: s.Oauth2MetadataURL,
 				},
 			},
 		}, nil
@@ -709,9 +746,29 @@ func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
 			Examples:    skill.Examples,
 			InputModes:  skill.InputModes,
 			OutputModes: skill.OutputModes,
+			Security:    toProtoSecurity(skill.Security),
 		}
 	}
 	return pSkills
+}
+
+func toProtoAgentCardSignatures(in []a2a.AgentCardSignature) ([]*a2apb.AgentCardSignature, error) {
+	if in == nil {
+		return nil, nil
+	}
+	out := make([]*a2apb.AgentCardSignature, len(in))
+	for i, v := range in {
+		header, err := toProtoMap(v.Header)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = &a2apb.AgentCardSignature{
+			Protected: v.Protected,
+			Signature: v.Signature,
+			Header:    header,
+		}
+	}
+	return out, nil
 }
 
 func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
@@ -727,6 +784,11 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	schemes, err := toProtoSecuritySchemes(card.SecuritySchemes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert security schemes: %w", err)
+	}
+
+	signatures, err := toProtoAgentCardSignatures(card.Signatures)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert signatures: %w", err)
 	}
 
 	result := &a2apb.AgentCard{
@@ -746,6 +808,8 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		AdditionalInterfaces:              toProtoAdditionalInterfaces(card.AdditionalInterfaces),
 		Security:                          toProtoSecurity(card.Security),
 		Skills:                            toProtoSkills(card.Skills),
+		IconUrl:                           card.IconURL,
+		Signatures:                        signatures,
 	}
 
 	return result, nil

@@ -9,7 +9,7 @@ version: v2
 inputs:
   - git_repo: https://github.com/a2aproject/A2A.git
     # Update to point to the desired git tag or commit
-    ref: v0.2.6
+    ref: e7cf203ecdd7003c0f1740bb712248d2b5252bf1
     subdir: specification/grpc
 
 managed:  
