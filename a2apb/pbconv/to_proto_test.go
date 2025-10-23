@@ -29,7 +29,7 @@ import (
 func mustMakeProtoMetadata(t *testing.T, meta map[string]any) *structpb.Struct {
 	s, err := structpb.NewStruct(meta)
 	if err != nil {
-		t.Errorf("structpb.NewStruct() error = %v", err)
+		t.Fatalf("structpb.NewStruct() error = %v", err)
 	}
 	return s
 }
