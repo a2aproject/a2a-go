@@ -16,6 +16,7 @@ package pushconfig
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -45,10 +46,10 @@ func newID() string {
 
 func validateConfig(config *a2a.PushConfig) error {
 	if config == nil {
-		return fmt.Errorf("push config cannot be nil")
+		return errors.New("push config cannot be nil")
 	}
 	if config.URL == "" {
-		return fmt.Errorf("push config endpoint cannot be empty")
+		return errors.New("push config endpoint cannot be empty")
 	}
 	if _, err := url.ParseRequestURI(config.URL); err != nil {
 		return fmt.Errorf("invalid push config endpoint URL: %w", err)
@@ -62,6 +63,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 		return err
 	}
 
+	// assign ID to copy?
 	if config.ID == "" {
 		config.ID = newID()
 	}
@@ -89,6 +91,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID) ([
 
 	configs, ok := s.configs[taskID]
 	if !ok {
+		// return empty list instead of nil ?
 		return nil, nil
 	}
 
