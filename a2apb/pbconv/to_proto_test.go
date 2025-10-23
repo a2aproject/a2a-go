@@ -20,6 +20,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -46,20 +47,22 @@ func TestToProto_toProtoMessage(t *testing.T) {
 		{
 			name: "success",
 			msg: &a2a.Message{
-				ID:        "test-msg",
-				ContextID: "test-ctx",
-				TaskID:    "test-task",
-				Role:      a2a.MessageRoleUser,
-				Parts:     []a2a.Part{a2a.TextPart{Text: "hello"}},
-				Metadata:  a2aMeta,
+				ID:             "test-msg",
+				ContextID:      "test-ctx",
+				TaskID:         "test-task",
+				Role:           a2a.MessageRoleUser,
+				ReferenceTasks: []a2a.TaskID{"task-123"},
+				Parts:          []a2a.Part{a2a.TextPart{Text: "hello"}},
+				Metadata:       a2aMeta,
 			},
 			want: &a2apb.Message{
-				MessageId: "test-msg",
-				ContextId: "test-ctx",
-				TaskId:    "test-task",
-				Role:      a2apb.Role_ROLE_USER,
-				Parts:     []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
-				Metadata:  pMeta,
+				MessageId:        "test-msg",
+				ContextId:        "test-ctx",
+				TaskId:           "test-task",
+				ReferenceTaskIds: []string{"task-123"},
+				Role:             a2apb.Role_ROLE_USER,
+				Parts:            []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
+				Metadata:         pMeta,
 			},
 		},
 		{
@@ -87,6 +90,15 @@ func TestToProto_toProtoMessage(t *testing.T) {
 			}
 			if !proto.Equal(got, tt.want) {
 				t.Errorf("toProtoMessage() got = %v, want %v", got, tt.want)
+			}
+			if !tt.wantErr {
+				gotBack, err := fromProtoMessages([]*a2apb.Message{got})
+				if err != nil {
+					t.Errorf("fromProtoMessages() error = %v", err)
+				}
+				if diff := cmp.Diff([]*a2a.Message{tt.msg}, gotBack); diff != "" {
+					t.Errorf("fromProtoMessages() wrong result (+got,-want):\n diff = %s", diff)
+				}
 			}
 		})
 	}

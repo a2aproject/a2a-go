@@ -72,6 +72,14 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 		Metadata:   fromProtoMetadata(pMsg.GetMetadata()),
 	}
 
+	taskIDs := pMsg.GetReferenceTaskIds()
+	if taskIDs != nil {
+		msg.ReferenceTasks = make([]a2a.TaskID, len(taskIDs))
+		for i, tid := range taskIDs {
+			msg.ReferenceTasks[i] = a2a.TaskID(tid)
+		}
+	}
+
 	return msg, nil
 }
 

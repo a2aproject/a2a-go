@@ -252,15 +252,23 @@ func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
+	var taskIDs []string
+	if msg.ReferenceTasks != nil {
+		taskIDs = make([]string, len(msg.ReferenceTasks))
+		for i, tid := range msg.ReferenceTasks {
+			taskIDs[i] = string(tid)
+		}
+	}
 
 	return &a2apb.Message{
-		MessageId:  msg.ID,
-		ContextId:  msg.ContextID,
-		Extensions: msg.Extensions,
-		Parts:      parts,
-		Role:       toProtoRole(msg.Role),
-		TaskId:     string(msg.TaskID),
-		Metadata:   pMetadata,
+		MessageId:        msg.ID,
+		ContextId:        msg.ContextID,
+		Extensions:       msg.Extensions,
+		Parts:            parts,
+		Role:             toProtoRole(msg.Role),
+		TaskId:           string(msg.TaskID),
+		Metadata:         pMetadata,
+		ReferenceTaskIds: taskIDs,
 	}, nil
 }
 
