@@ -25,6 +25,14 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func mustMakeProtoMetadata(t *testing.T, meta map[string]any) *structpb.Struct {
+	s, err := structpb.NewStruct(map[string]any{"hello": "world"})
+	if err != nil {
+		t.Errorf("structpb.NewStruct() error = %v", err)
+	}
+	return s
+}
+
 func TestToProto_toProtoMessage(t *testing.T) {
 	a2aMeta := map[string]any{"key": "value"}
 	pMeta, _ := structpb.NewStruct(a2aMeta)
@@ -50,7 +58,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 				ContextId: "test-ctx",
 				TaskId:    "test-task",
 				Role:      a2apb.Role_ROLE_USER,
-				Content:   []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
+				Parts:     []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
 				Metadata:  pMeta,
 			},
 		},
@@ -60,7 +68,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "bad metdata",
+			name: "bad metadata",
 			msg: &a2a.Message{
 				Metadata: map[string]any{
 					"bad": func() {},
@@ -195,6 +203,35 @@ func TestToProto_toProtoPart(t *testing.T) {
 				Data: map[string]any{"bad": func() {}},
 			},
 			wantErr: true,
+		},
+		{
+			name: "text with meta",
+			p:    a2a.TextPart{Text: "hello", Metadata: map[string]any{"hello": "world"}},
+			want: &a2apb.Part{
+				Part:     &a2apb.Part_Text{Text: "hello"},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+		},
+		{
+			name: "data with meta",
+			p:    a2a.DataPart{Data: map[string]any{"key": "value"}, Metadata: map[string]any{"hello": "world"}},
+			want: &a2apb.Part{
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+		},
+		{
+			name: "file with meta",
+			p: a2a.FilePart{
+				File:     a2a.FileBytes{Bytes: "content"},
+				Metadata: map[string]any{"hello": "world"},
+			},
+			want: &a2apb.Part{
+				Part: &a2apb.Part_File{File: &a2apb.FilePart{
+					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+				}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
 		},
 	}
 
@@ -535,7 +572,7 @@ func TestToProto_toProtoTask(t *testing.T) {
 		{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: []a2a.Part{a2a.TextPart{Text: "history"}}},
 	}
 	pHistory := []*a2apb.Message{
-		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Content: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
+		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
 	}
 
 	a2aArtifacts := []*a2a.Artifact{
@@ -1080,7 +1117,7 @@ func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 	pMsg := &a2apb.Message{
 		MessageId: "test-message",
 		Role:      a2apb.Role_ROLE_AGENT,
-		Content: []*a2apb.Part{
+		Parts: []*a2apb.Part{
 			{Part: &a2apb.Part_Text{Text: "response"}},
 		},
 	}

@@ -257,7 +257,7 @@ func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
 		MessageId:  msg.ID,
 		ContextId:  msg.ContextID,
 		Extensions: msg.Extensions,
-		Content:    parts,
+		Parts:      parts,
 		Role:       toProtoRole(msg.Role),
 		TaskId:     string(msg.TaskID),
 		Metadata:   pMetadata,
@@ -277,17 +277,27 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 }
 
 func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
+	meta, err := toProtoMetadata(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	switch fc := part.File.(type) {
 	case a2a.FileBytes:
-		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: fc.MimeType,
-			File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
-		}}}, nil
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: fc.MimeType,
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
+			}},
+			Metadata: meta,
+		}, nil
 	case a2a.FileURI:
-		return &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
-			MimeType: fc.MimeType,
-			File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
-		}}}, nil
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: fc.MimeType,
+				File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
+			}},
+			Metadata: meta,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported FilePartContent type: %T", fc)
 	}
@@ -298,15 +308,24 @@ func toProtoDataPart(part a2a.DataPart) (*a2apb.Part, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
-	return &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{
-		Data: s,
-	}}}, nil
+	meta, err := toProtoMetadata(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	return &a2apb.Part{
+		Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: s}},
+		Metadata: meta,
+	}, nil
 }
 
 func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
 	switch p := part.(type) {
 	case a2a.TextPart:
-		return &a2apb.Part{Part: &a2apb.Part_Text{Text: p.Text}}, nil
+		meta, err := toProtoMetadata(p.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		return &a2apb.Part{Part: &a2apb.Part_Text{Text: p.Text}, Metadata: meta}, nil
 	case a2a.DataPart:
 		return toProtoDataPart(p)
 	case a2a.FilePart:

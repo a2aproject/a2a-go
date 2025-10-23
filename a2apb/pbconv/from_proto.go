@@ -57,7 +57,7 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 		return nil, nil
 	}
 
-	parts, err := fromProtoParts(pMsg.GetContent())
+	parts, err := fromProtoParts(pMsg.GetParts())
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	return msg, nil
 }
 
-func fromProtoFilePart(pPart *a2apb.FilePart) (a2a.FilePart, error) {
+func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.FilePart, error) {
 	switch f := pPart.GetFile().(type) {
 	case *a2apb.FilePart_FileWithBytes:
 		return a2a.FilePart{
@@ -83,6 +83,7 @@ func fromProtoFilePart(pPart *a2apb.FilePart) (a2a.FilePart, error) {
 				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType()},
 				Bytes:    string(f.FileWithBytes),
 			},
+			Metadata: meta,
 		}, nil
 	case *a2apb.FilePart_FileWithUri:
 		return a2a.FilePart{
@@ -90,6 +91,7 @@ func fromProtoFilePart(pPart *a2apb.FilePart) (a2a.FilePart, error) {
 				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType()},
 				URI:      f.FileWithUri,
 			},
+			Metadata: meta,
 		}, nil
 	default:
 		return a2a.FilePart{}, fmt.Errorf("unsupported FilePart type: %T", f)
@@ -97,13 +99,14 @@ func fromProtoFilePart(pPart *a2apb.FilePart) (a2a.FilePart, error) {
 }
 
 func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
+	meta := fromProtoMetadata(p.Metadata)
 	switch part := p.GetPart().(type) {
 	case *a2apb.Part_Text:
-		return a2a.TextPart{Text: part.Text}, nil
+		return a2a.TextPart{Text: part.Text, Metadata: meta}, nil
 	case *a2apb.Part_Data:
-		return a2a.DataPart{Data: part.Data.GetData().AsMap()}, nil
+		return a2a.DataPart{Data: part.Data.GetData().AsMap(), Metadata: meta}, nil
 	case *a2apb.Part_File:
-		return fromProtoFilePart(part.File)
+		return fromProtoFilePart(part.File, meta)
 	default:
 		return nil, fmt.Errorf("unsupported part type: %T", part)
 	}
