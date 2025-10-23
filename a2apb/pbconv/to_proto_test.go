@@ -27,7 +27,7 @@ import (
 )
 
 func mustMakeProtoMetadata(t *testing.T, meta map[string]any) *structpb.Struct {
-	s, err := structpb.NewStruct(map[string]any{"hello": "world"})
+	s, err := structpb.NewStruct(meta)
 	if err != nil {
 		t.Errorf("structpb.NewStruct() error = %v", err)
 	}
@@ -727,8 +727,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationURL: "https://example.com/docs",
 		Capabilities: a2a.AgentCapabilities{
-			Streaming:         true,
-			PushNotifications: true,
+			Streaming:              true,
+			PushNotifications:      true,
+			StateTransitionHistory: true,
 			Extensions: []a2a.AgentExtension{
 				{URI: "ext-uri", Description: "ext-desc", Required: true, Params: map[string]any{"key": "val"}},
 			},
@@ -765,8 +766,15 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
+				Security: []a2a.SecurityRequirements{
+					{"apiKey": {}},
+				},
 			},
 		},
+		Signatures: []a2a.AgentCardSignature{
+			{Protected: "abc", Signature: "def", Header: map[string]any{"version": "1"}},
+		},
+		IconURL:                           "https://icons.com/icon.png",
 		SupportsAuthenticatedExtendedCard: true,
 	}
 
@@ -787,8 +795,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationUrl: "https://example.com/docs",
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:         true,
-			PushNotifications: true,
+			Streaming:              true,
+			PushNotifications:      true,
+			StateTransitionHistory: true,
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -835,8 +844,15 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
+				Security: []*a2apb.Security{
+					{Schemes: map[string]*a2apb.StringList{"apiKey": {List: []string{}}}},
+				},
 			},
 		},
+		Signatures: []*a2apb.AgentCardSignature{
+			{Protected: "abc", Signature: "def", Header: mustMakeProtoMetadata(t, map[string]any{"version": "1"})},
+		},
+		IconUrl:                           "https://icons.com/icon.png",
 		SupportsAuthenticatedExtendedCard: true,
 	}
 
@@ -876,13 +892,18 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				t.Errorf("toProtoAgentCard() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
-					if !proto.Equal(got, tt.want) {
-						t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
-					}
-				}
+			if tt.wantErr {
+				return
+			}
+			if !proto.Equal(got, tt.want) {
+				t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
+			}
+			gotBack, err := FromProtoAgentCard(got)
+			if err != nil {
+				t.Errorf("FromProtoAgentCard() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.card, gotBack); diff != "" {
+				t.Errorf("FromProtoAgentCard() wrong result (+got,-want):\ndiff = %s", diff)
 			}
 		})
 	}
@@ -1071,7 +1092,11 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 		{
 			name:   "mutual tls scheme",
 			scheme: a2a.MutualTLSSecurityScheme{},
-			want:   nil, // This is expected to return nil, nil
+			want: &a2apb.SecurityScheme{
+				Scheme: &a2apb.SecurityScheme_MtlsSecurityScheme{
+					MtlsSecurityScheme: &a2apb.MutualTlsSecurityScheme{},
+				},
+			},
 		},
 		{
 			name: "oauth2 scheme",
