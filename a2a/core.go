@@ -41,6 +41,48 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
+// UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
+// The kind field is used as a discriminator to determine which concrete type to unmarshal into.
+func UnmarshalEventJSON(data []byte) (Event, error) {
+	type typedEvent struct {
+		Kind string `json:"kind"`
+	}
+
+	var te typedEvent
+	if err := json.Unmarshal(data, &te); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+
+	switch te.Kind {
+	case "message":
+		var msg Message
+		if err := json.Unmarshal(data, &msg); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
+		}
+		return &msg, nil
+	case "task":
+		var task Task
+		if err := json.Unmarshal(data, &task); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
+		}
+		return &task, nil
+	case "status-update":
+		var statusUpdate TaskStatusUpdateEvent
+		if err := json.Unmarshal(data, &statusUpdate); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
+		}
+		return &statusUpdate, nil
+	case "artifact-update":
+		var artifactUpdate TaskArtifactUpdateEvent
+		if err := json.Unmarshal(data, &artifactUpdate); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
+		}
+		return &artifactUpdate, nil
+	default:
+		return nil, fmt.Errorf("unknown event kind: %s", te.Kind)
+	}
+}
+
 // MessageRole represents a set of possible values that identify the message sender.
 type MessageRole string
 
@@ -84,6 +126,15 @@ type Message struct {
 	// first message of a new task.
 	// An empty string means the message doesn't reference any Task.
 	TaskID TaskID `json:"taskId,omitempty" yaml:"taskId,omitempty" mapstructure:"taskId,omitempty"`
+}
+
+func (m Message) MarshalJSON() ([]byte, error) {
+	type wrapped Message
+	type withKind struct {
+		Kind string `json:"kind"`
+		wrapped
+	}
+	return json.Marshal(withKind{Kind: "message", wrapped: wrapped(m)})
 }
 
 // NewMessage creates a new message with a random identifier.
@@ -166,6 +217,15 @@ type Task struct {
 	Status TaskStatus `json:"status" yaml:"status" mapstructure:"status"`
 }
 
+func (t Task) MarshalJSON() ([]byte, error) {
+	type wrapped Task
+	type withKind struct {
+		Kind string `json:"kind"`
+		wrapped
+	}
+	return json.Marshal(withKind{Kind: "task", wrapped: wrapped(t)})
+}
+
 // TaskStatus represents the status of a task at a specific point in time.
 type TaskStatus struct {
 	// Message is an optional, human-readable message providing more details about the current status.
@@ -230,6 +290,15 @@ type TaskArtifactUpdateEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+func (e TaskArtifactUpdateEvent) MarshalJSON() ([]byte, error) {
+	type wrapped TaskArtifactUpdateEvent
+	type withKind struct {
+		Kind string `json:"kind"`
+		wrapped
+	}
+	return json.Marshal(withKind{Kind: "artifact-update", wrapped: wrapped(e)})
+}
+
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
 func NewArtifactEvent(task *Task, parts ...Part) *TaskArtifactUpdateEvent {
 	return &TaskArtifactUpdateEvent{
@@ -272,6 +341,15 @@ type TaskStatusUpdateEvent struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (e TaskStatusUpdateEvent) MarshalJSON() ([]byte, error) {
+	type wrapped TaskStatusUpdateEvent
+	type withKind struct {
+		Kind string `json:"kind"`
+		wrapped
+	}
+	return json.Marshal(withKind{Kind: "status-update", wrapped: wrapped(e)})
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
