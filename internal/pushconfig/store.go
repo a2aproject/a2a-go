@@ -63,7 +63,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 		return err
 	}
 
-	// assign ID to copy?
+	// TODO(wieliczko): assign ID to copy or assign it at request handler level
 	if config.ID == "" {
 		config.ID = newID()
 	}
@@ -91,7 +91,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID) ([
 
 	configs, ok := s.configs[taskID]
 	if !ok {
-		// return empty list instead of nil ?
+		// TODO(wieliczko): return empty list instead of nil ?
 		return nil, nil
 	}
 

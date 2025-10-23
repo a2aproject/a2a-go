@@ -261,21 +261,21 @@ func TestInMemoryPushConfigStore_DeleteAll(t *testing.T) {
 	})
 
 	testCases := []struct {
-		name   string
-		taskID a2a.TaskID
-		want   map[a2a.TaskID][]*a2a.PushConfig
+		name       string
+		taskID     a2a.TaskID
+		wantRemain map[a2a.TaskID][]*a2a.PushConfig
 	}{
 		{
 			name:   "existing task",
 			taskID: taskID,
-			want: map[a2a.TaskID][]*a2a.PushConfig{
+			wantRemain: map[a2a.TaskID][]*a2a.PushConfig{
 				anotherTaskID: anotherConfigs,
 			},
 		},
 		{
 			name:   "non-existent task",
 			taskID: a2a.TaskID("non-existent"),
-			want: map[a2a.TaskID][]*a2a.PushConfig{
+			wantRemain: map[a2a.TaskID][]*a2a.PushConfig{
 				taskID:        configs,
 				anotherTaskID: anotherConfigs,
 			},
@@ -298,7 +298,7 @@ func TestInMemoryPushConfigStore_DeleteAll(t *testing.T) {
 			}
 
 			got := toConfigList(store.configs)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
 				t.Errorf("Get() mismatch (-want +got):\n%s", diff)
 			}
 		})
