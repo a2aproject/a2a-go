@@ -26,6 +26,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+var tokenHeader = http.CanonicalHeaderKey("X-A2A-Notification-Token")
+
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {
 	client *http.Client
@@ -56,7 +58,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 
 	req.Header.Set("Content-Type", "application/json")
 	if config.Token != "" {
-		req.Header.Set("X-A2A-Notification-Token", config.Token)
+		req.Header.Set(tokenHeader, config.Token)
 	}
 	if config.Auth != nil && config.Auth.Credentials != "" {
 		// Find the first supported scheme and apply it.

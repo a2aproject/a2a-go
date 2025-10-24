@@ -85,8 +85,8 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 		if got := receivedHeaders.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type header = %q, want %q", got, "application/json")
 		}
-		if got := receivedHeaders.Get("X-A2A-Notification-Token"); got != "test-token" {
-			t.Errorf("X-A2A-Notification-Token header = %q, want %q", got, "test-token")
+		if got := receivedHeaders.Get(tokenHeader); got != "test-token" {
+			t.Errorf("%q header = %q, want %q", tokenHeader, got, "test-token")
 		}
 	})
 
@@ -133,8 +133,8 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 			t.Fatalf("SendPush() failed: %v", err)
 		}
 
-		if _, ok := receivedHeaders["X-A2A-Notification-Token"]; ok {
-			t.Error("X-A2A-Notification-Token header should not be set")
+		if _, ok := receivedHeaders[tokenHeader]; ok {
+			t.Error("%w header should not be set", tokenHeader)
 		}
 	})
 
