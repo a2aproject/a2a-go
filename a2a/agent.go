@@ -212,7 +212,7 @@ type AgentSkill struct {
 	// As in the overall AgentCard.security, this list represents a logical OR of
 	// security requirement objects.
 	// Each object is a set of security schemes that must be used together (a logical AND).
-	Security []map[string][]string `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	Security []SecurityRequirements `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// Tags is a set of keywords describing the skill's capabilities.
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`

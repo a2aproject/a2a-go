@@ -29,6 +29,7 @@ type Execution struct {
 	tid        a2a.TaskID
 	controller Executor
 
+	subscribers     map[chan a2a.Event]any
 	subscribeChan   chan chan a2a.Event
 	unsubscribeChan chan chan a2a.Event
 
@@ -41,6 +42,7 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 		tid:        tid,
 		controller: controller,
 
+		subscribers:     make(map[chan a2a.Event]any),
 		subscribeChan:   make(chan chan a2a.Event),
 		unsubscribeChan: make(chan chan a2a.Event),
 
@@ -57,33 +59,14 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
 		}
-
-		stopped := false
-		defer func() {
-			err := subscription.cancel(ctx)
-			// TODO(yarolegovich): else log
-			if err != nil && !stopped {
-				yield(nil, err)
-			}
-		}()
-
-		for event, err := range subscription.events(ctx) {
+		for event, err := range subscription.Events(ctx) {
 			if err != nil {
-				stopped = true
 				yield(nil, err)
 				return
 			}
 			if !yield(event, nil) {
-				stopped = true
 				return
 			}
-		}
-
-		// subscription events are published from consumer goroutine only, so we need to handle producer errors separately:
-		_, err = e.Result(ctx)
-		if err != nil {
-			stopped = true
-			yield(nil, err)
 		}
 	}
 }
@@ -94,10 +77,8 @@ func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 }
 
 func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
-	subscribers := make(map[chan a2a.Event]any)
-
 	defer func() {
-		for sub := range subscribers {
+		for sub := range e.subscribers {
 			close(sub)
 		}
 	}()
@@ -117,8 +98,12 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 				return nil, err
 			}
 
-			for subscriber := range subscribers {
-				subscriber <- event
+			for subscriber := range e.subscribers {
+				select {
+				case subscriber <- event:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
 
 			if res != nil {
@@ -132,10 +117,10 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 			return nil, err
 
 		case s := <-e.subscribeChan:
-			subscribers[s] = struct{}{}
+			e.subscribers[s] = struct{}{}
 
 		case s := <-e.unsubscribeChan:
-			delete(subscribers, s)
+			delete(e.subscribers, s)
 		}
 	}
 }

@@ -457,7 +457,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 					MessageId: "req-msg-123",
 					TaskId:    "test-task-123",
 					Role:      a2apb.Role_ROLE_USER,
-					Content: []*a2apb.Part{
+					Parts: []*a2apb.Part{
 						{
 							Part: &a2apb.Part_Text{Text: "Hello Agent"},
 						},
@@ -470,7 +470,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 						MessageId: "req-msg-123-response",
 						TaskId:    "test-task-123",
 						Role:      a2apb.Role_ROLE_AGENT,
-						Content: []*a2apb.Part{
+						Parts: []*a2apb.Part{
 							{
 								Part: &a2apb.Part_Text{Text: "Hello Agent"},
 							},
@@ -496,7 +496,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{
-					Content: []*a2apb.Part{{Part: nil}},
+					Parts: []*a2apb.Part{{Part: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
@@ -566,7 +566,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					MessageId: msgID,
 					TaskId:    string(taskID),
 					ContextId: contextID,
-					Content:   parts,
+					Parts:     parts,
 					Role:      a2apb.Role_ROLE_USER,
 				},
 			},
@@ -595,7 +595,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 							MessageId: fmt.Sprintf("%s-response", msgID),
 							TaskId:    string(taskID),
 							Role:      a2apb.Role_ROLE_AGENT,
-							Content:   parts,
+							Parts:     parts,
 						},
 					},
 				},
@@ -619,7 +619,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
 				Request: &a2apb.Message{
-					Content: []*a2apb.Part{{Part: nil}},
+					Parts: []*a2apb.Part{{Part: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
@@ -826,7 +826,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name:                   fmt.Sprintf("tasks/%s/pushConfigs/test-config", taskID),
+				Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/test-config", taskID),
 				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
 			},
 			wantParams: &a2a.TaskPushConfig{
@@ -907,10 +907,10 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		{
 			name: "success",
 			req: &a2apb.GetTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/%s/pushConfigs/%s", taskID, configID),
+				Name: fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s", taskID, configID),
+				Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
 				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: configID},
 			},
 			wantParams: &a2a.GetTaskPushConfigParams{
@@ -925,7 +925,7 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/handler-error/pushConfigs/test-config"},
+			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/handler-error/pushNotificationConfigs/test-config"},
 			wantErr: codes.Internal,
 		},
 	}
@@ -990,11 +990,11 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{
 					{
-						Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s-1", taskID, configID),
+						Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s-1", taskID, configID),
 						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-1", configID)},
 					},
 					{
-						Name:                   fmt.Sprintf("tasks/%s/pushConfigs/%s-2", taskID, configID),
+						Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s-2", taskID, configID),
 						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-2", configID)},
 					},
 				},
@@ -1075,7 +1075,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 		{
 			name: "success",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/%s/pushConfigs/%s", taskID, configID),
+				Name: fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
 			},
 			want: &emptypb.Empty{},
 			wantParams: &a2a.DeleteTaskPushConfigParams{
@@ -1093,7 +1093,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 		{
 			name: "handler error",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/handler-error/pushConfigs/%s", configID),
+				Name: fmt.Sprintf("tasks/handler-error/pushNotificationConfigs/%s", configID),
 			},
 			wantErr: codes.Internal,
 		},
@@ -1166,7 +1166,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		{
 			name:         "producer returns nil card",
 			cardProducer: &mockAgentCardProducer{card: nil},
-			wantErr:      codes.Internal,
+			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",

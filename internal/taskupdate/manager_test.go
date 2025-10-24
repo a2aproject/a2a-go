@@ -249,6 +249,21 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			events: []*a2a.TaskArtifactUpdateEvent{
 				{
 					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid},
+				},
+				{
+					Append: true,
+					TaskID: tid, ContextID: ctxid,
+					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"foo": "bar"}},
+				},
+			},
+			want: []*a2a.Artifact{{ID: aid, Metadata: map[string]any{"foo": "bar"}}},
+		},
+		{
+			name: "artifact updates metadata merged",
+			events: []*a2a.TaskArtifactUpdateEvent{
+				{
+					TaskID: tid, ContextID: ctxid,
 					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"hello": "world", "1": "2"}},
 				},
 				{
