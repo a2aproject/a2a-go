@@ -248,7 +248,7 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-var defaultMockCardProducer = &a2asrv.StaticAgentCardProducer{}
+var defaultMockCardProducer = a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{})
 
 func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
 	t.Helper()
@@ -1148,7 +1148,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			cardProducer: &a2asrv.StaticAgentCardProducer{Public: a2aCard},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard}),
 			want:         pCard,
 		},
 		{
@@ -1158,17 +1158,17 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name:         "producer returns nil card",
-			cardProducer: &a2asrv.StaticAgentCardProducer{},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{}),
 			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",
-			cardProducer: &a2asrv.StaticAgentCardProducer{Public: badCard},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: badCard}),
 			wantErr:      codes.Internal,
 		},
 		{
 			name:         "producer returns extended card",
-			cardProducer: &a2asrv.StaticAgentCardProducer{Public: a2aCard, Extended: extendedCard},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard, Extended: extendedCard}),
 			want:         extendedPCard,
 		},
 	}

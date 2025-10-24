@@ -62,26 +62,39 @@ type ExtendedAgentCardProducer interface {
 	ExtendedCard(ctx context.Context) *a2a.AgentCard
 }
 
-// StaticAgentCardProducer implements ExtendedAgentCardProducer and can be configured with [a2a.AgentCard] objects
-// which do not change depending on the request context.
-// StaticAgentCardProducer automaitcally sets SupportsAuthenticatedExtendedCard flag on Public card if Extended card is set.
-type StaticAgentCardProducer struct {
+// StaticAgentCard represents a configuration of [AgentCardProducer] implementation which returns
+// [a2a.AgentCard] objects which are configured once and remain static while the program running.
+// It used as input to [NewStaticAgentCardProducer].
+type StaticAgentCard struct {
 	// Public is an agent card available to unauthenticated clients.
 	Public *a2a.AgentCard
 	// Extended is an agent card available to authorized clients.
 	Extended *a2a.AgentCard
 }
 
-func (card *StaticAgentCardProducer) Card(ctx context.Context) *a2a.AgentCard {
-	if card.Extended != nil {
-		card.Public.SupportsAuthenticatedExtendedCard = true
-	}
-	return card.Public
+type staticAgentCardProducer struct {
+	card *StaticAgentCard
 }
 
-func (card *StaticAgentCardProducer) ExtendedCard(ctx context.Context) *a2a.AgentCard {
+// NewStaticAgentCardProducer creates an [AgentCardProducer] implementation which serves [a2a.AgentCard] objects
+// objects which are configured once and remain static while the program running.
+// NewStaticAgentCardProducer will automatically set SupportsAuthenticatedExtendedCard flag on Public card if Extended card is provided.
+func NewStaticAgentCardProducer(card StaticAgentCard) ExtendedAgentCardProducer {
 	if card.Extended != nil {
-		return card.Extended
+		publicCopy := *card.Public
+		publicCopy.SupportsAuthenticatedExtendedCard = true
+		card.Public = &publicCopy
 	}
-	return card.Public
+	return &staticAgentCardProducer{card: &card}
+}
+
+func (p *staticAgentCardProducer) Card(ctx context.Context) *a2a.AgentCard {
+	return p.card.Public
+}
+
+func (p *staticAgentCardProducer) ExtendedCard(ctx context.Context) *a2a.AgentCard {
+	if p.card.Extended != nil {
+		return p.card.Extended
+	}
+	return p.card.Public
 }
