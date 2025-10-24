@@ -91,8 +91,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID) ([
 
 	configs, ok := s.configs[taskID]
 	if !ok {
-		// TODO(wieliczko): return empty list instead of nil ?
-		return nil, nil
+		return []*a2a.PushConfig{}, nil
 	}
 
 	result := make([]*a2a.PushConfig, 0, len(configs))

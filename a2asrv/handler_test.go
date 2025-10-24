@@ -1080,9 +1080,12 @@ func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 			},
 		},
 		{
-			name:       "delete from non-existent task",
-			params:     &a2a.DeleteTaskPushConfigParams{TaskID: "non-existent-task", ConfigID: config1.ID},
-			wantRemain: nil,
+			name:   "delete from non-existent task",
+			params: &a2a.DeleteTaskPushConfigParams{TaskID: "non-existent-task", ConfigID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
 		},
 	}
 
@@ -1107,10 +1110,8 @@ func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 			}
 
 			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
-			if tc.params.TaskID == taskID {
-				if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
-					t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
-				}
+			if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
+				t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
