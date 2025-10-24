@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/pushconfig"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
@@ -111,9 +112,11 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		agentExecutor: executor,
-		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewMem(),
+		agentExecutor:   executor,
+		queueManager:    eventqueue.NewInMemoryManager(),
+		taskStore:       taskstore.NewMem(),
+		pushConfigStore: pushconfig.NewInMemoryStore(),
+		pushNotifier:    pushconfig.NewHTTPPushSender(),
 	}
 
 	for _, option := range options {
@@ -232,6 +235,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
+		pushNotifier:    h.pushNotifier,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,
@@ -239,19 +243,47 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return nil, ErrUnimplemented
+	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get push configs: %w", err)
+	}
+	if config != nil {
+		return &a2a.TaskPushConfig{
+			TaskID: params.TaskID,
+			Config: *config,
+		}, nil
+	}
+	return nil, a2a.ErrPushConfigNotFound
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return nil, ErrUnimplemented
+	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list push configs: %w", err)
+	}
+	result := make([]*a2a.TaskPushConfig, len(configs))
+	for i, config := range configs {
+		result[i] = &a2a.TaskPushConfig{
+			TaskID: params.TaskID,
+			Config: *config,
+		}
+	}
+	return result, nil
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return nil, ErrUnimplemented
+	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save push config: %w", err)
+	}
+	return &a2a.TaskPushConfig{
+		TaskID: params.TaskID,
+		Config: *saved,
+	}, nil
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	return ErrUnimplemented
+	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)
 }
 
 func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
