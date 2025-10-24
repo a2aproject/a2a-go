@@ -31,10 +31,13 @@ type PushNotifier interface {
 type PushConfigStore interface {
 	// Save creates or updates a push notification configuration for a task.
 	// PushConfig has an ID and a Task can have multiple associated configurations.
-	Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) error
+	Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error)
 
-	// Get retrieves all registered push configurations for a Task.
-	Get(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
+	// Get retrieves a push configuration registered for a Task with the given configID.
+	Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error)
+
+	// List retrieves all registered push configurations for a Task.
+	List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
 
 	// Delete removes a push configuration registered for a Task with the given configID.
 	Delete(ctx context.Context, taskID a2a.TaskID, configID string) error

@@ -15,7 +15,6 @@
 package pushconfig
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -27,7 +26,7 @@ import (
 )
 
 func TestInMemoryPushConfigStore_Save(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskID := a2a.TaskID("task")
 
 	testCases := []struct {
@@ -70,21 +69,19 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := NewInMemoryStore()
-			err := store.Save(ctx, taskID, tc.config)
-
+			saved, err := store.Save(ctx, taskID, tc.config)
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("Save() failed: %v", err)
 				}
-				storedConfigs, err := store.Get(ctx, taskID)
-				if err != nil {
-					t.Fatalf("Get() failed: %v", err)
+				if tc.config.ID == "" {
+					if saved.ID == "" {
+						t.Fatalf("Saved config ID is empty")
+					}
+					tc.config.ID = saved.ID
 				}
-				if len(storedConfigs) != 1 {
-					t.Fatalf("Get() returned %d configs, want 1 for task %s", len(storedConfigs), taskID)
-				}
-				if diff := cmp.Diff(tc.config, storedConfigs[0]); diff != "" {
-					t.Errorf("Stored config mismatch (-want +got):\n%s", diff)
+				if diff := cmp.Diff(tc.config, saved); diff != "" {
+					t.Fatalf("Stored config mismatch (-want +got):\n%s", diff)
 				}
 			} else {
 				if err == nil || err.Error() != tc.wantErr.Error() {
@@ -96,32 +93,28 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 }
 
 func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 
 	t.Run("modify original config after save", func(t *testing.T) {
 		store := NewInMemoryStore()
 		originalConfig := &a2a.PushConfig{ID: newID(), URL: "https://original.com"}
-		err := store.Save(ctx, taskID, originalConfig)
+		saved, err := store.Save(ctx, taskID, originalConfig)
 		if err != nil {
 			t.Fatalf("Save() failed: %v", err)
 		}
-		savedID := originalConfig.ID
-		savedURL := originalConfig.URL
+		savedID := saved.ID
+		savedURL := saved.URL
 
 		originalConfig.URL = "https://modified-original.com"
 		originalConfig.ID = "new-id-for-original"
 
-		storedConfigs, err := store.Get(ctx, taskID)
+		got, err := store.Get(ctx, taskID, savedID)
 		if err != nil {
 			t.Fatalf("Get() failed: %v", err)
 		}
-		if len(storedConfigs) != 1 {
-			t.Fatalf("Expected 1 config, got %d", len(storedConfigs))
-		}
-		retrievedConfig := storedConfigs[0]
 		wantConfig := &a2a.PushConfig{ID: savedID, URL: savedURL}
-		if diff := cmp.Diff(wantConfig, retrievedConfig); diff != "" {
+		if diff := cmp.Diff(wantConfig, got); diff != "" {
 			t.Errorf("Retrieved config mismatch after modifying original (-want +got):\n%s", diff)
 		}
 	})
@@ -129,39 +122,73 @@ func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {
 	t.Run("modify retrieved config after get", func(t *testing.T) {
 		store := NewInMemoryStore()
 		initialConfig := &a2a.PushConfig{ID: newID(), URL: "https://initial-get.com"}
-		err := store.Save(ctx, taskID, initialConfig)
+		saved, err := store.Save(ctx, taskID, initialConfig)
 		if err != nil {
 			t.Fatalf("Save() failed: %v", err)
 		}
 
-		retrievedConfigs, err := store.Get(ctx, taskID)
-		if err != nil || len(retrievedConfigs) != 1 {
-			t.Fatalf("First Get() failed or returned unexpected count: %v, count %d", err, len(retrievedConfigs))
-		}
-		firstRetrievedConfig := retrievedConfigs[0]
-		firstRetrievedConfig.URL = "https://modified-retrieved.com"
-		firstRetrievedConfig.ID = "new-id-for-retrieved"
-		secondRetrievedConfigs, err := store.Get(ctx, taskID)
-		if err != nil || len(secondRetrievedConfigs) != 1 {
-			t.Fatalf("Second Get() failed or returned unexpected count: %v, count %d", err, len(secondRetrievedConfigs))
-		}
-		secondRetrievedConfig := secondRetrievedConfigs[0]
-		if diff := cmp.Diff(initialConfig, secondRetrievedConfig); diff != "" {
+		retrieved, err := store.Get(ctx, taskID, saved.ID)
+		retrieved.URL = "https://modified-retrieved.com"
+		retrieved.ID = "new-id-for-retrieved"
+		secondRetrieved, err := store.Get(ctx, taskID, saved.ID)
+		if diff := cmp.Diff(initialConfig, secondRetrieved); diff != "" {
 			t.Errorf("Second retrieved config mismatch after modifying first retrieved (-want +got):\n%s", diff)
 		}
 	})
 }
 
 func TestInMemoryPushConfigStore_Get(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskID := a2a.TaskID("task")
 	config := &a2a.PushConfig{ID: newID(), URL: "https://example.com/push1"}
-	anotherTaskID := a2a.TaskID("another-task")
-	anotherConfig := &a2a.PushConfig{ID: newID(), URL: "https://example.com/push2"}
 
 	store := NewInMemoryStore()
-	_ = store.Save(ctx, taskID, config)
-	_ = store.Save(ctx, anotherTaskID, anotherConfig)
+	config, _ = store.Save(ctx, taskID, config)
+
+	testCases := []struct {
+		name    string
+		taskID  a2a.TaskID
+		want    *a2a.PushConfig
+		wantErr error
+	}{
+		{
+			name:   "existing task",
+			taskID: taskID,
+			want:   config,
+		},
+		{
+			name:    "non-existent task",
+			taskID:  a2a.TaskID("non-existent"),
+			wantErr: a2a.ErrPushConfigNotFound,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := store.Get(ctx, tc.taskID, config.ID)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("Get() failed: %v", err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, tc.want, diff)
+				}
+			} else {
+				if err == nil || err.Error() != tc.wantErr.Error() {
+					t.Fatalf("Save() error = %v, want %v", err, tc.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestInMemoryPushConfigStore_List(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("task")
+	config := &a2a.PushConfig{ID: newID(), URL: "https://example.com/push1"}
+
+	store := NewInMemoryStore()
+	config, _ = store.Save(ctx, taskID, config)
 
 	testCases := []struct {
 		name   string
@@ -176,25 +203,27 @@ func TestInMemoryPushConfigStore_Get(t *testing.T) {
 		{
 			name:   "non-existent task",
 			taskID: a2a.TaskID("non-existent"),
-			want:   nil,
+			want:   []*a2a.PushConfig{},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			configs, err := store.Get(ctx, tc.taskID)
+			configs, err := store.List(ctx, tc.taskID)
 			if err != nil {
 				t.Fatalf("Get() failed: %v", err)
 			}
-			if diff := cmp.Diff(tc.want, configs); diff != "" {
-				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", configs, tc.want, diff)
+			want := sortConfigList(tc.want)
+			got := sortConfigList(configs)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 			}
 		})
 	}
 }
 
 func TestInMemoryPushConfigStore_Delete(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskID := a2a.TaskID("task")
 	configs := []*a2a.PushConfig{
 		{ID: newID(), URL: "https://example.com/push1"},
@@ -222,7 +251,7 @@ func TestInMemoryPushConfigStore_Delete(t *testing.T) {
 		{
 			name:   "non-existent task",
 			taskID: a2a.TaskID("non-existent"),
-			want:   nil,
+			want:   []*a2a.PushConfig{},
 		},
 	}
 
@@ -230,26 +259,28 @@ func TestInMemoryPushConfigStore_Delete(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := NewInMemoryStore()
 			for _, config := range configs {
-				_ = store.Save(ctx, taskID, config)
+				_, _ = store.Save(ctx, taskID, config)
 			}
 
 			err := store.Delete(ctx, tc.taskID, tc.configID)
 			if err != nil {
 				t.Fatalf("Delete() failed: %v", err)
 			}
-			got, err := store.Get(ctx, tc.taskID)
+			got, err := store.List(ctx, tc.taskID)
 			if err != nil {
 				t.Fatalf("Get() failed: %v", err)
 			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, tc.want, diff)
+			want := sortConfigList(tc.want)
+			got = sortConfigList(got)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 			}
 		})
 	}
 }
 
 func TestInMemoryPushConfigStore_DeleteAll(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskID := a2a.TaskID("task")
 	configs := sortConfigList([]*a2a.PushConfig{
 		{ID: newID(), URL: "https://example.com/push1"},
@@ -287,10 +318,10 @@ func TestInMemoryPushConfigStore_DeleteAll(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := NewInMemoryStore()
 			for _, config := range configs {
-				_ = store.Save(ctx, taskID, config)
+				_, _ = store.Save(ctx, taskID, config)
 			}
 			for _, config := range anotherConfigs {
-				_ = store.Save(ctx, anotherTaskID, config)
+				_, _ = store.Save(ctx, anotherTaskID, config)
 			}
 
 			err := store.DeleteAll(ctx, tc.taskID)
@@ -319,17 +350,18 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			config := &a2a.PushConfig{URL: fmt.Sprintf("https://example.com/push-%d", i)}
-			if err := store.Save(ctx, taskID, config); err != nil {
+			saved, err := store.Save(ctx, taskID, config)
+			if err != nil {
 				t.Errorf("concurrent Save() failed: %v", err)
 			}
-			created <- config
+			created <- saved
 		}(i)
 	}
 
 	wg.Wait()
 	close(created)
 
-	configs, err := store.Get(ctx, taskID)
+	configs, err := store.List(ctx, taskID)
 	if err != nil {
 		t.Fatalf("Get() failed: %v", err)
 	}
@@ -338,16 +370,13 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 		t.Fatalf("Expected %d configs to be created, but got %d", numGoroutines, len(configs))
 	}
 
-	for got := range created {
-		found := false
-		for _, config := range configs {
-			if config.URL == got.URL {
-				found = true
-				break
-			}
+	for c := range created {
+		got, err := store.Get(ctx, taskID, c.ID)
+		if err != nil {
+			t.Fatalf("Get() failed: %v", err)
 		}
-		if !found {
-			t.Errorf("Missing config with URL %q", got.URL)
+		if diff := cmp.Diff(c, got); diff != "" {
+			t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, c, diff)
 		}
 	}
 }

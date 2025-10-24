@@ -883,9 +883,9 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 
 	testCases := []struct {
-		name       string
-		params     *a2a.TaskPushConfig
-		wantErrStr string
+		name    string
+		params  *a2a.TaskPushConfig
+		wantErr error
 	}{
 		{
 			name: "valid config with id",
@@ -907,7 +907,7 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 				TaskID: taskID,
 				Config: a2a.PushConfig{ID: "config-invalid"},
 			},
-			wantErrStr: "push config endpoint cannot be empty",
+			wantErr: errors.New("failed to save push config: push config endpoint cannot be empty"),
 		},
 	}
 
@@ -916,9 +916,9 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 			handler := newTestHandler()
 			got, err := handler.OnSetTaskPushConfig(ctx, tc.params)
 
-			if tc.wantErrStr != "" {
-				if err == nil || err.Error() != tc.wantErrStr {
-					t.Fatalf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErrStr)
+			if tc.wantErr != nil {
+				if err == nil || err.Error() != tc.wantErr.Error() {
+					t.Fatalf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
@@ -928,19 +928,15 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 			}
 
 			if got.Config.ID == "" {
-				t.Error("OnSetTaskPushConfig() expected a generated ID, but it was empty")
+				t.Fatalf("OnSetTaskPushConfig() expected a generated ID, but it was empty")
+			}
+
+			if tc.params.Config.ID == "" {
+				got.Config.ID = ""
 			}
 
 			if diff := cmp.Diff(tc.params, got); diff != "" {
-				t.Errorf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
-			}
-
-			stored, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: got.Config.ID})
-			if err != nil {
-				t.Fatalf("OnGetTaskPushConfig() for verification failed: %v", err)
-			}
-			if diff := cmp.Diff(got, stored); diff != "" {
-				t.Errorf("Stored config mismatch (-want +got):\n%s", diff)
+				t.Fatalf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

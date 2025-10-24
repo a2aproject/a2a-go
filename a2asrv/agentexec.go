@@ -85,7 +85,7 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		if e.pushConfigStore == nil {
 			return nil, a2a.ErrPushNotificationNotSupported
 		}
-		if err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
+		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
 			return nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
 		}
 	}

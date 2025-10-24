@@ -241,23 +241,21 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	configs, err := h.pushConfigStore.Get(ctx, params.TaskID)
+	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get push configs: %w", err)
 	}
-	for _, config := range configs {
-		if config.ID == params.ConfigID {
-			return &a2a.TaskPushConfig{
-				TaskID: params.TaskID,
-				Config: *config,
-			}, nil
-		}
+	if config != nil {
+		return &a2a.TaskPushConfig{
+			TaskID: params.TaskID,
+			Config: *config,
+		}, nil
 	}
 	return nil, a2a.ErrPushConfigNotFound
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	configs, err := h.pushConfigStore.Get(ctx, params.TaskID)
+	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
@@ -272,7 +270,14 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return params, h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
+	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save push config: %w", err)
+	}
+	return &a2a.TaskPushConfig{
+		TaskID: params.TaskID,
+		Config: *saved,
+	}, nil
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {

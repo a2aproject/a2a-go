@@ -58,19 +58,18 @@ func validateConfig(config *a2a.PushConfig) error {
 }
 
 // Save adds a copy of push config to the store.
-func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) error {
+func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
 	if err := validateConfig(config); err != nil {
-		return err
+		return nil, err
 	}
 
-	// TODO(wieliczko): assign ID to copy or assign it at request handler level
-	if config.ID == "" {
-		config.ID = newID()
-	}
-
-	copy, err := utils.DeepCopy(config)
+	toSave, err := utils.DeepCopy(config)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	if toSave.ID == "" {
+		toSave.ID = newID()
 	}
 
 	s.mu.Lock()
@@ -79,13 +78,32 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	if _, ok := s.configs[taskID]; !ok {
 		s.configs[taskID] = make(map[string]*a2a.PushConfig)
 	}
-	s.configs[taskID][config.ID] = copy
+	s.configs[taskID][toSave.ID] = toSave
 
-	return nil
+	// toSave, err := utils.DeepCopy(config)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	return toSave, nil
 }
 
-// Get returns a copy of stored configs for a task.
-func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
+// Get returns a copy of stored config for a task and with given ID.
+func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if configs, ok := s.configs[taskID]; ok {
+		if config, ok := configs[configID]; ok {
+			return utils.DeepCopy(config)
+		}
+	}
+
+	return nil, a2a.ErrPushConfigNotFound
+}
+
+// List returns a copy of stored configs for a task.
+func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
