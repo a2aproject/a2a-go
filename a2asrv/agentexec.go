@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	"log/slog"
+
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
@@ -27,6 +29,7 @@ type executor struct {
 	*processor
 	taskID          a2a.TaskID
 	taskStore       TaskStore
+	pushNotifier    PushNotifier
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams
@@ -38,7 +41,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return err
 	}
-	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
+	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task), e.pushConfigStore, e.pushNotifier)
 
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, reqCtx)
@@ -112,7 +115,7 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
 	}
-	c.processor.init(taskupdate.NewManager(c.taskStore, task))
+	c.processor.init(taskupdate.NewManager(c.taskStore, task), c.pushConfigStore, c.pushNotifier)
 
 	if task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, task)
@@ -143,15 +146,19 @@ type processor struct {
 	// Processor is running in event consumer goroutine, but request context loading
 	// happens in event consumer goroutine. Once request context is loaded and validate the processor
 	// gets initialized.
-	updateManager *taskupdate.Manager
+	updateManager   *taskupdate.Manager
+	pushConfigStore PushConfigStore
+	pushNotifier    PushNotifier
 }
 
 func newProcessor() *processor {
 	return &processor{}
 }
 
-func (p *processor) init(um *taskupdate.Manager) {
+func (p *processor) init(um *taskupdate.Manager, pcs PushConfigStore, pn PushNotifier) {
 	p.updateManager = um
+	p.pushConfigStore = pcs
+	p.pushNotifier = pn
 }
 
 // Process implements taskexec.Processor interface.
@@ -169,7 +176,17 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, err
 	}
 
-	// TODO(yarolegovich): handle pushes
+	if p.pushNotifier != nil && p.pushConfigStore != nil {
+		configs, err := p.pushConfigStore.List(ctx, task.ID)
+		if err != nil {
+			slog.Error("failed to list push configs", "task_id", task.ID, "error", err)
+		}
+		for _, config := range configs {
+			if err := p.pushNotifier.SendPush(ctx, config, task); err != nil {
+				slog.Error("failed to send push notification", "task_id", task.ID, "config_id", config.ID, "error", err)
+			}
+		}
+	}
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
 		return nil, nil

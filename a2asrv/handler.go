@@ -116,6 +116,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		queueManager:    eventqueue.NewInMemoryManager(),
 		taskStore:       taskstore.NewMem(),
 		pushConfigStore: pushconfig.NewInMemoryStore(),
+		pushNotifier:    pushconfig.NewHTTPPushSender(),
 	}
 
 	for _, option := range options {
@@ -234,6 +235,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
+		pushNotifier:    h.pushNotifier,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,

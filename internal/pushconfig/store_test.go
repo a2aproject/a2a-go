@@ -78,7 +78,7 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 					if saved.ID == "" {
 						t.Fatalf("Saved config ID is empty")
 					}
-					tc.config.ID = saved.ID
+					saved.ID = ""
 				}
 				if diff := cmp.Diff(tc.config, saved); diff != "" {
 					t.Fatalf("Stored config mismatch (-want +got):\n%s", diff)
@@ -119,6 +119,29 @@ func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("modify returned saved config", func(t *testing.T) {
+		store := NewInMemoryStore()
+		originalConfig := &a2a.PushConfig{ID: newID(), URL: "https://original.com"}
+		saved, err := store.Save(ctx, taskID, originalConfig)
+		if err != nil {
+			t.Fatalf("Save() failed: %v", err)
+		}
+		savedID := saved.ID
+		savedURL := saved.URL
+
+		saved.URL = "https://modified-original.com"
+		saved.ID = "new-id-for-original"
+
+		got, err := store.Get(ctx, taskID, savedID)
+		if err != nil {
+			t.Fatalf("Get() failed: %v", err)
+		}
+		wantConfig := &a2a.PushConfig{ID: savedID, URL: savedURL}
+		if diff := cmp.Diff(wantConfig, got); diff != "" {
+			t.Errorf("Retrieved config mismatch after modifying original (-want +got):\n%s", diff)
+		}
+	})
+
 	t.Run("modify retrieved config after get", func(t *testing.T) {
 		store := NewInMemoryStore()
 		initialConfig := &a2a.PushConfig{ID: newID(), URL: "https://initial-get.com"}
@@ -128,9 +151,15 @@ func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {
 		}
 
 		retrieved, err := store.Get(ctx, taskID, saved.ID)
+		if err != nil {
+			t.Fatalf("Get() failed: %v", err)
+		}
 		retrieved.URL = "https://modified-retrieved.com"
 		retrieved.ID = "new-id-for-retrieved"
 		secondRetrieved, err := store.Get(ctx, taskID, saved.ID)
+		if err != nil {
+			t.Fatalf("Get() failed: %v", err)
+		}
 		if diff := cmp.Diff(initialConfig, secondRetrieved); diff != "" {
 			t.Errorf("Second retrieved config mismatch after modifying first retrieved (-want +got):\n%s", diff)
 		}

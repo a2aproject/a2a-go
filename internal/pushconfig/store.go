@@ -80,12 +80,12 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	}
 	s.configs[taskID][toSave.ID] = toSave
 
-	// toSave, err := utils.DeepCopy(config)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	savedCopy, err := utils.DeepCopy(toSave)
+	if err != nil {
+		return nil, err
+	}
 
-	return toSave, nil
+	return savedCopy, nil
 }
 
 // Get returns a copy of stored config for a task and with given ID.

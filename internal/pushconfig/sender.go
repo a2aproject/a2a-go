@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -30,19 +31,20 @@ type HTTPPushSender struct {
 	client *http.Client
 }
 
-// NewHTTPPushSender creates a new HTTPPushSender. If no client is provided,
-// it uses a default client with a 30-second timeout.
-func NewHTTPPushSender(client *http.Client) *HTTPPushSender {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+// NewHTTPPushSender creates a new HTTPPushSender. It uses a default client
+// with a 30-second timeout. An optional timeout can be provided.
+func NewHTTPPushSender(timeout ...time.Duration) *HTTPPushSender {
+	t := 30 * time.Second
+	if len(timeout) > 0 {
+		t = timeout[0]
 	}
-	return &HTTPPushSender{client: client}
+	return &HTTPPushSender{client: &http.Client{Timeout: t}}
 }
 
-// Send serializes the event to JSON and sends it as an HTTP POST request
+// SendPush serializes the task to JSON and sends it as an HTTP POST request
 // to the URL specified in the push configuration.
-func (s *HTTPPushSender) Send(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
-	jsonData, err := json.Marshal(event)
+func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
+	jsonData, err := json.Marshal(task)
 	if err != nil {
 		return fmt.Errorf("failed to serialize event to JSON: %w", err)
 	}
@@ -55,6 +57,17 @@ func (s *HTTPPushSender) Send(ctx context.Context, config *a2a.PushConfig, event
 	req.Header.Set("Content-Type", "application/json")
 	if config.Token != "" {
 		req.Header.Set("X-A2A-Notification-Token", config.Token)
+	}
+	if config.Auth != nil && config.Auth.Credentials != "" {
+		// Find the first supported scheme and apply it.
+		for _, scheme := range config.Auth.Schemes {
+			switch strings.ToLower(scheme) {
+			case "bearer":
+				req.Header.Set("Authorization", "Bearer "+config.Auth.Credentials)
+			case "basic":
+				req.Header.Set("Authorization", "Basic "+config.Auth.Credentials)
+			}
+		}
 	}
 
 	resp, err := s.client.Do(req)
