@@ -248,7 +248,7 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-var defaultMockCardProducer = a2asrv.NewStaticCardProducer(nil)
+var defaultMockCardProducer = &a2asrv.StaticAgentCardProducer{}
 
 func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
 	t.Helper()
@@ -1122,13 +1122,16 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{
-		ProtocolVersion: "1.0",
-		Name:            "Test Agent",
-	}
+	a2aCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent"}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
+	}
+
+	extendedCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent", Description: "secret"}
+	extendedPCard, err := pbconv.ToProtoAgentCard(extendedCard)
+	if err != nil {
+		t.Fatalf("failed to convert extended agent card for test setup: %v", err)
 	}
 
 	badCard := &a2a.AgentCard{
@@ -1145,7 +1148,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			cardProducer: a2asrv.NewStaticCardProducer(a2aCard),
+			cardProducer: &a2asrv.StaticAgentCardProducer{Public: a2aCard},
 			want:         pCard,
 		},
 		{
@@ -1155,13 +1158,18 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name:         "producer returns nil card",
-			cardProducer: a2asrv.NewStaticCardProducer(nil),
+			cardProducer: &a2asrv.StaticAgentCardProducer{},
 			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",
-			cardProducer: a2asrv.NewStaticCardProducer(badCard),
+			cardProducer: &a2asrv.StaticAgentCardProducer{Public: badCard},
 			wantErr:      codes.Internal,
+		},
+		{
+			name:         "producer returns extended card",
+			cardProducer: &a2asrv.StaticAgentCardProducer{Public: a2aCard, Extended: extendedCard},
+			want:         extendedPCard,
 		},
 	}
 

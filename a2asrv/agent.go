@@ -54,15 +54,34 @@ func (fn AgentCardProducerFn) Card(ctx context.Context) *a2a.AgentCard {
 	return fn(ctx)
 }
 
-// NewStaticCardProducer creates AgentCardProducer implementation which always returns the provided card.
-func NewStaticCardProducer(card *a2a.AgentCard) AgentCardProducer {
-	return AgentCardProducerFn(func(ctx context.Context) *a2a.AgentCard { return card })
-}
-
 // ExtendedAgentCardProducer can create both public agent cards and cards available to authenticated users only.
 type ExtendedAgentCardProducer interface {
 	AgentCardProducer
 
 	// ExtendedCard returns a manifest for an agent which is only available to authenticated users.
 	ExtendedCard(ctx context.Context) *a2a.AgentCard
+}
+
+// StaticAgentCardProducer implements ExtendedAgentCardProducer and can be configured with [a2a.AgentCard] objects
+// which do not change depending on the request context.
+// StaticAgentCardProducer automaitcally sets SupportsAuthenticatedExtendedCard flag on Public card if Extended card is set.
+type StaticAgentCardProducer struct {
+	// Public is an agent card available to unauthenticated clients.
+	Public *a2a.AgentCard
+	// Extended is an agent card available to authorized clients.
+	Extended *a2a.AgentCard
+}
+
+func (card *StaticAgentCardProducer) Card(ctx context.Context) *a2a.AgentCard {
+	if card.Extended != nil {
+		card.Public.SupportsAuthenticatedExtendedCard = true
+	}
+	return card.Public
+}
+
+func (card *StaticAgentCardProducer) ExtendedCard(ctx context.Context) *a2a.AgentCard {
+	if card.Extended != nil {
+		return card.Extended
+	}
+	return card.Public
 }
