@@ -248,17 +248,7 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-type mockAgentCardProducer struct {
-	card *a2a.AgentCard
-}
-
-func (m *mockAgentCardProducer) Card() *a2a.AgentCard {
-	return m.card
-}
-
-var defaultMockCardProducer = &mockAgentCardProducer{
-	card: nil,
-}
+var defaultMockCardProducer = a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{})
 
 func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
 	t.Helper()
@@ -1132,13 +1122,16 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{
-		ProtocolVersion: "1.0",
-		Name:            "Test Agent",
-	}
+	a2aCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent"}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
+	}
+
+	extendedCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent", Description: "secret"}
+	extendedPCard, err := pbconv.ToProtoAgentCard(extendedCard)
+	if err != nil {
+		t.Fatalf("failed to convert extended agent card for test setup: %v", err)
 	}
 
 	badCard := &a2a.AgentCard{
@@ -1155,7 +1148,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			cardProducer: &mockAgentCardProducer{card: a2aCard},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard}),
 			want:         pCard,
 		},
 		{
@@ -1165,13 +1158,18 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name:         "producer returns nil card",
-			cardProducer: &mockAgentCardProducer{card: nil},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{}),
 			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",
-			cardProducer: &mockAgentCardProducer{card: badCard},
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: badCard}),
 			wantErr:      codes.Internal,
+		},
+		{
+			name:         "producer returns extended card",
+			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard, Extended: extendedCard}),
+			want:         extendedPCard,
 		},
 	}
 
