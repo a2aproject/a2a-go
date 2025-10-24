@@ -199,7 +199,7 @@ func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardR
 	if h.cardProducer == nil {
 		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
 	}
-	card := h.cardProducer.Card()
+	card := h.cardProducer.Card(ctx)
 	result, err := pbconv.ToProtoAgentCard(card)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert agent card: %v", err)

@@ -248,17 +248,7 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-type mockAgentCardProducer struct {
-	card *a2a.AgentCard
-}
-
-func (m *mockAgentCardProducer) Card() *a2a.AgentCard {
-	return m.card
-}
-
-var defaultMockCardProducer = &mockAgentCardProducer{
-	card: nil,
-}
+var defaultMockCardProducer = a2asrv.NewStaticCardProducer(nil)
 
 func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
 	t.Helper()
@@ -1155,7 +1145,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			cardProducer: &mockAgentCardProducer{card: a2aCard},
+			cardProducer: a2asrv.NewStaticCardProducer(a2aCard),
 			want:         pCard,
 		},
 		{
@@ -1165,12 +1155,12 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name:         "producer returns nil card",
-			cardProducer: &mockAgentCardProducer{card: nil},
+			cardProducer: a2asrv.NewStaticCardProducer(nil),
 			want:         &a2apb.AgentCard{},
 		},
 		{
 			name:         "producer returns bad card",
-			cardProducer: &mockAgentCardProducer{card: badCard},
+			cardProducer: a2asrv.NewStaticCardProducer(badCard),
 			wantErr:      codes.Internal,
 		},
 	}

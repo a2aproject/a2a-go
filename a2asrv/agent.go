@@ -44,7 +44,19 @@ type AgentCardProducer interface {
 	// Card returns a self-describing manifest for an agent. It provides essential
 	// metadata including the agent's identity, capabilities, skills, supported
 	// communication methods, and security requirements and is publicly available.
-	Card() *a2a.AgentCard
+	Card(ctx context.Context) *a2a.AgentCard
+}
+
+// AgentCardProducerFn is a function type which implements AgentCardProducer.
+type AgentCardProducerFn func(ctx context.Context) *a2a.AgentCard
+
+func (fn AgentCardProducerFn) Card(ctx context.Context) *a2a.AgentCard {
+	return fn(ctx)
+}
+
+// NewStaticCardProducer creates AgentCardProducer implementation which always returns the provided card.
+func NewStaticCardProducer(card *a2a.AgentCard) AgentCardProducer {
+	return AgentCardProducerFn(func(ctx context.Context) *a2a.AgentCard { return card })
 }
 
 // ExtendedAgentCardProducer can create both public agent cards and cards available to authenticated users only.
@@ -52,5 +64,5 @@ type ExtendedAgentCardProducer interface {
 	AgentCardProducer
 
 	// ExtendedCard returns a manifest for an agent which is only available to authenticated users.
-	ExtendedCard() *a2a.AgentCard
+	ExtendedCard(ctx context.Context) *a2a.AgentCard
 }
