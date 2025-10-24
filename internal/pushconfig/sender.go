@@ -61,7 +61,9 @@ func (s *HTTPPushSender) Send(ctx context.Context, config *a2a.PushConfig, event
 	if err != nil {
 		return fmt.Errorf("failed to send push notification: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status)
