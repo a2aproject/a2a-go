@@ -25,6 +25,7 @@ const (
 	A2AService_SendMessage_FullMethodName                      = "/a2a.v1.A2AService/SendMessage"
 	A2AService_SendStreamingMessage_FullMethodName             = "/a2a.v1.A2AService/SendStreamingMessage"
 	A2AService_GetTask_FullMethodName                          = "/a2a.v1.A2AService/GetTask"
+	A2AService_ListTasks_FullMethodName                        = "/a2a.v1.A2AService/ListTasks"
 	A2AService_CancelTask_FullMethodName                       = "/a2a.v1.A2AService/CancelTask"
 	A2AService_TaskSubscription_FullMethodName                 = "/a2a.v1.A2AService/TaskSubscription"
 	A2AService_CreateTaskPushNotificationConfig_FullMethodName = "/a2a.v1.A2AService/CreateTaskPushNotificationConfig"
@@ -48,10 +49,6 @@ const (
 //   - TaskPushNotificationConfig are a resource whose parent is a task.
 //     They have get, list and create methods.
 //   - AgentCard is a static resource with only a get method.
-//
-// fields are not present as they don't comply with AIP rules, and the
-// optional history_length on the get task method is not present as it also
-// violates AIP-127 and AIP-131.
 type A2AServiceClient interface {
 	// Send a message to the agent. This is a blocking call that will return the
 	// task once it is completed, or a LRO if requested.
@@ -61,6 +58,8 @@ type A2AServiceClient interface {
 	SendStreamingMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
 	// Get the current state of a task from the agent.
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	// List tasks with optional filtering and pagination.
+	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// Cancel a task from the agent. If supported one should expect no
 	// more task updates for the task.
 	CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*Task, error)
@@ -122,6 +121,16 @@ func (c *a2AServiceClient) GetTask(ctx context.Context, in *GetTaskRequest, opts
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Task)
 	err := c.cc.Invoke(ctx, A2AService_GetTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *a2AServiceClient) ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTasksResponse)
+	err := c.cc.Invoke(ctx, A2AService_ListTasks_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,10 +230,6 @@ func (c *a2AServiceClient) DeleteTaskPushNotificationConfig(ctx context.Context,
 //   - TaskPushNotificationConfig are a resource whose parent is a task.
 //     They have get, list and create methods.
 //   - AgentCard is a static resource with only a get method.
-//
-// fields are not present as they don't comply with AIP rules, and the
-// optional history_length on the get task method is not present as it also
-// violates AIP-127 and AIP-131.
 type A2AServiceServer interface {
 	// Send a message to the agent. This is a blocking call that will return the
 	// task once it is completed, or a LRO if requested.
@@ -234,6 +239,8 @@ type A2AServiceServer interface {
 	SendStreamingMessage(*SendMessageRequest, grpc.ServerStreamingServer[StreamResponse]) error
 	// Get the current state of a task from the agent.
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
+	// List tasks with optional filtering and pagination.
+	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// Cancel a task from the agent. If supported one should expect no
 	// more task updates for the task.
 	CancelTask(context.Context, *CancelTaskRequest) (*Task, error)
@@ -270,6 +277,9 @@ func (UnimplementedA2AServiceServer) SendStreamingMessage(*SendMessageRequest, g
 }
 func (UnimplementedA2AServiceServer) GetTask(context.Context, *GetTaskRequest) (*Task, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTask not implemented")
+}
+func (UnimplementedA2AServiceServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
 }
 func (UnimplementedA2AServiceServer) CancelTask(context.Context, *CancelTaskRequest) (*Task, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelTask not implemented")
@@ -356,6 +366,24 @@ func _A2AService_GetTask_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(A2AServiceServer).GetTask(ctx, req.(*GetTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _A2AService_ListTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(A2AServiceServer).ListTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: A2AService_ListTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(A2AServiceServer).ListTasks(ctx, req.(*ListTasksRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -493,6 +521,10 @@ var A2AService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTask",
 			Handler:    _A2AService_GetTask_Handler,
+		},
+		{
+			MethodName: "ListTasks",
+			Handler:    _A2AService_ListTasks_Handler,
 		},
 		{
 			MethodName: "CancelTask",
