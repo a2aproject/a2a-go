@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 )
 
 func TestJSONRPCTransport_SendMessage(t *testing.T) {
@@ -179,7 +180,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Error: &jsonrpcError{
+			Error: &jsonrpc.Error{
 				Code:    -32600,
 				Message: "Invalid Request",
 			},
@@ -198,7 +199,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 		t.Fatal("got nil error, want error")
 	}
 
-	jsonrpcErr, ok := err.(*jsonrpcError)
+	jsonrpcErr, ok := err.(*jsonrpc.Error)
 	if !ok {
 		t.Fatalf("got error type %T, want jsonrpcError", err)
 	}
@@ -640,7 +641,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 }
 
 func TestJSONRPCTransport_ErrorMethod(t *testing.T) {
-	err := &jsonrpcError{
+	err := &jsonrpc.Error{
 		Code:    -32600,
 		Message: "Invalid Request",
 		Data:    json.RawMessage(`{"details":"extra info"}`),
@@ -652,7 +653,7 @@ func TestJSONRPCTransport_ErrorMethod(t *testing.T) {
 	}
 
 	// Test without data field
-	err2 := &jsonrpcError{
+	err2 := &jsonrpc.Error{
 		Code:    -32601,
 		Message: "Method not found",
 	}
