@@ -113,7 +113,7 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 	}
 }
 
-// WithExtendedAgentCard set a static authenticated agent card.
+// WithExtendedAgentCard sets a static extended authenticated agent card.
 func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
@@ -122,7 +122,7 @@ func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
 	}
 }
 
-// WithExtendedAgentCardProducer sets a dynamic authenticated agent card provider.
+// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
 func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.authenticatedCardProducer = cardProducer

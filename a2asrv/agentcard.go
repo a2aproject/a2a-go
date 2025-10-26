@@ -37,6 +37,9 @@ func (fn AgentCardProducerFn) Card(ctx context.Context) (*a2a.AgentCard, error) 
 	return fn(ctx)
 }
 
+// NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard]
+// which is not expected to change while the program is running.
+// The method panics if the argument json marhsaling fails.
 func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 	bytes, err := json.Marshal(card)
 	if err != nil {
@@ -56,6 +59,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 	})
 }
 
+// NewAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard].
 func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		if req.Method == "OPTIONS" {
