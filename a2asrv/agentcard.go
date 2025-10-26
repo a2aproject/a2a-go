@@ -98,7 +98,6 @@ func writePublicCardHTTPOptions(rw http.ResponseWriter) {
 func writeAgentCardBytes(rw http.ResponseWriter, bytes []byte) {
 	rw.Header().Set("Access-Control-Allow-Origin", "*")
 	rw.Header().Set("Content-Type", "application/json")
-	if _, err := rw.Write(bytes); err != nil {
-		// TODO(yarolegovich): log error
-	}
+	// TODO(yarolegovich): log error
+	_, _ = rw.Write(bytes)
 }

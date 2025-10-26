@@ -92,7 +92,7 @@ func TestAgentCardHandler(t *testing.T) {
 					t.Errorf("client.Do(req) error = %v", err)
 					return
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				if resp.StatusCode != tc.wantStatus {
 					t.Errorf("client.Do(req) status = %d, want %d", resp.StatusCode, tc.wantStatus)
 				}
