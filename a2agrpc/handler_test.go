@@ -248,13 +248,11 @@ func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
 }
 
-var defaultMockCardProducer = a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{})
-
-func startTestServer(t *testing.T, handler a2asrv.RequestHandler, cardProducer a2asrv.AgentCardProducer) a2apb.A2AServiceClient {
+func startTestServer(t *testing.T, handler a2asrv.RequestHandler) a2apb.A2AServiceClient {
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	grpcHandler := NewHandler(cardProducer, handler)
+	grpcHandler := NewHandler(handler)
 	grpcHandler.RegisterWith(s)
 
 	go func() {
@@ -292,7 +290,7 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name      string
@@ -371,7 +369,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -431,7 +429,7 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 func TestGrpcHandler_SendMessage(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -533,7 +531,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	taskID := a2a.TaskID("stream-task-123")
 	msgID := "stream-req-1"
@@ -684,7 +682,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 func TestGrpcHandler_TaskSubscription(t *testing.T) {
 	ctx := t.Context()
 	mockHandler := defaultMockHandler
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 	taskID := a2a.TaskID("resub-task-456")
 	tests := []struct {
 		name       string
@@ -798,7 +796,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -885,7 +883,7 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -965,7 +963,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -1053,7 +1051,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
 	}
-	client := startTestServer(t, mockHandler, defaultMockCardProducer)
+	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
 		name       string
@@ -1128,12 +1126,6 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
 	}
 
-	extendedCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent", Description: "secret"}
-	extendedPCard, err := pbconv.ToProtoAgentCard(extendedCard)
-	if err != nil {
-		t.Fatalf("failed to convert extended agent card for test setup: %v", err)
-	}
-
 	badCard := &a2a.AgentCard{
 		Capabilities: a2a.AgentCapabilities{
 			Extensions: []a2a.AgentExtension{{Params: map[string]any{"bad": func() {}}}},
@@ -1147,9 +1139,11 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		wantErr      codes.Code
 	}{
 		{
-			name:         "success",
-			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard}),
-			want:         pCard,
+			name: "success",
+			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+				return a2aCard, nil
+			}),
+			want: pCard,
 		},
 		{
 			name:         "nil producer",
@@ -1157,25 +1151,25 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 			wantErr:      codes.Unimplemented,
 		},
 		{
-			name:         "producer returns nil card",
-			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{}),
-			want:         &a2apb.AgentCard{},
+			name: "producer returns nil card",
+			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+				return nil, nil
+			}),
+			want: &a2apb.AgentCard{},
 		},
 		{
-			name:         "producer returns bad card",
-			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: badCard}),
-			wantErr:      codes.Internal,
-		},
-		{
-			name:         "producer returns extended card",
-			cardProducer: a2asrv.NewStaticAgentCardProducer(a2asrv.StaticAgentCard{Public: a2aCard, Extended: extendedCard}),
-			want:         extendedPCard,
+			name: "producer fails",
+			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+				return badCard, nil
+			}),
+			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := startTestServer(t, defaultMockHandler, tt.cardProducer)
+			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
+			client := startTestServer(t, handler)
 			resp, err := client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
 			if tt.wantErr != codes.OK {
 				if err == nil {

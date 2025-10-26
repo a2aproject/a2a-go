@@ -30,19 +30,15 @@ import (
 
 type GRPCHandler struct {
 	a2apb.UnimplementedA2AServiceServer
-	cardProducer a2asrv.AgentCardProducer
-	handler      a2asrv.RequestHandler
+	handler a2asrv.RequestHandler
 }
 
 func (h *GRPCHandler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
-func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GRPCHandler {
-	return &GRPCHandler{
-		cardProducer: cardProducer,
-		handler:      handler,
-	}
+func NewHandler(handler a2asrv.RequestHandler) *GRPCHandler {
+	return &GRPCHandler{handler: handler}
 }
 
 func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
@@ -196,14 +192,9 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 }
 
 func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	if h.cardProducer == nil {
-		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
-	}
-	var card *a2a.AgentCard
-	if producer, ok := h.cardProducer.(a2asrv.ExtendedAgentCardProducer); ok {
-		card = producer.ExtendedCard(ctx)
-	} else {
-		card = h.cardProducer.Card(ctx)
+	card, err := h.handler.OnGetAgentCard(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unimplemented, err.Error())
 	}
 	result, err := pbconv.ToProtoAgentCard(card)
 	if err != nil {
