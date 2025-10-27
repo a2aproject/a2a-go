@@ -15,7 +15,6 @@
 package push
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -52,17 +51,17 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 		{
 			name:    "nil config",
 			config:  nil,
-			wantErr: errors.New("push config cannot be nil"),
+			wantErr: fmt.Errorf("%w: push config cannot be nil", a2a.ErrInvalidParams),
 		},
 		{
 			name:    "empty URL",
 			config:  &a2a.PushConfig{},
-			wantErr: errors.New("push config endpoint cannot be empty"),
+			wantErr: fmt.Errorf("%w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 		},
 		{
 			name:    "invalid URL",
 			config:  &a2a.PushConfig{URL: "not a url"},
-			wantErr: errors.New("invalid push config endpoint URL: parse \"not a url\": invalid URI for request"),
+			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: parse \"not a url\": invalid URI for request", a2a.ErrInvalidParams),
 		},
 	}
 

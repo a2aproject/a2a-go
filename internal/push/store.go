@@ -63,7 +63,7 @@ func validateConfig(config *a2a.PushConfig) error {
 // Save adds a copy of push config to the store.
 func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
 	if err := validateConfig(config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
 	}
 
 	toSave, err := utils.DeepCopy(config)
