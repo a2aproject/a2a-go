@@ -716,7 +716,11 @@ func TestDefaultRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 		return originalExecuteFunc(ctx, reqCtx, queue)
 	}
 
-	go handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}})
+	go func() {
+		for range handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}}) {
+			// Events have to be consumed to prevent a deadlock.
+		}
+	}()
 
 	<-executionStarted
 
