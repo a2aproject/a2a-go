@@ -179,6 +179,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		if err != nil {
 			//TODO: log error
 		}
+		// TODO: consider dispatching in parallel with max concurrent calls cap
 		for _, config := range configs {
 			if err := p.pushNotifier.SendPush(ctx, config, task); err != nil {
 				//TODO: log error

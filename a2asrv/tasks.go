@@ -29,7 +29,8 @@ type PushNotifier interface {
 
 // PushConfigStore manages push notification configurations for tasks.
 type PushConfigStore interface {
-	// Save creates or updates a push notification configuration for a task.
+	// Save creates or updates a push notification configuration for a task. If no ID is set
+	// on the provided config, it will have a store-generated ID for the returned config.
 	// PushConfig has an ID and a Task can have multiple associated configurations.
 	Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error)
 

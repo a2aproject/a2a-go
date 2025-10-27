@@ -77,6 +77,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 		return fmt.Errorf("failed to send push notification: %w", err)
 	}
 	defer func() {
+		// TODO: log error
 		_ = resp.Body.Close()
 	}()
 
