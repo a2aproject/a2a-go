@@ -31,7 +31,7 @@ import (
 
 func TestNewHTTPPushSender(t *testing.T) {
 	t.Run("with no timeout provided", func(t *testing.T) {
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 		if sender.client == nil {
 			t.Fatal("expected a default client to be created, but it was nil")
 		}
@@ -42,7 +42,7 @@ func TestNewHTTPPushSender(t *testing.T) {
 
 	t.Run("with custom timeout", func(t *testing.T) {
 		customTimeout := 10 * time.Second
-		sender := NewHTTPPushSender(customTimeout)
+		sender := NewHTTPPushSender(&HTTPSenderConfig{Timeout: customTimeout})
 		if sender.client.Timeout != customTimeout {
 			t.Errorf("expected client timeout to be %v, got %v", customTimeout, sender.client.Timeout)
 		}
@@ -72,7 +72,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 
 	t.Run("success with token", func(t *testing.T) {
 		config := &a2a.PushConfig{URL: server.URL, Token: "test-token"}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err != nil {
@@ -98,7 +98,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 				Credentials: "my-bearer-token",
 			},
 		}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err != nil {
@@ -112,7 +112,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 
 	t.Run("success with basic auth", func(t *testing.T) {
 		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Schemes: []string{"Basic"}, Credentials: "dXNlcjpwYXNz"}}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err != nil {
@@ -126,7 +126,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 
 	t.Run("success without token", func(t *testing.T) {
 		config := &a2a.PushConfig{URL: server.URL}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err != nil {
@@ -141,7 +141,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 	t.Run("json marshal fails", func(t *testing.T) {
 		badTask := &a2a.Task{Metadata: map[string]any{"a": make(chan int)}}
 		config := &a2a.PushConfig{URL: server.URL}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, badTask)
 		if err == nil || !strings.Contains(err.Error(), "failed to serialize event to JSON") {
@@ -151,7 +151,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 
 	t.Run("invalid request URL", func(t *testing.T) {
 		config := &a2a.PushConfig{URL: "::"}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err == nil || !strings.Contains(err.Error(), "failed to create HTTP request") {
@@ -161,7 +161,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 
 	t.Run("http client fails", func(t *testing.T) {
 		config := &a2a.PushConfig{URL: "http://localhost:1"}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err == nil || !strings.Contains(err.Error(), "failed to send push notification") {
@@ -176,7 +176,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 		defer errorServer.Close()
 
 		config := &a2a.PushConfig{URL: errorServer.URL}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)
 		if err == nil || !strings.Contains(err.Error(), "push notification endpoint returned non-success status: 500 Internal Server Error") {
@@ -197,7 +197,7 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 		cancel()
 
 		config := &a2a.PushConfig{URL: slowServer.URL}
-		sender := NewHTTPPushSender()
+		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(canceledCtx, config, task)
 		if !errors.Is(err, context.Canceled) {

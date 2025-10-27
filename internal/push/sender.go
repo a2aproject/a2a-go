@@ -33,12 +33,19 @@ type HTTPPushSender struct {
 	client *http.Client
 }
 
+// HTTPSenderConfig allows to adjust HTTPPushSender
+type HTTPSenderConfig struct {
+	Timeout time.Duration
+}
+
 // NewHTTPPushSender creates a new HTTPPushSender. It uses a default client
-// with a 30-second timeout. An optional timeout can be provided.
-func NewHTTPPushSender(timeout ...time.Duration) *HTTPPushSender {
+// with a 30-second timeout. An optional config can be provided to customize it.
+func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 	t := 30 * time.Second
-	if len(timeout) > 0 {
-		t = timeout[0]
+	if config != nil {
+		if config.Timeout > 0 {
+			t = config.Timeout
+		}
 	}
 	return &HTTPPushSender{client: &http.Client{Timeout: t}}
 }

@@ -16,7 +16,6 @@ package a2asrv
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 
@@ -26,8 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
-
-var ErrUnimplemented = errors.New("unimplemented")
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -74,6 +71,8 @@ type defaultRequestHandler struct {
 
 type RequestHandlerOption func(*defaultRequestHandler)
 
+type HTTPPushConfig push.HTTPSenderConfig
+
 // WithTaskStore overrides TaskStore with custom implementation
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
@@ -109,6 +108,13 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 	}
 }
 
+// WithHTTPPushSender overrides default PushNotifier with an HTTPPushSender configured with the provided config.
+func WithHTTPPushSender(config *HTTPPushConfig) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.pushNotifier = push.NewHTTPPushSender((*push.HTTPSenderConfig)(config))
+	}
+}
+
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
@@ -116,7 +122,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		queueManager:    eventqueue.NewInMemoryManager(),
 		taskStore:       taskstore.NewMem(),
 		pushConfigStore: push.NewInMemoryStore(),
-		pushNotifier:    push.NewHTTPPushSender(),
+		pushNotifier:    push.NewHTTPPushSender(nil),
 	}
 
 	for _, option := range options {
