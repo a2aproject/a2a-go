@@ -506,7 +506,7 @@ func TestDefaultRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
 		close(executionStarted)
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(3 * time.Millisecond)
 		return originalExecuteFunc(ctx, reqCtx, queue)
 	}
 
