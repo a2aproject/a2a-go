@@ -39,7 +39,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return err
 	}
-	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task), e.pushConfigStore, e.pushNotifier)
+	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
 
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, reqCtx)
@@ -113,7 +113,7 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
 	}
-	c.processor.init(taskupdate.NewManager(c.taskStore, task), c.pushConfigStore, c.pushNotifier)
+	c.processor.init(taskupdate.NewManager(c.taskStore, task))
 
 	if task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, task)
@@ -149,14 +149,15 @@ type processor struct {
 	pushNotifier    PushNotifier
 }
 
-func newProcessor() *processor {
-	return &processor{}
+func newProcessor(pushConfigStore PushConfigStore, pushNotifier PushNotifier) *processor {
+	return &processor{
+		pushConfigStore: pushConfigStore,
+		pushNotifier:    pushNotifier,
+	}
 }
 
-func (p *processor) init(um *taskupdate.Manager, pcs PushConfigStore, pn PushNotifier) {
+func (p *processor) init(um *taskupdate.Manager) {
 	p.updateManager = um
-	p.pushConfigStore = pcs
-	p.pushNotifier = pn
 }
 
 // Process implements taskexec.Processor interface.

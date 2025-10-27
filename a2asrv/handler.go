@@ -164,7 +164,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 	}
 
 	canceler := &canceler{
-		processor:    newProcessor(),
+		processor:    newProcessor(h.pushConfigStore, h.pushNotifier),
 		agent:        h.agentExecutor,
 		taskStore:    h.taskStore,
 		params:       params,
@@ -236,7 +236,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	}
 
 	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(),
+		processor:       newProcessor(h.pushConfigStore, h.pushNotifier),
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
