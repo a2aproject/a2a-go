@@ -18,8 +18,6 @@ import (
 	"context"
 	"fmt"
 
-	"log/slog"
-
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
@@ -179,11 +177,11 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	if p.pushNotifier != nil && p.pushConfigStore != nil {
 		configs, err := p.pushConfigStore.List(ctx, task.ID)
 		if err != nil {
-			slog.Error("failed to list push configs", "task_id", task.ID, "error", err)
+			//TODO: log error
 		}
 		for _, config := range configs {
 			if err := p.pushNotifier.SendPush(ctx, config, task); err != nil {
-				slog.Error("failed to send push notification", "task_id", task.ID, "config_id", config.ID, "error", err)
+				//TODO: log error
 			}
 		}
 	}
