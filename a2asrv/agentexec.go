@@ -175,18 +175,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, err
 	}
 
-	if p.pushNotifier != nil && p.pushConfigStore != nil {
-		configs, err := p.pushConfigStore.List(ctx, task.ID)
-		if err != nil {
-			//TODO: log error
-		}
-		// TODO: consider dispatching in parallel with max concurrent calls cap
-		for _, config := range configs {
-			if err := p.pushNotifier.SendPush(ctx, config, task); err != nil {
-				//TODO: log error
-			}
-		}
-	}
+	p.sendPushNotifications(ctx, task)
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
 		return nil, nil
@@ -210,4 +199,16 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	return nil, nil
+}
+
+func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) {
+	if p.pushNotifier != nil && p.pushConfigStore != nil {
+		configs, _ := p.pushConfigStore.List(ctx, task.ID)
+		// TODO(yarolegovich): log error from getting stored push configs
+		// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
+		for _, config := range configs {
+			// TODO(yarolegovich): log error from sending a push
+			_ = p.pushNotifier.SendPush(ctx, config, task)
+		}
+	}
 }
