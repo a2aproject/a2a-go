@@ -128,7 +128,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	taskID := query.ID
 	if taskID == "" {
-		return nil, fmt.Errorf("%w: missing TaskID", a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
 	}
 
 	task, err := h.taskStore.Get(ctx, taskID)
@@ -171,17 +171,21 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	execution, err := h.handleSendMessage(ctx, params)
+	execution, subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	for event, err := range execution.Events(ctx) {
+	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
 		}
-		if shouldInterrupt(event) {
-			return event.(a2a.SendMessageResult), nil
+		if taskID, required := isAuthRequired(event); required {
+			task, err := h.taskStore.Get(ctx, taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load task in auth-required state: %w", err)
+			}
+			return task, nil
 		}
 	}
 
@@ -189,13 +193,15 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	execution, err := h.handleSendMessage(ctx, params)
+	_, subscription, err := h.handleSendMessage(ctx, params)
+
 	if err != nil {
 		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, err)
 		}
 	}
-	return execution.Events(ctx)
+
+	return subscription.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
@@ -208,9 +214,9 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	return exec.Events(ctx)
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
 	if params.Message == nil {
-		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
 	var taskID a2a.TaskID
@@ -247,7 +253,12 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 	return ErrUnimplemented
 }
 
-// TODO(yarolegovich): handle auth-required state
-func shouldInterrupt(_ a2a.Event) bool {
-	return false
+func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
+	switch v := event.(type) {
+	case *a2a.Task:
+		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
+	case *a2a.TaskStatusUpdateEvent:
+		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
+	}
+	return "", false
 }
