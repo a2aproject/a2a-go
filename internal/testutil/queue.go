@@ -21,8 +21,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-// MockEventQueue is a mock of eventqueue.Queue
-type MockEventQueue struct {
+// TestEventQueue is a mock of eventqueue.Queue
+type TestEventQueue struct {
 	eventqueue.Queue
 
 	ReadFunc  func(ctx context.Context) (a2a.Event, error)
@@ -30,73 +30,55 @@ type MockEventQueue struct {
 	CloseFunc func() error
 }
 
-func (m *MockEventQueue) Read(ctx context.Context) (a2a.Event, error) {
+func (m *TestEventQueue) Read(ctx context.Context) (a2a.Event, error) {
 	if m.ReadFunc != nil {
 		return m.ReadFunc(ctx)
 	}
 	return m.Queue.Read(ctx)
 }
 
-func (m *MockEventQueue) Write(ctx context.Context, event a2a.Event) error {
+func (m *TestEventQueue) Write(ctx context.Context, event a2a.Event) error {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, event)
 	}
 	return m.Queue.Write(ctx, event)
 }
 
-func (m *MockEventQueue) Close() error {
+func (m *TestEventQueue) Close() error {
 	if m.CloseFunc != nil {
 		return m.CloseFunc()
 	}
 	return m.Queue.Close()
 }
 
-// WithReadMock overrides Read execution
-func (m *MockEventQueue) WithReadMock(event a2a.Event, err error) *MockEventQueue {
+// SetReadOverride overrides Read execution
+func (m *TestEventQueue) SetReadOverride(event a2a.Event, err error) *TestEventQueue {
 	m.ReadFunc = func(ctx context.Context) (a2a.Event, error) {
 		return event, err
 	}
 	return m
 }
 
-// ClearReadMock removes override for Read execution
-func (m *MockEventQueue) ClearReadMock() *MockEventQueue {
-	m.ReadFunc = nil
-	return m
-}
-
-// WithWriteMock overrides Write execution
-func (m *MockEventQueue) WithWriteMock(err error) *MockEventQueue {
+// SetWriteError overrides Write execution with given error
+func (m *TestEventQueue) SetWriteError(err error) *TestEventQueue {
 	m.WriteFunc = func(ctx context.Context, event a2a.Event) error {
 		return err
 	}
 	return m
 }
 
-// ClearWriteMock removes override for Write execution
-func (m *MockEventQueue) ClearWriteMock() *MockEventQueue {
-	m.WriteFunc = nil
-	return m
-}
-
-// WithCloseMock overrides Close execution
-func (m *MockEventQueue) WithCloseMock(err error) *MockEventQueue {
+// SetCloseError overrides Close execution with given error
+func (m *TestEventQueue) SetCloseError(err error) *TestEventQueue {
 	m.CloseFunc = func() error {
 		return err
 	}
 	return m
 }
 
-// ClearCloseMock removes override for Close execution
-func (m *MockEventQueue) ClearCloseMock() *MockEventQueue {
-	m.CloseFunc = nil
-	return m
-}
-
-// NewEventQueueMock allows to mock execution of read, write and close.
+// NewTestEventQueue allows to mock execution of read, write and close.
 // Without any overrides it defaults to in memory implementation.
-func NewEventQueueMock() *MockEventQueue {
-	return &MockEventQueue{
+func NewTestEventQueue() *TestEventQueue {
+	return &TestEventQueue{
 		Queue: eventqueue.NewInMemoryQueue(512),
 	}
 }

@@ -21,8 +21,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-// MockQueueManager is a mock of eventqueue.Manager
-type MockQueueManager struct {
+// TestQueueManager is a mock of eventqueue.Manager
+type TestQueueManager struct {
 	eventqueue.Manager
 
 	GetOrCreateFunc func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error)
@@ -30,73 +30,55 @@ type MockQueueManager struct {
 	DestroyFunc     func(ctx context.Context, taskID a2a.TaskID) error
 }
 
-func (m *MockQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
+func (m *TestQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
 	if m.GetOrCreateFunc != nil {
 		return m.GetOrCreateFunc(ctx, taskID)
 	}
 	return m.Manager.GetOrCreate(ctx, taskID)
 }
 
-func (m *MockQueueManager) Get(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
+func (m *TestQueueManager) Get(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
 	if m.GetFunc != nil {
 		return m.GetFunc(ctx, taskID)
 	}
 	return m.Manager.Get(ctx, taskID)
 }
 
-func (m *MockQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
+func (m *TestQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
 	if m.DestroyFunc != nil {
 		return m.DestroyFunc(ctx, taskID)
 	}
 	return m.Manager.Destroy(ctx, taskID)
 }
 
-// WithGetOrCreateMock overrides GetOrCreate execution
-func (m *MockQueueManager) WithGetOrCreateMock(queue eventqueue.Queue, err error) *MockQueueManager {
+// SetGetOrCreateOverride overrides GetOrCreate execution
+func (m *TestQueueManager) SetGetOrCreateOverride(queue eventqueue.Queue, err error) *TestQueueManager {
 	m.GetOrCreateFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
 		return queue, err
 	}
 	return m
 }
 
-// ClearGetOrCreateMock removes override for GetOrCreate execution
-func (m *MockQueueManager) ClearGetOrCreateMock() *MockQueueManager {
-	m.GetOrCreateFunc = nil
-	return m
-}
-
-// WithGetMock overrides Get execution
-func (m *MockQueueManager) WithGetMock(queue eventqueue.Queue, ok bool) *MockQueueManager {
+// SetGetOverride overrides Get execution
+func (m *TestQueueManager) SetGetOverride(queue eventqueue.Queue, ok bool) *TestQueueManager {
 	m.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
 		return queue, ok
 	}
 	return m
 }
 
-// ClearGetMock removes override for Get execution
-func (m *MockQueueManager) ClearGetMock() *MockQueueManager {
-	m.GetFunc = nil
-	return m
-}
-
-// WithDestroyMock overrides Destroy execution
-func (m *MockQueueManager) WithDestroyMock(err error) *MockQueueManager {
+// SetDestroyError overrides Destroy execution with given error
+func (m *TestQueueManager) SetDestroyError(err error) *TestQueueManager {
 	m.DestroyFunc = func(ctx context.Context, taskID a2a.TaskID) error {
 		return err
 	}
 	return m
 }
 
-// ClearDestroyMock removes override for Get execution
-func (m *MockQueueManager) ClearDestroyMock() *MockQueueManager {
-	m.DestroyFunc = nil
-	return m
-}
-
-// NewQueueManagerMock allows to mock execution of manager operations.
+// NewTestQueueManager allows to mock execution of manager operations.
 // Without any overrides it defaults to in memory implementation.
-func NewQueueManagerMock() *MockQueueManager {
-	return &MockQueueManager{
+func NewTestQueueManager() *TestQueueManager {
+	return &TestQueueManager{
 		Manager: eventqueue.NewInMemoryManager(),
 	}
 }
