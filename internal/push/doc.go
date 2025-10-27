@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package pushconfig provides types and utilities for storing push configs.
-package pushconfig
+// Package push provides types and utilities for storing push configs.
+package push

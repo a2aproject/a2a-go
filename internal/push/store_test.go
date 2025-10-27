@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pushconfig
+package push
 
 import (
 	"errors"
@@ -188,7 +188,7 @@ func TestInMemoryPushConfigStore_Get(t *testing.T) {
 		{
 			name:    "non-existent task",
 			taskID:  a2a.TaskID("non-existent"),
-			wantErr: a2a.ErrPushConfigNotFound,
+			wantErr: ErrPushConfigNotFound,
 		},
 	}
 

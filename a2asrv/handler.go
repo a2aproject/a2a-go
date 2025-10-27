@@ -22,7 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/internal/pushconfig"
+	"github.com/a2aproject/a2a-go/internal/push"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
@@ -115,8 +115,8 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		agentExecutor:   executor,
 		queueManager:    eventqueue.NewInMemoryManager(),
 		taskStore:       taskstore.NewMem(),
-		pushConfigStore: pushconfig.NewInMemoryStore(),
-		pushNotifier:    pushconfig.NewHTTPPushSender(),
+		pushConfigStore: push.NewInMemoryStore(),
+		pushNotifier:    push.NewHTTPPushSender(),
 	}
 
 	for _, option := range options {
@@ -252,7 +252,7 @@ func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params 
 			Config: *config,
 		}, nil
 	}
-	return nil, a2a.ErrPushConfigNotFound
+	return nil, push.ErrPushConfigNotFound
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {

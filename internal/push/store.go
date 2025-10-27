@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pushconfig
+package push
 
 import (
 	"context"
@@ -25,6 +25,9 @@ import (
 	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/uuid"
 )
+
+// ErrPushConfigNotFound indicates that a push config with the provided ID was not found
+var ErrPushConfigNotFound = errors.New("push config not found")
 
 // InMemoryPushConfigStore implements a2asrv.PushConfigStore.
 type InMemoryPushConfigStore struct {
@@ -99,7 +102,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, co
 		}
 	}
 
-	return nil, a2a.ErrPushConfigNotFound
+	return nil, ErrPushConfigNotFound
 }
 
 // List returns a copy of stored configs for a task.

@@ -26,6 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/push"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -906,12 +907,12 @@ func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 		{
 			name:    "non-existent config",
 			params:  &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: "non-existent"},
-			wantErr: a2a.ErrPushConfigNotFound,
+			wantErr: push.ErrPushConfigNotFound,
 		},
 		{
 			name:    "non-existent task",
 			params:  &a2a.GetTaskPushConfigParams{TaskID: "non-existent-task", ConfigID: config1.ID},
-			wantErr: a2a.ErrPushConfigNotFound,
+			wantErr: push.ErrPushConfigNotFound,
 		},
 	}
 
