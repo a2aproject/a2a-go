@@ -79,11 +79,11 @@ type defaultRequestHandler struct {
 	logger                    *slog.Logger
 }
 
-type RequestHandlerOption func(*defaultRequestHandler)
+type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
 // WithTaskStore overrides TaskStore with custom implementation
 func WithTaskStore(store TaskStore) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.taskStore = store
 	}
 }
@@ -100,35 +100,42 @@ func WithLogger(logger *slog.Logger) RequestHandlerOption {
 
 // WithEventQueueManager overrides eventqueue.Manager with custom implementation
 func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.queueManager = manager
 	}
 }
 
 // WithPushConfigStore overrides default PushConfigStore with custom implementation
 func WithPushConfigStore(store PushConfigStore) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
 	}
 }
 
 // WithPushNotifier overrides default PushNotifier with custom implementation
 func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushNotifier = notifier
 	}
 }
 
 // WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
+	}
+}
+
+// WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
+func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.Interceptors = append(ih.Interceptors, interceptor)
 	}
 }
 
 // WithExtendedAgentCard sets a static extended authenticated agent card.
 func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
 			return card, nil
 		})
@@ -137,7 +144,7 @@ func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
 
 // WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
 func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.authenticatedCardProducer = cardProducer
 	}
 }
@@ -150,14 +157,15 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		taskStore:     taskstore.NewMem(),
 		logger:        slog.Default(),
 	}
+	ih := &InterceptedHandler{Handler: h}
 
 	for _, option := range options {
-		option(h)
+		option(ih, h)
 	}
 
 	h.execManager = taskexec.NewManager(h.queueManager)
 
-	return h
+	return ih
 }
 
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
@@ -197,12 +205,11 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 		interceptors: h.reqContextInterceptors,
 	}
 
-	result, err := h.execManager.Cancel(ctx, params.ID, canceler)
+	response, err := h.execManager.Cancel(ctx, params.ID, canceler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
-
-	return result, nil
+	return response, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -235,6 +242,7 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 	if err != nil {
 		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, err)
+			return
 		}
 	}
 
@@ -242,13 +250,24 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	exec, ok := h.execManager.GetExecution(params.ID)
-	if !ok {
-		return func(yield func(a2a.Event, error) bool) {
+	return func(yield func(a2a.Event, error) bool) {
+		if params == nil {
+			yield(nil, a2a.ErrInvalidRequest)
+			return
+		}
+
+		exec, ok := h.execManager.GetExecution(params.ID)
+		if !ok {
 			yield(nil, a2a.ErrTaskNotFound)
+			return
+		}
+
+		for ev, err := range exec.Events(ctx) {
+			if !yield(ev, err) {
+				return
+			}
 		}
 	}
-	return exec.Events(ctx)
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
@@ -275,18 +294,30 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	if params == nil {
+		return nil, a2a.ErrInvalidRequest
+	}
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	if params == nil {
+		return nil, a2a.ErrInvalidRequest
+	}
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	if params == nil {
+		return nil, a2a.ErrInvalidRequest
+	}
 	return nil, ErrUnimplemented
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	if params == nil {
+		return a2a.ErrInvalidRequest
+	}
 	return ErrUnimplemented
 }
 

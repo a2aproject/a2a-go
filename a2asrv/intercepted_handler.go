@@ -171,7 +171,7 @@ func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.A
 	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
 		return nil, errOverride
 	}
-	return response, nil
+	return response, err
 }
 
 func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {

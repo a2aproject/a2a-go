@@ -31,16 +31,16 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 // or to have access to the list of activated extensions after the call ends.
 // If context already had a CallContext attached it will be shadowed.
 func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *CallContext) {
-	callCtx := &CallContext{User: unauthenticatedUser{}, requestMeta: meta}
+	callCtx := &CallContext{User: unauthenticatedUser{}, RequestMeta: meta}
 	return context.WithValue(ctx, callContextKey{}, callCtx), callCtx
 }
 
 // CallContext holds information about the current server call scope.
 type CallContext struct {
 	method              string
-	requestMeta         *RequestMeta
 	activatedExtensions []string
-
+	// RequestMeta is a metadata (eg. signatures, auth credentials) of the request associated with this call context.
+	RequestMeta *RequestMeta
 	// User can be set by authentication middleware to provide information about
 	// the user who initiated the request.
 	User User
@@ -49,11 +49,6 @@ type CallContext struct {
 // Method returns the name of the RequestHandler method which is being executed.
 func (cc *CallContext) Method() string {
 	return cc.method
-}
-
-// RequestMeta returns metadata of the request which created the call context.
-func (cc *CallContext) RequestMeta() *RequestMeta {
-	return cc.requestMeta
 }
 
 // Extensions returns a struct which provides an API for working with extensions in the current call context.
