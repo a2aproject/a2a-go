@@ -18,7 +18,7 @@ package a2asrv
 type User interface {
 	// Name returns a username.
 	Name() string
-	// Authenticated returns true if requested was authenticated.
+	// Authenticated returns true if the request was authenticated.
 	Authenticated() bool
 }
 

@@ -29,8 +29,9 @@ type RequestMeta struct {
 // NewRequestMeta creates a new immutable RequestMeta.
 func NewRequestMeta(src map[string][]string) *RequestMeta {
 	if src == nil {
-		return nil
+		return &RequestMeta{kv: map[string][]string{}}
 	}
+
 	kv := make(map[string][]string, len(src))
 	for k, v := range src {
 		kv[strings.ToLower(k)] = slices.Clone(v)
