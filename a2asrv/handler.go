@@ -42,20 +42,23 @@ type RequestHandler interface {
 	// OnResubscribeToTask handles the `tasks/resubscribe` protocol method.
 	OnResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
 
-	// OnMessageSendStream handles the 'message/stream' protocol method (streaming).
+	// OnSendMessageStream handles the 'message/stream' protocol method (streaming).
 	OnSendMessageStream(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
 
-	// OnGetTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/get` protocol method.
+	// OnGetTaskPushConfig handles the `tasks/pushNotificationConfig/get` protocol method.
 	OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
 
-	// OnListTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/list` protocol method.
+	// OnListTaskPushConfig handles the `tasks/pushNotificationConfig/list` protocol method.
 	OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
 
 	// OnSetTaskPushConfig handles the `tasks/pushNotificationConfig/set` protocol method.
 	OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
 
-	// OnDeleteTaskPushNotificationConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
+	// OnDeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
+
+	// GetAgentCard returns an extended [a2a.AgentCard] if configured.
+	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler
@@ -69,6 +72,8 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	reqContextInterceptors []RequestContextInterceptor
+
+	authenticatedCardProducer AgentCardProducer
 }
 
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
@@ -115,6 +120,22 @@ func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
 	}
 }
 
+// WithExtendedAgentCard sets a static extended authenticated agent card.
+func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
+			return card, nil
+		})
+	}
+}
+
+// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
+func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.authenticatedCardProducer = cardProducer
+	}
+}
+
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
@@ -134,14 +155,29 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 }
 
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	if query == nil {
-		return nil, a2a.ErrInvalidRequest
+	taskID := query.ID
+	if taskID == "" {
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
 	}
 
-	return nil, ErrUnimplemented
+	task, err := h.taskStore.Get(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task: %w", err)
+	}
+
+	if query.HistoryLength != nil {
+		historyLength := *query.HistoryLength
+
+		if historyLength <= 0 {
+			task.History = []*a2a.Message{}
+		} else if historyLength < len(task.History) {
+			task.History = task.History[len(task.History)-historyLength:]
+		}
+	}
+
+	return task, nil
 }
 
-// TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	if params == nil {
 		return nil, a2a.ErrInvalidRequest
@@ -163,21 +199,21 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	if params == nil {
-		return nil, a2a.ErrInvalidRequest
-	}
-
-	execution, err := h.handleSendMessage(ctx, params)
+	execution, subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	for event, err := range execution.Events(ctx) {
+	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
 		}
-		if shouldInterrupt(event) {
-			return event.(a2a.SendMessageResult), nil
+		if taskID, required := isAuthRequired(event); required {
+			task, err := h.taskStore.Get(ctx, taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load task in auth-required state: %w", err)
+			}
+			return task, nil
 		}
 	}
 
@@ -185,24 +221,16 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		if params == nil {
-			yield(nil, a2a.ErrInvalidRequest)
-			return
-		}
+	_, subscription, err := h.handleSendMessage(ctx, params)
 
-		execution, err := h.handleSendMessage(ctx, params)
-		if err != nil {
+	if err != nil {
+		return func(yield func(a2a.Event, error) bool) {
 			yield(nil, err)
 			return
 		}
-
-		for ev, err := range execution.Events(ctx) {
-			if !yield(ev, err) {
-				return
-			}
-		}
 	}
+
+	return subscription.Events(ctx)
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
@@ -226,12 +254,9 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, error) {
-	if params == nil {
-		return nil, a2a.ErrInvalidRequest
-	}
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
 	if params.Message == nil {
-		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
 	var taskID a2a.TaskID
@@ -280,7 +305,19 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 	return ErrUnimplemented
 }
 
-// TODO(yarolegovich): handle auth-required state
-func shouldInterrupt(_ a2a.Event) bool {
-	return false
+func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	if h.authenticatedCardProducer == nil {
+		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
+	}
+	return h.authenticatedCardProducer.Card(ctx)
+}
+
+func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
+	switch v := event.(type) {
+	case *a2a.Task:
+		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
+	case *a2a.TaskStatusUpdateEvent:
+		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
+	}
+	return "", false
 }

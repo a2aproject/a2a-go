@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package a2asrv
 
 import (
@@ -147,6 +161,19 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return err
 }
 
+func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnGetExtendedAgentCard")
+	ctx, err := h.interceptBefore(ctx, callCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := h.Handler.OnGetExtendedAgentCard(ctx)
+	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+		return nil, errOverride
+	}
+	return response, err
+}
+
 func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {
 	request := &Request{Payload: payload}
 
@@ -164,7 +191,8 @@ func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallC
 func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallContext, payload any, responseErr error) error {
 	response := &Response{Payload: payload, Err: responseErr}
 
-	for _, interceptor := range h.Interceptors {
+	for i := range len(h.Interceptors) {
+		interceptor := h.Interceptors[len(h.Interceptors)-i-1]
 		if err := interceptor.After(ctx, callCtx, response); err != nil {
 			return err
 		}

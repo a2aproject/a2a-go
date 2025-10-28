@@ -47,8 +47,9 @@ func (*TaskArtifactUpdateEvent) isEvent() {}
 type MessageRole string
 
 const (
-	MessageRoleAgent MessageRole = "agent"
-	MessageRoleUser  MessageRole = "user"
+	MessageRoleUnspecified MessageRole = ""
+	MessageRoleAgent       MessageRole = "agent"
+	MessageRoleUser        MessageRole = "user"
 )
 
 // NewMessageID generates a new random message identifier.
@@ -130,6 +131,7 @@ func NewContextID() string {
 type TaskState string
 
 const (
+	TaskStateUnspecified   TaskState = ""
 	TaskStateAuthRequired  TaskState = "auth-required"
 	TaskStateCanceled      TaskState = "canceled"
 	TaskStateCompleted     TaskState = "completed"

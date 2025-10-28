@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package a2asrv
 
 import (
@@ -5,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"reflect"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -98,6 +113,14 @@ func (h *mockHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.De
 	return h.resultErr
 }
 
+func (h *mockHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	h.lastCallContext, _ = CallContextFrom(ctx)
+	if h.resultErr != nil {
+		return nil, h.resultErr
+	}
+	return &a2a.AgentCard{}, nil
+}
+
 type mockInterceptor struct {
 	beforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error)
 	afterFn  func(ctx context.Context, callCtx *CallContext, resp *Response) error
@@ -188,6 +211,12 @@ var methodCalls = []struct {
 			return nil, h.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{})
 		},
 	},
+	{
+		method: "OnGetExtendedAgentCard",
+		call: func(ctx context.Context, h RequestHandler) (any, error) {
+			return h.OnGetExtendedAgentCard(ctx)
+		},
+	},
 }
 
 func TestInterceptedHandler_Auth(t *testing.T) {
@@ -259,6 +288,40 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	responsMsg := response.(*a2a.Message)
 	if responsMsg.Metadata[wantRespKey] != wantRespVal {
 		t.Fatalf("OnSendMessage() Response.Metadata[%q] = %v, want %d", wantRespKey, responsMsg.Metadata[wantRespKey], wantRespVal)
+	}
+}
+
+func TestInterceptedHandler_InterceptorOrdering(t *testing.T) {
+	ctx := t.Context()
+	mockHandler := &mockHandler{}
+
+	beforeCalls := []int{}
+	afterCalls := []int{}
+	createInterceptor := func(pos int) *mockInterceptor {
+		return &mockInterceptor{
+			beforeFn: func(ctx context.Context, callCtx *CallContext, resp *Request) (context.Context, error) {
+				beforeCalls = append(beforeCalls, pos)
+				return ctx, nil
+			},
+			afterFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+				afterCalls = append(afterCalls, pos)
+				return nil
+			},
+		}
+	}
+
+	interceptor1, interceptor2 := createInterceptor(1), createInterceptor(2)
+	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{interceptor1, interceptor2}}
+
+	_, _ = handler.OnGetTask(ctx, &a2a.TaskQueryParams{})
+
+	wantBefore := []int{1, 2}
+	if !reflect.DeepEqual(beforeCalls, wantBefore) {
+		t.Errorf("Before() invocation order = %v, want %v", beforeCalls, wantBefore)
+	}
+	wantAfter := []int{2, 1}
+	if !reflect.DeepEqual(afterCalls, wantAfter) {
+		t.Errorf("After() invocation order = %v, want %v", afterCalls, wantAfter)
 	}
 }
 
