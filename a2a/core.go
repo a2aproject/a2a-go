@@ -626,7 +626,7 @@ type MessageSendConfig struct {
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
-	// PushConfig is aonfiguration for the agent to send push notifications for updates after the initial response.
+	// PushConfig is configuration for the agent to send push notifications for updates after the initial response.
 	PushConfig *PushConfig `json:"pushNotificationConfig,omitempty" yaml:"pushNotificationConfig,omitempty" mapstructure:"pushNotificationConfig,omitempty"`
 }
 

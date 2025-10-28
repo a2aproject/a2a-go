@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 type testTransport struct {
@@ -159,6 +160,74 @@ func TestClient_InterceptorModifiesRequest(t *testing.T) {
 	}
 	if receivedMeta[metaKey] != metaVal {
 		t.Fatalf("client.GetTask() meta[%s]=%v, want %v", metaKey, receivedMeta[metaKey], metaVal)
+	}
+}
+
+func TestClient_DefaultSendMessageConfig(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	acceptedModes := []string{"text/plain"}
+	pushConfig := &a2a.PushConfig{URL: "https://push.com", Token: "secret"}
+	transport := &testTransport{
+		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			return task, nil
+		},
+		SendStreamingMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) { yield(task, nil) }
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := &Client{
+		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes},
+		transport:    transport,
+		interceptors: []CallInterceptor{interceptor},
+	}
+	req := &a2a.MessageSendParams{}
+	_, err := client.SendMessage(ctx, req)
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v", err)
+	}
+	want := &a2a.MessageSendParams{
+		Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
+	}
+	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
+		t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
+	}
+	if diff := cmp.Diff(&a2a.MessageSendParams{}, req); diff != "" {
+		t.Fatalf("client.SendMessage() modified params (+got,-want) diff = %s", diff)
+	}
+}
+
+func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	acceptedModes := []string{"text/plain"}
+	pushConfig := &a2a.PushConfig{URL: "https://push.com", Token: "secret"}
+	transport := &testTransport{
+		SendStreamingMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) { yield(task, nil) }
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := &Client{
+		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes},
+		transport:    transport,
+		interceptors: []CallInterceptor{interceptor},
+	}
+	req := &a2a.MessageSendParams{}
+	for _, err := range client.SendStreamingMessage(ctx, req) {
+		if err != nil {
+			t.Fatalf("client.SendStreamingMessage() error = %v", err)
+		}
+	}
+	want := &a2a.MessageSendParams{
+		Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
+	}
+	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
+		t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+	}
+	if diff := cmp.Diff(&a2a.MessageSendParams{}, req); diff != "" {
+		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
 	}
 }
 
@@ -304,6 +373,79 @@ func TestClient_InterceptorMethodsDataSharing(t *testing.T) {
 	}
 }
 
+func TestClient_GetExtendedAgentCard(t *testing.T) {
+	ctx := t.Context()
+	want := &a2a.AgentCard{Name: "test", SupportsAuthenticatedExtendedCard: true}
+	extendedCard := &a2a.AgentCard{Name: "test", Description: "secret"}
+	transport := &testTransport{
+		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+			return extendedCard, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}, card: want}
+	got, err := client.GetAgentCard(ctx)
+	if err != nil {
+		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+	}
+	if interceptor.lastReq == nil {
+		t.Fatal("lastReq = nil, want GertAgentCard")
+	}
+	if diff := cmp.Diff(extendedCard, got); diff != "" {
+		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+	}
+}
+
+func TestClient_PassAgentCardToInterceptorsAfterResolved(t *testing.T) {
+	ctx := t.Context()
+	extendedCard := &a2a.AgentCard{Name: "test", Description: "secret", SupportsAuthenticatedExtendedCard: true}
+	transport := &testTransport{
+		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+			return extendedCard, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
+	_, err := client.GetAgentCard(ctx)
+	if err != nil {
+		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+	}
+	if interceptor.lastReq.Card != nil {
+		t.Fatalf("lastReq.Card = %v, want nil", interceptor.lastReq.Card)
+	}
+	if interceptor.lastResp.Card != nil {
+		t.Fatalf("lastResp.Card = %v, want nil", interceptor.lastResp.Card)
+	}
+
+	_, err = client.GetAgentCard(ctx)
+	if err != nil {
+		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(extendedCard, interceptor.lastReq.Card); diff != "" {
+		t.Fatalf("wrong interceptor.lastReq.Card (+got,-want) diff = %s", diff)
+	}
+	if diff := cmp.Diff(extendedCard, interceptor.lastResp.Card); diff != "" {
+		t.Fatalf("wrong interceptor.lastResp.Card (+got,-want) diff = %s", diff)
+	}
+}
+
+func TestClient_GetAgentCardCallSkippedIfNoExtendedCard(t *testing.T) {
+	ctx := t.Context()
+	want := &a2a.AgentCard{Name: "test", SupportsAuthenticatedExtendedCard: false}
+	interceptor := &testInterceptor{}
+	client := &Client{interceptors: []CallInterceptor{interceptor}, card: want}
+	got, err := client.GetAgentCard(ctx)
+	if err != nil {
+		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+	}
+	if interceptor.lastReq != nil {
+		t.Fatalf("lastReq = %v, want nil", interceptor.lastReq)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+	}
+}
+
 func TestClient_InterceptGetTask(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
@@ -316,8 +458,11 @@ func TestClient_InterceptGetTask(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskQueryParams{}
 	resp, err := client.GetTask(ctx, req)
-	if interceptor.lastReq.Method() != "GetTask" {
-		t.Fatalf("wrong method: got = %v, want GetTask", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "GetTask" {
+		t.Fatalf("lastReq.Method = %v, want GetTask", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "GetTask" {
+		t.Fatalf("lastResp.Method = %v, want GetTask", interceptor.lastResp.Method)
 	}
 	if err != nil || resp != task {
 		t.Fatalf("client.GetTask() = (%v, %v), want %v", resp, err, task)
@@ -342,8 +487,11 @@ func TestClient_InterceptCancelTask(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskIDParams{}
 	resp, err := client.CancelTask(ctx, req)
-	if interceptor.lastReq.Method() != "CancelTask" {
-		t.Fatalf("wrong method: got = %v, want CancelTask", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "CancelTask" {
+		t.Fatalf("lastReq.Method = %v, want CancelTask", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "CancelTask" {
+		t.Fatalf("lastResp.Method = %v, want CancelTask", interceptor.lastResp.Method)
 	}
 	if err != nil || resp != task {
 		t.Fatalf("client.CancelTask() = (%v, %v), want %v", resp, err, task)
@@ -368,8 +516,11 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.MessageSendParams{}
 	resp, err := client.SendMessage(ctx, req)
-	if interceptor.lastReq.Method() != "SendMessage" {
-		t.Fatalf("wrong method: got %v, want SendMessage", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "SendMessage" {
+		t.Fatalf("lastReq.Method = %v, want SendMessage", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "SendMessage" {
+		t.Fatalf("lastResp.Method = %v, want SendMessage", interceptor.lastResp.Method)
 	}
 	if err != nil || resp != task {
 		t.Fatalf("client.SendMessage() = (%v, %v), want %v", resp, err, task)
@@ -407,8 +558,11 @@ func TestClient_InterceptResubscribeToTask(t *testing.T) {
 		}
 		eventI += 1
 	}
-	if interceptor.lastReq.Method() != "ResubscribeToTask" {
-		t.Fatalf("wrong method: got %v, want ResubscribeToTask", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "ResubscribeToTask" {
+		t.Fatalf("lastReq.Method = %v, want ResubscribeToTask", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "ResubscribeToTask" {
+		t.Fatalf("lastResp.Method = %v, want ResubscribeToTask", interceptor.lastResp.Method)
 	}
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
@@ -440,8 +594,11 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		}
 		eventI += 1
 	}
-	if interceptor.lastReq.Method() != "SendStreamingMessage" {
-		t.Fatalf("wrong method: got %v, want SendStreamingMessage", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "SendStreamingMessage" {
+		t.Fatalf("lastReq.Method = %v, want SendStreamingMessage", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "SendStreamingMessage" {
+		t.Fatalf("lastResp.Method = %v, want SendStreamingMessage", interceptor.lastResp.Method)
 	}
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
@@ -460,8 +617,11 @@ func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.GetTaskPushConfigParams{}
 	resp, err := client.GetTaskPushConfig(ctx, req)
-	if interceptor.lastReq.Method() != "GetTaskPushConfig" {
-		t.Fatalf("wrong method: got %v, want GetTaskPushConfig", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "GetTaskPushConfig" {
+		t.Fatalf("lastReq.Method = %v, want GetTaskPushConfig", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "GetTaskPushConfig" {
+		t.Fatalf("lastResp.Method = %v, want GetTaskPushConfig", interceptor.lastResp.Method)
 	}
 	if err != nil || resp != config {
 		t.Fatalf("client.GetTaskPushConfig() = (%v, %v), want %v", resp, err, config)
@@ -486,8 +646,11 @@ func TestClient_InterceptListTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.ListTaskPushConfigParams{}
 	resp, err := client.ListTaskPushConfig(ctx, req)
-	if interceptor.lastReq.Method() != "ListTaskPushConfig" {
-		t.Fatalf("wrong method: got %v, want ListTaskPushConfig", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "ListTaskPushConfig" {
+		t.Fatalf("lastReq.Method = %v, want ListTaskPushConfig", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "ListTaskPushConfig" {
+		t.Fatalf("lastResp.Method = %v, want ListTaskPushConfig", interceptor.lastResp.Method)
 	}
 	if err != nil || len(resp) != 1 || resp[0] != config {
 		t.Fatalf("client.ListTaskPushConfig() = (%v, %v), want %v", resp, err, config)
@@ -512,8 +675,11 @@ func TestClient_InterceptSetTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.TaskPushConfig{}
 	resp, err := client.SetTaskPushConfig(ctx, req)
-	if interceptor.lastReq.Method() != "SetTaskPushConfig" {
-		t.Fatalf("wrong method: got %v, want SetTaskPushConfig", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "SetTaskPushConfig" {
+		t.Fatalf("lastReq.Method = %v, want SetTaskPushConfig", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "SetTaskPushConfig" {
+		t.Fatalf("lastResp.Method = %v, want SetTaskPushConfig", interceptor.lastResp.Method)
 	}
 	if err != nil || resp != config {
 		t.Fatalf("client.SetTaskPushConfig() = (%v, %v), want %v", resp, err, config)
@@ -537,8 +703,11 @@ func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	req := &a2a.DeleteTaskPushConfigParams{}
 	err := client.DeleteTaskPushConfig(ctx, req)
-	if interceptor.lastReq.Method() != "DeleteTaskPushConfig" {
-		t.Fatalf("wrong method: got %v, want DeleteTaskPushConfig", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "DeleteTaskPushConfig" {
+		t.Fatalf("lastReq.Method = %v, want DeleteTaskPushConfig", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "DeleteTaskPushConfig" {
+		t.Fatalf("lastResp.Method = %v, want DeleteTaskPushConfig", interceptor.lastResp.Method)
 	}
 	if err != nil {
 		t.Fatalf("client.DeleteTaskPushConfig() error = %v, want nil", err)
@@ -561,9 +730,19 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	}
 	interceptor := &testInterceptor{}
 	client := newTestClient(transport, interceptor)
+	client.baseURL = "https://base.com"
 	resp, err := client.GetAgentCard(ctx)
-	if interceptor.lastReq.Method() != "GetAgentCard" {
-		t.Fatalf("wrong method: got %v, want GetAgentCard", interceptor.lastReq.Method())
+	if interceptor.lastReq.Method != "GetAgentCard" {
+		t.Fatalf("lastReq.Method = %v, want GetAgentCard", interceptor.lastReq.Method)
+	}
+	if interceptor.lastReq.BaseURL != client.baseURL {
+		t.Fatalf("lastReq.BaseURL = %q, want %q", interceptor.lastReq.BaseURL, client.baseURL)
+	}
+	if interceptor.lastResp.Method != "GetAgentCard" {
+		t.Fatalf("lastResp.Method = %v, want GetAgentCard", interceptor.lastResp.Method)
+	}
+	if interceptor.lastResp.BaseURL != client.baseURL {
+		t.Fatalf("lastResp.BaseURL = %q, want %q", interceptor.lastResp.BaseURL, client.baseURL)
 	}
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
