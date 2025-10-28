@@ -126,7 +126,9 @@ func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2
 func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := withMethodCallContext(ctx, "OnResubscribeToTask")
-		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
+		if params != nil {
+			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
+		}
 		ctx, err := h.interceptBefore(ctx, callCtx, params)
 		if err != nil {
 			yield(nil, err)
