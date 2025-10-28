@@ -28,6 +28,7 @@
 ## 🚀 Getting Started
 
 Requires Go `1.24.4` or newer:
+
 ```bash
 go get github.com/a2aproject/a2a-go@v0.3.0
 ```
@@ -49,16 +50,14 @@ For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld).
 2. Wrap the handler into a transport implementation:
 
     ```go
-    var cardProducer a2asrv.AgentCardProducer = newCustomCardProducer()
-    grpcHandler := a2agrpc.NewHandler(cardProducer, requestHandler)
+    grpcHandler := a2agrpc.NewHandler(requestHandler)
     ```
 
 3. Register handler with a server, for example:
+
     ```go
     import "google.golang.org/grpc"
-
     ...
-
     server := grpc.NewServer()
     grpcHandler.RegisterWith(server)
     err := server.Serve(listener)
@@ -81,6 +80,7 @@ For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld).
     ```
 
 3. The connection is now open and can be used to send requests to a server:
+
     ```go
     msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "..."})
     resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: msg})
