@@ -87,16 +87,10 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	}
 }
 
-// WithPushConfigStore overrides default PushConfigStore with custom implementation
-func WithPushConfigStore(store PushConfigStore) RequestHandlerOption {
+// WithPushNotifications adds support for push notifications.
+func WithPushNotifications(store PushConfigStore, notifier PushNotifier) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.pushConfigStore = store
-	}
-}
-
-// WithPushNotifier overrides default PushNotifier with custom implementation
-func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
 		h.pushNotifier = notifier
 	}
 }
@@ -118,11 +112,10 @@ func WithHTTPPushSender(config *HTTPPushConfig) RequestHandlerOption {
 // NewHandler creates a new request handler
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		agentExecutor:   executor,
-		queueManager:    eventqueue.NewInMemoryManager(),
-		taskStore:       taskstore.NewMem(),
-		pushConfigStore: push.NewInMemoryStore(),
-		pushNotifier:    push.NewHTTPPushSender(nil),
+		agentExecutor: executor,
+		queueManager:  eventqueue.NewInMemoryManager(),
+		taskStore:     taskstore.NewMem(),
+		// push notifications are not supported by default
 	}
 
 	for _, option := range options {
@@ -248,6 +241,9 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
+	}
 	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get push configs: %w", err)
@@ -262,6 +258,9 @@ func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
+	}
 	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
@@ -277,6 +276,9 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
+	}
 	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save push config: %w", err)
@@ -288,6 +290,9 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return a2a.ErrPushNotificationNotSupported
+	}
 	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)
 }
 

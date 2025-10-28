@@ -853,7 +853,9 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler()
+			ps := testutil.NewTestPushConfigStore()
+			pn := testutil.NewTestPushSender(t)
+			handler := newTestHandler(WithPushNotifications(ps, pn))
 			got, err := handler.OnSetTaskPushConfig(ctx, tc.params)
 
 			if tc.wantErr != nil {
@@ -887,7 +889,8 @@ func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 	config1 := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
 	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config1)
-	handler := newTestHandler(WithPushConfigStore(ps))
+	pn := testutil.NewTestPushSender(t)
+	handler := newTestHandler(WithPushNotifications(ps, pn))
 
 	testCases := []struct {
 		name    string
@@ -935,7 +938,8 @@ func TestDefaultRequestHandler_OnListTaskPushConfig(t *testing.T) {
 	emptyTaskID := a2a.TaskID("empty-task")
 
 	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
-	handler := newTestHandler(WithPushConfigStore(ps))
+	pn := testutil.NewTestPushSender(t)
+	handler := newTestHandler(WithPushNotifications(ps, pn))
 
 	if _, err := ps.Save(ctx, emptyTaskID, &config1); err != nil {
 		t.Fatalf("Setup: Save() for empty task failed: %v", err)
@@ -1020,7 +1024,8 @@ func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
-			handler := newTestHandler(WithPushConfigStore(ps))
+			pn := testutil.NewTestPushSender(t)
+			handler := newTestHandler(WithPushNotifications(ps, pn))
 			err := handler.OnDeleteTaskPushConfig(ctx, tc.params)
 			if err != nil {
 				t.Fatalf("OnDeleteTaskPushConfig() failed: %v", err)
