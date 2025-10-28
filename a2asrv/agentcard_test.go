@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,6 +29,8 @@ import (
 
 func TestAgentCardHandler(t *testing.T) {
 	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
+
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 
 	testCases := []struct {
 		method      string

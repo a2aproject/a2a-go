@@ -16,59 +16,43 @@ package log
 
 import (
 	"context"
+	"log/slog"
 )
-
-// A Level is the importance or severity of a log event.
-// The higher the level, the more important or severe the event.
-type Level int32
-
-// Logger provides a minimalistic logging interface.
-type Logger interface {
-	V(ctx context.Context, level Level) bool
-	Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any)
-	Info(ctx context.Context, msg string, keyValArgs ...any)
-	Error(ctx context.Context, msg string, err error, keyValArgs ...any)
-	With(keyValArgs ...any) Logger
-}
 
 type loggerKey struct{}
 
 // WithLogger creates a new Context with the provided Logger attached.
-func WithLogger(ctx context.Context, logger Logger) context.Context {
+func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	return context.WithValue(ctx, loggerKey{}, logger)
 }
 
-// LoggerFrom returns the Logger associated with the context, or false if no logger is available.
-func LoggerFrom(ctx context.Context) (Logger, bool) {
-	logger, ok := ctx.Value(loggerKey{}).(Logger)
-	return logger, ok
-}
-
-// V invokes V on the Logger associated with the provided Context or returns false if there's no Logger attached.
-func V(ctx context.Context, level Level) bool {
-	if logger, ok := LoggerFrom(ctx); ok {
-		return logger.V(ctx, level)
+// LoggerFrom returns the Logger associated with the context, or slog.Default() if no context-scoped logger is available.
+func LoggerFrom(ctx context.Context) *slog.Logger {
+	if logger, ok := ctx.Value(loggerKey{}).(*slog.Logger); ok {
+		return logger
 	}
-	return false
+	return slog.Default()
 }
 
-// Verbose invokes Verbose on the Logger associated with the provided Context or does nothing if there's no Logger attached.
-func Verbose(ctx context.Context, level Level, msg string, keyValArgs ...any) {
-	if logger, ok := LoggerFrom(ctx); ok {
-		logger.Verbose(ctx, level, msg, keyValArgs...)
+// Log invokes Log on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
+func Log(ctx context.Context, level slog.Level, msg string, keyValArgs ...any) {
+	logger := LoggerFrom(ctx)
+	if logger.Enabled(ctx, level) {
+		logger.Log(ctx, level, msg, keyValArgs...)
 	}
 }
 
-// Info invokes Info on the Logger associated with the provided Context or does nothing if there's no Logger attached.
+// Info invokes InfoContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
 func Info(ctx context.Context, msg string, keyValArgs ...any) {
-	if logger, ok := LoggerFrom(ctx); ok {
-		logger.Info(ctx, msg, keyValArgs...)
-	}
+	LoggerFrom(ctx).InfoContext(ctx, msg, keyValArgs...)
 }
 
-// Error invokes Error on the Logger associated with the provided Context or does nothing if there's no Logger attached.
+// Warn invokes WarnContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
+func Warn(ctx context.Context, msg string, keyValArgs ...any) {
+	LoggerFrom(ctx).WarnContext(ctx, msg, keyValArgs...)
+}
+
+// Error invokes ErrorContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
 func Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
-	if logger, ok := LoggerFrom(ctx); ok {
-		logger.Error(ctx, msg, err, keyValArgs...)
-	}
+	LoggerFrom(ctx).With("error", err).ErrorContext(ctx, msg, keyValArgs...)
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
-	"github.com/a2aproject/a2a-go/log"
 )
 
 var ErrUnimplemented = errors.New("unimplemented")
@@ -76,7 +75,6 @@ type defaultRequestHandler struct {
 	reqContextInterceptors []RequestContextInterceptor
 
 	authenticatedCardProducer AgentCardProducer
-	logger                    *slog.Logger
 }
 
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
@@ -93,8 +91,8 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 // github.com/a2aproject/a2a-go/log package-level functions.
 // If not provided, defaults to slog.Default().
 func WithLogger(logger *slog.Logger) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
-		h.logger = logger
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.Logger = logger
 	}
 }
 
@@ -155,9 +153,8 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		agentExecutor: executor,
 		queueManager:  eventqueue.NewInMemoryManager(),
 		taskStore:     taskstore.NewMem(),
-		logger:        slog.Default(),
 	}
-	ih := &InterceptedHandler{Handler: h}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
@@ -213,8 +210,6 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	// TODO(yarolegovich): attach request context values logger.With("task_id", taskID, ...) and add it to other methods
-	ctx = log.WithLogger(ctx, h.logger)
 	execution, subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err

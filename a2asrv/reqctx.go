@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // RequestContextInterceptor defines an extension point for modifying request contexts
@@ -63,7 +64,7 @@ func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestC
 	for _, taskID := range msg.ReferenceTasks {
 		task, err := ri.Store.Get(ctx, taskID)
 		if err != nil {
-			// TODO(yarolegovich): log task not found
+			log.Info(ctx, "a referenced task was not found", "referenced_task_id", taskID)
 			continue
 		}
 		tasks = append(tasks, task)

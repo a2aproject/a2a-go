@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // Factory provides an API for creating Clients compatible with the requested transports.
@@ -128,7 +129,9 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 	if transport == nil {
 		return nil, errors.Join(failures...)
 	}
-	// TODO(yarolegovich): log failures
+	if len(failures) > 0 {
+		log.Info(ctx, "some transports failed to connect", "failures", failures)
+	}
 	return transport, nil
 }
 
