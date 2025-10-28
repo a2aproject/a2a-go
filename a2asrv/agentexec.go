@@ -23,6 +23,24 @@ import (
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
 
+// AgentExecutor implementations translate agent outputs to A2A events.
+type AgentExecutor interface {
+	// Execute invokes an agent with the provided context and translates agent outputs
+	// into A2A events writing them to the provided event queue.
+	//
+	// Returns an error if agent invocation failed.
+	Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+
+	// Cancel requests the agent to stop processing an ongoing task.
+	//
+	// The agent should attempt to gracefully stop the task identified by the
+	// task ID in the request context and publish a TaskStatusUpdateEvent with
+	// state TaskStateCanceled to the event queue.
+	//
+	// Returns an error if the cancelation request cannot be processed.
+	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+}
+
 type executor struct {
 	*processor
 	taskID          a2a.TaskID
