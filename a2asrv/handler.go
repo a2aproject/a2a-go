@@ -56,6 +56,9 @@ type RequestHandler interface {
 
 	// OnDeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
+
+	// GetAgentCard returns an extended [a2a.AgentCard] if configured.
+	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler
@@ -69,6 +72,8 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	reqContextInterceptors []RequestContextInterceptor
+
+	authenticatedCardProducer AgentCardProducer
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -105,6 +110,22 @@ func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
+	}
+}
+
+// WithExtendedAgentCard sets a static extended authenticated agent card.
+func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
+			return card, nil
+		})
+	}
+}
+
+// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
+func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.authenticatedCardProducer = cardProducer
 	}
 }
 
@@ -149,7 +170,6 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 	return task, nil
 }
 
-// TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	if params == nil {
 		return nil, a2a.ErrInvalidRequest
@@ -252,6 +272,13 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	return ErrUnimplemented
+}
+
+func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	if h.authenticatedCardProducer == nil {
+		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
+	}
+	return h.authenticatedCardProducer.Card(ctx)
 }
 
 func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {

@@ -20,10 +20,19 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func mustMakeProtoMetadata(t *testing.T, meta map[string]any) *structpb.Struct {
+	s, err := structpb.NewStruct(meta)
+	if err != nil {
+		t.Fatalf("structpb.NewStruct() error = %v", err)
+	}
+	return s
+}
 
 func TestToProto_toProtoMessage(t *testing.T) {
 	a2aMeta := map[string]any{"key": "value"}
@@ -38,20 +47,22 @@ func TestToProto_toProtoMessage(t *testing.T) {
 		{
 			name: "success",
 			msg: &a2a.Message{
-				ID:        "test-msg",
-				ContextID: "test-ctx",
-				TaskID:    "test-task",
-				Role:      a2a.MessageRoleUser,
-				Parts:     []a2a.Part{a2a.TextPart{Text: "hello"}},
-				Metadata:  a2aMeta,
+				ID:             "test-msg",
+				ContextID:      "test-ctx",
+				TaskID:         "test-task",
+				Role:           a2a.MessageRoleUser,
+				ReferenceTasks: []a2a.TaskID{"task-123"},
+				Parts:          []a2a.Part{a2a.TextPart{Text: "hello"}},
+				Metadata:       a2aMeta,
 			},
 			want: &a2apb.Message{
-				MessageId: "test-msg",
-				ContextId: "test-ctx",
-				TaskId:    "test-task",
-				Role:      a2apb.Role_ROLE_USER,
-				Content:   []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
-				Metadata:  pMeta,
+				MessageId:        "test-msg",
+				ContextId:        "test-ctx",
+				TaskId:           "test-task",
+				ReferenceTaskIds: []string{"task-123"},
+				Role:             a2apb.Role_ROLE_USER,
+				Parts:            []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
+				Metadata:         pMeta,
 			},
 		},
 		{
@@ -60,7 +71,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "bad metdata",
+			name: "bad metadata",
 			msg: &a2a.Message{
 				Metadata: map[string]any{
 					"bad": func() {},
@@ -79,6 +90,15 @@ func TestToProto_toProtoMessage(t *testing.T) {
 			}
 			if !proto.Equal(got, tt.want) {
 				t.Errorf("toProtoMessage() got = %v, want %v", got, tt.want)
+			}
+			if !tt.wantErr {
+				gotBack, err := fromProtoMessages([]*a2apb.Message{got})
+				if err != nil {
+					t.Errorf("fromProtoMessages() error = %v", err)
+				}
+				if diff := cmp.Diff([]*a2a.Message{tt.msg}, gotBack); diff != "" {
+					t.Errorf("fromProtoMessages() wrong result (+got,-want):\n diff = %s", diff)
+				}
 			}
 		})
 	}
@@ -174,6 +194,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 			p: a2a.FilePart{
 				File: a2a.FileURI{
 					FileMeta: a2a.FileMeta{
+						Name:     "example",
 						MimeType: "text/plain",
 					},
 					URI: "http://example.com/file",
@@ -181,6 +202,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 			},
 			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
+				Name:     "example",
 				File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
 			}}},
 		},
@@ -195,6 +217,35 @@ func TestToProto_toProtoPart(t *testing.T) {
 				Data: map[string]any{"bad": func() {}},
 			},
 			wantErr: true,
+		},
+		{
+			name: "text with meta",
+			p:    a2a.TextPart{Text: "hello", Metadata: map[string]any{"hello": "world"}},
+			want: &a2apb.Part{
+				Part:     &a2apb.Part_Text{Text: "hello"},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+		},
+		{
+			name: "data with meta",
+			p:    a2a.DataPart{Data: map[string]any{"key": "value"}, Metadata: map[string]any{"hello": "world"}},
+			want: &a2apb.Part{
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+		},
+		{
+			name: "file with meta",
+			p: a2a.FilePart{
+				File:     a2a.FileBytes{Bytes: "content"},
+				Metadata: map[string]any{"hello": "world"},
+			},
+			want: &a2apb.Part{
+				Part: &a2apb.Part_File{File: &a2apb.FilePart{
+					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+				}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
 		},
 	}
 
@@ -535,7 +586,7 @@ func TestToProto_toProtoTask(t *testing.T) {
 		{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: []a2a.Part{a2a.TextPart{Text: "history"}}},
 	}
 	pHistory := []*a2apb.Message{
-		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Content: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
+		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
 	}
 
 	a2aArtifacts := []*a2a.Artifact{
@@ -676,8 +727,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationURL: "https://example.com/docs",
 		Capabilities: a2a.AgentCapabilities{
-			Streaming:         true,
-			PushNotifications: true,
+			Streaming:              true,
+			PushNotifications:      true,
+			StateTransitionHistory: true,
 			Extensions: []a2a.AgentExtension{
 				{URI: "ext-uri", Description: "ext-desc", Required: true, Params: map[string]any{"key": "val"}},
 			},
@@ -714,8 +766,15 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
+				Security: []a2a.SecurityRequirements{
+					{"apiKey": {}},
+				},
 			},
 		},
+		Signatures: []a2a.AgentCardSignature{
+			{Protected: "abc", Signature: "def", Header: map[string]any{"version": "1"}},
+		},
+		IconURL:                           "https://icons.com/icon.png",
 		SupportsAuthenticatedExtendedCard: true,
 	}
 
@@ -736,8 +795,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationUrl: "https://example.com/docs",
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:         true,
-			PushNotifications: true,
+			Streaming:              true,
+			PushNotifications:      true,
+			StateTransitionHistory: true,
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -784,8 +844,15 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
+				Security: []*a2apb.Security{
+					{Schemes: map[string]*a2apb.StringList{"apiKey": {List: []string{}}}},
+				},
 			},
 		},
+		Signatures: []*a2apb.AgentCardSignature{
+			{Protected: "abc", Signature: "def", Header: mustMakeProtoMetadata(t, map[string]any{"version": "1"})},
+		},
+		IconUrl:                           "https://icons.com/icon.png",
 		SupportsAuthenticatedExtendedCard: true,
 	}
 
@@ -825,13 +892,18 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				t.Errorf("toProtoAgentCard() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
-					if !proto.Equal(got, tt.want) {
-						t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
-					}
-				}
+			if tt.wantErr {
+				return
+			}
+			if !proto.Equal(got, tt.want) {
+				t.Errorf("toProtoAgentCard() got = %v, want %v", got, tt.want)
+			}
+			gotBack, err := FromProtoAgentCard(got)
+			if err != nil {
+				t.Errorf("FromProtoAgentCard() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.card, gotBack); diff != "" {
+				t.Errorf("FromProtoAgentCard() wrong result (+got,-want):\ndiff = %s", diff)
 			}
 		})
 	}
@@ -1020,7 +1092,11 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 		{
 			name:   "mutual tls scheme",
 			scheme: a2a.MutualTLSSecurityScheme{},
-			want:   nil, // This is expected to return nil, nil
+			want: &a2apb.SecurityScheme{
+				Scheme: &a2apb.SecurityScheme_MtlsSecurityScheme{
+					MtlsSecurityScheme: &a2apb.MutualTlsSecurityScheme{},
+				},
+			},
 		},
 		{
 			name: "oauth2 scheme",
@@ -1080,7 +1156,7 @@ func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 	pMsg := &a2apb.Message{
 		MessageId: "test-message",
 		Role:      a2apb.Role_ROLE_AGENT,
-		Content: []*a2apb.Part{
+		Parts: []*a2apb.Part{
 			{Part: &a2apb.Part_Text{Text: "response"}},
 		},
 	}
