@@ -26,7 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/internal/push"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"

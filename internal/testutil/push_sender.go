@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/push"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 )
 
 // TestPushSender is a mock of push.Sender.

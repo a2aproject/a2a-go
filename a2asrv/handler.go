@@ -21,7 +21,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/internal/push"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
