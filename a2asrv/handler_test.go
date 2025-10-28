@@ -885,13 +885,9 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
-	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
-
-	handler := newTestHandler()
-	_, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: taskID, Config: config1})
-	if err != nil {
-		t.Fatalf("Setup: OnSetTaskPushConfig() failed: %v", err)
-	}
+	config1 := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
+	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config1)
+	handler := newTestHandler(WithPushConfigStore(ps))
 
 	testCases := []struct {
 		name    string
@@ -902,7 +898,7 @@ func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 		{
 			name:   "success",
 			params: &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: config1.ID},
-			want:   &a2a.TaskPushConfig{TaskID: taskID, Config: config1},
+			want:   &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
 		},
 		{
 			name:    "non-existent config",
@@ -938,17 +934,13 @@ func TestDefaultRequestHandler_OnListTaskPushConfig(t *testing.T) {
 	config2 := a2a.PushConfig{ID: "config-2", URL: "https://example.com/push2"}
 	emptyTaskID := a2a.TaskID("empty-task")
 
-	handler := newTestHandler()
-	if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: taskID, Config: config1}); err != nil {
-		t.Fatalf("Setup: OnSetTaskPushConfig() for config1 failed: %v", err)
+	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
+	handler := newTestHandler(WithPushConfigStore(ps))
+
+	if _, err := ps.Save(ctx, emptyTaskID, &config1); err != nil {
+		t.Fatalf("Setup: Save() for empty task failed: %v", err)
 	}
-	if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: taskID, Config: config2}); err != nil {
-		t.Fatalf("Setup: OnSetTaskPushConfig() for config2 failed: %v", err)
-	}
-	if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: emptyTaskID, Config: config1}); err != nil {
-		t.Fatalf("Setup: OnSetTaskPushConfig() for empty task failed: %v", err)
-	}
-	if err := handler.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{TaskID: emptyTaskID, ConfigID: config1.ID}); err != nil {
+	if err := ps.DeleteAll(ctx, emptyTaskID); err != nil {
 		t.Fatalf("Setup: OnDeleteTaskPushConfig() for empty task failed: %v", err)
 	}
 
@@ -1027,14 +1019,8 @@ func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler()
-			if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: taskID, Config: config1}); err != nil {
-				t.Fatalf("Setup: OnSetTaskPushConfig() for config1 failed: %v", err)
-			}
-			if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: taskID, Config: config2}); err != nil {
-				t.Fatalf("Setup: OnSetTaskPushConfig() for config2 failed: %v", err)
-			}
-
+			ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
+			handler := newTestHandler(WithPushConfigStore(ps))
 			err := handler.OnDeleteTaskPushConfig(ctx, tc.params)
 			if err != nil {
 				t.Fatalf("OnDeleteTaskPushConfig() failed: %v", err)

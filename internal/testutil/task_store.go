@@ -60,8 +60,9 @@ func (m *TestTaskStore) SetGetOverride(task *a2a.Task, err error) *TestTaskStore
 	return m
 }
 
-// WithTasks seeds TaskStore with given task
+// WithTasks seeds TaskStore with given tasks
 func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskStore {
+	t.Helper()
 	ctx := t.Context()
 	for _, task := range tasks {
 		err := m.Save(ctx, task)
