@@ -418,6 +418,70 @@ func TestDefaultRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T)
 	}
 }
 
+func TestDefaultRequestHandler_OnGetAgentCard(t *testing.T) {
+	card := &a2a.AgentCard{Name: "agent"}
+
+	tests := []struct {
+		name     string
+		option   RequestHandlerOption
+		wantCard *a2a.AgentCard
+		wantErr  error
+	}{
+		{
+			name:     "static",
+			option:   WithExtendedAgentCard(card),
+			wantCard: card,
+		},
+		{
+			name: "dynamic",
+			option: WithExtendedAgentCardProducer(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+				return card, nil
+			})),
+			wantCard: card,
+		},
+		{
+			name: "dynamic error",
+			option: WithExtendedAgentCardProducer(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+				return nil, fmt.Errorf("failed")
+			})),
+			wantErr: fmt.Errorf("failed"),
+		},
+		{
+			name:    "not configured",
+			wantErr: a2a.ErrAuthenticatedExtendedCardNotConfigured,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			var options []RequestHandlerOption
+			if tt.option != nil {
+				options = append(options, tt.option)
+			}
+			handler := newTestHandler(options...)
+
+			result, gotErr := handler.OnGetExtendedAgentCard(ctx)
+
+			if tt.wantErr == nil {
+				if gotErr != nil {
+					t.Errorf("OnGetAgentCard() error = %v, wantErr nil", gotErr)
+				}
+				if diff := cmp.Diff(result, tt.wantCard); diff != "" {
+					t.Errorf("OnGetAgentCard() got = %v, want %v", result, tt.wantCard)
+				}
+			} else {
+				if gotErr == nil {
+					t.Fatalf("OnGetAgentCard() error = nil, wantErr %q", tt.wantErr)
+				}
+				if gotErr.Error() != tt.wantErr.Error() {
+					t.Errorf("OnGetAgentCard() error = %v, wantErr %v", gotErr, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
 func TestDefaultRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
