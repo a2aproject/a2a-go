@@ -54,6 +54,9 @@ type RequestHandler interface {
 
 	// OnDeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
+
+	// GetAgentCard returns an extended [a2a.AgentCard] if configured.
+	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler
@@ -67,6 +70,8 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	reqContextInterceptors []RequestContextInterceptor
+
+	authenticatedCardProducer AgentCardProducer
 }
 
 type RequestHandlerOption func(*defaultRequestHandler)
@@ -95,6 +100,13 @@ func WithPushNotifications(store PushConfigStore, notifier PushNotifier) Request
 	}
 }
 
+// WithHTTPPushSender overrides default PushNotifier with an HTTPPushSender configured with the provided config.
+func WithHTTPPushSender(config *HTTPPushConfig) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.pushNotifier = push.NewHTTPPushSender((*push.HTTPSenderConfig)(config))
+	}
+}
+
 // WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
@@ -102,10 +114,19 @@ func WithRequestContextInterceptor(interceptor RequestContextInterceptor) Reques
 	}
 }
 
-// WithHTTPPushSender overrides default PushNotifier with an HTTPPushSender configured with the provided config.
-func WithHTTPPushSender(config *HTTPPushConfig) RequestHandlerOption {
+// WithExtendedAgentCard sets a static extended authenticated agent card.
+func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
-		h.pushNotifier = push.NewHTTPPushSender((*push.HTTPSenderConfig)(config))
+		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
+			return card, nil
+		})
+	}
+}
+
+// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
+func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
+	return func(h *defaultRequestHandler) {
+		h.authenticatedCardProducer = cardProducer
 	}
 }
 
@@ -294,6 +315,13 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 		return a2a.ErrPushNotificationNotSupported
 	}
 	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)
+}
+
+func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	if h.authenticatedCardProducer == nil {
+		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
+	}
+	return h.authenticatedCardProducer.Card(ctx)
 }
 
 func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {

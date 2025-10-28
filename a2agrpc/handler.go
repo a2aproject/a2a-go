@@ -30,19 +30,15 @@ import (
 
 type GRPCHandler struct {
 	a2apb.UnimplementedA2AServiceServer
-	cardProducer a2asrv.AgentCardProducer
-	handler      a2asrv.RequestHandler
+	handler a2asrv.RequestHandler
 }
 
 func (h *GRPCHandler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
-func NewHandler(cardProducer a2asrv.AgentCardProducer, handler a2asrv.RequestHandler) *GRPCHandler {
-	return &GRPCHandler{
-		cardProducer: cardProducer,
-		handler:      handler,
-	}
+func NewHandler(handler a2asrv.RequestHandler) *GRPCHandler {
+	return &GRPCHandler{handler: handler}
 }
 
 func (h *GRPCHandler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
@@ -196,10 +192,10 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 }
 
 func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	if h.cardProducer == nil {
-		return nil, status.Error(codes.Unimplemented, "agent card producer not configured")
+	card, err := h.handler.OnGetExtendedAgentCard(ctx)
+	if err != nil {
+		return nil, toGRPCError(err)
 	}
-	card := h.cardProducer.Card()
 	result, err := pbconv.ToProtoAgentCard(card)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to convert agent card: %v", err)
