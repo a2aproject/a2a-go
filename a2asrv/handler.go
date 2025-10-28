@@ -59,7 +59,7 @@ type RequestHandler interface {
 	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
-// Implements a2asrv.RequestHandler
+// Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   *taskexec.Manager
@@ -78,14 +78,14 @@ type RequestHandlerOption func(*defaultRequestHandler)
 
 type HTTPPushConfig push.HTTPSenderConfig
 
-// WithTaskStore overrides TaskStore with custom implementation
+// WithTaskStore overrides TaskStore with custom implementation.
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.taskStore = store
 	}
 }
 
-// WithEventQueueManager overrides eventqueue.Manager with custom implementation
+// WithEventQueueManager overrides eventqueue.Manager with custom implementation.
 func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.queueManager = manager
@@ -100,14 +100,7 @@ func WithPushNotifications(store PushConfigStore, notifier PushNotifier) Request
 	}
 }
 
-// WithHTTPPushSender overrides default PushNotifier with an HTTPPushSender configured with the provided config.
-func WithHTTPPushSender(config *HTTPPushConfig) RequestHandlerOption {
-	return func(h *defaultRequestHandler) {
-		h.pushNotifier = push.NewHTTPPushSender((*push.HTTPSenderConfig)(config))
-	}
-}
-
-// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation.
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
@@ -130,7 +123,7 @@ func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandle
 	}
 }
 
-// NewHandler creates a new request handler
+// NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
 		agentExecutor: executor,

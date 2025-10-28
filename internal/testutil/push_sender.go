@@ -16,10 +16,6 @@ package testutil
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -27,20 +23,20 @@ import (
 )
 
 // TestPushSender is a mock of push.Sender.
-// It includes a mock HTTP server to receive push notifications.
 type TestPushSender struct {
 	*push.HTTPPushSender
-	Server         *httptest.Server
-	ReceivedTasks  []a2a.Task
-	ReceivedConfig *a2a.PushConfig
-	SendPushFunc   func(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
+
+	PushedTasks   []*a2a.Task
+	PushedConfigs []*a2a.PushConfig
+
+	SendPushFunc func(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
 }
 
-// SendPush calls the underlying SendPushFunc if it's set. If not, it calls the
-// embedded HTTPPushSender's SendPush method, which will send the push to the mock server.
+// SendPush calls the underlying SendPushFunc if it's set. If not,
+// it calls the embedded HTTPPushSender's SendPush method.
 func (m *TestPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
-	m.ReceivedConfig = config
-	m.ReceivedTasks = append(m.ReceivedTasks, *task)
+	m.PushedConfigs = append(m.PushedConfigs, config)
+	m.PushedTasks = append(m.PushedTasks, task)
 
 	if m.SendPushFunc != nil {
 		return m.SendPushFunc(ctx, config, task)
@@ -52,34 +48,17 @@ func (m *TestPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 // SetSendPushError overrides SendPush execution with given error
 func (m *TestPushSender) SetSendPushError(err error) *TestPushSender {
 	m.SendPushFunc = func(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
-		m.ReceivedConfig = config
 		return err
 	}
 	return m
 }
 
 // NewTestPushSender creates a new TestPushSender.
-// It also initializes a mock HTTP server to receive push notifications.
 func NewTestPushSender(t *testing.T) *TestPushSender {
-	t.Helper()
-	sender := &TestPushSender{
-		ReceivedTasks: make([]a2a.Task, 0),
+	return &TestPushSender{
+		HTTPPushSender: push.NewHTTPPushSender(nil),
+
+		PushedTasks:   make([]*a2a.Task, 0),
+		PushedConfigs: make([]*a2a.PushConfig, 0),
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "can't read body", http.StatusBadRequest)
-			return
-		}
-		var task a2a.Task
-		if err := json.Unmarshal(body, &task); err != nil {
-			http.Error(w, "can't unmarshal body", http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
-	sender.Server = server
-	sender.HTTPPushSender = push.NewHTTPPushSender(&push.HTTPSenderConfig{})
-	return sender
 }

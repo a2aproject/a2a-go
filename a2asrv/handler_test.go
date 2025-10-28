@@ -420,6 +420,45 @@ func TestDefaultRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T)
 	}
 }
 
+func TestDefaultRequestHandler_OnSendMessage_PushNotifications(t *testing.T) {
+	ctx := t.Context()
+
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.MessageSendParams{
+		Message: newUserMessage(taskSeed, "work"),
+		Config: &a2a.MessageSendConfig{
+			PushConfig: pushConfig,
+		},
+	}
+	agentEvents := []a2a.Event{
+		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+	}
+	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
+	wantResult.History = []*a2a.Message{input.Message}
+
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	executor := newEventReplayAgent(agentEvents, nil)
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t).SetSendPushError(nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	result, err := handler.OnSendMessage(ctx, input)
+	if err != nil {
+		t.Fatalf("OnSendMessage() failed: %v", err)
+	}
+	if diff := cmp.Diff(wantResult, result); diff != "" {
+		t.Errorf("OnSendMessage() mismatch (-want +got):\n%s", diff)
+	}
+	saved, err := ps.List(ctx, taskSeed.ID)
+	if err != nil || len(saved) != 1 {
+		t.Fatalf("expected push config to be saved, but got %v, %v", saved, err)
+	}
+	if len(pn.PushedConfigs) != 1 {
+		t.Fatal("expected push notification to be sent, but got %w: ", pn.PushedConfigs)
+	}
+}
+
 func TestDefaultRequestHandler_OnGetAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
