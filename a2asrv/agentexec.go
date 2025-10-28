@@ -45,6 +45,7 @@ type executor struct {
 	*processor
 	taskID          a2a.TaskID
 	taskStore       TaskStore
+	pushNotifier    PushNotifier
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams
@@ -103,7 +104,7 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		if e.pushConfigStore == nil {
 			return nil, a2a.ErrPushNotificationNotSupported
 		}
-		if err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
+		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
 			return nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
 		}
 	}
@@ -161,11 +162,16 @@ type processor struct {
 	// Processor is running in event consumer goroutine, but request context loading
 	// happens in event consumer goroutine. Once request context is loaded and validate the processor
 	// gets initialized.
-	updateManager *taskupdate.Manager
+	updateManager   *taskupdate.Manager
+	pushConfigStore PushConfigStore
+	pushNotifier    PushNotifier
 }
 
-func newProcessor() *processor {
-	return &processor{}
+func newProcessor(pushConfigStore PushConfigStore, pushNotifier PushNotifier) *processor {
+	return &processor{
+		pushConfigStore: pushConfigStore,
+		pushNotifier:    pushNotifier,
+	}
 }
 
 func (p *processor) init(um *taskupdate.Manager) {
@@ -187,7 +193,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, err
 	}
 
-	// TODO(yarolegovich): handle pushes
+	p.sendPushNotifications(ctx, task)
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
 		return nil, nil
@@ -211,4 +217,16 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	return nil, nil
+}
+
+func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) {
+	if p.pushNotifier != nil && p.pushConfigStore != nil {
+		configs, _ := p.pushConfigStore.List(ctx, task.ID)
+		// TODO(yarolegovich): log error from getting stored push configs
+		// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
+		for _, config := range configs {
+			// TODO(yarolegovich): log error from sending a push
+			_ = p.pushNotifier.SendPush(ctx, config, task)
+		}
+	}
 }
