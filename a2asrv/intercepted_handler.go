@@ -161,6 +161,19 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	return err
 }
 
+func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnGetExtendedAgentCard")
+	ctx, err := h.interceptBefore(ctx, callCtx, nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := h.Handler.OnGetExtendedAgentCard(ctx)
+	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+		return nil, errOverride
+	}
+	return response, nil
+}
+
 func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {
 	request := &Request{Payload: payload}
 

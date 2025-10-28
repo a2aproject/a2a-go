@@ -113,6 +113,14 @@ func (h *mockHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.De
 	return h.resultErr
 }
 
+func (h *mockHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	h.lastCallContext, _ = CallContextFrom(ctx)
+	if h.resultErr != nil {
+		return nil, h.resultErr
+	}
+	return &a2a.AgentCard{}, nil
+}
+
 type mockInterceptor struct {
 	beforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error)
 	afterFn  func(ctx context.Context, callCtx *CallContext, resp *Response) error
@@ -201,6 +209,12 @@ var methodCalls = []struct {
 		method: "OnDeleteTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
 			return nil, h.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{})
+		},
+	},
+	{
+		method: "OnGetExtendedAgentCard",
+		call: func(ctx context.Context, h RequestHandler) (any, error) {
+			return h.OnGetExtendedAgentCard(ctx)
 		},
 	},
 }
