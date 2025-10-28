@@ -1148,7 +1148,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		{
 			name:         "nil producer",
 			cardProducer: nil,
-			wantErr:      codes.Unimplemented,
+			wantErr:      codes.NotFound,
 		},
 		{
 			name: "producer returns nil card",

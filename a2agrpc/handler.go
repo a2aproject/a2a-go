@@ -192,7 +192,7 @@ func (h *GRPCHandler) ListTaskPushNotificationConfig(ctx context.Context, req *a
 }
 
 func (h *GRPCHandler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	card, err := h.handler.OnGetAgentCard(ctx)
+	card, err := h.handler.OnGetExtendedAgentCard(ctx)
 	if err != nil {
 		return nil, toGRPCError(err)
 	}

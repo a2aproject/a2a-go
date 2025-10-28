@@ -58,7 +58,7 @@ type RequestHandler interface {
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
 
 	// GetAgentCard returns an extended [a2a.AgentCard] if configured.
-	OnGetAgentCard(ctx context.Context) (*a2a.AgentCard, error)
+	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler
@@ -170,7 +170,6 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 	return task, nil
 }
 
-// TODO(yarolegovich): add tests in https://github.com/a2aproject/a2a-go/issues/21
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	if params == nil {
 		return nil, a2a.ErrInvalidRequest
@@ -275,7 +274,7 @@ func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, para
 	return ErrUnimplemented
 }
 
-func (h *defaultRequestHandler) OnGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	if h.authenticatedCardProducer == nil {
 		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
 	}
