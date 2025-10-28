@@ -16,9 +16,10 @@ package a2asrv
 
 import (
 	"context"
-	"github.com/google/uuid"
 	"iter"
 	"log/slog"
+
+	"github.com/google/uuid"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/log"
