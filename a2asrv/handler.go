@@ -221,16 +221,19 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	_, subscription, err := h.handleSendMessage(ctx, params)
-
-	if err != nil {
-		return func(yield func(a2a.Event, error) bool) {
+	return func(yield func(a2a.Event, error) bool) {
+		_, subscription, err := h.handleSendMessage(ctx, params)
+		if params == nil {
 			yield(nil, err)
 			return
 		}
-	}
 
-	return subscription.Events(ctx)
+		for ev, err := range subscription.Events(ctx) {
+			if !yield(ev, err) {
+				return
+			}
+		}
+	}
 }
 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
@@ -255,7 +258,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
-	if params.Message == nil {
+	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
 	}
 
