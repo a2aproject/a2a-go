@@ -400,7 +400,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			if beforeCallCtx != callCtx {
 				t.Error("want CallContext to be the same as provided by the caller")
 			}
-			gotVal, ok := beforeCallCtx.RequestMeta.Get(key)
+			gotVal, ok := beforeCallCtx.RequestMeta().Get(key)
 			if !ok || len(gotVal) != 1 || gotVal[0] != wantVal {
 				t.Errorf("%s() RequestMeta().Get(%s) = (%v, %v), want ([%q] true)", tc.method, key, gotVal, ok, wantVal)
 			}

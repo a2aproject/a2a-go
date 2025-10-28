@@ -64,7 +64,7 @@ func (e *Extensions) Requested(extension *a2a.AgentExtension) bool {
 
 // RequestedURIs returns all URIs of extensions requested by the client.
 func (e *Extensions) RequestedURIs() []string {
-	requested, ok := e.callCtx.RequestMeta.Get(ExtensionsMetaKey)
+	requested, ok := e.callCtx.RequestMeta().Get(ExtensionsMetaKey)
 	if !ok {
 		return []string{}
 	}
