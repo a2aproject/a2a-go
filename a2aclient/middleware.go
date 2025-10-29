@@ -41,7 +41,7 @@ type Request struct {
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
-	// Payload is the response. It is nil if method doesn't return anything or Err was returned.
+	// Payload is the request payload. It is nil if the method does not take any parameters.
 	Payload any
 }
 
