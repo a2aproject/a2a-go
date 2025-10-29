@@ -218,7 +218,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		_, subscription, err := h.handleSendMessage(ctx, params)
-		if params == nil {
+		if err != nil {
 			yield(nil, err)
 			return
 		}
