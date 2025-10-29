@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"fmt"
 	"iter"
 	"net/http"
+	"time"
+
+	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/internal/sse"
 )
 
 // jsonrpcRequest represents a JSON-RPC 2.0 request.
@@ -39,11 +43,12 @@ func (h *JSONRPCHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	var payload jsonrpcRequest
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-		jsonrpcErr := toJSONRPCError(a2a.ErrParseError)
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			// TODO(yarolegovich): log error
-		}
+		h.writeJSONRPCError(rw, fmt.Errorf("%w: %w", a2a.ErrParseError, err), nil)
+		return
+	}
+
+	if payload.JSONRPC != jsonrpc.Version {
+		h.writeJSONRPCError(rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
 
@@ -73,18 +78,14 @@ func (h *JSONRPCHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigDelete:
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
-	case jsonrpc.MethodGetAuthenticatedExtended:
+	case jsonrpc.MethodGetExtendedAgentCard:
 		result, err = h.onGetAgentCard(ctx)
 	default:
 		err = a2a.ErrMethodNotFound
 	}
 
 	if err != nil {
-		jsonrpcErr := toJSONRPCError(err)
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: &req.ID, Error: jsonrpcErr}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			// TODO(yarolegovich): log error
-		}
+		h.writeJSONRPCError(rw, err, &req.ID)
 		return
 	}
 
@@ -97,29 +98,86 @@ func (h *JSONRPCHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 }
 
 func (h *JSONRPCHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpcRequest) {
-	var events iter.Seq2[a2a.Event, error]
-	switch req.Method {
-	case jsonrpc.MethodTasksResubscribe:
-		events = h.onResubscribeToTask(ctx, req.Params)
-	case jsonrpc.MethodMessageStream:
-		events = h.onSendMessageStream(ctx, req.Params)
-	default:
-		events = func(yield func(a2a.Event, error) bool) { yield(nil, a2a.ErrMethodNotFound) }
+	sseWriter, err := sse.NewWriter(rw)
+	if err != nil {
+		h.writeJSONRPCError(rw, err, &req.ID)
+		return
+	}
+
+	sseWriter.WriteHeaders()
+
+	sseChan := make(chan []byte)
+	requestCtx, cancelReqCtx := context.WithCancel(ctx)
+	defer cancelReqCtx()
+	go func() {
+		var events iter.Seq2[a2a.Event, error]
+		switch req.Method {
+		case jsonrpc.MethodTasksResubscribe:
+			events = h.onResubscribeToTask(ctx, req.Params)
+		case jsonrpc.MethodMessageStream:
+			events = h.onSendMessageStream(ctx, req.Params)
+		default:
+			events = func(yield func(a2a.Event, error) bool) { yield(nil, a2a.ErrMethodNotFound) }
+		}
+		eventSeqToSSEDataStream(requestCtx, req, sseChan, events)
+	}()
+
+	keepAliveTicker := time.NewTicker(30 * time.Second)
+	defer keepAliveTicker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+		case <-keepAliveTicker.C:
+			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
+				// TODO(yarolegovich): log, failed to write a response
+				return
+			}
+		case data, ok := <-sseChan:
+			if !ok {
+				return
+			}
+			if err := sseWriter.WriteData(ctx, data); err != nil {
+				// TODO(yarolegovich): log, failed to write a response
+				return
+			}
+		}
+	}
+
+}
+
+func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan chan []byte, events iter.Seq2[a2a.Event, error]) {
+	defer close(sseChan)
+
+	handleError := func(err error) {
+		jsonrpcErr := jsonrpc.ToJSONRPCError(err)
+		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: &req.ID, Error: jsonrpcErr}
+		bytes, err := json.Marshal(resp)
+		if err != nil {
+			// TODO(yarolegovich): log, failed to marshal an error
+			return
+		}
+		select {
+		case <-ctx.Done():
+		case sseChan <- bytes:
+		}
 	}
 
 	for event, err := range events {
 		if err != nil {
-			jsonrpcErr := toJSONRPCError(err)
-			resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: &req.ID, Error: jsonrpcErr}
-			if err := json.NewEncoder(rw).Encode(resp); err != nil {
-				// TODO(yarolegovich): log error
-			}
+			handleError(err)
 			return
 		}
 
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: &req.ID, Result: result}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			// TODO(yarolegovich): log error
+		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: &req.ID, Result: event}
+		bytes, err := json.Marshal(resp)
+		if err != nil {
+			handleError(err)
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+		case sseChan <- bytes:
 		}
 	}
 }
@@ -211,44 +269,14 @@ func (h *JSONRPCHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 	return h.handler.OnDeleteTaskPushConfig(ctx, &params)
 }
 
-func (h *JSONRPCHandler) onGetAgentCard(_ context.Context) (*a2a.AgentCard, error) {
-	return &a2a.AgentCard{}, nil
+func (h *JSONRPCHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return h.handler.OnGetExtendedAgentCard(ctx)
 }
 
-func toJSONRPCError(err error) *jsonrpc.Error {
-	jsonrpcErr := &jsonrpc.Error{}
-	if errors.As(err, &jsonrpcErr) {
-		return jsonrpcErr
-	}
-
-	switch {
-	case errors.Is(err, a2a.ErrParseError):
-		return &jsonrpc.Error{Code: -32700, Message: err.Error()}
-	case errors.Is(err, a2a.ErrInvalidRequest):
-		return &jsonrpc.Error{Code: -32600, Message: err.Error()}
-	case errors.Is(err, a2a.ErrMethodNotFound):
-		return &jsonrpc.Error{Code: -32601, Message: err.Error()}
-	case errors.Is(err, a2a.ErrInvalidParams):
-		return &jsonrpc.Error{Code: -32602, Message: err.Error()}
-	case errors.Is(err, a2a.ErrInternalError):
-		return &jsonrpc.Error{Code: -32603, Message: err.Error()}
-	case errors.Is(err, a2a.ErrServerError):
-		return &jsonrpc.Error{Code: -32000, Message: err.Error()}
-	case errors.Is(err, a2a.ErrTaskNotFound):
-		return &jsonrpc.Error{Code: -32001, Message: err.Error()}
-	case errors.Is(err, a2a.ErrTaskNotCancelable):
-		return &jsonrpc.Error{Code: -32002, Message: err.Error()}
-	case errors.Is(err, a2a.ErrPushNotificationNotSupported):
-		return &jsonrpc.Error{Code: -32003, Message: err.Error()}
-	case errors.Is(err, a2a.ErrUnsupportedOperation):
-		return &jsonrpc.Error{Code: -32004, Message: err.Error()}
-	case errors.Is(err, a2a.ErrUnsupportedContentType):
-		return &jsonrpc.Error{Code: -32005, Message: err.Error()}
-	case errors.Is(err, a2a.ErrInvalidAgentResponse):
-		return &jsonrpc.Error{Code: -32006, Message: err.Error()}
-	case errors.Is(err, a2a.ErrAuthenticatedExtendedCardNotConfigured):
-		return &jsonrpc.Error{Code: -32007, Message: err.Error()}
-	default:
-		return &jsonrpc.Error{Code: -32000, Message: a2a.ErrInternalError.Error()}
+func (h *JSONRPCHandler) writeJSONRPCError(rw http.ResponseWriter, err error, reqID *string) {
+	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
+	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr, ID: reqID}
+	if err := json.NewEncoder(rw).Encode(resp); err != nil {
+		// TODO(yarolegovich): log error
 	}
 }

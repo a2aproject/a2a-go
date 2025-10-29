@@ -15,7 +15,6 @@
 package a2aclient
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -27,6 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/google/uuid"
 )
 
@@ -45,11 +45,6 @@ type jsonrpcResponse struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *jsonrpc.Error  `json:"error,omitempty"`
 }
-
-const (
-	// SSE data prefix
-	sseDataPrefix = "data: "
-)
 
 // JSONRPCOption configures optional parameters for the JSONRPC transport.
 // Options are applied during NewJSONRPCTransport initialization.
@@ -134,7 +129,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", jsonrpc.HeaderContentType)
+	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -153,7 +148,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}
 
 	if resp.Error != nil {
-		return nil, resp.Error
+		return nil, resp.Error.ToA2AError()
 	}
 
 	return resp.Result, nil
@@ -178,8 +173,8 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", jsonrpc.HeaderContentType)
-	httpReq.Header.Set("Accept", jsonrpc.HeaderEventStream)
+	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
+	httpReq.Header.Set("Accept", jsonrpc.ContentEventStream)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -198,36 +193,23 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
 func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
-		scanner := bufio.NewScanner(body)
-		prefixBytes := []byte(sseDataPrefix)
-
-		for scanner.Scan() {
-			lineBytes := scanner.Bytes()
-
-			// SSE data lines start with "data: "
-			if bytes.HasPrefix(lineBytes, prefixBytes) {
-				data := lineBytes[len(prefixBytes):]
-
-				var resp jsonrpcResponse
-				if err := json.Unmarshal(data, &resp); err != nil {
-					yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
-					return
-				}
-
-				if resp.Error != nil {
-					yield(nil, resp.Error)
-					return
-				}
-
-				if !yield(resp.Result, nil) {
-					return
-				}
+		for data, err := range sse.ParseDataStream(body) {
+			if err != nil {
+				yield(nil, err)
+				return
 			}
-			// Ignore empty lines, comments, and other SSE event types
-		}
-
-		if err := scanner.Err(); err != nil {
-			yield(nil, fmt.Errorf("SSE stream error: %w", err))
+			var resp jsonrpcResponse
+			if err := json.Unmarshal(data, &resp); err != nil {
+				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
+				return
+			}
+			if resp.Error != nil {
+				yield(nil, resp.Error.ToA2AError())
+				return
+			}
+			if !yield(resp.Result, nil) {
+				return
+			}
 		}
 	}
 }
