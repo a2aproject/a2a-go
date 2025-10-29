@@ -172,9 +172,6 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 			return task, nil
 		},
-		SendStreamingMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-			return func(yield func(a2a.Event, error) bool) { yield(task, nil) }
-		},
 	}
 	interceptor := &testInterceptor{}
 	client := &Client{
@@ -182,19 +179,26 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 		transport:    transport,
 		interceptors: []CallInterceptor{interceptor},
 	}
-	req := &a2a.MessageSendParams{}
-	_, err := client.SendMessage(ctx, req)
-	if err != nil {
-		t.Fatalf("client.SendMessage() error = %v", err)
-	}
-	want := &a2a.MessageSendParams{
-		Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
-	}
-	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
-	}
-	if diff := cmp.Diff(&a2a.MessageSendParams{}, req); diff != "" {
-		t.Fatalf("client.SendMessage() modified params (+got,-want) diff = %s", diff)
+	for _, req := range []*a2a.MessageSendParams{{}, {Config: &a2a.MessageSendConfig{}}} {
+		wantNilConfigAfter := req.Config == nil
+
+		_, err := client.SendMessage(ctx, req)
+		if err != nil {
+			t.Fatalf("client.SendMessage() error = %v", err)
+		}
+		want := &a2a.MessageSendParams{
+			Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
+		}
+		if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
+			t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
+		}
+		wantReq := &a2a.MessageSendParams{Config: &a2a.MessageSendConfig{}}
+		if wantNilConfigAfter {
+			wantReq = &a2a.MessageSendParams{}
+		}
+		if diff := cmp.Diff(wantReq, req); diff != "" {
+			t.Fatalf("client.SendMessage() modified params (+got,-want) diff = %s", diff)
+		}
 	}
 }
 
