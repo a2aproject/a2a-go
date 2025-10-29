@@ -383,7 +383,8 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 		},
 	}
 	interceptor := &testInterceptor{}
-	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}, card: want}
+	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
+	client.card.Store(want)
 	got, err := client.GetAgentCard(ctx)
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
@@ -433,7 +434,8 @@ func TestClient_GetAgentCardCallSkippedIfNoExtendedCard(t *testing.T) {
 	ctx := t.Context()
 	want := &a2a.AgentCard{Name: "test", SupportsAuthenticatedExtendedCard: false}
 	interceptor := &testInterceptor{}
-	client := &Client{interceptors: []CallInterceptor{interceptor}, card: want}
+	client := &Client{interceptors: []CallInterceptor{interceptor}}
+	client.card.Store(want)
 	got, err := client.GetAgentCard(ctx)
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
@@ -443,6 +445,33 @@ func TestClient_GetAgentCardCallSkippedIfNoExtendedCard(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+	}
+}
+
+func TestClient_FallbackToNonStreamingSend(t *testing.T) {
+	ctx := t.Context()
+	want := a2a.NewMessage(a2a.MessageRoleAgent)
+	transport := &testTransport{
+		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			return want, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
+	client.card.Store(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: false}})
+
+	eventCount := 0
+	for got, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{}) {
+		if err != nil {
+			t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+		}
+		eventCount++
+	}
+	if eventCount != 1 {
+		t.Fatalf("client.SendStreamingMessage() got %d events, want 1", eventCount)
 	}
 }
 
@@ -525,11 +554,11 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 	if err != nil || resp != task {
 		t.Fatalf("client.SendMessage() = (%v, %v), want %v", resp, err, task)
 	}
-	if interceptor.lastReq.Payload != req {
-		t.Fatalf("interceptor.Before payload = %v, got %v", interceptor.lastReq.Payload, req)
+	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
+		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
 	}
-	if interceptor.lastResp.Payload != task {
-		t.Fatalf("interceptor.After payload = %v, got %v", interceptor.lastResp.Payload, task)
+	if diff := cmp.Diff(task, interceptor.lastResp.Payload); diff != "" {
+		t.Fatalf("wrong interceptor.lastResp.Payload (+got,-want) diff = %s", diff)
 	}
 }
 
@@ -594,14 +623,17 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		}
 		eventI += 1
 	}
+	if eventI != len(events) {
+		t.Fatalf("client.SendStreamingMessage() event count = %d, want %d", eventI, len(events))
+	}
 	if interceptor.lastReq.Method != "SendStreamingMessage" {
 		t.Fatalf("lastReq.Method = %v, want SendStreamingMessage", interceptor.lastReq.Method)
 	}
 	if interceptor.lastResp.Method != "SendStreamingMessage" {
 		t.Fatalf("lastResp.Method = %v, want SendStreamingMessage", interceptor.lastResp.Method)
 	}
-	if interceptor.lastReq.Payload != req {
-		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
+	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
+		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
 	}
 }
 

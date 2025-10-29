@@ -84,13 +84,14 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
 
-	return &Client{
+	client := &Client{
 		config:       f.config,
 		transport:    conn,
 		interceptors: f.interceptors,
-		card:         card,
 		baseURL:      selected.endpoint.URL,
-	}, nil
+	}
+	client.card.Store(card)
+	return client, nil
 }
 
 // CreateFromEndpoints returns a Client configured to communicate with one of the provided endpoints.

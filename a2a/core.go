@@ -25,6 +25,7 @@ import (
 
 // SendMessageResult represents a response for non-streaming message send.
 type SendMessageResult interface {
+	Event
 	isSendMessageResult()
 }
 
