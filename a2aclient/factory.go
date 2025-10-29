@@ -79,16 +79,19 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		return nil, err
 	}
 
-	conn, err := createTransport(ctx, candidates, card)
+	conn, selected, err := createTransport(ctx, candidates, card)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
 
-	return &Client{
-		Config:       f.config,
+	client := &Client{
+		config:       f.config,
 		transport:    conn,
 		interceptors: f.interceptors,
-	}, nil
+		baseURL:      selected.endpoint.URL,
+	}
+	client.card.Store(card)
+	return client, nil
 }
 
 // CreateFromEndpoints returns a Client configured to communicate with one of the provided endpoints.
@@ -101,40 +104,43 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.Agent
 		return nil, err
 	}
 
-	conn, err := createTransport(ctx, candidates, nil)
+	conn, selected, err := createTransport(ctx, candidates, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
 
 	return &Client{
-		Config:       f.config,
+		config:       f.config,
 		transport:    conn,
 		interceptors: f.interceptors,
+		baseURL:      selected.endpoint.URL,
 	}, nil
 }
 
 // createTransport attempts to connect using the provided transports, returning the first
 // one that succeeds. If all transports fail, it returns an error.
-func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard) (Transport, error) {
+func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard) (Transport, *transportCandidate, error) {
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("empty list of transport candidates was provided")
+		return nil, nil, fmt.Errorf("empty list of transport candidates was provided")
 	}
 	var transport Transport
+	var selected *transportCandidate
 	var failures []error
 	for _, tc := range candidates {
 		conn, err := tc.factory.Create(ctx, tc.endpoint.URL, card)
 		if err == nil {
 			transport = conn
+			selected = &tc
 			break
 		}
 		err = fmt.Errorf("failed to connect to %s: %w", tc.endpoint.URL, err)
 		failures = append(failures, err)
 	}
 	if transport == nil {
-		return nil, errors.Join(failures...)
+		return nil, nil, errors.Join(failures...)
 	}
 	// TODO(yarolegovich): log failures
-	return transport, nil
+	return transport, selected, nil
 }
 
 // selectTransport filters the list of available endpoints leaving only those with

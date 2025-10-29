@@ -16,6 +16,8 @@ package a2aclient
 
 import (
 	"context"
+
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // Used to store CallMeta in context.Context after all the interceptors were applied.
@@ -30,26 +32,35 @@ type CallMeta map[string][]string
 // Request represents a transport-agnostic request to be sent to A2A server.
 // Payload is one of a2a package core types.
 type Request struct {
-	method  string
-	Meta    CallMeta
+	// Method is the name of the method invoked on the A2A-server.
+	Method string
+	// BaseURL is the URL of the agent interface to which the Client is connected.
+	BaseURL string
+	// CallMeta holds request metadata like auth headers and signatures.
+	Meta CallMeta
+	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
+	// created directly from server URL and extended AgentCard was never fetched.
+	Card *a2a.AgentCard
+	// Payload is the response. It is nil if method doesn't return anything or Err was returned.
 	Payload any
-}
-
-func (r *Request) Method() string {
-	return r.method
 }
 
 // Response represents a transport-agnostic result received from A2A server.
 // Payload is one of a2a package core types.
 type Response struct {
-	method  string
-	Err     error
-	Meta    CallMeta
+	// Method is the name of the method invoked on the A2A-server.
+	Method string
+	// BaseURL is the URL of the agent interface to which the Client is connected.
+	BaseURL string
+	// Err is the error response. It is nil for successful invocations.
+	Err error
+	// CallMeta holds request metadata like auth headers and signatures.
+	Meta CallMeta
+	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
+	// created directly from server URL and extended AgentCard was never fetched.
+	Card *a2a.AgentCard
+	// Payload is the response. It is nil if method doesn't return anything or Err was returned.
 	Payload any
-}
-
-func (r *Response) Method() string {
-	return r.method
 }
 
 // CallInterceptor can be attached to an a2aclient.Client.

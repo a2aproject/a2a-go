@@ -17,14 +17,15 @@ package a2aclient
 import (
 	"context"
 	"iter"
+	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // Config exposes options for customizing Client behavior.
 type Config struct {
-	// PushConfigs specifies the default push notification configurations to apply for every Task.
-	PushConfigs []a2a.PushConfig
+	// PushConfig specifies the default push notification configuration to apply for every Task.
+	PushConfig *a2a.PushConfig
 	// AcceptedOutputModes are MIME types passed with every Client message and might be used by an agent
 	// to decide on the result format.
 	// For example, an Agent might declare a skill with OutputModes: ["application/json", "image/png"]
@@ -43,9 +44,12 @@ type Config struct {
 // The actual call is delegated to a specific Transport implementation.
 // CallInterceptors are applied before and after every protocol call.
 type Client struct {
-	Config       Config
+	config       Config
 	transport    Transport
 	interceptors []CallInterceptor
+	baseURL      string
+
+	card atomic.Pointer[a2a.AgentCard]
 }
 
 // AddCallInterceptor allows to attach a CallInterceptor to the client after creation.
@@ -90,6 +94,8 @@ func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Tas
 func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	method := "SendMessage"
 
+	message = c.withDefaultSendConfig(message)
+
 	ctx, err := c.interceptBefore(ctx, method, message)
 	if err != nil {
 		return nil, err
@@ -103,17 +109,29 @@ func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams
 	return resp, err
 }
 
-func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		method := "ResubscribeToTask"
+		method := "SendStreamingMessage"
 
-		ctx, err := c.interceptBefore(ctx, method, id)
+		message = c.withDefaultSendConfig(message)
+
+		ctx, err := c.interceptBefore(ctx, method, message)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 
-		for resp, err := range c.transport.ResubscribeToTask(ctx, id) {
+		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
+			resp, err := c.transport.SendMessage(ctx, message)
+			if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
+				yield(nil, errOverride)
+				return
+			}
+			yield(resp, err)
+			return
+		}
+
+		for resp, err := range c.transport.SendStreamingMessage(ctx, message) {
 			if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 				yield(nil, errOverride)
 				return
@@ -131,17 +149,17 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 	}
 }
 
-func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		method := "SendStreamingMessage"
+		method := "ResubscribeToTask"
 
-		ctx, err := c.interceptBefore(ctx, method, message)
+		ctx, err := c.interceptBefore(ctx, method, id)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
 
-		for resp, err := range c.transport.SendStreamingMessage(ctx, message) {
+		for resp, err := range c.transport.ResubscribeToTask(ctx, id) {
 			if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
 				yield(nil, errOverride)
 				return
@@ -224,6 +242,10 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTas
 }
 
 func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	if card := c.card.Load(); card != nil && !card.SupportsAuthenticatedExtendedCard {
+		return card, nil
+	}
+
 	method := "GetAgentCard"
 
 	ctx, err := c.interceptBefore(ctx, method, nil)
@@ -236,6 +258,10 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 		return nil, errOverride
 	}
 
+	if err == nil {
+		c.card.Store(resp)
+	}
+
 	return resp, err
 }
 
@@ -243,10 +269,28 @@ func (c *Client) Destroy() error {
 	return c.transport.Destroy()
 }
 
+func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
+	result := *message
+	if c.config.PushConfig != nil || c.config.AcceptedOutputModes != nil {
+		if result.Config == nil {
+			result.Config = &a2a.MessageSendConfig{}
+		}
+		if result.Config.PushConfig == nil {
+			result.Config.PushConfig = c.config.PushConfig
+		}
+		if result.Config.AcceptedOutputModes == nil {
+			result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
+		}
+	}
+	return &result
+}
+
 func (c *Client) interceptBefore(ctx context.Context, method string, payload any) (context.Context, error) {
 	req := Request{
-		method:  method,
+		Method:  method,
+		BaseURL: c.baseURL,
 		Meta:    CallMeta{},
+		Card:    c.card.Load(),
 		Payload: payload,
 	}
 
@@ -272,9 +316,11 @@ func (c *Client) interceptAfter(ctx context.Context, method string, payload any,
 	}
 
 	resp := Response{
-		method:  method,
+		BaseURL: c.baseURL,
+		Method:  method,
 		Meta:    meta,
 		Payload: payload,
+		Card:    c.card.Load(),
 		Err:     err,
 	}
 	if payload == nil { // set interface to nil if method does not return any value
