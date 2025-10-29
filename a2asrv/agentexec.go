@@ -23,33 +23,159 @@ import (
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
 
+// AgentExecutor implementations translate agent outputs to A2A events.
+type AgentExecutor interface {
+	// Execute invokes an agent with the provided context and translates agent outputs
+	// into A2A events writing them to the provided event queue.
+	//
+	// Returns an error if agent invocation failed.
+	Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+
+	// Cancel requests the agent to stop processing an ongoing task.
+	//
+	// The agent should attempt to gracefully stop the task identified by the
+	// task ID in the request context and publish a TaskStatusUpdateEvent with
+	// state TaskStateCanceled to the event queue.
+	//
+	// Returns an error if the cancelation request cannot be processed.
+	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+}
+
 type executor struct {
 	*processor
-	agent  AgentExecutor
-	reqCtx RequestContext
+	taskID          a2a.TaskID
+	taskStore       TaskStore
+	pushNotifier    PushNotifier
+	pushConfigStore PushConfigStore
+	agent           AgentExecutor
+	params          *a2a.MessageSendParams
+	interceptors    []RequestContextInterceptor
 }
 
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
-	return e.agent.Execute(ctx, e.reqCtx, q)
+	reqCtx, err := e.loadExecRequestContext(ctx)
+	if err != nil {
+		return err
+	}
+	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
+
+	for _, interceptor := range e.interceptors {
+		ctx, err = interceptor.Intercept(ctx, reqCtx)
+		if err != nil {
+			return fmt.Errorf("interceptor failed: %w", err)
+		}
+	}
+
+	return e.agent.Execute(ctx, reqCtx, q)
+}
+
+func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, error) {
+	params, msg := e.params, e.params.Message
+
+	var task *a2a.Task
+	if msg.TaskID == "" {
+		task = taskupdate.NewSubmittedTask(e.taskID, msg)
+	} else {
+		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("task loading failed: %w", err)
+		}
+		if storedTask == nil {
+			return nil, a2a.ErrTaskNotFound
+		}
+
+		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
+			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
+		}
+
+		if storedTask.Status.State.Terminal() {
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
+		}
+
+		storedTask.History = append(storedTask.History, msg)
+		if err := e.taskStore.Save(ctx, storedTask); err != nil {
+			return nil, fmt.Errorf("task message history update failed: %w", err)
+		}
+
+		task = storedTask
+	}
+
+	if params.Config != nil && params.Config.PushConfig != nil {
+		if e.pushConfigStore == nil {
+			return nil, a2a.ErrPushNotificationNotSupported
+		}
+		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
+			return nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
+		}
+	}
+
+	return &RequestContext{
+		Message:   params.Message,
+		Task:      task,
+		TaskID:    task.ID,
+		ContextID: task.ContextID,
+		Metadata:  params.Message.Metadata,
+	}, nil
 }
 
 type canceler struct {
 	*processor
-	agent AgentExecutor
-	task  *a2a.Task
+	agent        AgentExecutor
+	taskStore    TaskStore
+	params       *a2a.TaskIDParams
+	interceptors []RequestContextInterceptor
 }
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
-	reqCtx := RequestContext{
-		TaskID:    c.task.ID,
-		ContextID: c.task.ContextID,
-		Task:      c.task,
+	task, err := c.taskStore.Get(ctx, c.params.ID)
+	if err != nil {
+		return fmt.Errorf("failed to load a task: %w", err)
 	}
+	c.processor.init(taskupdate.NewManager(c.taskStore, task))
+
+	if task.Status.State == a2a.TaskStateCanceled {
+		return q.Write(ctx, task)
+	}
+
+	if task.Status.State.Terminal() {
+		return fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+	}
+
+	reqCtx := &RequestContext{
+		TaskID:    task.ID,
+		Task:      task,
+		ContextID: task.ContextID,
+		Metadata:  c.params.Metadata,
+	}
+
+	for _, interceptor := range c.interceptors {
+		ctx, err = interceptor.Intercept(ctx, reqCtx)
+		if err != nil {
+			return fmt.Errorf("interceptor failed: %w", err)
+		}
+	}
+
 	return c.agent.Cancel(ctx, reqCtx, q)
 }
 
 type processor struct {
-	updateManager *taskupdate.Manager
+	// Processor is running in event consumer goroutine, but request context loading
+	// happens in event consumer goroutine. Once request context is loaded and validate the processor
+	// gets initialized.
+	updateManager   *taskupdate.Manager
+	pushConfigStore PushConfigStore
+	pushNotifier    PushNotifier
+}
+
+func newProcessor(pushConfigStore PushConfigStore, pushNotifier PushNotifier) *processor {
+	return &processor{
+		pushConfigStore: pushConfigStore,
+		pushNotifier:    pushNotifier,
+	}
+}
+
+func (p *processor) init(um *taskupdate.Manager) {
+	p.updateManager = um
 }
 
 // Process implements taskexec.Processor interface.
@@ -67,7 +193,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, err
 	}
 
-	// TODO(yarolegovich): handle pushes
+	p.sendPushNotifications(ctx, task)
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
 		return nil, nil
@@ -82,7 +208,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown task state")
+		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
 	}
 
 	if task.Status.State.Terminal() || task.Status.State == a2a.TaskStateInputRequired {
@@ -91,4 +217,16 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	return nil, nil
+}
+
+func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) {
+	if p.pushNotifier != nil && p.pushConfigStore != nil {
+		configs, _ := p.pushConfigStore.List(ctx, task.ID)
+		// TODO(yarolegovich): log error from getting stored push configs
+		// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
+		for _, config := range configs {
+			// TODO(yarolegovich): log error from sending a push
+			_ = p.pushNotifier.SendPush(ctx, config, task)
+		}
+	}
 }

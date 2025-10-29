@@ -12,6 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package push
-
-type InMemoryPushConfigStore struct{}
+// Package testutil provides utilities for easier test setup
+package testutil
