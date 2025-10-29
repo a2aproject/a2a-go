@@ -34,7 +34,14 @@ func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolGRPC,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			conn, err := grpc.NewClient(url, opts...)
+			interceptors := []grpc.DialOption{
+				grpc.WithStreamInterceptor(newStreamGRPCInterceptor()),
+				grpc.WithUnaryInterceptor(newUnaryGRPCInterceptor()),
+			}
+			conn, err := grpc.NewClient(
+				url,
+				append(interceptors, opts...)...,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -60,8 +67,6 @@ type grpcTransport struct {
 // A2A protocol methods
 
 func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoGetTaskRequest(query)
 	if err != nil {
 		return nil, err
@@ -76,8 +81,6 @@ func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams)
 }
 
 func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoCancelTaskRequest(id)
 	if err != nil {
 		return nil, err
@@ -92,8 +95,6 @@ func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*
 }
 
 func (c *grpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoSendMessageRequest(message)
 	if err != nil {
 		return nil, err
@@ -109,8 +110,6 @@ func (c *grpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSen
 
 func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx = withGRPCMetadata(ctx)
-
 		req, err := pbconv.ToProtoTaskSubscriptionRequest(id)
 		if err != nil {
 			yield(nil, err)
@@ -129,8 +128,6 @@ func (c *grpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDPar
 
 func (c *grpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx = withGRPCMetadata(ctx)
-
 		req, err := pbconv.ToProtoSendMessageRequest(message)
 		if err != nil {
 			yield(nil, err)
@@ -171,8 +168,6 @@ func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], y
 }
 
 func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoGetTaskPushConfigRequest(params)
 	if err != nil {
 		return nil, err
@@ -187,8 +182,6 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTa
 }
 
 func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoListTaskPushConfigRequest(params)
 	if err != nil {
 		return nil, err
@@ -203,8 +196,6 @@ func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.List
 }
 
 func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoCreateTaskPushConfigRequest(params)
 	if err != nil {
 		return nil, err
@@ -219,8 +210,6 @@ func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskP
 }
 
 func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	ctx = withGRPCMetadata(ctx)
-
 	req, err := pbconv.ToProtoDeleteTaskPushConfigRequest(params)
 	if err != nil {
 		return err
@@ -232,8 +221,6 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.De
 }
 
 func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	ctx = withGRPCMetadata(ctx)
-
 	pCard, err := c.client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
 
 	if err != nil {
@@ -247,13 +234,38 @@ func (c *grpcTransport) Destroy() error {
 	return c.closeConnFn()
 }
 
+func newUnaryGRPCInterceptor() grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		return invoker(withGRPCMetadata(ctx), method, req, reply, cc, opts...)
+	}
+}
+
+func newStreamGRPCInterceptor() grpc.StreamClientInterceptor {
+	return func(
+		ctx context.Context,
+		desc *grpc.StreamDesc,
+		cc *grpc.ClientConn,
+		method string,
+		streamer grpc.Streamer,
+		opts ...grpc.CallOption,
+	) (grpc.ClientStream, error) {
+		return streamer(withGRPCMetadata(ctx), desc, cc, method, opts...)
+	}
+}
+
 func withGRPCMetadata(ctx context.Context) context.Context {
 	callMeta, ok := CallMetaFrom(ctx)
 	if !ok || len(callMeta) == 0 {
 		return ctx
 	}
 	meta := metadata.MD{}
-	metadata.Pairs()
 	for k, vals := range callMeta {
 		meta[strings.ToLower(k)] = vals
 	}

@@ -82,10 +82,7 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				continue
 			}
 			switch v := scheme.(type) {
-			case a2a.HTTPAuthSecurityScheme:
-				req.Meta["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
-				return ctx, nil
-			case a2a.OAuth2SecurityScheme:
+			case a2a.HTTPAuthSecurityScheme, a2a.OAuth2SecurityScheme:
 				req.Meta["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
 				return ctx, nil
 			case a2a.APIKeySecurityScheme:
