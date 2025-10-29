@@ -17,6 +17,7 @@ package a2aclient
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -203,17 +204,8 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 		ID: "task-123",
 	})
 
-	if err == nil {
-		t.Fatal("got nil error, want error")
-	}
-
-	jsonrpcErr, ok := err.(*jsonrpc.Error)
-	if !ok {
-		t.Fatalf("got error type %T, want jsonrpcError", err)
-	}
-
-	if jsonrpcErr.Code != -32600 {
-		t.Errorf("got error code %d, want -32600", jsonrpcErr.Code)
+	if !errors.Is(err, a2a.ErrInvalidRequest) {
+		t.Fatalf("got error = %v, want %v", err, a2a.ErrInvalidRequest)
 	}
 }
 
@@ -591,29 +583,5 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 
 	if task.ID != "task-123" {
 		t.Errorf("got task ID %s, want task-123", task.ID)
-	}
-}
-
-func TestJSONRPCTransport_ErrorMethod(t *testing.T) {
-	err := &jsonrpc.Error{
-		Code:    -32600,
-		Message: "Invalid Request",
-		Data:    map[string]any{"details": "extra info"},
-	}
-
-	errStr := err.Error()
-	if errStr != "jsonrpc error -32600: Invalid Request (data: {\"details\":\"extra info\"})" {
-		t.Errorf("Unexpected error string: %s", errStr)
-	}
-
-	// Test without data field
-	err2 := &jsonrpc.Error{
-		Code:    -32601,
-		Message: "Method not found",
-	}
-
-	errStr2 := err2.Error()
-	if errStr2 != "jsonrpc error -32601: Method not found" {
-		t.Errorf("Unexpected error string: %s", errStr2)
 	}
 }

@@ -89,8 +89,7 @@ func WithJSONRPCTransport(opts ...JSONRPCOption) FactoryOption {
 // For custom timeout, retry logic, or connection pooling, provide a configured client via WithHTTPClient.
 func NewJSONRPCTransport(url string, card *a2a.AgentCard, opts ...JSONRPCOption) Transport {
 	t := &jsonrpcTransport{
-		url:       url,
-		agentCard: card,
+		url: url,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second, // Match Python SDK httpx.AsyncClient default
 		},
@@ -107,7 +106,6 @@ func NewJSONRPCTransport(url string, card *a2a.AgentCard, opts ...JSONRPCOption)
 type jsonrpcTransport struct {
 	url        string
 	httpClient *http.Client
-	agentCard  *a2a.AgentCard
 }
 
 // sendRequest sends a non-streaming JSON-RPC request and returns the response.
@@ -178,7 +176,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	httpReq.Header.Set("Accept", jsonrpc.ContentEventStream)
+	httpReq.Header.Set("Accept", sse.ContentEventStream)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -366,10 +364,16 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a
 
 // GetAgentCard retrieves the agent's card.
 func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	if t.agentCard == nil {
-		return nil, fmt.Errorf("no agent card available")
+	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, nil)
+	if err != nil {
+		return nil, err
 	}
-	return t.agentCard, nil
+
+	var card a2a.AgentCard
+	if err := json.Unmarshal(result, &card); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent card: %w", err)
+	}
+	return &card, nil
 }
 
 // Destroy closes the transport and releases resources.

@@ -11,8 +11,7 @@ const (
 	Version = "2.0"
 
 	// HTTP headers
-	ContentJSON        = "application/json"
-	ContentEventStream = "text/event-stream"
+	ContentJSON = "application/json"
 
 	// JSON-RPC method names per A2A spec §7
 	MethodMessageSend          = "message/send"
@@ -39,7 +38,7 @@ type Error struct {
 // Error implements the error interface for jsonrpcError.
 func (e *Error) Error() string {
 	if len(e.Data) > 0 {
-		return fmt.Sprintf("jsonrpc error %d: %s (data: %s)", e.Code, e.Message, string(e.Data))
+		return fmt.Sprintf("jsonrpc error %d: %s (data: %v)", e.Code, e.Message, e.Data)
 	}
 	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
 }
