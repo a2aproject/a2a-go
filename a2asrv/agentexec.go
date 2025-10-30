@@ -68,6 +68,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	return e.agent.Execute(ctx, reqCtx, q)
 }
 
+// loadExecRequestContext returns the RequestContext for AgentExecutor and a Task for initializing taskupdate.Manager with.
 func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, *a2a.Task, error) {
 	params, msg := e.params, e.params.Message
 
