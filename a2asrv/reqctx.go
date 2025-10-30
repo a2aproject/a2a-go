@@ -64,7 +64,7 @@ func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestC
 	for _, taskID := range msg.ReferenceTasks {
 		task, err := ri.Store.Get(ctx, taskID)
 		if err != nil {
-			log.Info(ctx, "a referenced task was not found", "referenced_task_id", taskID)
+			log.Info(ctx, "failed to get a referenced task", "referenced_task_id", taskID)
 			continue
 		}
 		tasks = append(tasks, task)
