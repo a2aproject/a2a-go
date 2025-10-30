@@ -252,12 +252,12 @@ func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallCo
 	return nil
 }
 
-// withLoggerContext is a private utility function which modifies CallContext.method if a CallContext
-// was passed by a transport implementation or initializes a new CallContext with the provided method.
+// withLoggerContext is a private utility function which attaches an slog.Logger with a2a-specific attributes
+// to the provided context.
 func (h *InterceptedHandler) withLoggerContext(ctx context.Context, attrs ...any) context.Context {
 	logger := h.Logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = log.LoggerFrom(ctx)
 	}
 	requestID := uuid.NewString()
 	withAttrs := logger.WithGroup("a2a").With(attrs...).With(slog.String("request_id", requestID))
