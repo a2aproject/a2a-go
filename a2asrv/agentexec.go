@@ -45,7 +45,7 @@ type executor struct {
 	*processor
 	taskID          a2a.TaskID
 	taskStore       TaskStore
-	pushNotifier    PushNotifier
+	pushSender      PushSender
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams
@@ -164,13 +164,13 @@ type processor struct {
 	// gets initialized.
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
-	pushNotifier    PushNotifier
+	pushSender      PushSender
 }
 
-func newProcessor(pushConfigStore PushConfigStore, pushNotifier PushNotifier) *processor {
+func newProcessor(store PushConfigStore, sender PushSender) *processor {
 	return &processor{
-		pushConfigStore: pushConfigStore,
-		pushNotifier:    pushNotifier,
+		pushConfigStore: store,
+		pushSender:      sender,
 	}
 }
 
@@ -193,7 +193,9 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, err
 	}
 
-	p.sendPushNotifications(ctx, task)
+	if err := p.sendPushNotifications(ctx, task); err != nil {
+		return nil, err
+	}
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
 		return nil, nil
@@ -219,14 +221,21 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	return nil, nil
 }
 
-func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) {
-	if p.pushNotifier != nil && p.pushConfigStore != nil {
-		configs, _ := p.pushConfigStore.List(ctx, task.ID)
-		// TODO(yarolegovich): log error from getting stored push configs
-		// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
-		for _, config := range configs {
-			// TODO(yarolegovich): log error from sending a push
-			_ = p.pushNotifier.SendPush(ctx, config, task)
+func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) error {
+	if p.pushSender == nil || p.pushConfigStore == nil {
+		return nil
+	}
+
+	configs, err := p.pushConfigStore.List(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+
+	// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
+	for _, config := range configs {
+		if err := p.pushSender.SendPush(ctx, config, task); err != nil {
+			return err
 		}
 	}
+	return nil
 }

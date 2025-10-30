@@ -65,7 +65,7 @@ type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   *taskexec.Manager
 
-	pushNotifier PushNotifier
+	pushSender   PushSender
 	queueManager eventqueue.Manager
 
 	pushConfigStore        PushConfigStore
@@ -104,10 +104,10 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 }
 
 // WithPushNotifications adds support for push notifications.
-func WithPushNotifications(store PushConfigStore, notifier PushNotifier) RequestHandlerOption {
+func WithPushNotifications(store PushConfigStore, notifier PushSender) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
-		h.pushNotifier = notifier
+		h.pushSender = notifier
 	}
 }
 
@@ -190,7 +190,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 	}
 
 	canceler := &canceler{
-		processor:    newProcessor(h.pushConfigStore, h.pushNotifier),
+		processor:    newProcessor(h.pushConfigStore, h.pushSender),
 		agent:        h.agentExecutor,
 		taskStore:    h.taskStore,
 		params:       params,
@@ -276,11 +276,11 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	}
 
 	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(h.pushConfigStore, h.pushNotifier),
+		processor:       newProcessor(h.pushConfigStore, h.pushSender),
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
-		pushNotifier:    h.pushNotifier,
+		pushSender:      h.pushSender,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,
@@ -288,7 +288,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
@@ -305,7 +305,7 @@ func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
@@ -323,7 +323,7 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
@@ -337,7 +337,7 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return a2a.ErrPushNotificationNotSupported
 	}
 	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)
