@@ -280,7 +280,6 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
-		pushSender:      h.pushSender,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,

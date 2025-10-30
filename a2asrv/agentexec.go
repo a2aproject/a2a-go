@@ -45,7 +45,6 @@ type executor struct {
 	*processor
 	taskID          a2a.TaskID
 	taskStore       TaskStore
-	pushSender      PushSender
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
 	params          *a2a.MessageSendParams

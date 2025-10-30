@@ -202,7 +202,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 				err := sender.SendPush(ctx, tc.config, tc.task)
 				if failOnError {
 					if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-						t.Errorf("SendPush() error = %v, want JSON marshal error", err)
+						t.Errorf("SendPush() error = %v, want error containing %s", err, tc.wantErr)
 					}
 				} else if err != nil {
 					t.Errorf("SendPush() error = %v, want nil when failOnError false", err)
