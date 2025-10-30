@@ -24,18 +24,23 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 var tokenHeader = http.CanonicalHeaderKey("X-A2A-Notification-Token")
 
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {
-	client *http.Client
+	client      *http.Client
+	failOnError bool
 }
 
 // HTTPSenderConfig allows to adjust HTTPPushSender
 type HTTPSenderConfig struct {
+	// Timeout is used to configure internal [http.Client].
 	Timeout time.Duration
+	// FailOnError can be set to true to make push sending errors trigger execution cancelation.
+	FailOnError bool
 }
 
 // NewHTTPPushSender creates a new HTTPPushSender. It uses a default client
@@ -47,7 +52,10 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 			t = config.Timeout
 		}
 	}
-	return &HTTPPushSender{client: &http.Client{Timeout: t}}
+	return &HTTPPushSender{
+		client:      &http.Client{Timeout: t},
+		failOnError: config != nil && config.FailOnError,
+	}
 }
 
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
@@ -55,12 +63,12 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
 	jsonData, err := json.Marshal(task)
 	if err != nil {
-		return fmt.Errorf("failed to serialize event to JSON: %w", err)
+		return s.handleError(ctx, fmt.Errorf("failed to serialize event to JSON: %w", err))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
+		return s.handleError(ctx, fmt.Errorf("failed to create HTTP request: %w", err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -81,16 +89,25 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send push notification: %w", err)
+		return s.handleError(ctx, fmt.Errorf("failed to send push notification: %w", err))
 	}
 	defer func() {
-		// TODO: log error
-		_ = resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "push response body close failed", err)
+		}
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status)
+		return s.handleError(ctx, fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status))
 	}
 
+	return nil
+}
+
+func (s *HTTPPushSender) handleError(ctx context.Context, err error) error {
+	if s.failOnError {
+		return err
+	}
+	log.Error(ctx, "push sending failed", err)
 	return nil
 }

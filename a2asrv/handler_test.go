@@ -459,6 +459,33 @@ func TestDefaultRequestHandler_OnSendMessage_PushNotifications(t *testing.T) {
 	}
 }
 
+func TestDefaultRequestHandler_OnSendMessage_RequiredPushFails(t *testing.T) {
+	ctx := t.Context()
+
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.MessageSendParams{
+		Message: newUserMessage(taskSeed, "work"),
+		Config:  &a2a.MessageSendConfig{PushConfig: pushConfig},
+	}
+	agentEvents := []a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!")}
+	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
+	wantResult.History = []*a2a.Message{input.Message}
+
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	executor := newEventReplayAgent(agentEvents, nil)
+	ps := testutil.NewTestPushConfigStore()
+
+	wantErr := errors.New("failed push fails execution")
+	pn := testutil.NewTestPushSender(t).SetSendPushError(wantErr)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	_, err := handler.OnSendMessage(ctx, input)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("OnSendMessage() err = %v, want %v", err, wantErr)
+	}
+}
+
 func TestDefaultRequestHandler_OnGetAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
