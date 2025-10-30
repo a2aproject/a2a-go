@@ -344,56 +344,33 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 }
 
 func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
-	t.Run("basic card without extended support", func(t *testing.T) {
-		card := &a2a.AgentCard{
-			Name:                              "Test Agent",
-			URL:                               "http://example.com",
-			SupportsAuthenticatedExtendedCard: false,
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonrpcRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("Failed to decode request: %v", err)
+			return
 		}
 
-		transport := NewJSONRPCTransport("http://example.com", card)
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"url":"http://example.com","name":"Test agent","description":"test"}`),
+		)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
 
-		result, err := transport.GetAgentCard(t.Context())
-		if err != nil {
-			t.Fatalf("GetAgentCard failed: %v", err)
-		}
+	transport := NewJSONRPCTransport(server.URL, nil)
 
-		if result.Name != "Test Agent" {
-			t.Errorf("got name %s, want Test Agent", result.Name)
-		}
-	})
+	got, err := transport.GetAgentCard(t.Context())
 
-	t.Run("returns provided card", func(t *testing.T) {
-		card := &a2a.AgentCard{
-			Name:        "Test Agent",
-			URL:         "http://example.com",
-			Description: "Test description",
-		}
+	if err != nil {
+		t.Fatalf("CancelTask failed: %v", err)
+	}
 
-		transport := NewJSONRPCTransport("http://example.com", card)
-
-		result, err := transport.GetAgentCard(t.Context())
-		if err != nil {
-			t.Fatalf("GetAgentCard failed: %v", err)
-		}
-
-		if result.Name != "Test Agent" {
-			t.Errorf("got name %s, want Test Agent", result.Name)
-		}
-
-		if result.Description != "Test description" {
-			t.Errorf("got description %s, want Test description", result.Description)
-		}
-	})
-
-	t.Run("no card provided", func(t *testing.T) {
-		transport := NewJSONRPCTransport("http://example.com", nil)
-
-		_, err := transport.GetAgentCard(t.Context())
-		if err == nil {
-			t.Fatal("got nil error when no card provided, want error")
-		}
-	})
+	want := &a2a.AgentCard{Name: "Test agent", URL: "http://example.com", Description: "test"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("got wrong card (+got,-want) diff = %s", diff)
+	}
 }
 
 func TestJSONRPCTransport_CancelTask(t *testing.T) {
