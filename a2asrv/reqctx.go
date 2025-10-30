@@ -34,14 +34,20 @@ type RequestContext struct {
 	Message *a2a.Message
 	// TaskID is an ID of the task or a newly generated UUIDv4 in case Message did not reference any Task.
 	TaskID a2a.TaskID
-	// Task is present if request message specified a TaskID.
-	Task *a2a.Task
+	// StoredTask is present if request message specified a TaskID.
+	StoredTask *a2a.Task
 	// RelatedTasks can be present when Message includes Task references and RequestContextBuilder is configured to load them.
 	RelatedTasks []*a2a.Task
 	// ContextID is a server-generated identifier for maintaining context across multiple related tasks or interactions. Matches the Task ContextID.
 	ContextID string
 	// Metadata of the request which triggered the call.
 	Metadata map[string]any
+}
+
+var _ a2a.TaskInfoProvider = (*RequestContext)(nil)
+
+func (rc *RequestContext) TaskInfo() a2a.TaskInfo {
+	return a2a.TaskInfo{TaskID: rc.TaskID, ContextID: rc.ContextID}
 }
 
 // ReferencedTasksLoader implements RequestContextInterceptor. It populates RelatedTasks field of RequestContext

@@ -56,7 +56,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return err
 	}
-	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.Task))
+	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.StoredTask))
 
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, reqCtx)
@@ -109,11 +109,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	}
 
 	return &RequestContext{
-		Message:   params.Message,
-		Task:      task,
-		TaskID:    task.ID,
-		ContextID: task.ContextID,
-		Metadata:  params.Message.Metadata,
+		Message:    params.Message,
+		StoredTask: task,
+		TaskID:     task.ID,
+		ContextID:  task.ContextID,
+		Metadata:   params.Message.Metadata,
 	}, nil
 }
 
@@ -141,10 +141,10 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	}
 
 	reqCtx := &RequestContext{
-		TaskID:    task.ID,
-		Task:      task,
-		ContextID: task.ContextID,
-		Metadata:  c.params.Metadata,
+		TaskID:     task.ID,
+		StoredTask: task,
+		ContextID:  task.ContextID,
+		Metadata:   c.params.Metadata,
 	}
 
 	for _, interceptor := range c.interceptors {
