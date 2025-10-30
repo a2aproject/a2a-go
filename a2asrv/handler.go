@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -85,7 +86,17 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 	}
 }
 
-// WithEventQueueManager overrides eventqueue.Manager with custom implementation.
+// WithLogger sets a custom [slog.Logger]. Request scoped parameters will be attached to this logger
+// on method invocations. Any injected dependency will be able to access the logger using either
+// github.com/a2aproject/a2a-go/log package-level functions.
+// If not provided, defaults to slog.Defadult().
+func WithLogger(logger *slog.Logger) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.Logger = logger
+	}
+}
+
+// WithEventQueueManager overrides eventqueue.Manager with custom implementation
 func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.queueManager = manager
@@ -138,7 +149,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		taskStore:     taskstore.NewMem(),
 		// push notifications are not supported by default
 	}
-	ih := &InterceptedHandler{Handler: h}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
