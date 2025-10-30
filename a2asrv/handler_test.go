@@ -19,12 +19,14 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -415,6 +417,45 @@ func TestDefaultRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T)
 		}
 	} else {
 		t.Fatalf("OnSendMessageStream() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
+	}
+}
+
+func TestDefaultRequestHandler_OnSendMessage_PushNotifications(t *testing.T) {
+	ctx := t.Context()
+
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.MessageSendParams{
+		Message: newUserMessage(taskSeed, "work"),
+		Config: &a2a.MessageSendConfig{
+			PushConfig: pushConfig,
+		},
+	}
+	agentEvents := []a2a.Event{
+		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+	}
+	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
+	wantResult.History = []*a2a.Message{input.Message}
+
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	executor := newEventReplayAgent(agentEvents, nil)
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t).SetSendPushError(nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	result, err := handler.OnSendMessage(ctx, input)
+	if err != nil {
+		t.Fatalf("OnSendMessage() failed: %v", err)
+	}
+	if diff := cmp.Diff(wantResult, result); diff != "" {
+		t.Errorf("OnSendMessage() mismatch (-want +got):\n%s", diff)
+	}
+	saved, err := ps.List(ctx, taskSeed.ID)
+	if err != nil || len(saved) != 1 {
+		t.Fatalf("expected push config to be saved, but got %v, %v", saved, err)
+	}
+	if len(pn.PushedConfigs) != 1 {
+		t.Fatal("expected push notification to be sent, but got %w: ", pn.PushedConfigs)
 	}
 }
 
@@ -880,21 +921,229 @@ func TestDefaultRequestHandler_RequestContextInterceptorRejectsRequest(t *testin
 	}
 }
 
-func TestDefaultRequestHandler_Unimplemented(t *testing.T) {
-	handler := NewHandler(&mockAgentExecutor{})
+func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
+	taskID := a2a.TaskID("test-task")
 
-	if _, err := handler.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
-		t.Errorf("OnGetTaskPushConfig: expected unimplemented error, got %v", err)
+	testCases := []struct {
+		name    string
+		params  *a2a.TaskPushConfig
+		wantErr error
+	}{
+		{
+			name: "valid config with id",
+			params: &a2a.TaskPushConfig{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+		},
+		{
+			name: "valid config without id",
+			params: &a2a.TaskPushConfig{
+				TaskID: taskID,
+				Config: a2a.PushConfig{URL: "https://example.com/push-no-id"},
+			},
+		},
+		{
+			name: "invalid config - empty URL",
+			params: &a2a.TaskPushConfig{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-invalid"},
+			},
+			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
+		},
 	}
-	if _, err := handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
-		t.Errorf("OnListTaskPushConfig: expected unimplemented error, got %v", err)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := testutil.NewTestPushConfigStore()
+			pn := testutil.NewTestPushSender(t)
+			handler := newTestHandler(WithPushNotifications(ps, pn))
+			got, err := handler.OnSetTaskPushConfig(ctx, tc.params)
+
+			if tc.wantErr != nil {
+				if err == nil || err.Error() != tc.wantErr.Error() {
+					t.Fatalf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("OnSetTaskPushConfig() failed: %v", err)
+			}
+
+			if got.Config.ID == "" {
+				t.Fatalf("OnSetTaskPushConfig() expected a generated ID, but it was empty")
+			}
+
+			if tc.params.Config.ID == "" {
+				got.Config.ID = ""
+			}
+
+			if diff := cmp.Diff(tc.params, got); diff != "" {
+				t.Fatalf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
-	if _, err := handler.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{}); !errors.Is(err, ErrUnimplemented) {
-		t.Errorf("OnSetTaskPushConfig: expected unimplemented error, got %v", err)
+}
+
+func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("test-task")
+	config1 := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
+	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config1)
+	pn := testutil.NewTestPushSender(t)
+	handler := newTestHandler(WithPushNotifications(ps, pn))
+
+	testCases := []struct {
+		name    string
+		params  *a2a.GetTaskPushConfigParams
+		want    *a2a.TaskPushConfig
+		wantErr error
+	}{
+		{
+			name:   "success",
+			params: &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: config1.ID},
+			want:   &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
+		},
+		{
+			name:    "non-existent config",
+			params:  &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: "non-existent"},
+			wantErr: push.ErrPushConfigNotFound,
+		},
+		{
+			name:    "non-existent task",
+			params:  &a2a.GetTaskPushConfigParams{TaskID: "non-existent-task", ConfigID: config1.ID},
+			wantErr: push.ErrPushConfigNotFound,
+		},
 	}
-	if err := handler.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{}); !errors.Is(err, ErrUnimplemented) {
-		t.Errorf("OnDeleteTaskPushConfig: expected unimplemented error, got %v", err)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := handler.OnGetTaskPushConfig(ctx, tc.params)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("OnGetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil {
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("OnGetTaskPushConfig() mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+func TestDefaultRequestHandler_OnListTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("test-task")
+	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
+	config2 := a2a.PushConfig{ID: "config-2", URL: "https://example.com/push2"}
+	emptyTaskID := a2a.TaskID("empty-task")
+
+	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
+	pn := testutil.NewTestPushSender(t)
+	handler := newTestHandler(WithPushNotifications(ps, pn))
+
+	if _, err := ps.Save(ctx, emptyTaskID, &config1); err != nil {
+		t.Fatalf("Setup: Save() for empty task failed: %v", err)
+	}
+	if err := ps.DeleteAll(ctx, emptyTaskID); err != nil {
+		t.Fatalf("Setup: OnDeleteTaskPushConfig() for empty task failed: %v", err)
+	}
+
+	testCases := []struct {
+		name   string
+		params *a2a.ListTaskPushConfigParams
+		want   []*a2a.TaskPushConfig
+	}{
+		{
+			name:   "list existing",
+			params: &a2a.ListTaskPushConfigParams{TaskID: taskID},
+			want: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+		},
+		{
+			name:   "list with empty task",
+			params: &a2a.ListTaskPushConfigParams{TaskID: emptyTaskID},
+			want:   []*a2a.TaskPushConfig{},
+		},
+		{
+			name:   "list non-existent task",
+			params: &a2a.ListTaskPushConfigParams{TaskID: "non-existent-task"},
+			want:   []*a2a.TaskPushConfig{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := handler.OnListTaskPushConfig(ctx, tc.params)
+			if err != nil {
+				t.Fatalf("OnListTaskPushConfig() failed: %v", err)
+			}
+			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("OnListTaskPushConfig() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("test-task")
+	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
+	config2 := a2a.PushConfig{ID: "config-2", URL: "https://example.com/push2"}
+
+	testCases := []struct {
+		name       string
+		params     *a2a.DeleteTaskPushConfigParams
+		wantRemain []*a2a.TaskPushConfig
+	}{
+		{
+			name:       "delete existing",
+			params:     &a2a.DeleteTaskPushConfigParams{TaskID: taskID, ConfigID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
+		},
+		{
+			name:   "delete non-existent config",
+			params: &a2a.DeleteTaskPushConfigParams{TaskID: taskID, ConfigID: "non-existent"},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+		},
+		{
+			name:   "delete from non-existent task",
+			params: &a2a.DeleteTaskPushConfigParams{TaskID: "non-existent-task", ConfigID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
+			pn := testutil.NewTestPushSender(t)
+			handler := newTestHandler(WithPushNotifications(ps, pn))
+			err := handler.OnDeleteTaskPushConfig(ctx, tc.params)
+			if err != nil {
+				t.Fatalf("OnDeleteTaskPushConfig() failed: %v", err)
+			}
+
+			got, err := handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{TaskID: taskID})
+			if err != nil {
+				t.Fatalf("OnListTaskPushConfig() for verification failed: %v", err)
+			}
+
+			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+			if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
+				t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

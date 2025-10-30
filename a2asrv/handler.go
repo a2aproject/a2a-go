@@ -16,18 +16,16 @@ package a2asrv
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
-
-var ErrUnimplemented = errors.New("unimplemented")
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -62,7 +60,7 @@ type RequestHandler interface {
 	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
-// Implements a2asrv.RequestHandler
+// Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   *taskexec.Manager
@@ -79,7 +77,9 @@ type defaultRequestHandler struct {
 
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
-// WithTaskStore overrides TaskStore with custom implementation
+type HTTPPushConfig push.HTTPSenderConfig
+
+// WithTaskStore overrides TaskStore with custom implementation.
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.taskStore = store
@@ -89,7 +89,7 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 // WithLogger sets a custom [slog.Logger]. Request scoped parameters will be attached to this logger
 // on method invocations. Any injected dependency will be able to access the logger using either
 // github.com/a2aproject/a2a-go/log package-level functions.
-// If not provided, defaults to slog.Default().
+// If not provided, defaults to slog.Defadult().
 func WithLogger(logger *slog.Logger) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		ih.Logger = logger
@@ -103,21 +103,15 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	}
 }
 
-// WithPushConfigStore overrides default PushConfigStore with custom implementation
-func WithPushConfigStore(store PushConfigStore) RequestHandlerOption {
+// WithPushNotifications adds support for push notifications.
+func WithPushNotifications(store PushConfigStore, notifier PushNotifier) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
-	}
-}
-
-// WithPushNotifier overrides default PushNotifier with custom implementation
-func WithPushNotifier(notifier PushNotifier) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushNotifier = notifier
 	}
 }
 
-// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation
+// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation.
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
@@ -147,12 +141,13 @@ func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandle
 	}
 }
 
-// NewHandler creates a new request handler
+// NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
 		agentExecutor: executor,
 		queueManager:  eventqueue.NewInMemoryManager(),
 		taskStore:     taskstore.NewMem(),
+		// push notifications are not supported by default
 	}
 	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
@@ -195,7 +190,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 	}
 
 	canceler := &canceler{
-		processor:    newProcessor(),
+		processor:    newProcessor(h.pushConfigStore, h.pushNotifier),
 		agent:        h.agentExecutor,
 		taskStore:    h.taskStore,
 		params:       params,
@@ -281,10 +276,11 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	}
 
 	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(),
+		processor:       newProcessor(h.pushConfigStore, h.pushNotifier),
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
+		pushNotifier:    h.pushNotifier,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,
@@ -292,31 +288,59 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	if params == nil {
-		return nil, a2a.ErrInvalidRequest
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
 	}
-	return nil, ErrUnimplemented
+	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get push configs: %w", err)
+	}
+	if config != nil {
+		return &a2a.TaskPushConfig{
+			TaskID: params.TaskID,
+			Config: *config,
+		}, nil
+	}
+	return nil, push.ErrPushConfigNotFound
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	if params == nil {
-		return nil, a2a.ErrInvalidRequest
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
 	}
-	return nil, ErrUnimplemented
+	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list push configs: %w", err)
+	}
+	result := make([]*a2a.TaskPushConfig, len(configs))
+	for i, config := range configs {
+		result[i] = &a2a.TaskPushConfig{
+			TaskID: params.TaskID,
+			Config: *config,
+		}
+	}
+	return result, nil
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	if params == nil {
-		return nil, a2a.ErrInvalidRequest
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return nil, a2a.ErrPushNotificationNotSupported
 	}
-	return nil, ErrUnimplemented
+	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save push config: %w", err)
+	}
+	return &a2a.TaskPushConfig{
+		TaskID: params.TaskID,
+		Config: *saved,
+	}, nil
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	if params == nil {
-		return a2a.ErrInvalidRequest
+	if h.pushConfigStore == nil || h.pushNotifier == nil {
+		return a2a.ErrPushNotificationNotSupported
 	}
-	return ErrUnimplemented
+	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)
 }
 
 func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {

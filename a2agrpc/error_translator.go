@@ -19,7 +19,6 @@ import (
 	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -50,8 +49,6 @@ func toGRPCError(err error) error {
 		code = codes.InvalidArgument
 	case errors.Is(err, a2a.ErrInvalidAgentResponse):
 		code = codes.Internal
-	case errors.Is(err, a2asrv.ErrUnimplemented):
-		code = codes.Unimplemented
 	case errors.Is(err, context.Canceled):
 		code = codes.Canceled
 	case errors.Is(err, context.DeadlineExceeded):
