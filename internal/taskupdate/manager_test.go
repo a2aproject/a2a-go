@@ -185,9 +185,10 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 	ctxid, tid, aid := a2a.NewContextID(), a2a.NewTaskID(), a2a.NewArtifactID()
 
 	testCases := []struct {
-		name   string
-		events []*a2a.TaskArtifactUpdateEvent
-		want   []*a2a.Artifact
+		name    string
+		events  []*a2a.TaskArtifactUpdateEvent
+		want    []*a2a.Artifact
+		wantErr bool
 	}{
 		{
 			name: "create an artifact",
@@ -349,7 +350,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			},
 		},
 		{
-			name: "skip update of non-existent Artifact",
+			name: "fail on update of non-existent Artifact",
 			events: []*a2a.TaskArtifactUpdateEvent{
 				{
 					Append: true,
@@ -357,7 +358,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 					Artifact: &a2a.Artifact{Parts: makeTextParts("Hello")},
 				},
 			},
-			want: nil,
+			wantErr: true,
 		},
 	}
 
@@ -367,13 +368,18 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			task := &a2a.Task{ID: tid, ContextID: ctxid}
 			m := NewManager(saver, task)
 
+			var gotErr error
 			var lastResult *a2a.Task
 			for _, ev := range tc.events {
 				result, err := m.Process(t.Context(), ev)
 				if err != nil {
-					t.Errorf("m.Process() failed: %v", err)
+					gotErr = err
+					break
 				}
 				lastResult = result
+			}
+			if tc.wantErr != (gotErr != nil) {
+				t.Errorf("error = %v, want error = %v", gotErr, tc.wantErr)
 			}
 
 			var saved []*a2a.Artifact
@@ -447,7 +453,6 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 					ID:       a2a.NewArtifactID(),
 					Metadata: invalidMeta,
 				},
-				Metadata: invalidMeta,
 			},
 		},
 		{
