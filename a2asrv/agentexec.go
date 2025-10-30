@@ -52,11 +52,11 @@ type executor struct {
 }
 
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
-	reqCtx, err := e.loadExecRequestContext(ctx)
+	reqCtx, task, err := e.loadExecRequestContext(ctx)
 	if err != nil {
 		return err
 	}
-	e.processor.init(taskupdate.NewManager(e.taskStore, reqCtx.StoredTask))
+	e.processor.init(taskupdate.NewManager(e.taskStore, task))
 
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, reqCtx)
@@ -68,53 +68,56 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	return e.agent.Execute(ctx, reqCtx, q)
 }
 
-func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, error) {
+func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, *a2a.Task, error) {
 	params, msg := e.params, e.params.Message
 
 	var task *a2a.Task
+	var existingTask *a2a.Task
 	if msg.TaskID == "" {
 		task = taskupdate.NewSubmittedTask(e.taskID, msg)
 	} else {
 		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
-			return nil, fmt.Errorf("task loading failed: %w", err)
+			return nil, nil, fmt.Errorf("task loading failed: %w", err)
 		}
 		if storedTask == nil {
-			return nil, a2a.ErrTaskNotFound
+			return nil, nil, a2a.ErrTaskNotFound
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+			return nil, nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+			return nil, nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
 		}
 
 		storedTask.History = append(storedTask.History, msg)
 		if err := e.taskStore.Save(ctx, storedTask); err != nil {
-			return nil, fmt.Errorf("task message history update failed: %w", err)
+			return nil, nil, fmt.Errorf("task message history update failed: %w", err)
 		}
 
+		existingTask = storedTask
 		task = storedTask
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
 		if e.pushConfigStore == nil {
-			return nil, a2a.ErrPushNotificationNotSupported
+			return nil, nil, a2a.ErrPushNotificationNotSupported
 		}
 		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
-			return nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
+			return nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
 		}
 	}
 
-	return &RequestContext{
+	reqCtx := &RequestContext{
 		Message:    params.Message,
-		StoredTask: task,
+		StoredTask: existingTask,
 		TaskID:     task.ID,
 		ContextID:  task.ContextID,
 		Metadata:   params.Message.Metadata,
-	}, nil
+	}
+	return reqCtx, task, nil
 }
 
 type canceler struct {

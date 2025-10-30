@@ -14,6 +14,17 @@ type TaskInfo struct {
 	ContextID string
 }
 
+// NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
+func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *Task {
+	taskInfo := infoProvider.TaskInfo()
+	return &Task{
+		ID:        taskInfo.TaskID,
+		ContextID: taskInfo.ContextID,
+		Status:    TaskStatus{State: TaskStateSubmitted},
+		History:   []*Message{initialMessage},
+	}
+}
+
 // TaskEventFactory is a utility for creating task events without the need to pass taskID and contextID around.
 type TaskEventFactory struct {
 	taskInfoProvider TaskInfoProvider
