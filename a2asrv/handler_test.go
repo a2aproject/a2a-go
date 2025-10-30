@@ -225,6 +225,11 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				},
 			},
 			{
+				name:    "fails if no message",
+				input:   &a2a.MessageSendParams{},
+				wantErr: a2a.ErrInvalidParams,
+			},
+			{
 				name:    "fails on non-existent task reference",
 				input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 				wantErr: a2a.ErrTaskNotFound,
@@ -234,7 +239,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				input: &a2a.MessageSendParams{
 					Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: taskSeed.ContextID + "1", ID: "test-message"},
 				},
-				wantErr: a2a.ErrInvalidRequest,
+				wantErr: a2a.ErrInvalidParams,
 			},
 			{
 				name: "fails if message references non-existent task",
@@ -248,7 +253,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				input: &a2a.MessageSendParams{
 					Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
 				},
-				wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidRequest),
+				wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
 			},
 		}
 	}
@@ -269,14 +274,14 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 			result, gotErr := handler.OnSendMessage(ctx, input)
 			if tt.wantErr == nil {
 				if gotErr != nil {
-					t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+					t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
 					t.Errorf("OnSendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
-					t.Fatalf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
 				}
 				if gotErr.Error() != tt.wantErr.Error() && !errors.Is(gotErr, tt.wantErr) {
 					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
@@ -306,7 +311,7 @@ func TestDefaultRequestHandler_OnSendMessage(t *testing.T) {
 				}
 
 				if gotErr != nil && tt.wantErr == nil {
-					t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+					t.Errorf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
 				}
 				if gotErr != nil {
 					streamErr = gotErr
@@ -513,7 +518,7 @@ func TestDefaultRequestHandler_OnGetAgentCard(t *testing.T) {
 				}
 			} else {
 				if gotErr == nil {
-					t.Fatalf("OnGetAgentCard() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("OnGetAgentCard() error = nil, wantErr %q", tt.wantErr)
 				}
 				if gotErr.Error() != tt.wantErr.Error() {
 					t.Errorf("OnGetAgentCard() error = %v, wantErr %v", gotErr, tt.wantErr)
@@ -663,7 +668,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 		{
 			name:    "missing TaskID",
 			query:   &a2a.TaskQueryParams{ID: ""},
-			wantErr: fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest),
+			wantErr: fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidParams),
 		},
 		{
 			name:    "task not found",
@@ -700,7 +705,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 			result, err := handler.OnGetTask(ctx, tt.query)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Fatalf("OnGetTask() error = %v, wantErr nil", err)
+					t.Errorf("OnGetTask() error = %v, wantErr nil", err)
 				}
 
 				if diff := cmp.Diff(result, tt.want); diff != "" {
@@ -708,7 +713,7 @@ func TestDefaultRequestHandler_OnGetTask(t *testing.T) {
 				}
 			} else {
 				if err == nil {
-					t.Fatalf("OnGetTask() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("OnGetTask() error = nil, wantErr %q", tt.wantErr)
 				}
 				if err.Error() != tt.wantErr.Error() {
 					t.Errorf("OnGetTask() error = %v, wantErr %v", err, tt.wantErr)
@@ -749,7 +754,7 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 		{
 			name:    "nil params",
 			params:  nil,
-			wantErr: a2a.ErrInvalidRequest,
+			wantErr: a2a.ErrInvalidParams,
 		},
 		{
 			name:    "task not found",
@@ -783,7 +788,7 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 			result, err := handler.OnCancelTask(ctx, tt.params)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Fatalf("OnCancelTask() error = %v, wantErr nil", err)
+					t.Errorf("OnCancelTask() error = %v, wantErr nil", err)
 				}
 
 				if diff := cmp.Diff(result, tt.want); diff != "" {
@@ -791,7 +796,7 @@ func TestDefaultRequestHandler_OnCancelTask(t *testing.T) {
 				}
 			} else {
 				if err == nil {
-					t.Fatalf("OnCancelTask() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("OnCancelTask() error = nil, wantErr %q", tt.wantErr)
 				}
 				if err.Error() != tt.wantErr.Error() {
 					t.Errorf("OnCancelTask() error = %v, wantErr %v", err, tt.wantErr)
@@ -963,17 +968,17 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 
 			if tc.wantErr != nil {
 				if err == nil || err.Error() != tc.wantErr.Error() {
-					t.Fatalf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+					t.Errorf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Fatalf("OnSetTaskPushConfig() failed: %v", err)
+				t.Errorf("OnSetTaskPushConfig() failed: %v", err)
 			}
 
 			if got.Config.ID == "" {
-				t.Fatalf("OnSetTaskPushConfig() expected a generated ID, but it was empty")
+				t.Errorf("OnSetTaskPushConfig() expected a generated ID, but it was empty")
 			}
 
 			if tc.params.Config.ID == "" {
@@ -981,7 +986,7 @@ func TestDefaultRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(tc.params, got); diff != "" {
-				t.Fatalf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
+				t.Errorf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1022,7 +1027,7 @@ func TestDefaultRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := handler.OnGetTaskPushConfig(ctx, tc.params)
 			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("OnGetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+				t.Errorf("OnGetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 			}
 			if tc.wantErr == nil {
 				if diff := cmp.Diff(tc.want, got); diff != "" {
@@ -1080,7 +1085,7 @@ func TestDefaultRequestHandler_OnListTaskPushConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := handler.OnListTaskPushConfig(ctx, tc.params)
 			if err != nil {
-				t.Fatalf("OnListTaskPushConfig() failed: %v", err)
+				t.Errorf("OnListTaskPushConfig() failed: %v", err)
 			}
 			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
 			if diff := cmp.Diff(tc.want, got); diff != "" {
@@ -1131,12 +1136,12 @@ func TestDefaultRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 			handler := newTestHandler(WithPushNotifications(ps, pn))
 			err := handler.OnDeleteTaskPushConfig(ctx, tc.params)
 			if err != nil {
-				t.Fatalf("OnDeleteTaskPushConfig() failed: %v", err)
+				t.Errorf("OnDeleteTaskPushConfig() failed: %v", err)
 			}
 
 			got, err := handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{TaskID: taskID})
 			if err != nil {
-				t.Fatalf("OnListTaskPushConfig() for verification failed: %v", err)
+				t.Errorf("OnListTaskPushConfig() for verification failed: %v", err)
 			}
 
 			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
