@@ -189,10 +189,12 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 
 	task, err := p.updateManager.Process(ctx, event)
 	if err != nil {
+		p.updateManager.SetTaskFailed(ctx, err)
 		return nil, err
 	}
 
 	if err := p.sendPushNotifications(ctx, task); err != nil {
+		p.updateManager.SetTaskFailed(ctx, err)
 		return nil, err
 	}
 

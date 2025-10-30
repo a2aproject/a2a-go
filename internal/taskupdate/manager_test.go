@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -63,8 +64,8 @@ func TestManager_TaskSaved(t *testing.T) {
 
 	newState := a2a.TaskStateCanceled
 	updated := &a2a.Task{
-		ID:        m.task.ID,
-		ContextID: m.task.ContextID,
+		ID:        m.lastSavedTask.ID,
+		ContextID: m.lastSavedTask.ContextID,
 		Status:    a2a.TaskStatus{State: newState},
 	}
 	result, err := m.Process(t.Context(), updated)
@@ -89,7 +90,7 @@ func TestManager_SaverError(t *testing.T) {
 
 	wantErr := errors.New("saver failed")
 	saver.fail = wantErr
-	if _, err := m.Process(t.Context(), m.task); !errors.Is(err, wantErr) {
+	if _, err := m.Process(t.Context(), m.lastSavedTask); !errors.Is(err, wantErr) {
 		t.Fatalf("m.Process() = %v, want %v", err, wantErr)
 	}
 }
@@ -97,11 +98,11 @@ func TestManager_SaverError(t *testing.T) {
 func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
-	m.task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
+	m.lastSavedTask.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
 	for _, state := range states {
-		event := newStatusUpdate(m.task)
+		event := newStatusUpdate(m.lastSavedTask)
 		event.Status.State = state
 
 		task, err := m.Process(t.Context(), event)
@@ -121,7 +122,7 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	var lastResult *a2a.Task
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
-		event := newStatusUpdate(m.task)
+		event := newStatusUpdate(m.lastSavedTask)
 		textPart := a2a.TextPart{Text: msg}
 		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
 
@@ -158,7 +159,7 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 
 	var lastResult *a2a.Task
 	for i, metadata := range updates {
-		event := newStatusUpdate(m.task)
+		event := newStatusUpdate(m.lastSavedTask)
 		event.Metadata = metadata
 
 		result, err := m.Process(t.Context(), event)
@@ -418,5 +419,72 @@ func TestManager_IDValidationFailure(t *testing.T) {
 		if _, err := m.Process(t.Context(), event); err == nil {
 			t.Fatalf("want ID validation to fail for %d-th event: %+v", i, event)
 		}
+	}
+}
+
+func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
+	seedTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	invalidMeta := map[string]any{"invalid": func() {}}
+
+	testCases := []struct {
+		name          string
+		invalidUpdate a2a.Event
+	}{
+		{
+			name: "task update",
+			invalidUpdate: &a2a.Task{
+				ID:        seedTask.ID,
+				ContextID: seedTask.ContextID,
+				Metadata:  invalidMeta,
+			},
+		},
+		{
+			name: "artifact update",
+			invalidUpdate: &a2a.TaskArtifactUpdateEvent{
+				TaskID:    seedTask.ID,
+				ContextID: seedTask.ContextID,
+				Artifact: &a2a.Artifact{
+					ID:       a2a.NewArtifactID(),
+					Metadata: invalidMeta,
+				},
+				Metadata: invalidMeta,
+			},
+		},
+		{
+			name: "task status update",
+			invalidUpdate: &a2a.TaskStatusUpdateEvent{
+				TaskID:    seedTask.ID,
+				ContextID: seedTask.ContextID,
+				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
+				Metadata:  invalidMeta,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			store := taskstore.NewMem()
+
+			task := *seedTask
+			m := NewManager(store, &task)
+			_, err := m.Process(ctx, tc.invalidUpdate)
+			if err == nil {
+				t.Error("m.Process() = nil, expected serialization failure")
+				return
+			}
+
+			m.SetTaskFailed(ctx, err)
+
+			storedTask, err := store.Get(ctx, task.ID)
+			if err != nil {
+				t.Errorf("store.Get() error = %v", err)
+				return
+			}
+
+			if storedTask.Status.State != a2a.TaskStateFailed {
+				t.Errorf("task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateFailed)
+			}
+		})
 	}
 }
