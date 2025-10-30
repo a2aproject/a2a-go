@@ -31,8 +31,8 @@ var tokenHeader = http.CanonicalHeaderKey("X-A2A-Notification-Token")
 
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {
-	client   *http.Client
-	required bool
+	client      *http.Client
+	failOnError bool
 }
 
 // HTTPSenderConfig allows to adjust HTTPPushSender
@@ -52,7 +52,10 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 			t = config.Timeout
 		}
 	}
-	return &HTTPPushSender{client: &http.Client{Timeout: t}}
+	return &HTTPPushSender{
+		client:      &http.Client{Timeout: t},
+		failOnError: config != nil && config.FailOnError,
+	}
 }
 
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
@@ -102,7 +105,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 }
 
 func (s *HTTPPushSender) handleError(ctx context.Context, err error) error {
-	if s.required {
+	if s.failOnError {
 		return err
 	}
 	log.Error(ctx, "push sending failed", err)
