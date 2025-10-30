@@ -270,17 +270,21 @@ func (c *Client) Destroy() error {
 }
 
 func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
+	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil {
+		return message
+	}
 	result := *message
-	if c.config.PushConfig != nil || c.config.AcceptedOutputModes != nil {
-		if result.Config == nil {
-			result.Config = &a2a.MessageSendConfig{}
-		}
-		if result.Config.PushConfig == nil {
-			result.Config.PushConfig = c.config.PushConfig
-		}
-		if result.Config.AcceptedOutputModes == nil {
-			result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
-		}
+	if result.Config == nil {
+		result.Config = &a2a.MessageSendConfig{}
+	} else {
+		configCopy := *result.Config
+		result.Config = &configCopy
+	}
+	if result.Config.PushConfig == nil {
+		result.Config.PushConfig = c.config.PushConfig
+	}
+	if result.Config.AcceptedOutputModes == nil {
+		result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
 	}
 	return &result
 }
