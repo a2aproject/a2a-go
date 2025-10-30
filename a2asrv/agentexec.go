@@ -100,7 +100,7 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
-		if e.pushConfigStore == nil {
+		if e.pushSender == nil || e.pushConfigStore == nil {
 			return nil, a2a.ErrPushNotificationNotSupported
 		}
 		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {

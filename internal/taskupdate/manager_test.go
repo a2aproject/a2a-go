@@ -475,7 +475,7 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 			m := NewManager(store, &task)
 			_, err := m.Process(ctx, tc.invalidUpdate)
 			if err == nil {
-				t.Error("m.Process() = nil, expected serialization failure")
+				t.Error("m.Process() error = nil, expected serialization failure")
 				return
 			}
 
