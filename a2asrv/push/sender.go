@@ -60,12 +60,12 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
 	jsonData, err := json.Marshal(task)
 	if err != nil {
-		return s.handleError(fmt.Errorf("failed to serialize event to JSON: %w", err))
+		return s.handleError(ctx, fmt.Errorf("failed to serialize event to JSON: %w", err))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return s.handleError(fmt.Errorf("failed to create HTTP request: %w", err))
+		return s.handleError(ctx, fmt.Errorf("failed to create HTTP request: %w", err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -86,7 +86,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return s.handleError(fmt.Errorf("failed to send push notification: %w", err))
+		return s.handleError(ctx, fmt.Errorf("failed to send push notification: %w", err))
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -95,7 +95,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, t
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return s.handleError(fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status))
+		return s.handleError(ctx, fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status))
 	}
 
 	return nil
