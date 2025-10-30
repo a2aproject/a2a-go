@@ -48,7 +48,7 @@ func NewWriter(w http.ResponseWriter) (*SSEWriter, error) {
 
 func (w *SSEWriter) WriteHeaders() {
 	header := w.writer.Header()
-	header.Set("ContentType", ContentEventStream)
+	header.Set("Content-Type", ContentEventStream)
 	header.Set("Cache-Control", "no-cache")
 	header.Set("Connection", "keep-alive")
 	header.Set("X-Accel-Buffering", "no")
