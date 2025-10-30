@@ -163,7 +163,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	taskID := query.ID
 	if taskID == "" {
-		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidParams)
 	}
 
 	task, err := h.taskStore.Get(ctx, taskID)
@@ -186,7 +186,7 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	if params == nil {
-		return nil, a2a.ErrInvalidRequest
+		return nil, a2a.ErrInvalidParams
 	}
 
 	canceler := &canceler{
@@ -229,7 +229,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		_, subscription, err := h.handleSendMessage(ctx, params)
-		if params == nil {
+		if err != nil {
 			yield(nil, err)
 			return
 		}
@@ -245,7 +245,7 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if params == nil {
-			yield(nil, a2a.ErrInvalidRequest)
+			yield(nil, a2a.ErrInvalidParams)
 			return
 		}
 
@@ -265,7 +265,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 
 	var taskID a2a.TaskID

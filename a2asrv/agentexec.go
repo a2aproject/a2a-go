@@ -84,11 +84,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidRequest)
+			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidRequest)
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
 		}
 
 		storedTask.History = append(storedTask.History, msg)
