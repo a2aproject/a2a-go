@@ -137,6 +137,7 @@ func (h *JSONRPCHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	for {
 		select {
 		case <-ctx.Done():
+			return
 		case <-keepAliveTicker.C:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				// TODO(yarolegovich): log, failed to write a response
@@ -168,6 +169,7 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan c
 		}
 		select {
 		case <-ctx.Done():
+			return
 		case sseChan <- bytes:
 		}
 	}
@@ -187,6 +189,7 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan c
 
 		select {
 		case <-ctx.Done():
+			return
 		case sseChan <- bytes:
 		}
 	}
