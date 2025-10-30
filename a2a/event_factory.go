@@ -1,29 +1,6 @@
 package a2a
 
-// TaskInfoProvider is used to provide information for creating events related to a Task.
-type TaskInfoProvider interface {
-	// TaskInfo returns information about the task to which this event is related.
-	TaskInfo() TaskInfo
-}
 
-// TaskInfo represents information about the Task which all the events share.
-type TaskInfo struct {
-	// TaskID is an id of the task.
-	TaskID TaskID
-	// ContextID is an id of the interactions group the task belong to.
-	ContextID string
-}
-
-// NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
-func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *Task {
-	taskInfo := infoProvider.TaskInfo()
-	return &Task{
-		ID:        taskInfo.TaskID,
-		ContextID: taskInfo.ContextID,
-		Status:    TaskStatus{State: TaskStateSubmitted},
-		History:   []*Message{initialMessage},
-	}
-}
 
 // TaskEventFactory is a utility for creating task events without the need to pass taskID and contextID around.
 type TaskEventFactory struct {

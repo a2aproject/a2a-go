@@ -23,6 +23,20 @@ import (
 	"github.com/google/uuid"
 )
 
+// TaskInfoProvider provides information about the Task.
+type TaskInfoProvider interface {
+	// TaskInfo returns information about the task.
+	TaskInfo() TaskInfo
+}
+
+// TaskInfo represents information about the Task and the group of interactions it belongs to.
+type TaskInfo struct {
+	// TaskID is an id of the task.
+	TaskID TaskID
+	// ContextID is an id of the interactions group the task belong to.
+	ContextID string
+}
+
 // SendMessageResult represents a response for non-streaming message send.
 type SendMessageResult interface {
 	Event
@@ -245,6 +259,17 @@ type Task struct {
 
 	// Status is the current status of the task, including its state and a descriptive message.
 	Status TaskStatus `json:"status" yaml:"status" mapstructure:"status"`
+}
+
+// NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
+func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *Task {
+	taskInfo := infoProvider.TaskInfo()
+	return &Task{
+		ID:        taskInfo.TaskID,
+		ContextID: taskInfo.ContextID,
+		Status:    TaskStatus{State: TaskStateSubmitted},
+		History:   []*Message{initialMessage},
+	}
 }
 
 func (t Task) MarshalJSON() ([]byte, error) {
