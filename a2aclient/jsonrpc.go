@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 	"github.com/google/uuid"
 )
 
@@ -175,8 +176,11 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
-	// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
-	defer func() { _ = httpResp.Body.Close() }()
+	defer func() {
+		if err := httpResp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
 
 	if httpResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
@@ -222,8 +226,9 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
-		_ = httpResp.Body.Close()
+		if err := httpResp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
 		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
 	}
 
@@ -300,8 +305,11 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 			yield(nil, err)
 			return
 		}
-		// TODO(yarolegovich): log error. we're in process of deciding on the logging approach
-		defer func() { _ = body.Close() }()
+		defer func() {
+			if err := body.Close(); err != nil {
+				log.Error(ctx, "failed to close http response body", err)
+			}
+		}()
 
 		for result, err := range parseSSEStream(body) {
 			if err != nil {
