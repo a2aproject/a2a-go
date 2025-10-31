@@ -30,7 +30,7 @@
 Requires Go `1.24.4` or newer:
 
 ```bash
-go get github.com/a2aproject/a2a-go@v0.3.0
+go get github.com/a2aproject/a2a-go@0.3.0
 ```
 
 Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
