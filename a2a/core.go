@@ -264,9 +264,17 @@ type Task struct {
 // NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
 func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *Task {
 	taskInfo := infoProvider.TaskInfo()
+	taskID := taskInfo.TaskID
+	if taskID == "" {
+		taskID = NewTaskID()
+	}
+	contextID := taskInfo.ContextID
+	if contextID == "" {
+		contextID = NewContextID()
+	}
 	return &Task{
-		ID:        taskInfo.TaskID,
-		ContextID: taskInfo.ContextID,
+		ID:        taskID,
+		ContextID: contextID,
 		Status:    TaskStatus{State: TaskStateSubmitted},
 		History:   []*Message{initialMessage},
 	}

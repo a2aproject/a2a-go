@@ -56,6 +56,16 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return err
 	}
+
+	if e.params.Config != nil && e.params.Config.PushConfig != nil {
+		if e.pushConfigStore == nil || e.pushSender == nil {
+			return a2a.ErrPushNotificationNotSupported
+		}
+		if _, err := e.pushConfigStore.Save(ctx, e.taskID, e.params.Config.PushConfig); err != nil {
+			return fmt.Errorf("failed to save %v: %w", e.params.Config.PushConfig, err)
+		}
+	}
+
 	e.processor.init(taskupdate.NewManager(e.taskStore, task))
 
 	for _, interceptor := range e.interceptors {
@@ -72,53 +82,53 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, *a2a.Task, error) {
 	params, msg := e.params, e.params.Message
 
-	var task *a2a.Task
-	var existingTask *a2a.Task
 	if msg.TaskID == "" {
-		task = taskupdate.NewSubmittedTask(e.taskID, msg)
-	} else {
-		storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("task loading failed: %w", err)
+		contextID := msg.ContextID
+		if contextID == "" {
+			contextID = a2a.NewContextID()
 		}
-		if storedTask == nil {
-			return nil, nil, a2a.ErrTaskNotFound
+		reqCtx := &RequestContext{
+			Message:   params.Message,
+			TaskID:    e.taskID,
+			ContextID: contextID,
+			Metadata:  params.Message.Metadata,
 		}
-
-		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
-		}
-
-		if storedTask.Status.State.Terminal() {
-			return nil, nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
-		}
-
-		storedTask.History = append(storedTask.History, msg)
-		if err := e.taskStore.Save(ctx, storedTask); err != nil {
-			return nil, nil, fmt.Errorf("task message history update failed: %w", err)
-		}
-
-		existingTask = storedTask
-		task = storedTask
+		return reqCtx, a2a.NewSubmittedTask(reqCtx, msg), nil
 	}
 
-	if params.Config != nil && params.Config.PushConfig != nil {
-		if e.pushConfigStore == nil {
-			return nil, nil, a2a.ErrPushNotificationNotSupported
-		}
-		if _, err := e.pushConfigStore.Save(ctx, task.ID, params.Config.PushConfig); err != nil {
-			return nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
-		}
+	if msg.TaskID != e.taskID {
+		return nil, nil, fmt.Errorf("bug: message task id different from executor task id")
+	}
+
+	storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("task loading failed: %w", err)
+	}
+	if storedTask == nil {
+		return nil, nil, a2a.ErrTaskNotFound
+	}
+
+	if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
+		return nil, nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+	}
+
+	if storedTask.Status.State.Terminal() {
+		return nil, nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+	}
+
+	storedTask.History = append(storedTask.History, msg)
+	if err := e.taskStore.Save(ctx, storedTask); err != nil {
+		return nil, nil, fmt.Errorf("task message history update failed: %w", err)
 	}
 
 	reqCtx := &RequestContext{
 		Message:    params.Message,
-		StoredTask: existingTask,
-		TaskID:     task.ID,
-		ContextID:  task.ContextID,
+		StoredTask: storedTask,
+		TaskID:     storedTask.ID,
+		ContextID:  storedTask.ContextID,
 		Metadata:   params.Message.Metadata,
 	}
-	return reqCtx, task, nil
+	return reqCtx, storedTask, nil
 }
 
 type canceler struct {
