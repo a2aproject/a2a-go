@@ -56,7 +56,7 @@ type RequestHandler interface {
 	// OnDeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error
 
-	// GetAgentCard returns an extended [a2a.AgentCard] if configured.
+	// GetAgentCard returns an extended a2a.AgentCard if configured.
 	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
 }
 
@@ -75,21 +75,21 @@ type defaultRequestHandler struct {
 	authenticatedCardProducer AgentCardProducer
 }
 
+// RequestHandlerOption can be used to customize the default [RequestHandler] implementation behavior.
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
-type HTTPPushConfig push.HTTPSenderConfig
-
-// WithTaskStore overrides TaskStore with custom implementation.
+// WithTaskStore overrides TaskStore with a custom implementation. If not provided,
+// default to an in-memory implementation.
 func WithTaskStore(store TaskStore) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.taskStore = store
 	}
 }
 
-// WithLogger sets a custom [slog.Logger]. Request scoped parameters will be attached to this logger
-// on method invocations. Any injected dependency will be able to access the logger using either
-// github.com/a2aproject/a2a-go/log package-level functions.
-// If not provided, defaults to slog.Defadult().
+// WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
+// on method invocations. Any injected dependency will be able to access the logger using
+// [github.com/a2aproject/a2a-go/log] package-level functions.
+// If not provided, defaults to slog.Default().
 func WithLogger(logger *slog.Logger) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		ih.Logger = logger
@@ -103,7 +103,8 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	}
 }
 
-// WithPushNotifications adds support for push notifications.
+// WithPushNotifications adds support for push notifications. If dependencies are not provided
+// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
 func WithPushNotifications(store PushConfigStore, notifier PushSender) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
@@ -111,7 +112,7 @@ func WithPushNotifications(store PushConfigStore, notifier PushSender) RequestHa
 	}
 }
 
-// WithRequestContextInterceptor overrides default RequestContextInterceptor with custom implementation.
+// WithRequestContextInterceptor overrides the default RequestContextInterceptor with a custom implementation.
 func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
