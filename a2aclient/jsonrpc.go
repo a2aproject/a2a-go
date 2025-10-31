@@ -151,8 +151,7 @@ func (e *jsonrpcError) Error() string {
 	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
 }
 
-// sendRequest sends a non-streaming JSON-RPC request and returns the response.
-func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params any) (*http.Request, error) {
 	req := jsonrpcRequest{
 		JSONRPC: jsonrpcVersion,
 		Method:  method,
@@ -172,6 +171,24 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 	httpReq.Header.Set("Content-Type", contentTypeJSON)
 
+	if callMeta, ok := CallMetaFrom(ctx); ok {
+		for k, vals := range callMeta {
+			for _, v := range vals {
+				httpReq.Header.Add(k, v)
+			}
+		}
+	}
+
+	return httpReq, nil
+}
+
+// sendRequest sends a non-streaming JSON-RPC request and returns the response.
+func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	httpReq, err := t.newHTTPRequest(ctx, method, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
@@ -183,7 +200,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
 	var resp jsonrpcResponse
@@ -200,24 +217,10 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
 func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params any) (io.ReadCloser, error) {
-	req := jsonrpcRequest{
-		JSONRPC: jsonrpcVersion,
-		Method:  method,
-		Params:  params,
-		ID:      uuid.New().String(),
-	}
-
-	reqBody, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewBuffer(reqBody))
+	httpReq, err := t.newHTTPRequest(ctx, method, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-
-	httpReq.Header.Set("Content-Type", contentTypeJSON)
 	httpReq.Header.Set("Accept", acceptEventStream)
 
 	httpResp, err := t.httpClient.Do(httpReq)
@@ -229,7 +232,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
 	return httpResp.Body, nil

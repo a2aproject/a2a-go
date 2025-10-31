@@ -16,7 +16,6 @@ package a2aclient
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,38 +24,44 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
+
+func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonrpcRequest {
+	t.Helper()
+	if httpReq.Method != "POST" {
+		t.Errorf("got %s, want POST", httpReq.Method)
+	}
+	if httpReq.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("got Content-Type %s, want application/json", httpReq.Header.Get("Content-Type"))
+	}
+
+	var req jsonrpcRequest
+	if err := json.NewDecoder(httpReq.Body).Decode(&req); err != nil {
+		t.Fatalf("Failed to decode request: %v", err)
+	}
+	if req.Method != method {
+		t.Fatalf("got method %s, want %s", req.Method, method)
+	}
+	if req.JSONRPC != "2.0" {
+		t.Fatalf("got jsonrpc %s, want 2.0", req.JSONRPC)
+	}
+	return req
+}
+
+func newResponse(req jsonrpcRequest, msg json.RawMessage) jsonrpcResponse {
+	return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Result: msg}
+}
 
 func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	// Create a mock server that returns a Task
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
-		if r.Method != "POST" {
-			t.Errorf("got %s, want POST", r.Method)
-		}
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("got Content-Type %s, want application/json", r.Header.Get("Content-Type"))
-		}
+		req := mustDecodeJSONRPC(t, r, "message/send")
 
-		// Parse request
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("Failed to decode request: %v", err)
-		}
-
-		if req.JSONRPC != "2.0" {
-			t.Errorf("got jsonrpc %s, want 2.0", req.JSONRPC)
-		}
-		if req.Method != "message/send" {
-			t.Errorf("got method %s, want message/send", req.Method)
-		}
-
-		// Send response
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`),
-		}
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`),
+		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
@@ -65,7 +70,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	// Send message
-	result, err := transport.SendMessage(context.Background(), &a2a.MessageSendParams{
+	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
 
@@ -86,28 +91,20 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	// Create a mock server that returns a Message instead of Task
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("Failed to decode request: %v", err)
-		}
-
-		if req.Method != "message/send" {
-			t.Errorf("got method %s, want message/send", req.Method)
-		}
+		req := mustDecodeJSONRPC(t, r, "message/send")
 
 		// Send Message response (has "role" field, not "status" field)
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"kind":"message","messageId":"msg-123","role":"agent","parts":[{"kind":"text","text":"Hello"}]}`),
-		}
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"kind":"message","messageId":"msg-123","role":"agent","parts":[{"kind":"text","text":"Hello"}]}`),
+		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	result, err := transport.SendMessage(context.Background(), &a2a.MessageSendParams{
+	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
 
@@ -129,30 +126,45 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	}
 }
 
-func TestJSONRPCTransport_GetTask(t *testing.T) {
+func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
+	wantValues := []string{"bar", "baz"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
+		req := mustDecodeJSONRPC(t, r, "tasks/get")
+
+		if diff := cmp.Diff(wantValues, r.Header.Values("foo")); diff != "" {
+			t.Fatalf("r.Header.Get() wrong result (+got,-want) diff = %s", diff)
 		}
 
-		if req.Method != "tasks/get" {
-			t.Errorf("got method %s, want tasks/get", req.Method)
-		}
-
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
-		}
+		resp := newResponse(req, json.RawMessage(`{"kind":"task"}`))
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	task, err := transport.GetTask(context.Background(), &a2a.TaskQueryParams{
+	ctx := withCallMeta(t.Context(), CallMeta{"foo": wantValues})
+
+	_, err := transport.GetTask(ctx, &a2a.TaskQueryParams{})
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+}
+
+func TestJSONRPCTransport_GetTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := mustDecodeJSONRPC(t, r, "tasks/get")
+
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
+		)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+
+	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
@@ -170,11 +182,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 
 func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
-		}
+		req := mustDecodeJSONRPC(t, r, "tasks/get")
 
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
@@ -190,7 +198,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	_, err := transport.GetTask(context.Background(), &a2a.TaskQueryParams{
+	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
@@ -238,7 +246,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	events := []a2a.Event{}
-	for event, err := range transport.SendStreamingMessage(context.Background(), &a2a.MessageSendParams{
+	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test"}),
 	}) {
 		if err != nil {
@@ -273,7 +281,6 @@ func TestParseSSEStream(t *testing.T) {
 data: {"jsonrpc":"2.0","id":"2","result":{"role":"agent"}}
 
 `
-
 	body := io.NopCloser(bytes.NewBufferString(sseData))
 
 	results := []json.RawMessage{}
@@ -291,15 +298,7 @@ data: {"jsonrpc":"2.0","id":"2","result":{"role":"agent"}}
 
 func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
-		}
-
-		if req.Method != "tasks/resubscribe" {
-			t.Errorf("got method %s, want tasks/resubscribe", req.Method)
-		}
+		_ = mustDecodeJSONRPC(t, r, "tasks/resubscribe")
 
 		if r.Header.Get("Accept") != "text/event-stream" {
 			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
@@ -327,7 +326,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	events := []a2a.Event{}
-	for event, err := range transport.ResubscribeToTask(context.Background(), &a2a.TaskIDParams{
+	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
 	}) {
 		if err != nil {
@@ -361,7 +360,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 		transport := NewJSONRPCTransport("http://example.com", card)
 
-		result, err := transport.GetAgentCard(context.Background())
+		result, err := transport.GetAgentCard(t.Context())
 		if err != nil {
 			t.Fatalf("GetAgentCard failed: %v", err)
 		}
@@ -380,7 +379,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 		transport := NewJSONRPCTransport("http://example.com", card)
 
-		result, err := transport.GetAgentCard(context.Background())
+		result, err := transport.GetAgentCard(t.Context())
 		if err != nil {
 			t.Fatalf("GetAgentCard failed: %v", err)
 		}
@@ -397,7 +396,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	t.Run("no card provided", func(t *testing.T) {
 		transport := NewJSONRPCTransport("http://example.com", nil)
 
-		_, err := transport.GetAgentCard(context.Background())
+		_, err := transport.GetAgentCard(t.Context())
 		if err == nil {
 			t.Fatal("got nil error when no card provided, want error")
 		}
@@ -406,28 +405,19 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
-		}
+		req := mustDecodeJSONRPC(t, r, "tasks/cancel")
 
-		if req.Method != "tasks/cancel" {
-			t.Errorf("got method %s, want tasks/cancel", req.Method)
-		}
-
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`),
-		}
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`),
+		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	task, err := transport.CancelTask(context.Background(), &a2a.TaskIDParams{
+	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
 	})
 
@@ -443,27 +433,19 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 	t.Run("Get", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req jsonrpcRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("Failed to decode request: %v", err)
-			}
+			req := mustDecodeJSONRPC(t, r, "tasks/pushNotificationConfig/get")
 
-			if req.Method != "tasks/pushNotificationConfig/get" {
-				t.Errorf("got method %s, want tasks/pushNotificationConfig/get", req.Method)
-			}
-
-			resp := jsonrpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result:  json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
-			}
+			resp := newResponse(
+				req,
+				json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
+			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.GetTaskPushConfig(context.Background(), &a2a.GetTaskPushConfigParams{
+		config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
 			TaskID: "task-123",
 		})
 
@@ -478,27 +460,19 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req jsonrpcRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("Failed to decode request: %v", err)
-			}
+			req := mustDecodeJSONRPC(t, r, "tasks/pushNotificationConfig/list")
 
-			if req.Method != "tasks/pushNotificationConfig/list" {
-				t.Errorf("got method %s, want tasks/pushNotificationConfig/list", req.Method)
-			}
-
-			resp := jsonrpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result:  json.RawMessage(`[{"taskId":"task-1","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},{"taskId":"task-2","pushNotificationConfig":{"id":"config-2","url":"https://webhook2.example.com"}}]`),
-			}
+			resp := newResponse(
+				req,
+				json.RawMessage(`[{"taskId":"task-1","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},{"taskId":"task-2","pushNotificationConfig":{"id":"config-2","url":"https://webhook2.example.com"}}]`),
+			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		configs, err := transport.ListTaskPushConfig(context.Background(), &a2a.ListTaskPushConfigParams{})
+		configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{})
 
 		if err != nil {
 			t.Fatalf("ListTaskPushConfig failed: %v", err)
@@ -511,27 +485,19 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 	t.Run("Set", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req jsonrpcRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("Failed to decode request: %v", err)
-			}
+			req := mustDecodeJSONRPC(t, r, "tasks/pushNotificationConfig/set")
 
-			if req.Method != "tasks/pushNotificationConfig/set" {
-				t.Errorf("got method %s, want tasks/pushNotificationConfig/set", req.Method)
-			}
-
-			resp := jsonrpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result:  json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
-			}
+			resp := newResponse(
+				req,
+				json.RawMessage(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`),
+			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.SetTaskPushConfig(context.Background(), &a2a.TaskPushConfig{
+		config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
 			TaskID: "task-123",
 			Config: a2a.PushConfig{
 				ID:  "config-123",
@@ -554,27 +520,16 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 	t.Run("Delete", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req jsonrpcRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("Failed to decode request: %v", err)
-			}
+			req := mustDecodeJSONRPC(t, r, "tasks/pushNotificationConfig/delete")
 
-			if req.Method != "tasks/pushNotificationConfig/delete" {
-				t.Errorf("got method %s, want tasks/pushNotificationConfig/delete", req.Method)
-			}
-
-			resp := jsonrpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result:  json.RawMessage(`{}`),
-			}
+			resp := newResponse(req, json.RawMessage(`{}`))
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		err := transport.DeleteTaskPushConfig(context.Background(), &a2a.DeleteTaskPushConfigParams{
+		err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
 			TaskID: "task-123",
 		})
 
@@ -609,11 +564,10 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 			return
 		}
 
-		resp := jsonrpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
-		}
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`),
+		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
@@ -626,7 +580,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 		t.Errorf("got timeout %v, want 10s", jt.httpClient.Timeout)
 	}
 
-	task, err := transport.GetTask(context.Background(), &a2a.TaskQueryParams{
+	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
