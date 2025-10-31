@@ -24,26 +24,12 @@ import (
 	"github.com/a2aproject/a2a-go/a2agrpc"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
-
-type mockAgentExecutor struct {
-	ExecuteFn func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error
-}
-
-func (e *mockAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	if e.ExecuteFn != nil {
-		return e.ExecuteFn(ctx, reqCtx, q)
-	}
-	return nil
-}
-
-func (e *mockAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	return nil
-}
 
 func startGRPCTestServer(t *testing.T, handler a2asrv.RequestHandler, listener *bufconn.Listener) {
 	s := grpc.NewServer()
@@ -68,12 +54,10 @@ func TestAuth_GRPC(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 
 	var capturedCallContext *a2asrv.CallContext
-	executor := &mockAgentExecutor{
-		ExecuteFn: func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-			capturedCallContext, _ = a2asrv.CallContextFrom(ctx)
-			return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent))
-		},
-	}
+	executor := testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+		capturedCallContext, _ = a2asrv.CallContextFrom(ctx)
+		return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent))
+	})
 	handler := a2asrv.NewHandler(executor)
 	go startGRPCTestServer(t, handler, listener)
 
