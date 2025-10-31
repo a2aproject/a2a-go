@@ -26,7 +26,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrPushConfigNotFound indicates that a push config with the provided ID was not found
+// ErrPushConfigNotFound indicates that a push config with the provided ID was not found.
 var ErrPushConfigNotFound = errors.New("push config not found")
 
 // InMemoryPushConfigStore implements a2asrv.PushConfigStore.

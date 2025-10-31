@@ -105,10 +105,10 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 
 // WithPushNotifications adds support for push notifications. If dependencies are not provided
 // push-related methods will be returning a2a.ErrPushNotificationNotSupported,
-func WithPushNotifications(store PushConfigStore, notifier PushSender) RequestHandlerOption {
+func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
-		h.pushSender = notifier
+		h.pushSender = sender
 	}
 }
 
