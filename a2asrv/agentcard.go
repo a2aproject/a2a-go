@@ -27,11 +27,11 @@ import (
 type AgentCardProducer interface {
 	// Card returns a self-describing manifest for an agent. It provides essential
 	// metadata including the agent's identity, capabilities, skills, supported
-	// communication methods, and security requirements and is publicly available.
+	// communication methods, and security requirements.
 	Card(ctx context.Context) (*a2a.AgentCard, error)
 }
 
-// AgentCardProducerFn is a function type which implements AgentCardProducer.
+// AgentCardProducerFn is a function type which implements [AgentCardProducer].
 type AgentCardProducerFn func(ctx context.Context) (*a2a.AgentCard, error)
 
 func (fn AgentCardProducerFn) Card(ctx context.Context) (*a2a.AgentCard, error) {

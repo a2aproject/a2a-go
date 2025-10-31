@@ -59,9 +59,9 @@ func mustServe(t *testing.T, path string, body []byte, callback func(r *http.Req
 func TestResolver_DefaultPath(t *testing.T) {
 	want := &a2a.AgentCard{Name: "TestResolver_DefaultPath"}
 	url := mustServe(t, defaultAgentCardPath, mustMarshal(t, want), nil)
-	resolver := Resolver{BaseURL: url}
+	resolver := Resolver{}
 
-	got, err := resolver.Resolve(t.Context())
+	got, err := resolver.Resolve(t.Context(), url)
 	if err != nil {
 		t.Fatalf("Resolve() failed with: %v", err)
 	}
@@ -77,8 +77,8 @@ func TestResolver_CustomPath(t *testing.T) {
 	want := &a2a.AgentCard{Name: "TestResolver_DefaultPath"}
 	url := mustServe(t, path, mustMarshal(t, want), nil)
 
-	resolver := Resolver{BaseURL: url}
-	got, err := resolver.Resolve(ctx)
+	resolver := Resolver{}
+	got, err := resolver.Resolve(ctx, url)
 	var httpErr *ErrStatusNotOK
 	if err == nil || !errors.As(err, &httpErr) {
 		t.Fatalf("expected Resolve() to fail with ErrStatusNotOK, got %v, %v", got, err)
@@ -88,7 +88,7 @@ func TestResolver_CustomPath(t *testing.T) {
 	}
 
 	for _, p := range []string{path, strings.TrimPrefix(path, "/")} {
-		got, err = resolver.Resolve(ctx, WithPath(p))
+		got, err = resolver.Resolve(ctx, url, WithPath(p))
 		if err != nil {
 			t.Fatalf("Resolve(%s) failed with %v", p, err)
 		}
@@ -107,8 +107,8 @@ func TestResolver_CustomHeader(t *testing.T) {
 		capturedHeader = req.Header[h]
 	})
 
-	resolver := Resolver{BaseURL: url}
-	_, err := resolver.Resolve(t.Context(), WithRequestHeader(h, hval))
+	resolver := NewResolver(nil)
+	_, err := resolver.Resolve(t.Context(), url, WithRequestHeader(h, hval))
 	if err != nil {
 		t.Fatalf("Resolve() failed with: %v", err)
 	}
@@ -121,8 +121,8 @@ func TestResolver_CustomHeader(t *testing.T) {
 func TestResolver_MalformedJSON(t *testing.T) {
 	url := mustServe(t, defaultAgentCardPath, []byte(`}{`), nil)
 
-	resolver := Resolver{BaseURL: url}
-	got, err := resolver.Resolve(t.Context())
+	resolver := NewResolver(nil)
+	got, err := resolver.Resolve(t.Context(), url)
 	if err == nil {
 		t.Fatalf("expected Resolve() to fail on malformed response, got: %v", got)
 	}

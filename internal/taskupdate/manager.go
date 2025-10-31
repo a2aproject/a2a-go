@@ -24,19 +24,19 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// Saver is used for saving the Task after updating its state.
+// Saver is used for saving the [a2a.Task] after updating its state.
 type Saver interface {
 	Save(ctx context.Context, task *a2a.Task) error
 }
 
-// Manager is used for processing a2a.Event related to a Task. It updates
-// the Task accordingly and uses Saver to store the new state.
+// Manager is used for processing [a2a.Event] related to an [a2a.Task]. It updates
+// the Task accordingly and uses [Saver] to store the new state.
 type Manager struct {
 	lastSavedTask *a2a.Task
 	saver         Saver
 }
 
-// NewManager creates an initialized update Manager for the provided task.
+// NewManager is a [Manager] constructor function.
 func NewManager(saver Saver, task *a2a.Task) *Manager {
 	return &Manager{lastSavedTask: task, saver: saver}
 }
@@ -53,7 +53,7 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, cause error) {
 	}
 }
 
-// Process validates that the event is associated with the managed Task and updates the Task accordingly.
+// Process validates the event associated with the managed [a2a.Task] and integrates the new state into it.
 func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*a2a.Task, error) {
 	if mgr.lastSavedTask == nil {
 		return nil, fmt.Errorf("event processor Task not set")

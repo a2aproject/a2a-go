@@ -24,20 +24,76 @@ import (
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
+// The provided [RequestContext] should be used as a [a2a.TaskInfoProvider] argument for [a2a.Event]-s constructor functions.
+// For streaming responses [a2a.TaskArtifactUpdatEvent]-s should be used.
+// A2A server stops processing events after one of these events:
+//   - An [a2a.Message] with any payload.
+//   - An [a2a.TaskStatusUpdateEvent] with Final field set to true.
+//   - An [a2a.Task] with a [a2a.TaskState] for which Terminal() method returns true.
+//
+// The following code can be used as a streaming implementation template with generateOutputs and toParts missing:
+//
+//	func Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+//		if reqCtx.StoredTask == nil {
+//			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateSubmitted, nil)
+//			if err := queue.Write(ctx, event); err != nil {
+//				return fmt.Errorf("failed to write state submitted: %w", err)
+//			}
+//		}
+//
+//		// perform setup
+//
+//		event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateWorking, nil)
+//		if err := queue.Write(ctx, event); err != nil {
+//			return fmt.Errorf("failed to write state working: %w", err)
+//		}
+//
+//		var artifactID a2a.ArtifactID
+//		for output, err := range generateOutputs() {
+//			if err != nil {
+//				event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateFailed, toErrorMessage(err))
+//				if err := queue.Write(ctx, event); err != nil {
+//					return fmt.Errorf("failed to write state failed: %w", err)
+//				}
+//			}
+//
+//			parts := toParts(output)
+//			var event *a2a.TaskArtifactUpdateEvent
+//			if artifactID == "" {
+//				event = a2a.NewArtifactEvent(reqCtx, parts...)
+//				artifactID = event.Artifact.ID
+//			} else {
+//				event = a2a.NewArtifactUpdateEvent(reqCtx, artifactID, parts...)
+//			}
+//
+//			if err := queue.Write(ctx, event); err != nil {
+//				return fmt.Errorf("failed to write artifact update: %w", err)
+//			}
+//		}
+//
+//		event = a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+//		event.Final = true
+//		if err := queue.Write(ctx, event); err != nil {
+//			return fmt.Errorf("failed to write state working: %w", err)
+//		}
+//
+//		return nil
+//	}
 type AgentExecutor interface {
-	// Execute invokes an agent with the provided context and translates agent outputs
-	// into A2A events writing them to the provided event queue.
+	// Execute invokes the agent passing information about the request which triggered execution,
+	// translates agent outputs to A2A events and writes them to the event queue.
+	// Every invocation runs in a dedicated goroutine.
 	//
-	// Returns an error if agent invocation failed.
+	// Failures should generally be reported by writing events carrying the cancelation information
+	// and task state. An error should be returned in special cases like a failure to write an event.
 	Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 
-	// Cancel requests the agent to stop processing an ongoing task.
+	// Cancel is called when a client requests the agent to stop working on a task.
+	// The simplest implementation can write a cancelation event to the queue and let
+	// it be processed by the A2A server. If the events gets applied during an active execution the execution
+	// Context gets canceled.
 	//
-	// The agent should attempt to gracefully stop the task identified by the
-	// task ID in the request context and publish a TaskStatusUpdateEvent with
-	// state TaskStateCanceled to the event queue.
-	//
-	// Returns an error if the cancelation request cannot be processed.
+	// An an error should be returned if the cancelation request cannot be processed or a queue write failed.
 	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
 

@@ -14,7 +14,7 @@
 
 package a2asrv
 
-// User can be attached to call context by authentication middleware.
+// User can be attached to [CallContext] by authentication middleware.
 type User interface {
 	// Name returns a username.
 	Name() string
@@ -22,7 +22,7 @@ type User interface {
 	Authenticated() bool
 }
 
-// AuthenticatedUser is a simple implementation of User interface which can be configured with a username.
+// AuthenticatedUser is a simple implementation of [User] interface configurable with a username.
 type AuthenticatedUser struct {
 	UserName string
 }

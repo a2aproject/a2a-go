@@ -12,9 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package a2asrv provides a configurable A2A protocol server implementation.
-//
-// The server can be configured with custom implementations of core interfaces
-// like TaskStore, AgentExecutor, and PushSender to support different
-// deployment scenarios and business requirements.
+/*
+Package a2asrv provides a configurable A2A protocol server implementation.
+
+The default implementation can be created using NewRequestHandler. The function takes a single required
+[AgentExecutor] dependency and a variable number of [RequestHandlerOption]-s used to customize handler behavior.
+
+AgentExecutor implementation is responsible for invoking the agent, translating its outputs
+to a2a core types and writing them to the provided [eventqueue.Queue]. A2A server will be reading
+data from the queue, processing it and notifying connected clients.
+
+RequestHandler is transport-agnostic and needs to be wrapped in a transport-specific translation layer
+like [github.com/a2aproject/a2a-go/a2agrpc.Handler]. JSONRPC transport implementation can be created using NewJSONRPCHandler function
+and registered with the standard [http.Server]:
+
+	handler := a2asrv.NewRequestHandler(
+		agentExecutor,
+		a2asrv.WithTaskStore(customDB),
+		a2asrv.WithPushNotifications(configStore, sender),
+		a2asrv.WithCallInterceptor(customMiddleware),
+		...
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(handler))
+
+The package provides utilities for serving public [a2a.AgentCard]-s. These return handler implementations
+which can be registered with a standard http server. Since the card is public, CORS policy allows requests from any domain.
+
+	mux.Handle(a2asrv, a2asrv.NewStaticAgentCardHandler(card))
+
+	// or for more advanced use cases
+
+	mux.Handle(a2asrv, a2asrv.NewAgentCardHandler(producer))
+*/
 package a2asrv

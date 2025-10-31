@@ -22,7 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Subscription encapsulates the logic of subscribing a channel to Execution events and canceling the subscription.
+// Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the subscription.
 // A default subscription is created when an Execution is started.
 type Subscription struct {
 	eventsChan chan a2a.Event

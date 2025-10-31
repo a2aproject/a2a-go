@@ -47,7 +47,7 @@ type PushConfigStore interface {
 	DeleteAll(ctx context.Context, taskID a2a.TaskID) error
 }
 
-// TaskStore provides storage for A2A tasks.
+// TaskStore provides storage for [a2a.Task]-s.
 type TaskStore interface {
 	// Save stores a task.
 	Save(ctx context.Context, task *a2a.Task) error

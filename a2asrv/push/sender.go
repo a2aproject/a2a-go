@@ -35,7 +35,7 @@ type HTTPPushSender struct {
 	failOnError bool
 }
 
-// HTTPSenderConfig allows to adjust HTTPPushSender
+// HTTPSenderConfig allows to configure [HTTPPushSender].
 type HTTPSenderConfig struct {
 	// Timeout is used to configure internal [http.Client].
 	Timeout time.Duration

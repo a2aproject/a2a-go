@@ -50,7 +50,7 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 	}
 }
 
-// Events subscribes to the events the agent is producing during an active Execution.
+// Events subscribes to the events an agent is producing during an active Execution.
 // If the Execution was finished the sequence will be empty.
 func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {

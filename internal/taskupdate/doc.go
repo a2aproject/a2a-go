@@ -12,6 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package taskupdate provides types and utilities for performing Task updates in response
-// to events produced by the AgentExecutor.
+// Package taskupdate provides types and utilities for performing [a2a.Task] updates in response to [a2a.Event]-s.
 package taskupdate

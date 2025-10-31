@@ -16,12 +16,14 @@ package a2aclient
 
 import (
 	"context"
+	"errors"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
 // A2AClient defines a transport-agnostic interface for making A2A requests.
+// Transport implementations are a translation layer between a2a core types and wire formats.
 type Transport interface {
 	// GetTask calls the 'tasks/get' protocol method.
 	GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error)
@@ -70,52 +72,54 @@ func (fn TransportFactoryFn) Create(ctx context.Context, url string, card *a2a.A
 	return fn(ctx, url, card)
 }
 
-type UnimplementedTransport struct{}
+var errNotImplemented = errors.New("not implemented")
 
-func (UnimplementedTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return nil, ErrNotImplemented
+type unimplementedTransport struct{}
+
+func (unimplementedTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (unimplementedTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(nil, ErrNotImplemented)
+		yield(nil, errNotImplemented)
 	}
 }
 
-func (UnimplementedTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (unimplementedTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(nil, ErrNotImplemented)
+		yield(nil, errNotImplemented)
 	}
 }
 
-func (UnimplementedTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	return ErrNotImplemented
+func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+	return errNotImplemented
 }
 
-func (UnimplementedTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return nil, ErrNotImplemented
+func (unimplementedTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return nil, errNotImplemented
 }
 
-func (UnimplementedTransport) Destroy() error {
+func (unimplementedTransport) Destroy() error {
 	return nil
 }

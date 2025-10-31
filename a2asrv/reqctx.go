@@ -22,13 +22,13 @@ import (
 )
 
 // RequestContextInterceptor defines an extension point for modifying request contexts
-// that contain the information needed by AgentExecutor implementations to process incoming requests.
+// that contain the information needed by [AgentExecutor] implementations to process incoming requests.
 type RequestContextInterceptor interface {
-	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.Execute.
+	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.
 	Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error)
 }
 
-// RequestContext provides information about an incoming A2A request to AgentExecutor.
+// RequestContext provides information about an incoming A2A request to [AgentExecutor].
 type RequestContext struct {
 	// A message which triggered the execution. nil for cancelation request.
 	Message *a2a.Message

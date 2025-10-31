@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package log provides utilities for attaching an [slog.Logger] configured with request-specific
+// attributes to [context.Context]. The logger can later be retrieved or used indirectly through package-level
+// logging function calls.
+//
+// Server and client extension point implementations should use this package for generating logs
+// instead of using other loggers or slog directly.
 package log
 
 import (

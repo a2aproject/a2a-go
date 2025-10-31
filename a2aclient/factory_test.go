@@ -154,7 +154,7 @@ func TestFactory_TransportSelection(t *testing.T) {
 						return nil, fmt.Errorf("connection failed")
 					}
 					selectedProtocol = protocol
-					return UnimplementedTransport{}, nil
+					return unimplementedTransport{}, nil
 				}))
 			}
 			if tc.clientPrefers != nil {

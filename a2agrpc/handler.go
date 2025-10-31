@@ -30,15 +30,18 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
+// Handler implements protobuf translation layer and delegates the actual method handling to [a2asrv.RequestHandler].
 type Handler struct {
 	a2apb.UnimplementedA2AServiceServer
 	handler a2asrv.RequestHandler
 }
 
+// RegisterWith registers as an A2AService implementation with the provided [grpc.Server].
 func (h *Handler) RegisterWith(s *grpc.Server) {
 	a2apb.RegisterA2AServiceServer(s, h)
 }
 
+// NewHandler is a [Handler] constructor function.
 func NewHandler(handler a2asrv.RequestHandler) *Handler {
 	return &Handler{handler: handler}
 }
