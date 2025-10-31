@@ -39,9 +39,9 @@ func (e *ErrStatusNotOK) Error() string {
 
 const defaultAgentCardPath = "/.well-known/agent-card.json"
 
-var defaultClient = &http.Client{Timeout: 15 * time.Second}
+var defaultClient = &http.Client{Timeout: 30 * time.Second}
 
-// DefaultResolver is configured with an [http.Client] with a 15 seconds timeout.
+// DefaultResolver is configured with an [http.Client] with a 30-second timeout.
 var DefaultResolver = &Resolver{Client: defaultClient}
 
 // Resolver is used to fetch an [a2a.AgentCard].

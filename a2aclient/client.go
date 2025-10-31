@@ -42,7 +42,7 @@ type Config struct {
 
 // Client represents a transport-agnostic implementation of A2A client.
 // The actual call is delegated to a specific [Transport] implementation.
-// [CallInterceptor]s are applied before and after every protocol call.
+// [CallInterceptor]-s are applied before and after every protocol call.
 type Client struct {
 	config       Config
 	transport    Transport

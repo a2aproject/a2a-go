@@ -66,8 +66,10 @@ func NewFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts 
 // CreateFromCard returns a [Client] configured to communicate with the agent described by
 // the provided [a2a.AgentCard] or fails if we couldn't establish a compatible transport.
 // [Config].PreferredTransports field is used to determine the order of connection attempts.
+//
 // If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
 // and proceed in the order specified by the AdditionalInterfaces.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
 	serverPrefs := make([]a2a.AgentInterface, 1+len(card.AdditionalInterfaces))
@@ -96,7 +98,9 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 
 // CreateFromEndpoints returns a [Client] configured to communicate with one of the provided endpoints.
 // [Config].PreferredTransports field is used to determine the order of connection attempts.
+//
 // If PreferredTransports were not provided, we attempt to establish a connection using the provided endpoint order.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface) (*Client, error) {
 	candidates, err := f.selectTransport(endpoints)
