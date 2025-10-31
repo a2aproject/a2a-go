@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
@@ -46,6 +47,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 		panic(err.Error())
 	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx := withRequestContext(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw)
 			rw.WriteHeader(http.StatusOK)
@@ -55,13 +57,14 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeAgentCardBytes(rw, bytes)
+		writeAgentCardBytes(ctx, rw, bytes)
 	})
 }
 
 // NewAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard].
 func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx := withRequestContext(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw)
 			rw.WriteHeader(http.StatusOK)
@@ -71,21 +74,30 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		ctx := context.Background()
 		card, err := producer.Card(ctx)
 		if err != nil {
-			// TODO(yarolegovich): log error
+			log.Error(ctx, "agent card producer failed", err)
 			rw.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		cardBytes, err := json.Marshal(card)
 		if err != nil {
-			// TODO(yarolegovich): log error
+			log.Error(ctx, "agent card marshaling failed", err)
 			rw.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		writeAgentCardBytes(rw, cardBytes)
+		writeAgentCardBytes(ctx, rw, cardBytes)
 	})
+}
+
+func withRequestContext(req *http.Request) context.Context {
+	logger := log.LoggerFrom(req.Context())
+	withAttrs := logger.With(
+		"method", req.Method,
+		"host", req.Host,
+		"remote_addr", req.RemoteAddr,
+	)
+	return log.WithLogger(req.Context(), withAttrs)
 }
 
 func writePublicCardHTTPOptions(rw http.ResponseWriter) {
@@ -95,9 +107,10 @@ func writePublicCardHTTPOptions(rw http.ResponseWriter) {
 	rw.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-func writeAgentCardBytes(rw http.ResponseWriter, bytes []byte) {
+func writeAgentCardBytes(ctx context.Context, rw http.ResponseWriter, bytes []byte) {
 	rw.Header().Set("Access-Control-Allow-Origin", "*")
 	rw.Header().Set("Content-Type", "application/json")
-	// TODO(yarolegovich): log error
-	_, _ = rw.Write(bytes)
+	if _, err := rw.Write(bytes); err != nil {
+		log.Error(ctx, "failed to write agent card response", err)
+	}
 }

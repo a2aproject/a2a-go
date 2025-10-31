@@ -21,6 +21,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/utils"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // Saver is used for saving the Task after updating its state.
@@ -93,7 +94,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 
 	if updateIdx < 0 {
 		if event.Append {
-			// TODO(yarolegovich): log "artifact for update not found" as Python does
+			log.Warn(ctx, "no artifact found for update", "artifact_id", event.Artifact.ID, "artifact_count", len(task.Artifacts))
 			return task, nil
 		}
 		task.Artifacts = append(task.Artifacts, artifact)

@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -86,11 +85,6 @@ func TestToGRPCError(t *testing.T) {
 			name: "ErrInvalidAgentResponse",
 			err:  a2a.ErrInvalidAgentResponse,
 			want: status.Error(codes.Internal, a2a.ErrInvalidAgentResponse.Error()),
-		},
-		{
-			name: "ErrUnimplemented",
-			err:  a2asrv.ErrUnimplemented,
-			want: status.Error(codes.Unimplemented, a2asrv.ErrUnimplemented.Error()),
 		},
 		{
 			name: "context canceled",
