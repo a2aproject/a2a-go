@@ -1,7 +1,7 @@
 # A2A Go SDK
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Nightly Check](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yml/badge.svg)](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yml)
+[![Nightly Check](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml/badge.svg)](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml)
 [![Go Doc](https://img.shields.io/badge/Go%20Package-Doc-blue.svg)](https://pkg.go.dev/github.com/a2aproject/a2a-go)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/a2aproject/a2a-go)
 
@@ -33,11 +33,15 @@ Requires Go `1.24.4` or newer:
 go get github.com/a2aproject/a2a-go@v0.3.0
 ```
 
+Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
+
 ## Examples
 
-For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld).
+For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld). 
 
 ### Server
+
+For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github.com/a2aproject/a2a-go/a2asrv).
 
 1. Create a transport-agnostic A2A request handler:
 
@@ -51,6 +55,10 @@ For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld).
 
     ```go
     grpcHandler := a2agrpc.NewHandler(requestHandler)
+    
+    // or
+
+    jsonrpcHandler := a2asrv.NewJSONRPCHandler(requestHandler)
     ```
 
 3. Register handler with a server, for example:
@@ -64,6 +72,8 @@ For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld).
     ```
 
 ### Client 
+
+For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/github.com/a2aproject/a2a-go/a2aclient).
 
 1. Resolve an `AgentCard` to get an information about how an agent is exposed.
 

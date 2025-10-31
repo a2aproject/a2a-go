@@ -22,7 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Config exposes options for customizing Client behavior.
+// Config exposes options for customizing [Client] behavior.
 type Config struct {
 	// PushConfig specifies the default push notification configuration to apply for every Task.
 	PushConfig *a2a.PushConfig
@@ -41,8 +41,8 @@ type Config struct {
 }
 
 // Client represents a transport-agnostic implementation of A2A client.
-// The actual call is delegated to a specific Transport implementation.
-// CallInterceptors are applied before and after every protocol call.
+// The actual call is delegated to a specific [Transport] implementation.
+// [CallInterceptor]s are applied before and after every protocol call.
 type Client struct {
 	config       Config
 	transport    Transport
@@ -52,7 +52,7 @@ type Client struct {
 	card atomic.Pointer[a2a.AgentCard]
 }
 
-// AddCallInterceptor allows to attach a CallInterceptor to the client after creation.
+// AddCallInterceptor allows to attach a [CallInterceptor] to the client after creation.
 func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 	c.interceptors = append(c.interceptors, ci)
 }

@@ -26,8 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2apb/pbconv"
 )
 
-// WithGRPCTransport returns a Client factory configuration option that if applied will
-// enable support of gRPC-A2A communication.
+// WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
 func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolGRPC,

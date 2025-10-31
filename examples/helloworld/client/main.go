@@ -34,8 +34,7 @@ func main() {
 	ctx := context.Background()
 
 	// Resolve an AgentCard
-	cardResolver := agentcard.Resolver{BaseURL: *cardURL}
-	card, err := cardResolver.Resolve(ctx)
+	card, err := agentcard.DefaultResolver.Resolve(ctx, *cardURL)
 	if err != nil {
 		log.Fatalf("Failed to resolve an AgentCard: %v", err)
 	}

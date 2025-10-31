@@ -23,14 +23,13 @@ import (
 // Used to store CallMeta in context.Context after all the interceptors were applied.
 type callMetaKey struct{}
 
-// CallMeta holds things like auth headers, signatures etc.
-// In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of context.Context.
-// Custom protocol implementations can use CallMetaFrom to access this data and
+// CallMeta holds things like auth headers and signatures.
+// In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of [context.Context].
+// Custom protocol implementations can use [CallMetaFrom] to access this data and
 // perform the operations necessary for attaching it to the request.
 type CallMeta map[string][]string
 
 // Request represents a transport-agnostic request to be sent to A2A server.
-// Payload is one of a2a package core types.
 type Request struct {
 	// Method is the name of the method invoked on the A2A-server.
 	Method string
@@ -41,12 +40,11 @@ type Request struct {
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
-	// Payload is the request payload. It is nil if the method does not take any parameters.
+	// Payload is the request payload. It is nil if the method does not take any parameters. Otherwise, it is one of a2a package core types otherwise.
 	Payload any
 }
 
 // Response represents a transport-agnostic result received from A2A server.
-// Payload is one of a2a package core types.
 type Response struct {
 	// Method is the name of the method invoked on the A2A-server.
 	Method string
@@ -59,11 +57,11 @@ type Response struct {
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
-	// Payload is the response. It is nil if method doesn't return anything or Err was returned.
+	// Payload is the response. It is nil if method doesn't return anything or Err was returned. Otherwise, it is one of a2a package core types otherwise.
 	Payload any
 }
 
-// CallInterceptor can be attached to an a2aclient.Client.
+// CallInterceptor can be attached to an [Client].
 // If multiple interceptors are added:
 //   - Before will be executed in the order of attachment sequentially.
 //   - After will be executed in the reverse order sequentially.
@@ -76,8 +74,7 @@ type CallInterceptor interface {
 	After(ctx context.Context, resp *Response) error
 }
 
-// CallMetaFrom allows Transport implementations to access CallMeta after all
-// the interceptors were applied.
+// CallMetaFrom allows [Transport] implementations to access CallMeta after all the interceptors were applied.
 func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 	meta, ok := ctx.Value(callMetaKey{}).(CallMeta)
 	return meta, ok

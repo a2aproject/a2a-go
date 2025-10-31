@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package a2a contains core types and constants from the A2A protocol
-// shared by client and server implementations.
-//
+// Package a2a contains core types and constants from the A2A protocol shared by client and server implementations.
 // These types implement the A2A specification and are transport-agnostic.
+//
+// Additionally, the package provides factory methods for types implementing the [Event] interface.
 package a2a

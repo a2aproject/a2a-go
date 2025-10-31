@@ -19,14 +19,13 @@ type AgentCapabilities struct {
 	// Extensions is a list of protocol extensions supported by the agent.
 	Extensions []AgentExtension `json:"extensions,omitempty" yaml:"extensions,omitempty" mapstructure:"extensions,omitempty"`
 
-	// PushNotifications indicates if the agent supports sending push notifications
-	// for asynchronous task updates.
+	// PushNotifications indicates if the agent supports sending push notifications for asynchronous task updates.
 	PushNotifications bool `json:"pushNotifications,omitempty" yaml:"pushNotifications,omitempty" mapstructure:"pushNotifications,omitempty"`
 
 	// StateTransitionHistory indicates if the agent provides a history of state transitions for a task.
 	StateTransitionHistory bool `json:"stateTransitionHistory,omitempty" yaml:"stateTransitionHistory,omitempty" mapstructure:"stateTransitionHistory,omitempty"`
 
-	// Streaming indicates if the agent supports Server-Sent Events (SSE) for streaming responses.
+	// Streaming indicates if the agent supports streaming responses.
 	Streaming bool `json:"streaming,omitempty" yaml:"streaming,omitempty" mapstructure:"streaming,omitempty"`
 }
 
@@ -54,8 +53,7 @@ type AgentCard struct {
 	// - MAY reuse URLs if multiple transports are available at the same endpoint
 	// - MUST accurately declare the transport available at each URL
 	//
-	// Clients can select any interface from this list based on their transport
-	// capabilities
+	// Clients can select any interface from this list based on their transport capabilities
 	// and preferences. This enables transport negotiation and fallback scenarios.
 	AdditionalInterfaces []AgentInterface `json:"additionalInterfaces,omitempty" yaml:"additionalInterfaces,omitempty" mapstructure:"additionalInterfaces,omitempty"`
 
@@ -87,10 +85,8 @@ type AgentCard struct {
 	// If not specified, defaults to 'JSONRPC'.
 	//
 	// IMPORTANT: The transport specified here MUST be available at the main 'url'.
-	// This creates a binding between the main URL and its supported transport
-	// protocol.
-	// Clients should prefer this transport and URL combination when both are
-	// supported.
+	// This creates a binding between the main URL and its supported transport protocol.
+	// Clients should prefer this transport and URL combination when both are supported.
 	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
 
 	// ProtocolVersion is the version of the A2A protocol this agent supports.
@@ -198,8 +194,7 @@ type AgentSkill struct {
 	// ID is a unique identifier for the agent's skill.
 	ID string `json:"id" yaml:"id" mapstructure:"id"`
 
-	// InputModes is the set of supported input MIME types for this skill, overriding the agent's
-	// defaults.
+	// InputModes is the set of supported input MIME types for this skill, overriding the agent's defaults.
 	InputModes []string `json:"inputModes,omitempty" yaml:"inputModes,omitempty" mapstructure:"inputModes,omitempty"`
 
 	// Name is a human-readable name for the skill.
