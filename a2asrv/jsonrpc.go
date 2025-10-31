@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package a2asrv
 
 import (
@@ -11,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/internal/sse"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // jsonrpcRequest represents a JSON-RPC 2.0 request.
@@ -42,23 +57,24 @@ func (h *JSONRPCHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
 	if req.Method != "POST" {
-		h.writeJSONRPCError(rw, a2a.ErrInvalidRequest, nil)
+		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
 
 	defer func() {
-		_ = req.Body.Close()
-		// TODO(yarolegovich): log error
+		if err := req.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close request body", err)
+		}
 	}()
 
 	var payload jsonrpcRequest
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-		h.writeJSONRPCError(rw, newParseError(err), nil)
+		h.writeJSONRPCError(ctx, rw, newParseError(err), nil)
 		return
 	}
 
 	if payload.JSONRPC != jsonrpc.Version {
-		h.writeJSONRPCError(rw, a2a.ErrInvalidRequest, nil)
+		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
 
@@ -94,14 +110,14 @@ func (h *JSONRPCHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	}
 
 	if err != nil {
-		h.writeJSONRPCError(rw, err, req.ID)
+		h.writeJSONRPCError(ctx, rw, err, req.ID)
 		return
 	}
 
 	if result != nil {
 		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
 		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			// TODO(yarolegovich): log error
+			log.Error(ctx, "failed to encode response", err)
 		}
 	}
 }
@@ -109,7 +125,7 @@ func (h *JSONRPCHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 func (h *JSONRPCHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpcRequest) {
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
-		h.writeJSONRPCError(rw, err, req.ID)
+		h.writeJSONRPCError(ctx, rw, err, req.ID)
 		return
 	}
 
@@ -140,7 +156,7 @@ func (h *JSONRPCHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			return
 		case <-keepAliveTicker.C:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
-				// TODO(yarolegovich): log, failed to write a response
+				log.Error(ctx, "failed to send keep-alive", err)
 				return
 			}
 		case data, ok := <-sseChan:
@@ -148,7 +164,7 @@ func (h *JSONRPCHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 				return
 			}
 			if err := sseWriter.WriteData(ctx, data); err != nil {
-				// TODO(yarolegovich): log, failed to write a response
+				log.Error(ctx, "failed to write an event", err)
 				return
 			}
 		}
@@ -164,7 +180,7 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan c
 		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Error: jsonrpcErr}
 		bytes, err := json.Marshal(resp)
 		if err != nil {
-			// TODO(yarolegovich): log, failed to marshal an error
+			log.Error(ctx, "failed to marshal error response", err)
 			return
 		}
 		select {
@@ -290,10 +306,10 @@ func newParseError(cause error) error {
 	return fmt.Errorf("%w: %w", a2a.ErrParseError, cause)
 }
 
-func (h *JSONRPCHandler) writeJSONRPCError(rw http.ResponseWriter, err error, reqID any) {
+func (h *JSONRPCHandler) writeJSONRPCError(ctx context.Context, rw http.ResponseWriter, err error, reqID any) {
 	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
 	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr, ID: reqID}
 	if err := json.NewEncoder(rw).Encode(resp); err != nil {
-		// TODO(yarolegovich): log error
+		log.Error(ctx, "failed to send error response", err)
 	}
 }
