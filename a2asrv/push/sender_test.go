@@ -47,9 +47,16 @@ func TestNewHTTPPushSender(t *testing.T) {
 			t.Errorf("expected client timeout to be %v, got %v", customTimeout, sender.client.Timeout)
 		}
 	})
+
+	t.Run("failOnError defaults to false", func(t *testing.T) {
+		sender := NewHTTPPushSender(nil)
+		if sender.failOnError {
+			t.Errorf("failOnError defaulted to true")
+		}
+	})
 }
 
-func TestHTTPPushSender_SendPush(t *testing.T) {
+func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	ctx := context.Background()
 	task := &a2a.Task{ID: "test-task", ContextID: "test-context"}
 
@@ -137,52 +144,72 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 			t.Error("%w header should not be set", tokenHeader)
 		}
 	})
+}
 
-	t.Run("json marshal fails", func(t *testing.T) {
-		badTask := &a2a.Task{Metadata: map[string]any{"a": make(chan int)}}
-		config := &a2a.PushConfig{URL: server.URL}
-		sender := NewHTTPPushSender(nil)
+func TestHTTPPushSender_SendPushError(t *testing.T) {
+	ctx := context.Background()
+	task := &a2a.Task{ID: "test-task", ContextID: "test-context"}
 
-		err := sender.SendPush(ctx, config, badTask)
-		if err == nil || !strings.Contains(err.Error(), "failed to serialize event to JSON") {
-			t.Errorf("SendPush() error = %v, want JSON marshal error", err)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token := r.Header.Get(tokenHeader); token == "fail" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
-	})
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	failedPushConfig := &a2a.PushConfig{URL: server.URL, ID: "test-task", Token: "fail"}
 
-	t.Run("invalid request URL", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: "::"}
-		sender := NewHTTPPushSender(nil)
+	testCases := []struct {
+		name    string
+		task    *a2a.Task
+		config  *a2a.PushConfig
+		wantErr string
+	}{
+		{
+			name:    "json marshal fails",
+			task:    &a2a.Task{Metadata: map[string]any{"a": make(chan int)}},
+			wantErr: "failed to serialize event to JSON",
+		},
+		{
+			name:    "invalid request URL",
+			task:    task,
+			config:  &a2a.PushConfig{URL: "::"},
+			wantErr: "failed to create HTTP request",
+		},
+		{
+			name:    "http client fails",
+			task:    task,
+			config:  &a2a.PushConfig{URL: "http://localhost:1"},
+			wantErr: "failed to send push notification",
+		},
+		{
+			name:    "non-success status code",
+			task:    task,
+			config:  failedPushConfig,
+			wantErr: "push notification endpoint returned non-success status: 500 Internal Server Error",
+		},
+	}
 
-		err := sender.SendPush(ctx, config, task)
-		if err == nil || !strings.Contains(err.Error(), "failed to create HTTP request") {
-			t.Errorf("SendPush() error = %v, want request creation error", err)
+	for _, failOnError := range []bool{true, false} {
+		for _, tc := range testCases {
+			name := tc.name
+			if failOnError {
+				name = tc.name + " (fail on error)"
+			}
+			t.Run(name, func(t *testing.T) {
+				sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: failOnError})
+				err := sender.SendPush(ctx, tc.config, tc.task)
+				if failOnError {
+					if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+						t.Errorf("SendPush() error = %v, want error containing %s", err, tc.wantErr)
+					}
+				} else if err != nil {
+					t.Errorf("SendPush() error = %v, want nil when failOnError false", err)
+				}
+			})
 		}
-	})
-
-	t.Run("http client fails", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: "http://localhost:1"}
-		sender := NewHTTPPushSender(nil)
-
-		err := sender.SendPush(ctx, config, task)
-		if err == nil || !strings.Contains(err.Error(), "failed to send push notification") {
-			t.Errorf("SendPush() error = %v, want client execution error", err)
-		}
-	})
-
-	t.Run("non-success status code", func(t *testing.T) {
-		errorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-		}))
-		defer errorServer.Close()
-
-		config := &a2a.PushConfig{URL: errorServer.URL}
-		sender := NewHTTPPushSender(nil)
-
-		err := sender.SendPush(ctx, config, task)
-		if err == nil || !strings.Contains(err.Error(), "push notification endpoint returned non-success status: 500 Internal Server Error") {
-			t.Errorf("SendPush() error = %v, want non-success status error", err)
-		}
-	})
+	}
 
 	t.Run("context canceled", func(t *testing.T) {
 		blocker := make(chan struct{})
@@ -197,11 +224,16 @@ func TestHTTPPushSender_SendPush(t *testing.T) {
 		cancel()
 
 		config := &a2a.PushConfig{URL: slowServer.URL}
-		sender := NewHTTPPushSender(nil)
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
 
 		err := sender.SendPush(canceledCtx, config, task)
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("SendPush() error = %v, want context.Canceled", err)
+		}
+
+		sender = NewHTTPPushSender(nil)
+		if err := sender.SendPush(canceledCtx, config, task); err != nil {
+			t.Errorf("SendPush() error = %v, want nil when FailOnError false", err)
 		}
 	})
 }

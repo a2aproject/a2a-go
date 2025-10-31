@@ -17,8 +17,12 @@ package a2asrv
 import (
 	"context"
 	"iter"
+	"log/slog"
+
+	"github.com/google/uuid"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // InterceptedHandler implements RequestHandler. It can be used to attach call interceptors and initialize
@@ -28,10 +32,16 @@ type InterceptedHandler struct {
 	Handler RequestHandler
 	// Interceptors is a list of call interceptors which will be applied before and after each call.
 	Interceptors []CallInterceptor
+	// Logger is the logger which will be accessible from request scope context using [github.com/a2aproject/a2a-go/a2a/log] package
+	// methods. Defaults to slog.Default() if not set.
+	Logger *slog.Logger
 }
 
 func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetTask")
+	if query != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(query.ID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, query)
 	if err != nil {
 		return nil, err
@@ -45,6 +55,9 @@ func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 
 func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnCancelTask")
+	if params != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return nil, err
@@ -58,6 +71,17 @@ func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskI
 
 func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnSendMessage")
+	if params != nil && params.Message != nil {
+		msg := params.Message
+		ctx = h.withLoggerContext(
+			ctx,
+			slog.String("message_id", msg.ID),
+			slog.String("task_id", string(msg.TaskID)),
+			slog.String("context_id", msg.ContextID),
+		)
+	} else {
+		ctx = h.withLoggerContext(ctx)
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return nil, err
@@ -72,6 +96,17 @@ func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.Mess
 func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := withMethodCallContext(ctx, "OnSendMessageStream")
+		if params != nil && params.Message != nil {
+			msg := params.Message
+			ctx = h.withLoggerContext(
+				ctx,
+				slog.String("message_id", msg.ID),
+				slog.String("task_id", string(msg.TaskID)),
+				slog.String("context_id", msg.ContextID),
+			)
+		} else {
+			ctx = h.withLoggerContext(ctx)
+		}
 		ctx, err := h.interceptBefore(ctx, callCtx, params)
 		if err != nil {
 			yield(nil, err)
@@ -92,6 +127,9 @@ func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2
 func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := withMethodCallContext(ctx, "OnResubscribeToTask")
+		if params != nil {
+			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
+		}
 		ctx, err := h.interceptBefore(ctx, callCtx, params)
 		if err != nil {
 			yield(nil, err)
@@ -111,6 +149,9 @@ func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2
 
 func (h *InterceptedHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetTaskPushConfig")
+	if params != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return nil, err
@@ -124,6 +165,9 @@ func (h *InterceptedHandler) OnGetTaskPushConfig(ctx context.Context, params *a2
 
 func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnListTaskPushConfig")
+	if params != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return nil, err
@@ -137,6 +181,9 @@ func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a
 
 func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnSetTaskPushConfig")
+	if params != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return nil, err
@@ -150,6 +197,9 @@ func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2
 
 func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	ctx, callCtx := withMethodCallContext(ctx, "OnDeleteTaskPushConfig")
+	if params != nil {
+		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
+	}
 	ctx, err := h.interceptBefore(ctx, callCtx, params)
 	if err != nil {
 		return err
@@ -163,6 +213,7 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 
 func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetExtendedAgentCard")
+	ctx = h.withLoggerContext(ctx)
 	ctx, err := h.interceptBefore(ctx, callCtx, nil)
 	if err != nil {
 		return nil, err
@@ -199,6 +250,18 @@ func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallCo
 	}
 
 	return nil
+}
+
+// withLoggerContext is a private utility function which attaches an slog.Logger with a2a-specific attributes
+// to the provided context.
+func (h *InterceptedHandler) withLoggerContext(ctx context.Context, attrs ...any) context.Context {
+	logger := h.Logger
+	if logger == nil {
+		logger = log.LoggerFrom(ctx)
+	}
+	requestID := uuid.NewString()
+	withAttrs := logger.WithGroup("a2a").With(attrs...).With(slog.String("request_id", requestID))
+	return log.WithLogger(ctx, withAttrs)
 }
 
 // withMethodCallContext is a private utility function which modifies CallContext.method if a CallContext

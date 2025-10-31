@@ -20,10 +20,10 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// PushNotifier defines the interface for sending push notifications
+// PushSender defines the interface for sending push notifications
 // about task state changes to external endpoints.
-type PushNotifier interface {
-	// SendPush sends a push notification containing the latest task state.
+type PushSender interface {
+	// SendPush sends a push notification containing the latest task state. If an error is returned execution is stopped.
 	SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
 }
 
@@ -37,7 +37,7 @@ type PushConfigStore interface {
 	// Get retrieves a push configuration registered for a Task with the given configID.
 	Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error)
 
-	// List retrieves all registered push configurations for a Task.
+	// List retrieves all registered push configurations for a Task. Returning an error stops the execution.
 	List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
 
 	// Delete removes a push configuration registered for a Task with the given configID.

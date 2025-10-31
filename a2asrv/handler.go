@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -64,7 +65,7 @@ type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   *taskexec.Manager
 
-	pushNotifier PushNotifier
+	pushSender   PushSender
 	queueManager eventqueue.Manager
 
 	pushConfigStore        PushConfigStore
@@ -85,7 +86,17 @@ func WithTaskStore(store TaskStore) RequestHandlerOption {
 	}
 }
 
-// WithEventQueueManager overrides eventqueue.Manager with custom implementation.
+// WithLogger sets a custom [slog.Logger]. Request scoped parameters will be attached to this logger
+// on method invocations. Any injected dependency will be able to access the logger using either
+// github.com/a2aproject/a2a-go/log package-level functions.
+// If not provided, defaults to slog.Defadult().
+func WithLogger(logger *slog.Logger) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.Logger = logger
+	}
+}
+
+// WithEventQueueManager overrides eventqueue.Manager with custom implementation
 func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.queueManager = manager
@@ -93,10 +104,10 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 }
 
 // WithPushNotifications adds support for push notifications.
-func WithPushNotifications(store PushConfigStore, notifier PushNotifier) RequestHandlerOption {
+func WithPushNotifications(store PushConfigStore, notifier PushSender) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
-		h.pushNotifier = notifier
+		h.pushSender = notifier
 	}
 }
 
@@ -138,7 +149,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		taskStore:     taskstore.NewMem(),
 		// push notifications are not supported by default
 	}
-	ih := &InterceptedHandler{Handler: h}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
@@ -152,7 +163,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	taskID := query.ID
 	if taskID == "" {
-		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidParams)
 	}
 
 	task, err := h.taskStore.Get(ctx, taskID)
@@ -175,11 +186,11 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	if params == nil {
-		return nil, a2a.ErrInvalidRequest
+		return nil, a2a.ErrInvalidParams
 	}
 
 	canceler := &canceler{
-		processor:    newProcessor(h.pushConfigStore, h.pushNotifier),
+		processor:    newProcessor(h.pushConfigStore, h.pushSender),
 		agent:        h.agentExecutor,
 		taskStore:    h.taskStore,
 		params:       params,
@@ -218,7 +229,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		_, subscription, err := h.handleSendMessage(ctx, params)
-		if params == nil {
+		if err != nil {
 			yield(nil, err)
 			return
 		}
@@ -234,7 +245,7 @@ func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params 
 func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if params == nil {
-			yield(nil, a2a.ErrInvalidRequest)
+			yield(nil, a2a.ErrInvalidParams)
 			return
 		}
 
@@ -254,7 +265,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 
 	var taskID a2a.TaskID
@@ -265,11 +276,10 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	}
 
 	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(h.pushConfigStore, h.pushNotifier),
+		processor:       newProcessor(h.pushConfigStore, h.pushSender),
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushConfigStore: h.pushConfigStore,
-		pushNotifier:    h.pushNotifier,
 		taskID:          taskID,
 		params:          params,
 		interceptors:    h.reqContextInterceptors,
@@ -277,7 +287,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	config, err := h.pushConfigStore.Get(ctx, params.TaskID, params.ConfigID)
@@ -294,7 +304,7 @@ func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	configs, err := h.pushConfigStore.List(ctx, params.TaskID)
@@ -312,7 +322,7 @@ func (h *defaultRequestHandler) OnListTaskPushConfig(ctx context.Context, params
 }
 
 func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
 	saved, err := h.pushConfigStore.Save(ctx, params.TaskID, &params.Config)
@@ -326,7 +336,7 @@ func (h *defaultRequestHandler) OnSetTaskPushConfig(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	if h.pushConfigStore == nil || h.pushNotifier == nil {
+	if h.pushConfigStore == nil || h.pushSender == nil {
 		return a2a.ErrPushNotificationNotSupported
 	}
 	return h.pushConfigStore.Delete(ctx, params.TaskID, params.ConfigID)

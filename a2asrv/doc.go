@@ -15,6 +15,6 @@
 // Package a2asrv provides a configurable A2A protocol server implementation.
 //
 // The server can be configured with custom implementations of core interfaces
-// like TaskStore, AgentExecutor, and PushNotifier to support different
+// like TaskStore, AgentExecutor, and PushSender to support different
 // deployment scenarios and business requirements.
 package a2asrv
