@@ -80,7 +80,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 
 // loadExecRequestContext returns the RequestContext for AgentExecutor and a Task for initializing taskupdate.Manager with.
 func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, *a2a.Task, error) {
-	params, msg := e.params, e.params.Message
+	msg := e.params.Message
 
 	if msg.TaskID == "" {
 		contextID := msg.ContextID
@@ -88,10 +88,10 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 			contextID = a2a.NewContextID()
 		}
 		reqCtx := &RequestContext{
-			Message:   params.Message,
+			Message:   msg,
 			TaskID:    e.taskID,
 			ContextID: contextID,
-			Metadata:  params.Message.Metadata,
+			Metadata:  msg.Metadata,
 		}
 		return reqCtx, a2a.NewSubmittedTask(reqCtx, msg), nil
 	}
@@ -122,11 +122,11 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	}
 
 	reqCtx := &RequestContext{
-		Message:    params.Message,
+		Message:    msg,
 		StoredTask: storedTask,
 		TaskID:     storedTask.ID,
 		ContextID:  storedTask.ContextID,
-		Metadata:   params.Message.Metadata,
+		Metadata:   msg.Metadata,
 	}
 	return reqCtx, storedTask, nil
 }

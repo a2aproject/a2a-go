@@ -30,6 +30,8 @@ type TaskInfoProvider interface {
 }
 
 // TaskInfo represents information about the Task and the group of interactions it belongs to.
+// Values might be empty which means the TaskInfoProvider is not associated with any tasks.
+// An example would be the first user message.
 type TaskInfo struct {
 	// TaskID is an id of the task.
 	TaskID TaskID
@@ -262,6 +264,7 @@ type Task struct {
 }
 
 // NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
+// New values are generated for task and context id when they are missing.
 func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *Task {
 	taskInfo := infoProvider.TaskInfo()
 	taskID := taskInfo.TaskID
