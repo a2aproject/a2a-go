@@ -14,7 +14,7 @@
 
 /*
 Package agentcard provides utilities for fetching public [a2a.AgentCard].
-A [Resolver] can be created with a custom [http.Client] or DefaultResolver can be used.
+A [Resolver] can be created with a custom [http.Client] or package-level DefaultResolver can be used.
 
 	card, err := agentcard.DefaultResolver.Resolve(ctx, baseURL)
 
