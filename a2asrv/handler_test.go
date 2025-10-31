@@ -353,11 +353,11 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	authCredentialsChan := make(chan struct{})
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateAuthRequired, nil)); err != nil {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
 				return err
 			}
 			<-authCredentialsChan
-			result := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			result := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
 			result.Final = true
 			return q.Write(ctx, result)
 		},
@@ -400,11 +400,11 @@ func TestRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
 	authCredentialsChan := make(chan struct{})
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateAuthRequired, nil)); err != nil {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
 				return err
 			}
 			<-authCredentialsChan
-			result := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			result := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
 			result.Final = true
 			return q.Write(ctx, result)
 		},
@@ -721,7 +721,7 @@ func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	ts := taskstore.NewMem()
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			event := a2a.NewStatusUpdateEvent(reqCtx.Task, a2a.TaskStateCompleted, nil)
+			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
 			event.Final = true
 			return q.Write(ctx, event)
 		},
