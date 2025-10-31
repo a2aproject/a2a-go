@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // ErrCredentialNotFound is returned by CredentialsService if a credential for the provided
@@ -74,7 +75,7 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				continue
 			}
 			if err != nil {
-				// TODO(yarolegovich): log error
+				log.Error(ctx, "credentials service error", err)
 				continue
 			}
 			scheme, ok := req.Card.SecuritySchemes[schemeName]

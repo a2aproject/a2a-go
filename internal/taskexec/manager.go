@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 var (
@@ -226,7 +227,8 @@ func (m *Manager) handleCancelWithConcurrentRun(ctx context.Context, cancel *can
 }
 
 func (m *Manager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
-	// TODO(yarolegovich): log if destroy fails
 	// TODO(yarolegovich): consider not destroying queues until a Task reaches terminal state
-	_ = m.queueManager.Destroy(ctx, tid)
+	if err := m.queueManager.Destroy(ctx, tid); err != nil {
+		log.Error(ctx, "failed to destroy a queue", err)
+	}
 }

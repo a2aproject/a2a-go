@@ -16,6 +16,7 @@ package a2agrpc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
@@ -271,5 +272,8 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {
 	activated := callCtx.Extensions().ActivatedURIs()
-	return metadata.MD{a2asrv.ExtensionsMetaKey: activated}
+	if len(activated) == 0 {
+		return metadata.MD{}
+	}
+	return metadata.MD{strings.ToLower(a2asrv.ExtensionsMetaKey): activated}
 }
