@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -391,6 +392,175 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	task, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: taskID})
 	if task.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("handler.OnGetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+	}
+}
+
+func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+
+	createExecutor := func(generateEvent func(reqCtx *RequestContext) []a2a.Event) (*mockAgentExecutor, chan struct{}) {
+		waitingChan := make(chan struct{})
+		return &mockAgentExecutor{
+			ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+				for i, event := range generateEvent(reqCtx) {
+					if i > 0 {
+						select {
+						case <-waitingChan:
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					}
+					if err := q.Write(ctx, event); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		}, waitingChan
+	}
+
+	type testCase struct {
+		name        string
+		blocking    bool
+		input       *a2a.MessageSendParams
+		agentEvents func(reqCtx *RequestContext) []a2a.Event
+		wantState   a2a.TaskState
+		wantEvents  int
+	}
+
+	createTestCases := func() []testCase {
+		return []testCase{
+			{
+				name:     "defaults to blocking",
+				blocking: true,
+				input:    &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
+						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
+					}
+				},
+				wantState:  a2a.TaskStateCompleted,
+				wantEvents: 2,
+			},
+			{
+				name:  "non-terminal task state",
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
+						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
+					}
+				},
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
+			},
+			{
+				name:  "non-final status update",
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newTaskStatusUpdate(reqCtx, a2a.TaskStateWorking, "Working..."),
+						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
+					}
+				},
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
+			},
+			{
+				name:  "artifact update update",
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newArtifactEvent(reqCtx, a2a.NewArtifactID()),
+						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
+					}
+				},
+				wantState:  a2a.TaskStateSubmitted,
+				wantEvents: 2,
+			},
+			{
+				name:  "message for existing task",
+				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+						newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+					}
+				},
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
+			},
+			{
+				name:  "message",
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done"}),
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done-2"}),
+					}
+				},
+				wantEvents: 1, // streaming processing stops imeddiately after the first message
+			},
+		}
+	}
+
+	for _, tt := range createTestCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+			executor, waitingChan := createExecutor(tt.agentEvents)
+			if tt.blocking {
+				close(waitingChan)
+			}
+			handler := NewHandler(executor, WithTaskStore(store))
+
+			result, gotErr := handler.OnSendMessage(ctx, tt.input)
+			if !tt.blocking {
+				close(waitingChan)
+			}
+			if gotErr != nil {
+				t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
+				return
+			}
+			if tt.wantState != a2a.TaskStateUnspecified {
+				task, ok := result.(*a2a.Task)
+				if !ok {
+					t.Errorf("OnSendMessage() returned %T, want a2a.Task", result)
+					return
+				}
+				if task.Status.State != tt.wantState {
+					t.Errorf("OnSendMessage() task.State = %v, want %v", task.Status.State, tt.wantState)
+				}
+			} else {
+				if _, ok := result.(*a2a.Message); !ok {
+					t.Errorf("OnSendMessage() returned %T, want a2a.Message", result)
+				}
+			}
+		})
+	}
+
+	for _, tt := range createTestCases() {
+		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+			executor, waitingChan := createExecutor(tt.agentEvents)
+			close(waitingChan)
+			handler := NewHandler(executor, WithTaskStore(store))
+
+			gotEvents := 0
+			for _, gotErr := range handler.OnSendMessageStream(ctx, tt.input) {
+				if gotErr != nil {
+					t.Errorf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+				}
+				gotEvents++
+			}
+			if gotEvents != tt.wantEvents {
+				t.Errorf("OnSendMessageStream() event count = %d, want %d", gotEvents, tt.wantEvents)
+			}
+		})
 	}
 }
 
@@ -1320,29 +1490,30 @@ func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	}
 }
 
-func newTaskStatusUpdate(task *a2a.Task, state a2a.TaskState, msg string) *a2a.TaskStatusUpdateEvent {
+func newTaskStatusUpdate(task a2a.TaskInfoProvider, state a2a.TaskState, msg string) *a2a.TaskStatusUpdateEvent {
 	ue := a2a.NewStatusUpdateEvent(task, state, newAgentMessage(msg))
 	ue.Status.Timestamp = &fixedTime
 	return ue
 }
 
-func newFinalTaskStatusUpdate(task *a2a.Task, state a2a.TaskState, msg string) *a2a.TaskStatusUpdateEvent {
+func newFinalTaskStatusUpdate(task a2a.TaskInfoProvider, state a2a.TaskState, msg string) *a2a.TaskStatusUpdateEvent {
 	res := newTaskStatusUpdate(task, state, msg)
 	res.Final = true
 	return res
 }
 
-func newTaskWithStatus(task *a2a.Task, state a2a.TaskState, msg string) *a2a.Task {
+func newTaskWithStatus(task a2a.TaskInfoProvider, state a2a.TaskState, msg string) *a2a.Task {
+	info := task.TaskInfo()
 	status := a2a.TaskStatus{State: state, Message: newAgentMessage(msg)}
 	status.Timestamp = &fixedTime
-	return &a2a.Task{ID: task.ID, ContextID: task.ContextID, Status: status}
+	return &a2a.Task{ID: info.TaskID, ContextID: info.ContextID, Status: status}
 }
 
-func newTaskWithMeta(task *a2a.Task, meta map[string]any) *a2a.Task {
-	return &a2a.Task{ID: task.ID, ContextID: task.ContextID, Metadata: meta}
+func newTaskWithMeta(task a2a.TaskInfoProvider, meta map[string]any) *a2a.Task {
+	return &a2a.Task{ID: task.TaskInfo().TaskID, ContextID: task.TaskInfo().ContextID, Metadata: meta}
 }
 
-func newArtifactEvent(task *a2a.Task, aid a2a.ArtifactID, parts ...a2a.Part) *a2a.TaskArtifactUpdateEvent {
+func newArtifactEvent(task a2a.TaskInfoProvider, aid a2a.ArtifactID, parts ...a2a.Part) *a2a.TaskArtifactUpdateEvent {
 	ev := a2a.NewArtifactEvent(task, parts...)
 	ev.Artifact.ID = aid
 	return ev

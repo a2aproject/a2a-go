@@ -19,6 +19,11 @@ import (
 	"encoding/gob"
 )
 
+// Ptr returns a pointer to the argument simplifying pointer to primitive literals creation.
+func Ptr[T any](v T) *T {
+	return &v
+}
+
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.
 func DeepCopy[T any](task *T) (*T, error) {
 	var buf bytes.Buffer

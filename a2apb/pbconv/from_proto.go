@@ -19,6 +19,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -162,7 +163,7 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 
 	result := &a2a.MessageSendConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
-		Blocking:            conf.GetBlocking(),
+		Blocking:            proto.Bool(conf.GetBlocking()),
 		PushConfig:          pConf,
 	}
 

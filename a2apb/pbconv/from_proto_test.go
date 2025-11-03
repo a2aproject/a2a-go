@@ -20,6 +20,8 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -187,7 +189,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			},
 			want: &a2a.MessageSendConfig{
 				AcceptedOutputModes: []string{"text/plain"},
-				Blocking:            true,
+				Blocking:            proto.Bool(true),
 				HistoryLength:       &a2aHistoryLen,
 				PushConfig: &a2a.PushConfig{
 					ID:    "test-push-config",
@@ -205,14 +207,14 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			in: &a2apb.SendMessageConfiguration{
 				HistoryLength: 0,
 			},
-			want: &a2a.MessageSendConfig{},
+			want: &a2a.MessageSendConfig{Blocking: proto.Bool(false)},
 		},
 		{
 			name: "config with no push notification",
 			in: &a2apb.SendMessageConfiguration{
 				PushNotification: nil,
 			},
-			want: &a2a.MessageSendConfig{},
+			want: &a2a.MessageSendConfig{Blocking: proto.Bool(false)},
 		},
 		{
 			name: "nil config",
@@ -221,13 +223,15 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		got, err := fromProtoSendMessageConfig(tt.in)
-		if (err != nil) != tt.wantErr {
-			t.Fatalf("fromProtoSendMessageConfig() error = %v", err)
-		}
-		if !reflect.DeepEqual(got, tt.want) {
-			t.Errorf("fromProtoSendMessageConfig() got = %v, want %v", got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := fromProtoSendMessageConfig(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("fromProtoSendMessageConfig() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("fromProtoSendMessageConfig() wrong result (+got,-want)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
+			}
+		})
 	}
 }
 
@@ -259,7 +263,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 		},
 	}
 	a2aConf := &a2a.MessageSendConfig{
-		Blocking:      true,
+		Blocking:      proto.Bool(true),
 		HistoryLength: &a2aHistoryLen,
 		PushConfig: &a2a.PushConfig{
 			ID:    "push-config",
@@ -324,7 +328,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			},
 			want: &a2a.MessageSendParams{
 				Message: &a2aMsg,
-				Config:  &a2a.MessageSendConfig{PushConfig: &a2a.PushConfig{}},
+				Config:  &a2a.MessageSendConfig{PushConfig: &a2a.PushConfig{}, Blocking: proto.Bool(false)},
 			},
 		},
 	}
