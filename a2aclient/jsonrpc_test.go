@@ -17,6 +17,7 @@ package a2aclient
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -67,7 +69,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	defer server.Close()
 
 	// Create transport
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	// Send message
 	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
@@ -102,7 +104,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
@@ -140,7 +142,7 @@ func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	ctx := withCallMeta(t.Context(), CallMeta{"foo": wantValues})
 
@@ -162,7 +164,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
@@ -187,7 +189,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 		resp := jsonrpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Error: &jsonrpcError{
+			Error: &jsonrpc.Error{
 				Code:    -32600,
 				Message: "Invalid Request",
 			},
@@ -196,23 +198,14 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
-	if err == nil {
-		t.Fatal("got nil error, want error")
-	}
-
-	jsonrpcErr, ok := err.(*jsonrpcError)
-	if !ok {
-		t.Fatalf("got error type %T, want jsonrpcError", err)
-	}
-
-	if jsonrpcErr.Code != -32600 {
-		t.Errorf("got error code %d, want -32600", jsonrpcErr.Code)
+	if !errors.Is(err, a2a.ErrInvalidRequest) {
+		t.Fatalf("got error = %v, want %v", err, a2a.ErrInvalidRequest)
 	}
 }
 
@@ -243,7 +236,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	events := []a2a.Event{}
 	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
@@ -323,7 +316,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	events := []a2a.Event{}
 	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
@@ -351,56 +344,29 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 }
 
 func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
-	t.Run("basic card without extended support", func(t *testing.T) {
-		card := &a2a.AgentCard{
-			Name:                              "Test Agent",
-			URL:                               "http://example.com",
-			SupportsAuthenticatedExtendedCard: false,
-		}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := mustDecodeJSONRPC(t, r, "agent/getAuthenticatedExtendedCard")
 
-		transport := NewJSONRPCTransport("http://example.com", card)
+		resp := newResponse(
+			req,
+			json.RawMessage(`{"url":"http://example.com","name":"Test agent","description":"test"}`),
+		)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
 
-		result, err := transport.GetAgentCard(t.Context())
-		if err != nil {
-			t.Fatalf("GetAgentCard failed: %v", err)
-		}
+	transport := NewJSONRPCTransport(server.URL)
 
-		if result.Name != "Test Agent" {
-			t.Errorf("got name %s, want Test Agent", result.Name)
-		}
-	})
+	got, err := transport.GetAgentCard(t.Context())
 
-	t.Run("returns provided card", func(t *testing.T) {
-		card := &a2a.AgentCard{
-			Name:        "Test Agent",
-			URL:         "http://example.com",
-			Description: "Test description",
-		}
+	if err != nil {
+		t.Fatalf("GetAgentCard failed: %v", err)
+	}
 
-		transport := NewJSONRPCTransport("http://example.com", card)
-
-		result, err := transport.GetAgentCard(t.Context())
-		if err != nil {
-			t.Fatalf("GetAgentCard failed: %v", err)
-		}
-
-		if result.Name != "Test Agent" {
-			t.Errorf("got name %s, want Test Agent", result.Name)
-		}
-
-		if result.Description != "Test description" {
-			t.Errorf("got description %s, want Test description", result.Description)
-		}
-	})
-
-	t.Run("no card provided", func(t *testing.T) {
-		transport := NewJSONRPCTransport("http://example.com", nil)
-
-		_, err := transport.GetAgentCard(t.Context())
-		if err == nil {
-			t.Fatal("got nil error when no card provided, want error")
-		}
-	})
+	want := &a2a.AgentCard{Name: "Test agent", URL: "http://example.com", Description: "test"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("got wrong card (+got,-want) diff = %s", diff)
+	}
 }
 
 func TestJSONRPCTransport_CancelTask(t *testing.T) {
@@ -415,7 +381,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
@@ -443,7 +409,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
 			TaskID: "task-123",
@@ -470,7 +436,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{})
 
@@ -495,7 +461,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
 			TaskID: "task-123",
@@ -527,7 +493,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
 			TaskID: "task-123",
@@ -541,7 +507,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 func TestJSONRPCTransport_DefaultTimeout(t *testing.T) {
 	// Test that default transport has 5-second timeout (matching Python SDK)
-	transport := NewJSONRPCTransport("http://example.com", nil)
+	transport := NewJSONRPCTransport("http://example.com")
 
 	// Access internal transport to check HTTP client timeout
 	jt := transport.(*jsonrpcTransport)
@@ -572,7 +538,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil, WithHTTPClient(customClient))
+	transport := NewJSONRPCTransport(server.URL, WithHTTPClient(customClient))
 
 	// Verify custom client is used
 	jt := transport.(*jsonrpcTransport)
@@ -590,29 +556,5 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 
 	if task.ID != "task-123" {
 		t.Errorf("got task ID %s, want task-123", task.ID)
-	}
-}
-
-func TestJSONRPCTransport_ErrorMethod(t *testing.T) {
-	err := &jsonrpcError{
-		Code:    -32600,
-		Message: "Invalid Request",
-		Data:    json.RawMessage(`{"details":"extra info"}`),
-	}
-
-	errStr := err.Error()
-	if errStr != "jsonrpc error -32600: Invalid Request (data: {\"details\":\"extra info\"})" {
-		t.Errorf("Unexpected error string: %s", errStr)
-	}
-
-	// Test without data field
-	err2 := &jsonrpcError{
-		Code:    -32601,
-		Message: "Method not found",
-	}
-
-	errStr2 := err2.Error()
-	if errStr2 != "jsonrpc error -32601: Method not found" {
-		t.Errorf("Unexpected error string: %s", errStr2)
 	}
 }

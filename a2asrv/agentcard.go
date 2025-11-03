@@ -23,6 +23,8 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+const WellKnownAgentCardPath = "/.well-known/agent-card.json"
+
 // AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
 type AgentCardProducer interface {
 	// Card returns a self-describing manifest for an agent. It provides essential
