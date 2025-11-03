@@ -214,10 +214,11 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		if err != nil {
 			return nil, err
 		}
-		if taskID, required := isAuthRequired(event); required {
+
+		if taskID, interrupt := shouldInterruptNonStreaming(params, event); interrupt {
 			task, err := h.taskStore.Get(ctx, taskID)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load task in auth-required state: %w", err)
+				return nil, fmt.Errorf("failed to load task on event processing interrupt: %w", err)
 			}
 			return task, nil
 		}
@@ -349,12 +350,23 @@ func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2
 	return h.authenticatedCardProducer.Card(ctx)
 }
 
-func isAuthRequired(event a2a.Event) (a2a.TaskID, bool) {
+func shouldInterruptNonStreaming(params *a2a.MessageSendParams, event a2a.Event) (a2a.TaskID, bool) {
+	// Non-blocking clients receive a result on the first task event
+	if params.Config != nil && !params.Config.Blocking {
+		if _, ok := event.(*a2a.Message); ok {
+			return "", false
+		}
+		taskInfo := event.TaskInfo()
+		return taskInfo.TaskID, true
+	}
+
+	// Non-streaming clients need to be notified when auth is required
 	switch v := event.(type) {
 	case *a2a.Task:
 		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
 	case *a2a.TaskStatusUpdateEvent:
 		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
 	}
+
 	return "", false
 }
