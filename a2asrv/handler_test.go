@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -416,6 +417,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 
 	type testCase struct {
 		name        string
+		blocking    bool
 		input       *a2a.MessageSendParams
 		agentEvents func(reqCtx *RequestContext) []a2a.Event
 		wantState   a2a.TaskState
@@ -424,8 +426,20 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 	createTestCases := func() []testCase {
 		return []testCase{
 			{
+				name:     "defaults to blocking",
+				blocking: true,
+				input:    &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
+						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
+					}
+				},
+				wantState: a2a.TaskStateCompleted,
+			},
+			{
 				name:  "non-terminal task state",
-				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: false}},
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
 				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
@@ -436,7 +450,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "non-final status update",
-				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: false}},
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
 				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(reqCtx, a2a.TaskStateWorking, "Working..."),
@@ -447,7 +461,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "artifact update update",
-				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: false}},
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
 				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
 					return []a2a.Event{
 						newArtifactEvent(reqCtx, a2a.NewArtifactID()),
@@ -458,7 +472,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "message for existing task",
-				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: false}},
+				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: boolPtr(false)}},
 				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
@@ -476,10 +490,15 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			ctx := t.Context()
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 			executor, waitingChan := createExecutor(tt.agentEvents)
+			if tt.blocking {
+				close(waitingChan)
+			}
 			handler := NewHandler(executor, WithTaskStore(store))
 
 			result, gotErr := handler.OnSendMessage(ctx, tt.input)
-			close(waitingChan)
+			if !tt.blocking {
+				close(waitingChan)
+			}
 			if gotErr != nil {
 				t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				return

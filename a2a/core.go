@@ -691,8 +691,8 @@ type MessageSendConfig struct {
 	AcceptedOutputModes []string `json:"acceptedOutputModes,omitempty" yaml:"acceptedOutputModes,omitempty" mapstructure:"acceptedOutputModes,omitempty"`
 
 	// Blocking indicates if the client will wait for the task to complete. The server may reject
-	// this if the task is long-running.
-	Blocking bool `json:"blocking,omitempty" yaml:"blocking,omitempty" mapstructure:"blocking,omitempty"`
+	// this if the task is long-running. Server might choose to default to true.
+	Blocking *bool `json:"blocking,omitempty" yaml:"blocking,omitempty" mapstructure:"blocking,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
