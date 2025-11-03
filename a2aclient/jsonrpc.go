@@ -109,7 +109,6 @@ type jsonrpcTransport struct {
 	httpClient *http.Client
 }
 
-// sendRequest sends a non-streaming JSON-RPC request and returns the response.
 func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params any) (*http.Request, error) {
 	req := jsonrpcRequest{
 		JSONRPC: jsonrpc.Version,

@@ -345,11 +345,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 
 func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Errorf("Failed to decode request: %v", err)
-			return
-		}
+		req := mustDecodeJSONRPC(t, r, "agent/getAuthenticatedExtendedCard")
 
 		resp := newResponse(
 			req,
@@ -364,7 +360,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	got, err := transport.GetAgentCard(t.Context())
 
 	if err != nil {
-		t.Fatalf("CancelTask failed: %v", err)
+		t.Fatalf("GetAgentCard failed: %v", err)
 	}
 
 	want := &a2a.AgentCard{Name: "Test agent", URL: "http://example.com", Description: "test"}
