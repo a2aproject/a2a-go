@@ -1463,8 +1463,8 @@ func newTaskWithStatus(task a2a.TaskInfoProvider, state a2a.TaskState, msg strin
 	return &a2a.Task{ID: info.TaskID, ContextID: info.ContextID, Status: status}
 }
 
-func newTaskWithMeta(task *a2a.Task, meta map[string]any) *a2a.Task {
-	return &a2a.Task{ID: task.ID, ContextID: task.ContextID, Metadata: meta}
+func newTaskWithMeta(task a2a.TaskInfoProvider, meta map[string]any) *a2a.Task {
+	return &a2a.Task{ID: task.TaskInfo().TaskID, ContextID: task.TaskInfo().ContextID, Metadata: meta}
 }
 
 func newArtifactEvent(task a2a.TaskInfoProvider, aid a2a.ArtifactID, parts ...a2a.Part) *a2a.TaskArtifactUpdateEvent {
