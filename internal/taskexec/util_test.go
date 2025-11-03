@@ -131,14 +131,14 @@ func TestReadQueueToChannels_StopsErrorWriteWhenContextCanceled(t *testing.T) {
 }
 
 func TestRunProducerConsumer(t *testing.T) {
-	panicFn := func() error { panic("panic") }
+	panicFn := func(str string) error { panic(str) }
 	msg := a2a.NewMessage(a2a.MessageRoleUser)
 
 	testCases := []struct {
 		name     string
 		producer eventProducerFn
 		consumer eventConsumerFn
-		wantErr  bool
+		wantErr  error
 	}{
 		{
 			name:     "success",
@@ -147,47 +147,76 @@ func TestRunProducerConsumer(t *testing.T) {
 		},
 		{
 			name:     "producer panic",
-			producer: func(ctx context.Context) error { return panicFn() },
-			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
-			wantErr:  true,
+			producer: func(ctx context.Context) error { return panicFn("panic!") },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+			wantErr: fmt.Errorf("event producer panic: panic!"),
 		},
 		{
 			name:     "consumer panic",
 			producer: func(ctx context.Context) error { return nil },
-			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, panicFn() },
-			wantErr:  true,
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, panicFn("panic!") },
+			wantErr:  fmt.Errorf("event consumer panic: panic!"),
 		},
 		{
 			name:     "producer error",
 			producer: func(ctx context.Context) error { return fmt.Errorf("error") },
-			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
-			wantErr:  true,
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+			wantErr: fmt.Errorf("error"),
 		},
 		{
 			name:     "consumer error",
 			producer: func(ctx context.Context) error { return nil },
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, fmt.Errorf("error") },
-			wantErr:  true,
+			wantErr:  fmt.Errorf("error"),
 		},
 		{
 			name:     "nil consumer result",
 			producer: func(ctx context.Context) error { return nil },
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, nil },
-			wantErr:  true,
+			wantErr:  fmt.Errorf("bug: consumer stopped, but result unset"),
+		},
+		{
+			name: "producer context canceled on consumer non-nil result",
+			producer: func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
+		},
+		{
+			name: "producer context canceled on consumer error result",
+			producer: func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, fmt.Errorf("error") },
+			wantErr:  fmt.Errorf("error"),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer)
-			if tc.wantErr && err == nil {
-				t.Fatalf("expected error, got %v", result)
+			if tc.wantErr != nil && err == nil {
+				t.Errorf("expected error, got %v", result)
+				return
 			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("expected result, got %v, %v", result, err)
+			if tc.wantErr == nil && err != nil {
+				t.Errorf("expected result, got %v, %v", result, err)
+				return
+			}
+			if tc.wantErr != nil && tc.wantErr.Error() != err.Error() {
+				t.Errorf("expected error = %s, got %s", tc.wantErr.Error(), err.Error())
+				return
 			}
 			if result == nil && err == nil {
-				t.Fatalf("expected non-nil error when result is nil")
+				t.Errorf("expected non-nil error when result is nil")
 			}
 		})
 	}

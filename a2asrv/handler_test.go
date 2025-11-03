@@ -404,7 +404,11 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
 				for i, event := range generateEvent(reqCtx) {
 					if i > 0 {
-						<-waitingChan
+						select {
+						case <-waitingChan:
+						case <-ctx.Done():
+							return ctx.Err()
+						}
 					}
 					if err := q.Write(ctx, event); err != nil {
 						return err
@@ -421,6 +425,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 		input       *a2a.MessageSendParams
 		agentEvents func(reqCtx *RequestContext) []a2a.Event
 		wantState   a2a.TaskState
+		wantEvents  int
 	}
 
 	createTestCases := func() []testCase {
@@ -435,7 +440,8 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
 					}
 				},
-				wantState: a2a.TaskStateCompleted,
+				wantState:  a2a.TaskStateCompleted,
+				wantEvents: 2,
 			},
 			{
 				name:  "non-terminal task state",
@@ -446,7 +452,8 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
 					}
 				},
-				wantState: a2a.TaskStateWorking,
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
 			},
 			{
 				name:  "non-final status update",
@@ -457,7 +464,8 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
-				wantState: a2a.TaskStateWorking,
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
 			},
 			{
 				name:  "artifact update update",
@@ -468,7 +476,8 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
-				wantState: a2a.TaskStateSubmitted,
+				wantState:  a2a.TaskStateSubmitted,
+				wantEvents: 2,
 			},
 			{
 				name:  "message for existing task",
@@ -479,7 +488,19 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 						newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
-				wantState: a2a.TaskStateWorking,
+				wantState:  a2a.TaskStateWorking,
+				wantEvents: 2,
+			},
+			{
+				name:  "message",
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+					return []a2a.Event{
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done"}),
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done-2"}),
+					}
+				},
+				wantEvents: 1, // streaming processing stops imeddiately after the first message
 			},
 		}
 	}
@@ -503,12 +524,19 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 				t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
 				return
 			}
-			task, ok := result.(*a2a.Task)
-			if !ok {
-				t.Errorf("OnSendMessage() return %T, want a2a.Message", result)
-			}
-			if task.Status.State != tt.wantState {
-				t.Errorf("OnSendMessage() task.State = %v, want %v", task.Status.State, tt.wantState)
+			if tt.wantState != a2a.TaskStateUnspecified {
+				task, ok := result.(*a2a.Task)
+				if !ok {
+					t.Errorf("OnSendMessage() returned %T, want a2a.Task", result)
+					return
+				}
+				if task.Status.State != tt.wantState {
+					t.Errorf("OnSendMessage() task.State = %v, want %v", task.Status.State, tt.wantState)
+				}
+			} else {
+				if _, ok := result.(*a2a.Message); !ok {
+					t.Errorf("OnSendMessage() returned %T, want a2a.Message", result)
+				}
 			}
 		})
 	}
@@ -529,9 +557,8 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 				}
 				gotEvents++
 			}
-			wantEvents := len(tt.agentEvents(&RequestContext{}))
-			if gotEvents != wantEvents {
-				t.Errorf("OnSendMessageStream() event countr = %d, wantErr %d", gotEvents, wantEvents)
+			if gotEvents != tt.wantEvents {
+				t.Errorf("OnSendMessageStream() event count = %d, want %d", gotEvents, tt.wantEvents)
 			}
 		})
 	}
