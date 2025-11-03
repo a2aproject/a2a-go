@@ -69,7 +69,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	defer server.Close()
 
 	// Create transport
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	// Send message
 	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
@@ -104,7 +104,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
@@ -142,7 +142,7 @@ func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	ctx := withCallMeta(t.Context(), CallMeta{"foo": wantValues})
 
@@ -164,7 +164,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
@@ -198,7 +198,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
@@ -236,7 +236,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	events := []a2a.Event{}
 	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
@@ -316,7 +316,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	events := []a2a.Event{}
 	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
@@ -355,7 +355,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	got, err := transport.GetAgentCard(t.Context())
 
@@ -381,7 +381,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil)
+	transport := NewJSONRPCTransport(server.URL)
 
 	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
@@ -409,7 +409,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
 			TaskID: "task-123",
@@ -436,7 +436,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{})
 
@@ -461,7 +461,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
 			TaskID: "task-123",
@@ -493,7 +493,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}))
 		defer server.Close()
 
-		transport := NewJSONRPCTransport(server.URL, nil)
+		transport := NewJSONRPCTransport(server.URL)
 
 		err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
 			TaskID: "task-123",
@@ -507,7 +507,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 func TestJSONRPCTransport_DefaultTimeout(t *testing.T) {
 	// Test that default transport has 5-second timeout (matching Python SDK)
-	transport := NewJSONRPCTransport("http://example.com", nil)
+	transport := NewJSONRPCTransport("http://example.com")
 
 	// Access internal transport to check HTTP client timeout
 	jt := transport.(*jsonrpcTransport)
@@ -538,7 +538,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewJSONRPCTransport(server.URL, nil, WithHTTPClient(customClient))
+	transport := NewJSONRPCTransport(server.URL, WithHTTPClient(customClient))
 
 	// Verify custom client is used
 	jt := transport.(*jsonrpcTransport)
