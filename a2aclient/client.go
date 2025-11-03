@@ -41,7 +41,7 @@ type Config struct {
 	PreferredTransports []a2a.TransportProtocol
 	// Whether client prefers to poll for task updates instead of blocking until a terminal state is reached.
 	// If set to true, non-streaming send message result might be a Message or a Task in any (including non-terminal) state.
-	// Callers are responsible for running the polling loop. Blocking is always true for streaming requests.
+	// Callers are responsible for running the polling loop. This configuration does not apply to streaming requests.
 	Polling bool
 }
 
