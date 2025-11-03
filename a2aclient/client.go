@@ -38,6 +38,10 @@ type Config struct {
 	// If there's no overlap in supported Transport Factory will return an error on Client
 	// creation attempt.
 	PreferredTransports []a2a.TransportProtocol
+	// Whether client prefers to poll for task updates instead of blocking until a terminal state is reached.
+	// If set to true, non-streaming send message result might be a Message or a Task in any state.
+	// Callers are responsible for running the polling loop.
+	Polling bool
 }
 
 // Client represents a transport-agnostic implementation of A2A client.
@@ -113,7 +117,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SendStreamingMessage"
 
-		message = c.withDefaultSendConfig(message)
+		message = c.withDefaultStreamingSendConfig(message)
 
 		ctx, err := c.interceptBefore(ctx, method, message)
 		if err != nil {
@@ -269,8 +273,16 @@ func (c *Client) Destroy() error {
 	return c.transport.Destroy()
 }
 
+func (c *Client) withDefaultStreamingSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
+	message = c.withDefaultSendConfig(message)
+	if message.Config != nil {
+		message.Config.Blocking = true
+	}
+	return message
+}
+
 func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
-	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil {
+	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil && !c.config.Polling {
 		return message
 	}
 	result := *message
@@ -286,6 +298,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.Mess
 	if result.Config.AcceptedOutputModes == nil {
 		result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
 	}
+	result.Config.Blocking = !c.config.Polling
 	return &result
 }
 
