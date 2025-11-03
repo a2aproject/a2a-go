@@ -39,8 +39,8 @@ type Config struct {
 	// creation attempt.
 	PreferredTransports []a2a.TransportProtocol
 	// Whether client prefers to poll for task updates instead of blocking until a terminal state is reached.
-	// If set to true, non-streaming send message result might be a Message or a Task in any state.
-	// Callers are responsible for running the polling loop.
+	// If set to true, non-streaming send message result might be a Message or a Task in any (including non-terminal) state.
+	// Callers are responsible for running the polling loop. Blocking is always true for streaming requests.
 	Polling bool
 }
 
@@ -98,7 +98,7 @@ func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Tas
 func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 	method := "SendMessage"
 
-	message = c.withDefaultSendConfig(message)
+	message = c.withDefaultSendConfig(message, blocking(!c.config.Polling))
 
 	ctx, err := c.interceptBefore(ctx, method, message)
 	if err != nil {
@@ -117,7 +117,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SendStreamingMessage"
 
-		message = c.withDefaultStreamingSendConfig(message)
+		message = c.withDefaultSendConfig(message, blocking(true))
 
 		ctx, err := c.interceptBefore(ctx, method, message)
 		if err != nil {
@@ -273,16 +273,10 @@ func (c *Client) Destroy() error {
 	return c.transport.Destroy()
 }
 
-func (c *Client) withDefaultStreamingSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
-	message = c.withDefaultSendConfig(message)
-	if message.Config != nil {
-		message.Config.Blocking = true
-	}
-	return message
-}
+type blocking bool
 
-func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.MessageSendParams {
-	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil && !c.config.Polling {
+func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams, blocking blocking) *a2a.MessageSendParams {
+	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil && blocking {
 		return message
 	}
 	result := *message
@@ -298,7 +292,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams) *a2a.Mess
 	if result.Config.AcceptedOutputModes == nil {
 		result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
 	}
-	result.Config.Blocking = !c.config.Polling
+	result.Config.Blocking = bool(blocking)
 	return &result
 }
 
