@@ -17,9 +17,11 @@ package a2aclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // ErrCredentialNotFound is returned by CredentialsService if a credential for the provided
@@ -56,6 +58,44 @@ type AuthInterceptor struct {
 	Service CredentialsService
 }
 
+func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+	if req.Card == nil || req.Card.Security == nil || req.Card.SecuritySchemes == nil {
+		return ctx, nil
+	}
+
+	sessionID, ok := SessionIDFrom(ctx)
+	if !ok {
+		return ctx, nil
+	}
+
+	for _, requirement := range req.Card.Security {
+		for schemeName := range requirement {
+			credential, err := ai.Service.Get(ctx, sessionID, schemeName)
+			if errors.Is(err, ErrCredentialNotFound) {
+				continue
+			}
+			if err != nil {
+				log.Error(ctx, "credentials service error", err)
+				continue
+			}
+			scheme, ok := req.Card.SecuritySchemes[schemeName]
+			if !ok {
+				continue
+			}
+			switch v := scheme.(type) {
+			case a2a.HTTPAuthSecurityScheme, a2a.OAuth2SecurityScheme:
+				req.Meta["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
+				return ctx, nil
+			case a2a.APIKeySecurityScheme:
+				req.Meta[v.Name] = []string{string(credential)}
+				return ctx, nil
+			}
+		}
+	}
+
+	return ctx, nil
+}
+
 // CredentialsService is used by auth interceptor for resolving credentials.
 type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)
@@ -70,9 +110,11 @@ type InMemoryCredentialsStore struct {
 	credentials map[SessionID]SessionCredentials
 }
 
+var _ CredentialsService = (*InMemoryCredentialsStore)(nil)
+
 // NewInMemoryCredentialsStore initializes an InMemoryCredentialsStore.
-func NewInMemoryCredentialsStore() InMemoryCredentialsStore {
-	return InMemoryCredentialsStore{
+func NewInMemoryCredentialsStore() *InMemoryCredentialsStore {
+	return &InMemoryCredentialsStore{
 		credentials: make(map[SessionID]SessionCredentials),
 	}
 }
