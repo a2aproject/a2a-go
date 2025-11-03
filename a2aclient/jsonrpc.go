@@ -80,7 +80,7 @@ func WithJSONRPCTransport(opts ...JSONRPCOption) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolJSONRPC,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewJSONRPCTransport(url, card, opts...), nil
+			return NewJSONRPCTransport(url, opts...), nil
 		}),
 	)
 }
@@ -88,7 +88,7 @@ func WithJSONRPCTransport(opts ...JSONRPCOption) FactoryOption {
 // NewJSONRPCTransport creates a new JSON-RPC transport for A2A protocol communication.
 // By default, an HTTP client with 5-second timeout is used (matching Python SDK behavior).
 // For custom timeout, retry logic, or connection pooling, provide a configured client via WithHTTPClient.
-func NewJSONRPCTransport(url string, card *a2a.AgentCard, opts ...JSONRPCOption) Transport {
+func NewJSONRPCTransport(url string, opts ...JSONRPCOption) Transport {
 	t := &jsonrpcTransport{
 		url: url,
 		httpClient: &http.Client{
@@ -244,7 +244,7 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.Message
 	}
 }
 
-// streamRequestToEvents handles SSE streaming for JSON-RPC jsonrpc.Methods.
+// streamRequestToEvents handles SSE streaming for JSON-RPC methods.
 // It converts the SSE stream into a sequence of A2A events.
 func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params any) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
