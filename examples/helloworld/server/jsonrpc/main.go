@@ -23,11 +23,8 @@ import (
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2agrpc"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 )
 
 // agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
@@ -43,42 +40,8 @@ func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext,
 	return nil
 }
 
-func startGRPCServer(port int, card *a2a.AgentCard) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
-	}
-	log.Printf("Starting a gRPC server on 127.0.0.1:%d", port)
-
-	// A transport-agnostic implementation of A2A protocol methods.
-	// The behavior is configurable using option-arguments of form a2asrv.With*(), for example:
-	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
-	requestHandler := a2asrv.NewHandler(&agentExecutor{}, a2asrv.WithExtendedAgentCard(card))
-
-	// A gRPC-transport implementation for A2A.
-	grpcHandler := a2agrpc.NewHandler(requestHandler)
-
-	s := grpc.NewServer()
-	grpcHandler.RegisterWith(s)
-	return s.Serve(listener)
-}
-
-func servePublicCard(port int, card *a2a.AgentCard) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Starting a public AgentCard server on 127.0.0.1:%d", port)
-
-	mux := http.NewServeMux()
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
-	return http.Serve(listener, mux)
-}
-
 var (
-	grpcPort = flag.Int("grpc-port", 9000, "Port for a gGRPC A2A server to listen on.")
-	cardPort = flag.Int("card-port", 9001, "Port for a public A2A AgentCard server to listen on.")
+	port = flag.Int("port", 9001, "Port for a gGRPC A2A server to listen on.")
 )
 
 func main() {
@@ -87,8 +50,8 @@ func main() {
 	agentCard := &a2a.AgentCard{
 		Name:               "Hello World Agent",
 		Description:        "Just a hello world agent",
-		URL:                fmt.Sprintf("127.0.0.1:%d", *grpcPort),
-		PreferredTransport: a2a.TransportProtocolGRPC,
+		URL:                fmt.Sprintf("http://127.0.0.1:%d/invoke", *port),
+		PreferredTransport: a2a.TransportProtocolJSONRPC,
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: true},
@@ -103,14 +66,21 @@ func main() {
 		},
 	}
 
-	var group errgroup.Group
-	group.Go(func() error {
-		return startGRPCServer(*grpcPort, agentCard)
-	})
-	group.Go(func() error {
-		return servePublicCard(*cardPort, agentCard)
-	})
-	if err := group.Wait(); err != nil {
-		log.Fatalf("Server shutdown: %v", err)
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		log.Fatalf("Failed to bind to a port: %v", err)
 	}
+	log.Printf("Starting a JSONRPC server on 127.0.0.1:%d", *port)
+
+	// A transport-agnostic implementation of A2A protocol methods.
+	// The behavior is configurable using option-arguments of form a2asrv.With*(), for example:
+	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
+	requestHandler := a2asrv.NewHandler(&agentExecutor{})
+
+	mux := http.NewServeMux()
+	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(requestHandler))
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(agentCard))
+
+	err = http.Serve(listener, mux)
+	log.Printf("Server stopped: %v", err)
 }
