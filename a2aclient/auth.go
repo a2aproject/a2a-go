@@ -24,7 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// ErrCredentialNotFound is returned by CredentialsService if a credential for the provided
+// ErrCredentialNotFound is returned by [CredentialsService] if a credential for the provided
 // (sessionId, scheme) pair was not found.
 var ErrCredentialNotFound = errors.New("credential not found")
 
@@ -35,7 +35,7 @@ type SessionID string
 type sessionIDKey struct{}
 
 // WithSessionID allows callers to attach a session identifier to the request.
-// CallInterceptor can access this identifier through CallContext.
+// [CallInterceptor] can access this identifier using [SessionIDFrom].
 func WithSessionID(ctx context.Context, sid SessionID) context.Context {
 	return context.WithValue(ctx, sessionIDKey{}, sid)
 }
@@ -49,10 +49,10 @@ func SessionIDFrom(ctx context.Context) (SessionID, bool) {
 // AuthCredential represents a security-scheme specific credential (eg. a JWT token).
 type AuthCredential string
 
-// AuthInterceptor implements CallInterceptor.
-// It uses SessionID provided using a2aclient.WithSessionID to lookup credentials according
-// and attach them to the according to the security scheme described in a2a.AgentCard.
-// Credentials fetching is delegated to CredentialsService.
+// AuthInterceptor implements [CallInterceptor].
+// It uses SessionID provided using [WithSessionID] to lookup credentials
+// and attach them according to the security scheme specified in the agent card.
+// Credentials fetching is delegated to [CredentialsService].
 type AuthInterceptor struct {
 	PassthroughInterceptor
 	Service CredentialsService
@@ -96,15 +96,15 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 	return ctx, nil
 }
 
-// CredentialsService is used by auth interceptor for resolving credentials.
+// CredentialsService is used by [AuthInterceptor] for resolving credentials.
 type CredentialsService interface {
 	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)
 }
 
-// SessionCredentials is a map of auth credentials by scheme name.
+// SessionCredentials is a map of scheme names to auth credentials.
 type SessionCredentials map[a2a.SecuritySchemeName]AuthCredential
 
-// InMemoryCredentialsStore implements CredentialsService.
+// InMemoryCredentialsStore implements [CredentialsService].
 type InMemoryCredentialsStore struct {
 	mu          sync.RWMutex
 	credentials map[SessionID]SessionCredentials
@@ -112,7 +112,7 @@ type InMemoryCredentialsStore struct {
 
 var _ CredentialsService = (*InMemoryCredentialsStore)(nil)
 
-// NewInMemoryCredentialsStore initializes an InMemoryCredentialsStore.
+// NewInMemoryCredentialsStore initializes an in-memory implementation of [CredentialsService].
 func NewInMemoryCredentialsStore() *InMemoryCredentialsStore {
 	return &InMemoryCredentialsStore{
 		credentials: make(map[SessionID]SessionCredentials),

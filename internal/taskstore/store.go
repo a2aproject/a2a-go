@@ -23,7 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
-// Mem stores deep-copied Tasks in memory.
+// Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*a2a.Task
@@ -34,7 +34,7 @@ func init() {
 	gob.Register([]any{})
 }
 
-// NewMem creates an empty Mem store.
+// NewMem creates an empty [Mem] store.
 func NewMem() *Mem {
 	return &Mem{
 		tasks: make(map[a2a.TaskID]*a2a.Task),

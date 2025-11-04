@@ -51,53 +51,32 @@ type jsonrpcResponse struct {
 // Options are applied during NewJSONRPCTransport initialization.
 type JSONRPCOption func(*jsonrpcTransport)
 
-// WithHTTPClient sets a custom HTTP client for the JSONRPC transport.
-// By default, a client with 5-second timeout is used (matching the Python SDK default).
-// For production deployments, provide a client with appropriate timeout, retry policy,
-// and connection pooling configured for your requirements.
-//
-// Example:
-//
-//	client := &http.Client{
-//	    Timeout: 60 * time.Second,
-//	    Transport: &http.Transport{
-//	        MaxIdleConns:        100,
-//	        MaxIdleConnsPerHost: 10,
-//	        IdleConnTimeout:     90 * time.Second,
-//	    },
-//	}
-//	transport := NewJSONRPCTransport(url, card, WithHTTPClient(client))
-func WithHTTPClient(client *http.Client) JSONRPCOption {
-	return func(t *jsonrpcTransport) {
-		t.httpClient = client
-	}
-}
-
 // WithJSONRPCTransport returns a Client factory option that enables JSON-RPC transport support.
 // When applied, the client will use JSON-RPC 2.0 over HTTP for all A2A protocol communication
 // as defined in the A2A specification §7.
-func WithJSONRPCTransport(opts ...JSONRPCOption) FactoryOption {
+func WithJSONRPCTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolJSONRPC,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewJSONRPCTransport(url, opts...), nil
+			return NewJSONRPCTransport(url, client), nil
 		}),
 	)
 }
 
 // NewJSONRPCTransport creates a new JSON-RPC transport for A2A protocol communication.
-// By default, an HTTP client with 5-second timeout is used (matching Python SDK behavior).
-// For custom timeout, retry logic, or connection pooling, provide a configured client via WithHTTPClient.
-func NewJSONRPCTransport(url string, opts ...JSONRPCOption) Transport {
+// By default, an HTTP client with 5-second timeout is used.
+// For production deployments, provide a client with appropriate timeout, retry policy,
+// and connection pooling configured for your requirements.
+func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
-		url: url,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second, // Match Python SDK httpx.AsyncClient default
-		},
+		url:        url,
+		httpClient: client,
 	}
 
-	for _, opt := range opts {
-		opt(t)
+	if t.httpClient == nil {
+		t.httpClient = &http.Client{
+			Timeout: 5 * time.Second, // Match Python SDK httpx.AsyncClient default
+		}
 	}
 
 	return t

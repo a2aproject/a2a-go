@@ -58,8 +58,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(reqHandler))
 
-	resolver := agentcard.Resolver{BaseURL: server.URL}
-	card, err := resolver.Resolve(ctx)
+	card, err := agentcard.DefaultResolver.Resolve(ctx, server.URL)
 	if err != nil {
 		t.Fatalf("resolver.Resolve() error = %v", err)
 	}

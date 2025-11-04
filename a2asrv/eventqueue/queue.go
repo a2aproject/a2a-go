@@ -27,14 +27,14 @@ var (
 )
 
 // Reader defines the interface for reading events from a queue.
-// A2A server stack reads events written by AgentExecutor.
+// A2A server stack reads events written by [a2asrv.AgentExecutor].
 type Reader interface {
 	// Read dequeues an event or blocks if the queue is empty.
 	Read(ctx context.Context) (a2a.Event, error)
 }
 
 // Writer defines the interface for writing events to a queue.
-// AgentExecutor translates agent responses to Messages, Tasks or Task update events.
+// [a2asrv.AgentExecutor] translates agent responses to Messages, Tasks or Task update events.
 type Writer interface {
 	// Write enqueues an event or blocks if a bounded queue is full.
 	Write(ctx context.Context, event a2a.Event) error

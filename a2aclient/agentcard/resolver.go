@@ -39,12 +39,23 @@ func (e *ErrStatusNotOK) Error() string {
 
 const defaultAgentCardPath = "/.well-known/agent-card.json"
 
-// Resolver is used to fetch an AgentCard from the provided URL.
+var defaultClient = &http.Client{Timeout: 30 * time.Second}
+
+// DefaultResolver is configured with an [http.Client] with a 30-second timeout.
+var DefaultResolver = &Resolver{Client: defaultClient}
+
+// Resolver is used to fetch an [a2a.AgentCard].
 type Resolver struct {
-	BaseURL string
+	// Client can be used to configure appropriate timeout, retry policy, and connection pooling
+	Client *http.Client
 }
 
-// ResolveOption is used to customize Resolve() behavior.
+// NewResolver is a [Resolver] constructor function.
+func NewResolver(client *http.Client) *Resolver {
+	return &Resolver{Client: client}
+}
+
+// ResolveOption is used to customize Resolve behavior.
 type ResolveOption func(r *resolveRequest)
 
 type resolveRequest struct {
@@ -52,15 +63,15 @@ type resolveRequest struct {
 	headers map[string]string
 }
 
-// Resolve fetches an AgentCard from the provided URL.
-// By default fetches from the  /.well-known/agent-card.json path.
-func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.AgentCard, error) {
+// Resolve fetches an [a2a.AgentCard] from the provided base URL.
+// By default the request is sent for the  /.well-known/agent-card.json path.
+func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveOption) (*a2a.AgentCard, error) {
 	reqSpec := &resolveRequest{path: defaultAgentCardPath, headers: make(map[string]string)}
 	for _, o := range opts {
 		o(reqSpec)
 	}
 
-	reqUrl, err := url.JoinPath(r.BaseURL, reqSpec.path)
+	reqUrl, err := url.JoinPath(baseURL, reqSpec.path)
 	if err != nil {
 		return nil, fmt.Errorf("url construction failed: %w", err)
 	}
@@ -73,7 +84,11 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 		req.Header.Add(h, val)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := r.Client
+	if client == nil {
+		client = defaultClient
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("card request failed: %w", err)
@@ -101,7 +116,7 @@ func (r *Resolver) Resolve(ctx context.Context, opts ...ResolveOption) (*a2a.Age
 	return &card, nil
 }
 
-// WithPath makes Resolve fetch from the provided path relative to BaseURL.
+// WithPath makes Resolve fetch from the provided path relative to base URL.
 func WithPath(path string) ResolveOption {
 	return func(r *resolveRequest) {
 		r.path = path

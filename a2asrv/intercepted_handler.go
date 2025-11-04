@@ -25,14 +25,14 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// InterceptedHandler implements RequestHandler. It can be used to attach call interceptors and initialize
+// InterceptedHandler implements [RequestHandler]. It can be used to attach call interceptors and initialize
 // call context for every method of the wrapped handler.
 type InterceptedHandler struct {
 	// Handler is responsible for the actual processing of every call.
 	Handler RequestHandler
 	// Interceptors is a list of call interceptors which will be applied before and after each call.
 	Interceptors []CallInterceptor
-	// Logger is the logger which will be accessible from request scope context using [github.com/a2aproject/a2a-go/a2a/log] package
+	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
 }

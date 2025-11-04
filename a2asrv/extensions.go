@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// ExtensionsMetaKey is the default extensions key for extensions metadata passed with a request or in a response.
 const ExtensionsMetaKey = "X-A2A-Extensions"
 
 // Extensions provides utility methods for accessing extensions requested by the client and keeping track of extensions
@@ -52,7 +53,7 @@ func (e *Extensions) Activate(extension *a2a.AgentExtension) {
 	e.callCtx.activatedExtensions = append(e.callCtx.activatedExtensions, extension.URI)
 }
 
-// ActivatedURIs returns all URIs activated during call execution.
+// ActivatedURIs returns URIs of all extensions activated during call processing.
 func (e *Extensions) ActivatedURIs() []string {
 	return slices.Clone(e.callCtx.activatedExtensions)
 }
@@ -62,7 +63,7 @@ func (e *Extensions) Requested(extension *a2a.AgentExtension) bool {
 	return slices.Contains(e.RequestedURIs(), extension.URI)
 }
 
-// RequestedURIs returns all URIs of extensions requested by the client.
+// RequestedURIs returns URIs all of all extensions requested by the client.
 func (e *Extensions) RequestedURIs() []string {
 	requested, ok := e.callCtx.RequestMeta().Get(ExtensionsMetaKey)
 	if !ok {

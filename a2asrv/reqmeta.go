@@ -19,14 +19,13 @@ import (
 	"strings"
 )
 
-// RequestMeta holds the data like auth headers, signatures, etc.
-// Custom transport implementations pass the values to WithCallContext to make it accessible
-// in a transport-agnostic way.
+// RequestMeta holds the metadata associated with a request, like auth headers and signatures.
+// Custom transport implementations can call WithCallContext to make it accessible during request processing.
 type RequestMeta struct {
 	kv map[string][]string
 }
 
-// NewRequestMeta creates a new immutable RequestMeta.
+// NewRequestMeta is a [RequestMeta] constructor function .
 func NewRequestMeta(src map[string][]string) *RequestMeta {
 	if src == nil {
 		return &RequestMeta{kv: map[string][]string{}}

@@ -25,9 +25,8 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// Factory provides an API for creating Clients compatible with the requested transports.
-// Factory is immutable, but the configuration can be extended using WithAdditionalOptions(f, opts...) call.
-// Additional configurations can be applied at the moment of Client creation.
+// Factory provides an API for creating a [Client] compatible with requested transports.
+// Factory is immutable, but the configuration can be extended using [WithAdditionalOptions] call.
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
@@ -50,25 +49,27 @@ type transportCandidate struct {
 //
 //	https://github.com/a2aproject/a2a-java (JSON-RPC included by default)
 //	https://github.com/a2aproject/a2a-js (jsonrpc_transport_handler.ts)
-var defaultOptions = []FactoryOption{WithJSONRPCTransport(), WithGRPCTransport()}
+var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithGRPCTransport()}
 
-// NewFromCard is a helper for creating a Client configured without creating a factory.
-// It is equivalent to calling NewFromCard on a Factory created without any options.
+// NewFromCard is a client [Client] constructor method which takes an [a2a.AgentCard] as input.
+// It is equivalent to [Factory].CreateFromCard method.
 func NewFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption) (*Client, error) {
 	return NewFactory(opts...).CreateFromCard(ctx, card)
 }
 
-// NewFromEndpoints is a helper for creating a Client configured without creating a factory.
-// It is equivalent to calling NewFromEndpoints on a Factory created without any options.
+// NewFromEndpoints is a [Client] constructor method which takes known [a2a.AgentInterface] descriptions as input.
+// It is equivalent to [Factory].CreateFromEndpoints method.
 func NewFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
 	return NewFactory(opts...).CreateFromEndpoints(ctx, endpoints)
 }
 
-// CreateFromCard returns a Client configured to communicate with the agent described by
-// the provided AgentCard or fails if we couldn't establish a compatible transport.
-// Config PreferredTransports will be used to determine the order of connection attempts.
+// CreateFromCard returns a [Client] configured to communicate with the agent described by
+// the provided [a2a.AgentCard] or fails if we couldn't establish a compatible transport.
+// [Config].PreferredTransports field is used to determine the order of connection attempts.
+//
 // If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
 // and proceed in the order specified by the AdditionalInterfaces.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
 	serverPrefs := make([]a2a.AgentInterface, 1+len(card.AdditionalInterfaces))
@@ -95,9 +96,11 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 	return client, nil
 }
 
-// CreateFromEndpoints returns a Client configured to communicate with one of the provided endpoints.
-// Config PreferredTransports will be used to determine the order of connection attempts.
-// If PreferredTransports were not provided, we attempt to establish using the provided endpoint order.
+// CreateFromEndpoints returns a [Client] configured to communicate with one of the provided endpoints.
+// [Config].PreferredTransports field is used to determine the order of connection attempts.
+//
+// If PreferredTransports were not provided, we attempt to establish a connection using the provided endpoint order.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface) (*Client, error) {
 	candidates, err := f.selectTransport(endpoints)
@@ -182,7 +185,7 @@ func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCa
 	return candidates, nil
 }
 
-// FactoryOption represents a configuration applied to a Factory.
+// FactoryOption represents a configuration for creating a [Client].
 type FactoryOption interface {
 	apply(f *Factory)
 }
@@ -193,21 +196,21 @@ func (f factoryOptionFn) apply(factory *Factory) {
 	f(factory)
 }
 
-// WithConfig makes the provided Config be used for all Clients created by the factory.
+// WithConfig configures [Client] with the provided [Config].
 func WithConfig(c Config) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
 		f.config = c
 	})
 }
 
-// WithTransport enables the factory to creates clients for the provided protocol.
+// WithTransport uses the provided factory during connection establishment for the specified protocol.
 func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
 		f.transports[protocol] = factory
 	})
 }
 
-// WithInterceptors attaches call interceptors to clients created by the factory.
+// WithInterceptors attaches call interceptors to created [Client]s.
 func WithInterceptors(interceptors ...CallInterceptor) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
 		f.interceptors = append(f.interceptors, interceptors...)

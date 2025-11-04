@@ -51,7 +51,7 @@ type Manager struct {
 	cancelations map[a2a.TaskID]*cancelation
 }
 
-// NewManager creates an initialized Manager instance.
+// NewManager is a [Manager] constructor function.
 func NewManager(queueManager eventqueue.Manager) *Manager {
 	return &Manager{
 		queueManager: queueManager,
@@ -60,7 +60,8 @@ func NewManager(queueManager eventqueue.Manager) *Manager {
 	}
 }
 
-// GetExecution can be used to resubscribe to events which are being produced by agentExecution.
+// GetExecution is used to get a reference to an active [Execution]. The method can be used
+// to resubscribe to execution events or wait for its completion.
 func (m *Manager) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -68,7 +69,8 @@ func (m *Manager) GetExecution(taskID a2a.TaskID) (*Execution, bool) {
 	return execution, ok
 }
 
-// Execute starts an AgentExecutor in a separate goroutine with a detached context.
+// Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
+// the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
 func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor) (*Execution, *Subscription, error) {
 	m.mu.Lock()
@@ -95,11 +97,11 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 	return execution, subscription, nil
 }
 
-// Cancel uses Canceler to finish execution and waits for it to finish.
-// If there's a cancelation in progress we wait for its result instead of starting a new attempt.
-// If there's an active Execution Canceler will be writing to the same result queue. Consumers
-// subscribed to the Execution will receive a Task cancelation Event.
-// If there's no active Execution Canceler is responsible for processing Task events.
+// Cancel uses [Canceler] to signal task cancelation and waits for it to take effect.
+// If there's a cancelation in progress we wait for its result instead of starting a new one.
+// If there's an active [Execution] Canceler will be writing to the same result queue. Consumers
+// subscribed to the Execution will receive a task cancelation event and handle it accordingly.
+// If there's no active Execution Canceler will be processing task events.
 func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceler Canceler) (*a2a.Task, error) {
 	m.mu.Lock()
 	execution := m.executions[tid]
