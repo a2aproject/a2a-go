@@ -37,7 +37,7 @@ Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full d
 
 ## Examples
 
-For a simple example refer to the [helloworld] example(./examples/helloworld). 
+For a simple example refer to the [helloworld](./examples/helloworld) example. 
 
 ### Server
 
@@ -107,7 +107,7 @@ You can find a variety of more detailed examples in the [a2a-samples](https://gi
 
 Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to get involved.
 
-Before starting work on a new feature or significant change, please open an issue to discuss your proposed approach with the maintainers. This helps ensure your contribution aligns with the project's goals and prevents duplicated effort or wasted work
+Before starting work on a new feature or significant change, please open an issue to discuss your proposed approach with the maintainers. This helps ensure your contribution aligns with the project's goals and prevents duplicated effort or wasted work.
 
 ---
 
