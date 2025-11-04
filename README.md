@@ -37,7 +37,7 @@ Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full d
 
 ## Examples
 
-For a simple example refer to [gRPC helloworld](./examples/grpc/helloworld). 
+For a simple example refer to the [helloworld] example(./examples/helloworld). 
 
 ### Server
 
@@ -78,8 +78,7 @@ For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/git
 1. Resolve an `AgentCard` to get an information about how an agent is exposed.
 
     ```go
-    cardResolver := agentcard.Resolver{BaseURL: *cardURL}
-    card, err := cardResolver.Resolve(ctx)
+    card, err := agentcard.DefaultResolver.Resolve(ctx)
     ```
 
 2. Create a transport-agnostic client from the `AgentCard`:
@@ -107,6 +106,8 @@ You can find a variety of more detailed examples in the [a2a-samples](https://gi
 ## 🤝 Contributing
 
 Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines on how to get involved.
+
+Before starting work on a new feature or significant change, please open an issue to discuss your proposed approach with the maintainers. This helps ensure your contribution aligns with the project's goals and prevents duplicated effort or wasted work
 
 ---
 
