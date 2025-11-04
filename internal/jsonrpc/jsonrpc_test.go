@@ -12,32 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package utils
+package jsonrpc
 
 import (
-	"bytes"
-	"encoding/gob"
+	"testing"
 )
 
-// Ptr returns a pointer to the argument simplifying pointer to primitive literals creation.
-func Ptr[T any](v T) *T {
-	return &v
-}
-
-// DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.
-func DeepCopy[T any](task *T) (*T, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	dec := gob.NewDecoder(&buf)
-
-	if err := enc.Encode(*task); err != nil {
-		return nil, err
+func TestJSONRPCError(t *testing.T) {
+	err := &Error{
+		Code:    -32600,
+		Message: "Invalid Request",
+		Data:    map[string]any{"details": "extra info"},
 	}
 
-	var copy T
-	if err := dec.Decode(&copy); err != nil {
-		return nil, err
+	errStr := err.Error()
+	if errStr != "jsonrpc error -32600: Invalid Request (data: map[details:extra info])" {
+		t.Errorf("Unexpected error string: %s", errStr)
 	}
 
-	return &copy, nil
+	err2 := &Error{Code: -32601, Message: "Method not found"}
+
+	errStr2 := err2.Error()
+	if errStr2 != "jsonrpc error -32601: Method not found" {
+		t.Errorf("Unexpected error string: %s", errStr2)
+	}
 }

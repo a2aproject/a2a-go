@@ -15,7 +15,6 @@
 package a2aclient
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -26,33 +25,27 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
 	"github.com/google/uuid"
 )
 
-// JSON-RPC 2.0 protocol constants
-const (
-	jsonrpcVersion = "2.0"
+// jsonrpcRequest represents a JSON-RPC 2.0 request.
+type jsonrpcRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+	ID      string `json:"id"`
+}
 
-	// HTTP headers
-	contentTypeJSON   = "application/json"
-	acceptEventStream = "text/event-stream"
-
-	// JSON-RPC method names per A2A spec §7
-	methodMessageSend              = "message/send"
-	methodMessageStream            = "message/stream"
-	methodTasksGet                 = "tasks/get"
-	methodTasksCancel              = "tasks/cancel"
-	methodTasksResubscribe         = "tasks/resubscribe"
-	methodPushConfigGet            = "tasks/pushNotificationConfig/get"
-	methodPushConfigSet            = "tasks/pushNotificationConfig/set"
-	methodPushConfigList           = "tasks/pushNotificationConfig/list"
-	methodPushConfigDelete         = "tasks/pushNotificationConfig/delete"
-	methodGetAuthenticatedExtended = "agent/getAuthenticatedExtendedCard"
-
-	// SSE data prefix
-	sseDataPrefix = "data: "
-)
+// jsonrpcResponse represents a JSON-RPC 2.0 response.
+type jsonrpcResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *jsonrpc.Error  `json:"error,omitempty"`
+}
 
 // JSONRPCOption configures optional parameters for the JSONRPC transport.
 // Options are applied during NewJSONRPCTransport initialization.
@@ -65,7 +58,7 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolJSONRPC,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewJSONRPCTransport(url, card, client), nil
+			return NewJSONRPCTransport(url, client), nil
 		}),
 	)
 }
@@ -74,10 +67,9 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 // By default, an HTTP client with 5-second timeout is used.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
-func NewJSONRPCTransport(url string, card *a2a.AgentCard, client *http.Client) Transport {
+func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
 		url:        url,
-		agentCard:  card,
 		httpClient: client,
 	}
 
@@ -94,46 +86,11 @@ func NewJSONRPCTransport(url string, card *a2a.AgentCard, client *http.Client) T
 type jsonrpcTransport struct {
 	url        string
 	httpClient *http.Client
-	agentCard  *a2a.AgentCard
 }
 
-// jsonrpcRequest represents a JSON-RPC 2.0 request.
-type jsonrpcRequest struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  any    `json:"params,omitempty"`
-	ID      string `json:"id"`
-}
-
-// jsonrpcResponse represents a JSON-RPC 2.0 response.
-type jsonrpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      string          `json:"id"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonrpcError   `json:"error,omitempty"`
-}
-
-// jsonrpcError represents a JSON-RPC 2.0 error object.
-// TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
-// This needs to be implemented across all transports (currently not in grpc either).
-type jsonrpcError struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data,omitempty"`
-}
-
-// Error implements the error interface for jsonrpcError.
-func (e *jsonrpcError) Error() string {
-	if len(e.Data) > 0 {
-		return fmt.Sprintf("jsonrpc error %d: %s (data: %s)", e.Code, e.Message, string(e.Data))
-	}
-	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
-}
-
-// sendRequest sends a non-streaming JSON-RPC request and returns the response.
-func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params any) (*http.Request, error) {
 	req := jsonrpcRequest{
-		JSONRPC: jsonrpcVersion,
+		JSONRPC: jsonrpc.Version,
 		Method:  method,
 		Params:  params,
 		ID:      uuid.New().String(),
@@ -149,7 +106,25 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", contentTypeJSON)
+	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
+
+	if callMeta, ok := CallMetaFrom(ctx); ok {
+		for k, vals := range callMeta {
+			for _, v := range vals {
+				httpReq.Header.Add(k, v)
+			}
+		}
+	}
+
+	return httpReq, nil
+}
+
+// sendRequest sends a non-streaming JSON-RPC request and returns the response.
+func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	httpReq, err := t.newHTTPRequest(ctx, method, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -162,7 +137,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
 	var resp jsonrpcResponse
@@ -171,7 +146,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}
 
 	if resp.Error != nil {
-		return nil, resp.Error
+		return nil, resp.Error.ToA2AError()
 	}
 
 	return resp.Result, nil
@@ -179,25 +154,11 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
 func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params any) (io.ReadCloser, error) {
-	req := jsonrpcRequest{
-		JSONRPC: jsonrpcVersion,
-		Method:  method,
-		Params:  params,
-		ID:      uuid.New().String(),
-	}
-
-	reqBody, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewBuffer(reqBody))
+	httpReq, err := t.newHTTPRequest(ctx, method, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-
-	httpReq.Header.Set("Content-Type", contentTypeJSON)
-	httpReq.Header.Set("Accept", acceptEventStream)
+	httpReq.Header.Set("Accept", sse.ContentEventStream)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -208,7 +169,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, fmt.Errorf("unexpected HTTP status code: %d", httpResp.StatusCode)
+		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
 	return httpResp.Body, nil
@@ -217,43 +178,30 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
 func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
-		scanner := bufio.NewScanner(body)
-		prefixBytes := []byte(sseDataPrefix)
-
-		for scanner.Scan() {
-			lineBytes := scanner.Bytes()
-
-			// SSE data lines start with "data: "
-			if bytes.HasPrefix(lineBytes, prefixBytes) {
-				data := lineBytes[len(prefixBytes):]
-
-				var resp jsonrpcResponse
-				if err := json.Unmarshal(data, &resp); err != nil {
-					yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
-					return
-				}
-
-				if resp.Error != nil {
-					yield(nil, resp.Error)
-					return
-				}
-
-				if !yield(resp.Result, nil) {
-					return
-				}
+		for data, err := range sse.ParseDataStream(body) {
+			if err != nil {
+				yield(nil, err)
+				return
 			}
-			// Ignore empty lines, comments, and other SSE event types
-		}
-
-		if err := scanner.Err(); err != nil {
-			yield(nil, fmt.Errorf("SSE stream error: %w", err))
+			var resp jsonrpcResponse
+			if err := json.Unmarshal(data, &resp); err != nil {
+				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
+				return
+			}
+			if resp.Error != nil {
+				yield(nil, resp.Error.ToA2AError())
+				return
+			}
+			if !yield(resp.Result, nil) {
+				return
+			}
 		}
 	}
 }
 
 // SendMessage sends a non-streaming message to the agent.
 func (t *jsonrpcTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	result, err := t.sendRequest(ctx, methodMessageSend, message)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodMessageSend, message)
 	if err != nil {
 		return nil, err
 	}
@@ -311,12 +259,12 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 
 // SendStreamingMessage sends a streaming message to the agent.
 func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	return t.streamRequestToEvents(ctx, methodMessageStream, message)
+	return t.streamRequestToEvents(ctx, jsonrpc.MethodMessageStream, message)
 }
 
 // GetTask retrieves the current state of a task.
 func (t *jsonrpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, methodTasksGet, query)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksGet, query)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +279,7 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryPara
 
 // CancelTask requests cancellation of a task.
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, methodTasksCancel, id)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksCancel, id)
 	if err != nil {
 		return nil, err
 	}
@@ -346,12 +294,12 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams)
 
 // ResubscribeToTask reconnects to an SSE stream for an ongoing task.
 func (t *jsonrpcTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return t.streamRequestToEvents(ctx, methodTasksResubscribe, id)
+	return t.streamRequestToEvents(ctx, jsonrpc.MethodTasksResubscribe, id)
 }
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, methodPushConfigGet, params)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigGet, params)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +314,7 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params *a2a.Ge
 
 // ListTaskPushConfig lists push notification configurations.
 func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, methodPushConfigList, params)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigList, params)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +329,7 @@ func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params *a2a.L
 
 // SetTaskPushConfig sets or updates the push notification configuration for a task.
 func (t *jsonrpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	result, err := t.sendRequest(ctx, methodPushConfigSet, params)
+	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigSet, params)
 	if err != nil {
 		return nil, err
 	}
@@ -396,16 +344,22 @@ func (t *jsonrpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.Ta
 
 // DeleteTaskPushConfig deletes a push notification configuration.
 func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	_, err := t.sendRequest(ctx, methodPushConfigDelete, params)
+	_, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigDelete, params)
 	return err
 }
 
 // GetAgentCard retrieves the agent's card.
 func (t *jsonrpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	if t.agentCard == nil {
-		return nil, fmt.Errorf("no agent card available")
+	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, nil)
+	if err != nil {
+		return nil, err
 	}
-	return t.agentCard, nil
+
+	var card a2a.AgentCard
+	if err := json.Unmarshal(result, &card); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent card: %w", err)
+	}
+	return &card, nil
 }
 
 // Destroy closes the transport and releases resources.

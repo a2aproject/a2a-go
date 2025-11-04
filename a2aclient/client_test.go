@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -175,7 +176,7 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 	}
 	interceptor := &testInterceptor{}
 	client := &Client{
-		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes},
+		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes, Polling: true},
 		transport:    transport,
 		interceptors: []CallInterceptor{interceptor},
 	}
@@ -187,7 +188,7 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 			t.Fatalf("client.SendMessage() error = %v", err)
 		}
 		want := &a2a.MessageSendParams{
-			Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
+			Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, Blocking: utils.Ptr(false)},
 		}
 		if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
 			t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
@@ -214,7 +215,7 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 	}
 	interceptor := &testInterceptor{}
 	client := &Client{
-		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes},
+		config:       Config{PushConfig: pushConfig, AcceptedOutputModes: acceptedModes, Polling: true},
 		transport:    transport,
 		interceptors: []CallInterceptor{interceptor},
 	}
@@ -225,7 +226,7 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 		}
 	}
 	want := &a2a.MessageSendParams{
-		Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig},
+		Config: &a2a.MessageSendConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, Blocking: utils.Ptr(true)},
 	}
 	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)

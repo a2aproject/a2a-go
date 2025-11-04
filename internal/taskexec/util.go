@@ -16,6 +16,7 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
@@ -62,6 +63,9 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 		return
 	})
 
+	// The error is returned to cancel producer context when consumer decides to return a result and stop processing events.
+	errConsumerStopped := errors.New("consumer stopped")
+
 	var result *a2a.SendMessageResult
 	group.Go(func() (err error) {
 		defer func() {
@@ -71,15 +75,18 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 		}()
 		localResult, err := consumer(ctx)
 		result = &localResult
+		if err == nil {
+			err = errConsumerStopped
+		}
 		return
 	})
 
-	if err := group.Wait(); err != nil {
+	if err := group.Wait(); err != nil && !errors.Is(err, errConsumerStopped) {
 		return nil, err
 	}
 
 	if *result == nil {
-		return nil, fmt.Errorf("bug: no error returned, but result unset")
+		return nil, fmt.Errorf("bug: consumer stopped, but result unset")
 	}
 
 	return *result, nil
