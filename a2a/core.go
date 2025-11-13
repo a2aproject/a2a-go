@@ -714,7 +714,7 @@ type MessageSendParams struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-// Time-based UUID generally imrpoves index update performance if ID field is indexed in a persistent store.
+// Time-based UUID generally  index update performance if ID field is indexed in a persistent store.
 func newUUIDString() string {
 	return uuid.Must(uuid.NewV7()).String()
 }

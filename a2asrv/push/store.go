@@ -42,7 +42,7 @@ func NewInMemoryStore() *InMemoryPushConfigStore {
 	}
 }
 
-// NewID creates a new random identifier.
+// newID creates a time-based random ID.
 func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
