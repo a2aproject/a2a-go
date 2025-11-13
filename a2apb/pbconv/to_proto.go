@@ -49,7 +49,7 @@ func ToProtoSendMessageRequest(params *a2a.MessageSendParams) (*a2apb.SendMessag
 		return nil, err
 	}
 
-	pMeta, err := structpb.NewStruct(params.Metadata)
+	pMeta, err := toProtoMap(params.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
@@ -316,7 +316,7 @@ func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
 }
 
 func toProtoDataPart(part a2a.DataPart) (*a2apb.Part, error) {
-	s, err := structpb.NewStruct(part.Data)
+	s, err := toProtoMap(part.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
@@ -548,7 +548,7 @@ func toProtoAgentProvider(provider *a2a.AgentProvider) *a2apb.AgentProvider {
 func toProtoAgentExtensions(extensions []a2a.AgentExtension) ([]*a2apb.AgentExtension, error) {
 	pExtensions := make([]*a2apb.AgentExtension, len(extensions))
 	for i, ext := range extensions {
-		params, err := structpb.NewStruct(ext.Params)
+		params, err := toProtoMap(ext.Params)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert extension params: %w", err)
 		}
