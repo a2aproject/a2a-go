@@ -44,7 +44,7 @@ func NewInMemoryStore() *InMemoryPushConfigStore {
 
 // NewID creates a new random identifier.
 func newID() string {
-	return uuid.NewString()
+	return uuid.Must(uuid.NewV7()).String()
 }
 
 func validateConfig(config *a2a.PushConfig) error {
