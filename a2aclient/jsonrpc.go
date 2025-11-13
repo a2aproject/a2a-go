@@ -93,7 +93,7 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 		JSONRPC: jsonrpc.Version,
 		Method:  method,
 		Params:  params,
-		ID:      uuid.New().String(),
+		ID:      uuid.NewString(),
 	}
 
 	reqBody, err := json.Marshal(req)
