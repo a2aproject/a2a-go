@@ -49,7 +49,7 @@ func ToProtoSendMessageRequest(params *a2a.MessageSendParams) (*a2apb.SendMessag
 		return nil, err
 	}
 
-	pMeta, err := structpb.NewStruct(params.Metadata)
+	pMeta, err := toProtoMap(params.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
