@@ -345,6 +345,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("fromProtoSendMessageRequest() = %v, want %v", got, tt.want)
+				return
 			}
 
 			gotBack, err := ToProtoSendMessageRequest(got)
