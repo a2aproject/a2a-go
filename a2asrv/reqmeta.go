@@ -63,10 +63,14 @@ func (rm *RequestMeta) List() iter.Seq2[string, []string] {
 
 // With allows to create a RequestMeta instance holding the extended set of values.
 func (rm *RequestMeta) With(additional map[string][]string) *RequestMeta {
+	if len(additional) == 0 {
+		return rm
+	}
+
 	merged := make(map[string][]string, len(additional)+len(rm.kv))
 	maps.Copy(merged, rm.kv)
 	for k, v := range additional {
-		merged[strings.ToLower(k)] = v
+		merged[strings.ToLower(k)] = slices.Clone(v)
 	}
-	return NewRequestMeta(merged)
+	return &RequestMeta{kv: merged}
 }
