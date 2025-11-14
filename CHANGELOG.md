@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/a2aproject/a2a-go/compare/v0.3.1...v0.3.2) (2025-11-14)
+
+
+### Bug Fixes
+
+* allow request meta extension and hide mistakenly exported type ([#106](https://github.com/a2aproject/a2a-go/issues/106)) ([46fa0cb](https://github.com/a2aproject/a2a-go/commit/46fa0cb89d3af2690aed1a65e5f43191db3cd727))
+
 ## [0.3.1](https://github.com/a2aproject/a2a-go/compare/v0.3.0...v0.3.1) (2025-11-13)
 
 
