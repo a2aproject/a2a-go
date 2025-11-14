@@ -35,6 +35,8 @@ func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *
 	return context.WithValue(ctx, callContextKey{}, callCtx), callCtx
 }
 
+type CallContextState map[string]any
+
 // CallContext holds information about the current server call scope.
 type CallContext struct {
 	method              string
@@ -44,6 +46,10 @@ type CallContext struct {
 	// User can be set by authentication middleware to provide information about
 	// the user who initiated the request.
 	User User
+
+	// State allows storing arbitrary user data. It can be modified by middleware or any
+	// extension point.
+	State CallContextState
 }
 
 // Method returns the name of the RequestHandler method which is being executed.
