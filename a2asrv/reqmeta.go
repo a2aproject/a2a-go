@@ -15,6 +15,8 @@
 package a2asrv
 
 import (
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -25,7 +27,7 @@ type RequestMeta struct {
 	kv map[string][]string
 }
 
-// NewRequestMeta is a [RequestMeta] constructor function .
+// NewRequestMeta is a [RequestMeta] constructor function.
 func NewRequestMeta(src map[string][]string) *RequestMeta {
 	if src == nil {
 		return &RequestMeta{kv: map[string][]string{}}
@@ -46,4 +48,29 @@ func (rm *RequestMeta) Get(key string) ([]string, bool) {
 
 	val, ok := rm.kv[strings.ToLower(key)]
 	return val, ok
+}
+
+// List allows to inspect all request meta values.
+func (rm *RequestMeta) List() iter.Seq2[string, []string] {
+	return func(yield func(string, []string) bool) {
+		for k, v := range rm.kv {
+			if !yield(k, slices.Clone(v)) {
+				return
+			}
+		}
+	}
+}
+
+// With allows to create a RequestMeta instance holding the extended set of values.
+func (rm *RequestMeta) With(additional map[string][]string) *RequestMeta {
+	if len(additional) == 0 {
+		return rm
+	}
+
+	merged := make(map[string][]string, len(additional)+len(rm.kv))
+	maps.Copy(merged, rm.kv)
+	for k, v := range additional {
+		merged[strings.ToLower(k)] = slices.Clone(v)
+	}
+	return &RequestMeta{kv: merged}
 }
