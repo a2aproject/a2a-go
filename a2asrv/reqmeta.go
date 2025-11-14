@@ -65,6 +65,8 @@ func (rm *RequestMeta) List() iter.Seq2[string, []string] {
 func (rm *RequestMeta) With(additional map[string][]string) *RequestMeta {
 	merged := make(map[string][]string, len(additional)+len(rm.kv))
 	maps.Copy(merged, rm.kv)
-	maps.Copy(merged, additional)
+	for k, v := range additional {
+		merged[strings.ToLower(k)] = v
+	}
 	return NewRequestMeta(merged)
 }
