@@ -44,3 +44,14 @@ type Canceler interface {
 	// Expected to produce a Task update event with canceled state.
 	Cancel(context.Context, eventqueue.Queue) error
 }
+
+// Limiter implementation provides an extension point for controling the number of active executions.
+// Methods are called from critical sections and must not perform any blocking operations. Any internal
+// datastructures can be safely mutated.
+type Limiter interface {
+	// Start is called before starting a new execution.
+	// Context returned from this method is passed to Stop. A non-nil error aborts the run.
+	Start(context.Context) (context.Context, error)
+	// Stop is called after an execution completes or fails. Context parameter is the value returned from Start.
+	Stop(context.Context)
+}

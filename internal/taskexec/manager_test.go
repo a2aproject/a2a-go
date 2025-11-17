@@ -28,8 +28,7 @@ import (
 )
 
 func newManager() *Manager {
-	qm := eventqueue.NewInMemoryManager()
-	return NewManager(qm)
+	return NewManager(Config{})
 }
 
 type testProcessor struct {
@@ -139,6 +138,19 @@ func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
 	}
 }
 
+type testLimiter struct {
+	StartFn func(context.Context) (context.Context, error)
+	StopFn  func(context.Context)
+}
+
+func (l *testLimiter) Start(ctx context.Context) (context.Context, error) {
+	return l.StartFn(ctx)
+}
+
+func (l *testLimiter) Stop(ctx context.Context) {
+	l.StopFn(ctx)
+}
+
 func TestManager_Execute(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
@@ -157,6 +169,113 @@ func TestManager_Execute(t *testing.T) {
 
 	if got, err := execution.Result(ctx); err != nil || got != want {
 		t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
+	}
+}
+
+func TestManager_ExecuteRateLimit(t *testing.T) {
+	t.Parallel()
+	ctx, tid := t.Context(), a2a.NewTaskID()
+	running, wantErr := 0, errors.New("rejected")
+	limiter := &testLimiter{
+		StartFn: func(ctx context.Context) (context.Context, error) {
+			if running == 1 {
+				return nil, wantErr
+			}
+			running++
+			return ctx, nil
+		},
+		StopFn: func(context.Context) {
+			running--
+		},
+	}
+	manager := NewManager(Config{Limiter: limiter})
+
+	executor := newExecutor()
+	executor.nextEventTerminal = true
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subscription.cancel()
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if _, _, err := manager.Execute(ctx, tid+"1", executor); !errors.Is(err, wantErr) {
+		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	}
+
+	<-executor.executeCalled
+	executor.mustWrite(t, &a2a.Task{ID: tid})
+	if _, err := execution.Result(ctx); err != nil {
+		t.Fatalf("execution.Result() error = %v", err)
+	}
+
+	execution, subscription, err = manager.Execute(ctx, tid, executor)
+	subscription.cancel()
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	executor.mustWrite(t, &a2a.Task{ID: tid})
+	if _, err := execution.Result(ctx); err != nil {
+		t.Fatalf("execution.Result() error = %v", err)
+	}
+}
+
+func TestManager_ExecuteLimiterThreadSafe(t *testing.T) {
+	t.Parallel()
+	ctx, tid := t.Context(), a2a.NewTaskID()
+
+	errRejected := errors.New("rejected")
+	var running, maxExecutions int32 = 0, 3
+	var atomicRunning atomic.Int32
+	limiter := &testLimiter{
+		StartFn: func(ctx context.Context) (context.Context, error) {
+			if running+1 > maxExecutions {
+				return nil, errRejected
+			}
+			running++
+			if av := atomicRunning.Add(1); av != running || av > maxExecutions {
+				t.Errorf("atomic value = %d, want %d and no more than %d", av, running, maxExecutions)
+			}
+			return ctx, nil
+		},
+		StopFn: func(context.Context) {
+			running--
+			if av := atomicRunning.Add(-1); av != running {
+				t.Errorf("atomic value = %d, want %d", av, running)
+			}
+		},
+	}
+
+	attempts := 100
+	successChan := make(chan int32, attempts)
+	manager := NewManager(Config{Limiter: limiter})
+	for i := range attempts {
+		go func() {
+			executor := newExecutor()
+			execution, subscription, err := manager.Execute(ctx, a2a.TaskID(fmt.Sprintf("%d", i)), executor)
+			subscription.cancel()
+			if err != nil && !errors.Is(err, errRejected) {
+				t.Errorf("manager.Execute() error = %v, want %v", err, errRejected)
+			}
+			if err != nil {
+				successChan <- 0
+				return
+			}
+			executor.nextEventTerminal = true
+			<-executor.executeCalled
+			executor.mustWrite(t, &a2a.Task{ID: tid})
+			if _, err := execution.Result(ctx); err != nil {
+				t.Errorf("execution.Result() error = %v", err)
+			}
+			successChan <- 1
+		}()
+	}
+
+	var success int32 = 0
+	for range attempts {
+		success += <-successChan
+	}
+	if success < maxExecutions {
+		t.Fatalf("success.Load() = %d, want at least %d", success, maxExecutions)
 	}
 }
 

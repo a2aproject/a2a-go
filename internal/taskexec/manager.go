@@ -45,19 +45,34 @@ var (
 // Both cancelations and executions are started in detached context and run until completion.
 type Manager struct {
 	queueManager eventqueue.Manager
+	limiter      Limiter
 
 	mu           sync.Mutex
 	executions   map[a2a.TaskID]*Execution
 	cancelations map[a2a.TaskID]*cancelation
 }
 
+// Config contains Manager configuration parameters.
+type Config struct {
+	QueueManager eventqueue.Manager
+	Limiter      Limiter
+}
+
 // NewManager is a [Manager] constructor function.
-func NewManager(queueManager eventqueue.Manager) *Manager {
-	return &Manager{
-		queueManager: queueManager,
+func NewManager(cfg Config) *Manager {
+	manager := &Manager{
+		queueManager: cfg.QueueManager,
+		limiter:      cfg.Limiter,
 		executions:   make(map[a2a.TaskID]*Execution),
 		cancelations: make(map[a2a.TaskID]*cancelation),
 	}
+	if manager.queueManager == nil {
+		manager.queueManager = eventqueue.NewInMemoryManager()
+	}
+	if manager.limiter == nil {
+		manager.limiter = &noLimiter{}
+	}
+	return manager
 }
 
 // GetExecution is used to get a reference to an active [Execution]. The method can be used
@@ -86,11 +101,14 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 		return nil, nil, ErrCancelationInProgress
 	}
 
+	detachedCtx, err := m.limiter.Start(context.WithoutCancel(ctx))
+	if err != nil {
+		return nil, nil, fmt.Errorf("execution rate-limited: %w", err)
+	}
+
 	execution := newExecution(tid, executor)
 	subscription := newDefaultSubscription(execution)
 	m.executions[tid] = execution
-
-	detachedCtx := context.WithoutCancel(ctx)
 
 	go m.handleExecution(detachedCtx, execution)
 
@@ -135,6 +153,7 @@ func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceler Canceler)
 func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
+		m.limiter.Stop(ctx)
 		delete(m.executions, execution.tid)
 		execution.result.signalDone()
 		m.mu.Unlock()
@@ -152,6 +171,7 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 		func(ctx context.Context) error { return execution.controller.Execute(ctx, queue) },
 		func(ctx context.Context) (a2a.SendMessageResult, error) { return execution.processEvents(ctx, queue) },
 	)
+
 	if err != nil {
 		execution.result.setError(err)
 		return
