@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
@@ -65,8 +66,9 @@ type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   *taskexec.Manager
 
-	pushSender   PushSender
-	queueManager eventqueue.Manager
+	pushSender        PushSender
+	queueManager      eventqueue.Manager
+	concurrencyConfig limiter.ConcurrencyConfig
 
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
@@ -95,6 +97,13 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	}
 }
 
+// WithConcurrencyConfig allows to set limits on the number of concurrent executions.
+func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.concurrencyConfig = config
+	}
+}
+
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
@@ -110,7 +119,8 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	}
 
 	h.execManager = taskexec.NewManager(taskexec.Config{
-		QueueManager: h.queueManager,
+		QueueManager:      h.queueManager,
+		ConcurrencyConfig: h.concurrencyConfig,
 	})
 
 	return ih
