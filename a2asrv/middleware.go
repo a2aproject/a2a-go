@@ -88,6 +88,13 @@ type CallInterceptor interface {
 	After(ctx context.Context, callCtx *CallContext, resp *Response) error
 }
 
+// WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
+func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.Interceptors = append(ih.Interceptors, interceptor)
+	}
+}
+
 // PassthroughInterceptor can be used by [CallInterceptor] implementers who don't need all methods.
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughCallInterceptor struct{}

@@ -47,6 +47,15 @@ type PushConfigStore interface {
 	DeleteAll(ctx context.Context, taskID a2a.TaskID) error
 }
 
+// WithPushNotifications adds support for push notifications. If dependencies are not provided
+// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
+func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.pushConfigStore = store
+		h.pushSender = sender
+	}
+}
+
 // TaskStore provides storage for [a2a.Task]-s.
 type TaskStore interface {
 	// Save stores a task.
@@ -54,4 +63,12 @@ type TaskStore interface {
 
 	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
 	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error)
+}
+
+// WithTaskStore overrides TaskStore with a custom implementation. If not provided,
+// default to an in-memory implementation.
+func WithTaskStore(store TaskStore) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.taskStore = store
+	}
 }
