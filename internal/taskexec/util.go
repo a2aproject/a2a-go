@@ -91,12 +91,3 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 
 	return *result, nil
 }
-
-// noLimiter is no-op implementation of [Limiter].
-type noLimiter struct{}
-
-func (*noLimiter) Start(ctx context.Context) (context.Context, error) {
-	return ctx, nil
-}
-
-func (*noLimiter) Stop(context.Context) {}

@@ -138,19 +138,6 @@ func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
 	}
 }
 
-type testLimiter struct {
-	StartFn func(context.Context) (context.Context, error)
-	StopFn  func(context.Context)
-}
-
-func (l *testLimiter) Start(ctx context.Context) (context.Context, error) {
-	return l.StartFn(ctx)
-}
-
-func (l *testLimiter) Stop(ctx context.Context) {
-	l.StopFn(ctx)
-}
-
 func TestManager_Execute(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
