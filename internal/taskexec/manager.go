@@ -100,7 +100,7 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 	}
 
 	if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
-		return nil, nil, fmt.Errorf("execution rate-limited: %w", err)
+		return nil, nil, fmt.Errorf("concurrency quota exceeded: %w", err)
 	}
 
 	execution := newExecution(tid, executor)
