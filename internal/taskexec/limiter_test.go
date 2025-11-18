@@ -102,6 +102,25 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 				{scope: "u-2", wantErr: true},
 			},
 		},
+		{
+			name: "global quota not subtracted when not enough scope quota",
+			config: limiter.ConcurrencyConfig{
+				MaxExecutions: 3,
+				GetMaxExecutions: func(scope string) int {
+					if scope == "u-1" {
+						return 2
+					} else {
+						return 1
+					}
+				},
+			},
+			events: []executionEvent{
+				{scope: "u-1"},
+				{scope: "u-2"},
+				{scope: "u-2", wantErr: true},
+				{scope: "u-1"},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

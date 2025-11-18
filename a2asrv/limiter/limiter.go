@@ -26,11 +26,11 @@ var limiterScopeKey = limiterScopeKeyType{}
 // ConcurrencyConfig defines how many concurrent executions are allowed globally or per-scope.
 type ConcurrencyConfig struct {
 	// MaxExecutions sets a limit on the number of active executions. A number of goroutines started by execution might be greater than 1.
-	// A limit is enforced only when it is greater than one.
+	// A limit is enforced only when it is greater than zero.
 	MaxExecutions int
 	// GetMaxExecutions sets a limit on the number of active executions for a scope. A scope can be attached to context
 	// using [WithScope] function. A number of goroutines started by execution might be greater than 1.
-	// A limit is enforced only when it is greater than one.
+	// A limit is enforced only when it is greater than zero.
 	GetMaxExecutions func(scope string) int
 }
 

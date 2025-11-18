@@ -47,11 +47,12 @@ func (l *concurrencyLimiter) acquireQuotaLocked(ctx context.Context) error {
 		}
 		return fmt.Errorf("max concurrency limit reached")
 	}
-	l.executions++
 
 	if l.config.GetMaxExecutions == nil {
+		l.executions++
 		return nil
 	}
+
 	if scopeKey, scoped := limiter.ScopeFrom(ctx); scoped {
 		scopeActive := l.executionsByScope[scopeKey]
 		if limit := l.config.GetMaxExecutions(scopeKey); limit > 0 && scopeActive >= limit {
@@ -62,6 +63,8 @@ func (l *concurrencyLimiter) acquireQuotaLocked(ctx context.Context) error {
 		}
 		l.executionsByScope[scopeKey] = scopeActive + 1
 	}
+
+	l.executions++
 	return nil
 }
 
@@ -77,7 +80,9 @@ func (l *concurrencyLimiter) releaseQuotaLocked(ctx context.Context) {
 	}
 	if scopeKey, scoped := limiter.ScopeFrom(ctx); scoped {
 		scopedActive := l.executionsByScope[scopeKey]
-		if scopedActive > 0 {
+		if scopedActive == 1 {
+			delete(l.executionsByScope, scopeKey)
+		} else if scopedActive > 0 {
 			l.executionsByScope[scopeKey] = scopedActive - 1
 		} else {
 			log.Error(ctx, "no scoped quota to release", errQuotaNotAcquired, "scope", scopeKey)
