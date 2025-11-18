@@ -24,9 +24,9 @@ import (
 
 func TestManager_ExecuteRateLimit(t *testing.T) {
 	type executionEvent struct {
-		scope   string
-		end     bool
-		wantErr bool
+		scope   string // passed to limiter.WithScope(ctx)
+		end     bool   // if true an execution ends in the provided scope
+		wantErr bool   // true means the execution start is expected to fail
 	}
 	testCases := []struct {
 		name   string
