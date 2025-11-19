@@ -55,24 +55,22 @@ func Info(ctx context.Context, msg string, keyValArgs ...any) {
 
 // Warn invokes WarnContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
 func Warn(ctx context.Context, msg string, keyValArgs ...any) {
-	doLog(ctx, slog.LevelInfo, msg, keyValArgs...)
+	doLog(ctx, slog.LevelWarn, msg, keyValArgs...)
 }
 
 // Error invokes ErrorContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
 func Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
-	doLog(ctx, slog.LevelInfo, msg, slices.Concat([]any{"error", err}, keyValArgs)...)
+	doLog(ctx, slog.LevelError, msg, slices.Concat([]any{"error", err}, keyValArgs)...)
 }
 
 // If we use logger.Log() directly in our log package methods these methods are logged as the call site.
 func doLog(ctx context.Context, level slog.Level, msg string, keyValArgs ...any) {
 	logger := LoggerFrom(ctx)
 	if logger.Enabled(ctx, level) {
-		var pc uintptr
 		var pcs [1]uintptr
 		// skip [runtime.Callers, this function, this function's caller]
 		runtime.Callers(3, pcs[:])
-		pc = pcs[0]
-		record := slog.NewRecord(time.Now(), level, msg, pc)
+		record := slog.NewRecord(time.Now(), level, msg, pcs[0])
 		record.Add(keyValArgs...)
 		_ = logger.Handler().Handle(ctx, record)
 	}
