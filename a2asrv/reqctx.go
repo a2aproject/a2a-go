@@ -28,6 +28,13 @@ type RequestContextInterceptor interface {
 	Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error)
 }
 
+// WithRequestContextInterceptor overrides the default RequestContextInterceptor with a custom implementation.
+func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
+	}
+}
+
 // RequestContext provides information about an incoming A2A request to [AgentExecutor].
 type RequestContext struct {
 	// A message which triggered the execution. nil for cancelation request.

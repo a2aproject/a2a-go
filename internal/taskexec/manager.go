@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -49,15 +50,27 @@ type Manager struct {
 	mu           sync.Mutex
 	executions   map[a2a.TaskID]*Execution
 	cancelations map[a2a.TaskID]*cancelation
+	limiter      *concurrencyLimiter
+}
+
+// Config contains Manager configuration parameters.
+type Config struct {
+	QueueManager      eventqueue.Manager
+	ConcurrencyConfig limiter.ConcurrencyConfig
 }
 
 // NewManager is a [Manager] constructor function.
-func NewManager(queueManager eventqueue.Manager) *Manager {
-	return &Manager{
-		queueManager: queueManager,
+func NewManager(cfg Config) *Manager {
+	manager := &Manager{
+		queueManager: cfg.QueueManager,
+		limiter:      newConcurrencyLimiter(cfg.ConcurrencyConfig),
 		executions:   make(map[a2a.TaskID]*Execution),
 		cancelations: make(map[a2a.TaskID]*cancelation),
 	}
+	if manager.queueManager == nil {
+		manager.queueManager = eventqueue.NewInMemoryManager()
+	}
+	return manager
 }
 
 // GetExecution is used to get a reference to an active [Execution]. The method can be used
@@ -84,6 +97,10 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, executor Executor
 
 	if _, ok := m.cancelations[tid]; ok {
 		return nil, nil, ErrCancelationInProgress
+	}
+
+	if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
+		return nil, nil, fmt.Errorf("concurrency quota exceeded: %w", err)
 	}
 
 	execution := newExecution(tid, executor)
@@ -135,6 +152,7 @@ func (m *Manager) Cancel(ctx context.Context, tid a2a.TaskID, canceler Canceler)
 func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 	defer func() {
 		m.mu.Lock()
+		m.limiter.releaseQuotaLocked(ctx)
 		delete(m.executions, execution.tid)
 		execution.result.signalDone()
 		m.mu.Unlock()
@@ -152,6 +170,7 @@ func (m *Manager) handleExecution(ctx context.Context, execution *Execution) {
 		func(ctx context.Context) error { return execution.controller.Execute(ctx, queue) },
 		func(ctx context.Context) (a2a.SendMessageResult, error) { return execution.processEvents(ctx, queue) },
 	)
+
 	if err != nil {
 		execution.result.setError(err)
 		return

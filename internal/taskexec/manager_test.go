@@ -28,8 +28,7 @@ import (
 )
 
 func newManager() *Manager {
-	qm := eventqueue.NewInMemoryManager()
-	return NewManager(qm)
+	return NewManager(Config{})
 }
 
 type testProcessor struct {
