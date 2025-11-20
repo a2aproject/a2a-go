@@ -46,11 +46,11 @@ var (
 // Both cancelations and executions are started in detached context and run until completion.
 type Manager struct {
 	queueManager eventqueue.Manager
-	limiter      *concurrencyLimiter
 
 	mu           sync.Mutex
 	executions   map[a2a.TaskID]*Execution
 	cancelations map[a2a.TaskID]*cancelation
+	limiter      *concurrencyLimiter
 }
 
 // Config contains Manager configuration parameters.
