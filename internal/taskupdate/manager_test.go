@@ -480,7 +480,7 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 
 			storedTask := m.SetTaskFailed(ctx, err)
 			if storedTask.Status.State != a2a.TaskStateFailed {
-				t.Errorf("task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateFailed)
+				t.Errorf("task.Status.State = %q, want %q", storedTask.Status.State, a2a.TaskStateFailed)
 			}
 		})
 	}

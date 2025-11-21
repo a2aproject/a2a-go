@@ -325,7 +325,7 @@ func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
 		t.Fatalf("execution.Result() incorrect (+got,-want) diff = %s", diff)
 	}
 	if subErr := <-subErrChan; subErr != nil {
-		t.Fatalf("subscription error = %v, want nil", err)
+		t.Fatalf("subscription error = %v, want nil", subErr)
 	}
 	subEvents := <-subEventsChan
 	if diff := cmp.Diff([]a2a.Event{wantResult}, subEvents); diff != "" {
