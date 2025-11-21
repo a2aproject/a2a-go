@@ -49,6 +49,8 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, cause error) (*a2a.Task, 
 		log.Error(ctx, "failed to store failed task state", err)
 		return nil, err
 	}
+
+	log.Info(ctx, "task moved to failed state", "cause", cause.Error())
 	return task, nil
 }
 
