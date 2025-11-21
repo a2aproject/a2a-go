@@ -259,13 +259,11 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 
 	task, err := p.updateManager.Process(ctx, event)
 	if err != nil {
-		p.updateManager.SetTaskFailed(ctx, err)
-		return nil, err
+		return p.setTaskFailed(ctx, err)
 	}
 
 	if err := p.sendPushNotifications(ctx, task); err != nil {
-		p.updateManager.SetTaskFailed(ctx, err)
-		return nil, err
+		return p.setTaskFailed(ctx, err)
 	}
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
@@ -290,6 +288,15 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	return nil, nil
+}
+
+func (p *processor) setTaskFailed(ctx context.Context, err error) (*a2a.SendMessageResult, error) {
+	task, err := p.updateManager.SetTaskFailed(ctx, err)
+	if err != nil {
+		return nil, err
+	}
+	var result a2a.SendMessageResult = task
+	return &result, nil
 }
 
 func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) error {
