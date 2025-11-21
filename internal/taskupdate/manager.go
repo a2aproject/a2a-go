@@ -44,6 +44,8 @@ func NewManager(saver Saver, task *a2a.Task) *Manager {
 // SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
 func (mgr *Manager) SetTaskFailed(ctx context.Context, cause error) *a2a.Task {
 	task := mgr.lastSavedTask
+	// TODO(yarolegovich): consider storing cause.Error() as part of failed task. Might be undesirable
+	// to disclose the cause to clients.
 	task.Status = a2a.TaskStatus{State: a2a.TaskStateFailed}
 
 	if _, err := mgr.saveTask(ctx, task); err != nil {
