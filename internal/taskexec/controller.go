@@ -28,6 +28,10 @@ type Processor interface {
 	// the terminal value becomes the result of the execution.
 	// Called in a separate goroutine.
 	Process(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
+
+	// ProcessError is called when an execution error is encountered to try recovering from it.
+	// If it returns a non-nill result, the returned value will become the result of execution.
+	ProcessError(context.Context, error) a2a.SendMessageResult
 }
 
 // Executor implementation starts an agent execution.

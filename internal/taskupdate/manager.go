@@ -41,17 +41,18 @@ func NewManager(saver Saver, task *a2a.Task) *Manager {
 	return &Manager{lastSavedTask: task, saver: saver}
 }
 
-func (mgr *Manager) SetTaskFailed(ctx context.Context, cause error) (*a2a.Task, error) {
+// SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
+func (mgr *Manager) SetTaskFailed(ctx context.Context, cause error) *a2a.Task {
 	task := mgr.lastSavedTask
 	task.Status = a2a.TaskStatus{State: a2a.TaskStateFailed}
 
 	if _, err := mgr.saveTask(ctx, task); err != nil {
 		log.Error(ctx, "failed to store failed task state", err)
-		return nil, err
+		return nil
 	}
 
 	log.Info(ctx, "task moved to failed state", "cause", cause.Error())
-	return task, nil
+	return task
 }
 
 // Process validates the event associated with the managed [a2a.Task] and integrates the new state into it.

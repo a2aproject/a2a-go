@@ -66,28 +66,34 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 	// The error is returned to cancel producer context when consumer decides to return a result and stop processing events.
 	errConsumerStopped := errors.New("consumer stopped")
 
-	var result *a2a.SendMessageResult
+	var processorResult *a2a.SendMessageResult
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("event consumer panic: %v", r)
 			}
 		}()
+
 		localResult, err := consumer(ctx)
-		result = &localResult
+		processorResult = &localResult
 		if err == nil {
+			// We do this to cancel producer context. There's no point for it to continue, as there will be no consumer to process events.
 			err = errConsumerStopped
 		}
 		return
 	})
 
-	if err := group.Wait(); err != nil && !errors.Is(err, errConsumerStopped) {
-		return nil, err
+	groupErr := group.Wait()
+
+	// process the result first, because consumer can override an error with "failed" result
+	if processorResult != nil && *processorResult != nil {
+		return *processorResult, nil
 	}
 
-	if *result == nil {
-		return nil, fmt.Errorf("bug: consumer stopped, but result unset")
+	// errConsumerStopped is just a way to cancel producer context
+	if groupErr != nil && !errors.Is(groupErr, errConsumerStopped) {
+		return nil, groupErr
 	}
 
-	return *result, nil
+	return nil, fmt.Errorf("bug: consumer stopped, but result unset: %w", groupErr)
 }

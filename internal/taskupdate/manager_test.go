@@ -478,11 +478,7 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 				t.Fatalf("m.Process() error = nil, expected serialization failure")
 			}
 
-			storedTask, err := m.SetTaskFailed(ctx, err)
-			if err != nil {
-				t.Fatalf("m.SetTaskFailed() error = %v", err)
-			}
-
+			storedTask := m.SetTaskFailed(ctx, err)
 			if storedTask.Status.State != a2a.TaskStateFailed {
 				t.Errorf("task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateFailed)
 			}

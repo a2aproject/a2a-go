@@ -715,10 +715,37 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 	executor := newEventReplayAgent([]a2a.Event{&a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID()}}, nil)
 	handler := NewHandler(executor, WithTaskStore(store))
 
-	wantErr := errors.New("failed push fails execution")
+	wantErr := "wrong id"
 	_, err := handler.OnSendMessage(ctx, input)
-	if !strings.Contains(err.Error(), "failed to save task state") {
+	if !strings.Contains(err.Error(), wantErr) {
 		t.Fatalf("OnSendMessage() err = %v, want to contain %q", err, wantErr)
+	}
+}
+
+func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
+	ctx := t.Context()
+
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
+
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			panic("problem")
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	result, err := handler.OnSendMessage(ctx, input)
+	if err != nil {
+		t.Fatalf("OnSendMessage() error = %v", err)
+	}
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+	}
+	if task.Status.State != a2a.TaskStateFailed {
+		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
