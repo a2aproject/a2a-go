@@ -17,7 +17,7 @@ package a2asrv
 import (
 	"context"
 	"fmt"
-	"sync"
+	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -237,11 +237,14 @@ type processor struct {
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
 
-	// init() is called from executor goroutine, while fields set there might be needed in processor goroutine
-	// for error handling purposes, because an error might occur before the processor gets initialized.
-	mu             sync.Mutex
 	reqCtx         *RequestContext
 	processedCount int
+
+	// initialized is set to true when init() finishes. The function is called from executor goroutine, but the
+	// fields it sets might be accessed by ProcessError() invoked from processor goroutine.
+	// ProcessError() can be invoked before or during init() if processor encountered an error.
+	// Process() can ignore the flag because Process(event) happens after Executor.Write(event).
+	initialized atomic.Bool
 }
 
 func newProcessor(store PushConfigStore, sender PushSender) *processor {
@@ -252,10 +255,9 @@ func newProcessor(store PushConfigStore, sender PushSender) *processor {
 }
 
 func (p *processor) init(um *taskupdate.Manager, reqCtx *RequestContext) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.updateManager = um
 	p.reqCtx = reqCtx
+	p.initialized.Store(true)
 }
 
 // Process implements taskexec.Processor interface method.
@@ -304,13 +306,14 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) a2a.SendMessageResult {
-	p.mu.Lock()
+	if !p.initialized.Load() {
+		return nil
+	}
+
 	if p.reqCtx == nil || (p.reqCtx.StoredTask == nil && p.processedCount == 0) {
-		p.mu.Unlock()
 		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
 		return nil
 	}
-	p.mu.Unlock()
 
 	return p.updateManager.SetTaskFailed(ctx, cause)
 }
