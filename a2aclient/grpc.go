@@ -57,8 +57,8 @@ func NewGRPCTransport(conn *grpc.ClientConn) Transport {
 	}
 }
 
-// NewGRPCTransportFromClient can be used for creating GRPC transport implementation where connection
-// is managed externally and encapsulated in service client. Transport Destroy will be a no-op.
+// NewGRPCTransportFromClient creates a gRPC transport where the connection is managed
+// externally and encapsulated in the service client. The transport's Destroy method is a no-op.
 func NewGRPCTransportFromClient(client a2apb.A2AServiceClient) Transport {
 	return &grpcTransport{
 		client:      client,
