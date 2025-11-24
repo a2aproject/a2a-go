@@ -35,7 +35,7 @@ func TestRESTTransport_GetTask(t *testing.T) {
 
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`))
 	}))
 	defer server.Close()
 
@@ -71,8 +71,8 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		}
 
 		// Mock response
-		w.Header().Set("Content-Type", "applicatoin/json")
-		w.Write([]byte (`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`))
 	}))
 	defer server.Close()
 
@@ -107,7 +107,7 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`))
 	}))
 	defer server.Close()
 
@@ -146,8 +146,8 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		
-		// Send task updates via SSE 
+
+		// Send task updates via SSE
 		events := []string{
 			`data: {"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"working"}}`,
 			``,
@@ -163,7 +163,7 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	
+
 	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
@@ -196,7 +196,7 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 
 func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 	// Set up a mock HTTP server
-	server:= httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify Method, Path and Headers
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
@@ -205,7 +205,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 			t.Errorf("expected path /v1/message:stream, got %s", r.URL.Path)
 		}
 		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accpet"))
+			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -265,7 +265,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 
 func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 	// Set up a mock HTTP server
-	server:= httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
@@ -273,10 +273,10 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs/config-123" {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
-		
+
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
 
@@ -285,7 +285,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 
 	//Call GetTaskPushConfig and log unexpected errors
 	config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
-		TaskID: a2a.TaskID("task-123"),
+		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
 	})
 
@@ -306,7 +306,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 
 func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 	// Set up a mock HTTP server
-	server:= httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
@@ -317,7 +317,7 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"taskId":"task-123","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},
 			{"taskId":"task-123","pushNotificationConfig":{"id":"config-2","url":"https://webhook2.example.com"}}
 		]`))
@@ -334,7 +334,7 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTaskPushConfig failed: %v", err)
 	}
-	
+
 	if len(configs) != 2 {
 		t.Errorf("got %d configs, want 2", len(configs))
 	}
@@ -356,13 +356,13 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs" {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
 		}
-		
+
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
-	
+
 	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
@@ -388,7 +388,7 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 		t.Errorf("got config URL %s, want https://webhook.example.com", config.Config.URL)
 	}
 }
-// Dont understand JSONRpc test for DeleteTaskPushConfig
+
 func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -399,18 +399,18 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs/config-123" {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
-		
+
 		// Mock response
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	
+
 	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
 	// Call DeleteTaskPushConfig and log unexpected errors
 	err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
-		TaskID:  a2a.TaskID("task-123"),
+		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
 	})
 
@@ -432,10 +432,10 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 
 		// Mock response
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"url": "http://example.com", "name": "Test agent", "description":"test"}`))
+		_, _ = w.Write([]byte(`{"url": "http://example.com", "name": "Test agent", "description":"test"}`))
 	}))
 	defer server.Close()
-	
+
 	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
@@ -444,7 +444,7 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
 	}
-	
+
 	if card.URL != "http://example.com" {
 		t.Errorf("got card URL %s, want http://example.com", card.URL)
 	}
