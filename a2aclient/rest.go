@@ -55,7 +55,7 @@ func NewRESTTransport(url string, client *http.Client) Transport {
 // sendRequest prepares the HTTP request and sends it to the server.
 // It returns the HTTP response with the Body OPEN.
 // The caller is responsible for closing the response body.
-func (t *RESTTransport) sendRequest(ctx context.Context, method string, path string, payload any) (*http.Response, error) {
+func (t *RESTTransport) sendRequest(ctx context.Context, method string, path string, payload any, acceptHeader string) (*http.Response, error) {
 	reqBody, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -67,7 +67,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, method string, path str
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", sse.ContentEventStream)
+	httpReq.Header.Set("Accept", acceptHeader)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -88,7 +88,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, method string, path str
 
 // doRequest is an adapter for SIngle Response calls
 func (t *RESTTransport) doRequest(ctx context.Context, method string, path string, payload any, result any) error {
-	resp, err := t.sendRequest(ctx, method, path, payload)
+	resp, err := t.sendRequest(ctx, method, path, payload, "application/json")
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (t *RESTTransport) doRequest(ctx context.Context, method string, path strin
 // doStreamingRequest is an adapter for Streaming Response calls
 func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, path string, payload any) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		resp, err := t.sendRequest(ctx, method, path, payload)
+		resp, err := t.sendRequest(ctx, method, path, payload, sse.ContentEventStream)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -128,7 +128,7 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, p
 
 			event, err := a2a.UnmarshalEventJSON(data)
 			if err != nil {
-				yield(a2a.Event(nil), err)
+				yield(nil, err)
 				return
 			}
 

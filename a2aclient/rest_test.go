@@ -71,7 +71,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		}
 
 		// Mock response
-		w.Header().Set("Content-Type", "applicatoin/json")
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`))
 	}))
 	defer server.Close()
@@ -205,7 +205,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 			t.Errorf("expected path /v1/message:stream, got %s", r.URL.Path)
 		}
 		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accpet"))
+			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -389,7 +389,6 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 	}
 }
 
-// Dont understand JSONRpc test for DeleteTaskPushConfig
 func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
