@@ -129,7 +129,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 }
 
 // loadExecRequestContext returns the RequestContext for AgentExecutor and a Task for initializing taskupdate.Manager with.
-func (e *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*RequestContext, *a2a.Task, error) {
+func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*RequestContext, *a2a.Task, error) {
 	msg := params.Message
 
 	if msg.TaskID == "" {
@@ -150,7 +150,7 @@ func (e *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, pa
 		return nil, nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
 
-	storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+	storedTask, err := f.taskStore.Get(ctx, msg.TaskID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("task loading failed: %w", err)
 	}
@@ -167,7 +167,7 @@ func (e *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, pa
 	}
 
 	storedTask.History = append(storedTask.History, msg)
-	if err := e.taskStore.Save(ctx, storedTask); err != nil {
+	if err := f.taskStore.Save(ctx, storedTask); err != nil {
 		return nil, nil, fmt.Errorf("task message history update failed: %w", err)
 	}
 

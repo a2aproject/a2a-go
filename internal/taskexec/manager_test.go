@@ -95,8 +95,6 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.Send
 		return &result, nil
 	}
 
-	fmt.Println("non terminal", event)
-
 	return nil, nil
 }
 
@@ -152,7 +150,6 @@ func newCanceler() *testCanceler {
 }
 
 func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error {
-	fmt.Println("cancel called")
 	c.queue = queue
 	close(c.cancelCalled)
 
