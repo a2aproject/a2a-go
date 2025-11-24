@@ -24,6 +24,12 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+type Execution interface {
+	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
+
+	Result(ctx context.Context) (a2a.SendMessageResult, error)
+}
+
 type subscriptionEvent struct {
 	event    a2a.Event
 	terminal bool
@@ -33,9 +39,9 @@ type subscriberChan chan subscriptionEvent
 
 // Execution represents an agent invocation in a context of the referenced task.
 // If the invocation was finished Result() will resolve immediately, otherwise it will block.
-type Execution struct {
-	tid        a2a.TaskID
-	controller Executor
+type localExecution struct {
+	tid    a2a.TaskID
+	params *a2a.MessageSendParams
 
 	subscribers     map[subscriberChan]any
 	subscribeChan   chan subscriberChan
@@ -45,10 +51,10 @@ type Execution struct {
 }
 
 // Not exported, because Executions are created by Executor.
-func newExecution(tid a2a.TaskID, controller Executor) *Execution {
-	return &Execution{
-		tid:        tid,
-		controller: controller,
+func newLocalExecution(tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
+	return &localExecution{
+		tid:    tid,
+		params: params,
 
 		subscribers:     make(map[subscriberChan]any),
 		subscribeChan:   make(chan subscriberChan),
@@ -60,9 +66,9 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 
 // Events subscribes to the events an agent is producing during an active Execution.
 // If the Execution was finished the sequence will be empty.
-func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
+func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		subscription, err := newSubscription(ctx, e)
+		subscription, err := newLocalSubscription(ctx, e)
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
@@ -80,11 +86,11 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 }
 
 // Result resolves immediately for the finished Execution or blocks until it is complete.
-func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
+func (e *localExecution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
 }
 
-func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
+func (e *localExecution) processEvents(ctx context.Context, queue eventqueue.Queue, processor Processor) (a2a.SendMessageResult, error) {
 	defer func() {
 		for sub := range e.subscribers {
 			close(sub)
@@ -100,7 +106,7 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 	for {
 		select {
 		case event := <-eventChan:
-			res, err := e.controller.Process(ctx, event)
+			res, err := processor.Process(ctx, event)
 			if err != nil {
 				return nil, err
 			}
@@ -117,7 +123,7 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 				case subscriber <- subEvent:
 				case <-ctx.Done():
 					log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
-					return e.processError(ctx, context.Cause(ctx))
+					return processor.ProcessError(ctx, context.Cause(ctx))
 				}
 			}
 
@@ -127,11 +133,11 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 
 		case <-ctx.Done():
 			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
-			return e.processError(ctx, context.Cause(ctx))
+			return processor.ProcessError(ctx, context.Cause(ctx))
 
 		case err := <-errorChan:
 			log.Info(ctx, "error reading from queue", "error", err)
-			return e.processError(ctx, err)
+			return processor.ProcessError(ctx, err)
 
 		case s := <-e.subscribeChan:
 			e.subscribers[s] = struct{}{}
@@ -140,11 +146,4 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 			delete(e.subscribers, s)
 		}
 	}
-}
-
-func (e *Execution) processError(ctx context.Context, err error) (a2a.SendMessageResult, error) {
-	if result := e.controller.ProcessError(ctx, err); result != nil {
-		return result, nil
-	}
-	return nil, err
 }

@@ -97,3 +97,21 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 
 	return nil, fmt.Errorf("bug: consumer stopped, but result unset: %w", groupErr)
 }
+
+func processEvents(ctx context.Context, queue eventqueue.Queue, processor Processor) (a2a.SendMessageResult, error) {
+	for {
+		event, err := queue.Read(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := processor.Process(ctx, event)
+		if err != nil {
+			return nil, err
+		}
+
+		if res != nil {
+			return *res, nil
+		}
+	}
+}

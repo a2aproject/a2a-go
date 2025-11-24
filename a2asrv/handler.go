@@ -121,6 +121,13 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	h.execManager = taskexec.NewManager(taskexec.Config{
 		QueueManager:      h.queueManager,
 		ConcurrencyConfig: h.concurrencyConfig,
+		Factory: &factory{
+			agent:           h.agentExecutor,
+			taskStore:       h.taskStore,
+			pushSender:      h.pushSender,
+			pushConfigStore: h.pushConfigStore,
+			interceptors:    h.reqContextInterceptors,
+		},
 	})
 
 	return ih
@@ -155,15 +162,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 		return nil, a2a.ErrInvalidParams
 	}
 
-	canceler := &canceler{
-		processor:    newProcessor(h.pushConfigStore, h.pushSender),
-		agent:        h.agentExecutor,
-		taskStore:    h.taskStore,
-		params:       params,
-		interceptors: h.reqContextInterceptors,
-	}
-
-	response, err := h.execManager.Cancel(ctx, params.ID, canceler)
+	response, err := h.execManager.Cancel(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
@@ -230,7 +229,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Execution, taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
@@ -242,15 +241,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		taskID = params.Message.TaskID
 	}
 
-	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(h.pushConfigStore, h.pushSender),
-		agent:           h.agentExecutor,
-		taskStore:       h.taskStore,
-		pushConfigStore: h.pushConfigStore,
-		taskID:          taskID,
-		params:          params,
-		interceptors:    h.reqContextInterceptors,
-	})
+	return h.execManager.Execute(ctx, taskID, params)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
