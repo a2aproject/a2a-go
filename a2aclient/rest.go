@@ -169,7 +169,7 @@ func (t *RESTTransport) SendMessage(ctx context.Context, message *a2a.MessageSen
 	if err := t.doRequest(ctx, "POST", path, message, &result); err != nil {
 		return nil, err
 	}
-	
+
 	// Use a2a.UnmarshalEventJSON to determine the type based on the 'kind' field
 	event, err := a2a.UnmarshalEventJSON(result)
 	if err != nil {
