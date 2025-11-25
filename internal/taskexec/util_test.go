@@ -150,7 +150,7 @@ func TestRunProducerConsumer(t *testing.T) {
 			producer: func(ctx context.Context) error { return panicFn("panic!") },
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
 				<-ctx.Done()
-				return nil, ctx.Err()
+				return nil, nil
 			},
 			wantErr: fmt.Errorf("event producer panic: panic!"),
 		},
@@ -165,9 +165,17 @@ func TestRunProducerConsumer(t *testing.T) {
 			producer: func(ctx context.Context) error { return fmt.Errorf("error") },
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
 				<-ctx.Done()
-				return nil, ctx.Err()
+				return nil, nil
 			},
 			wantErr: fmt.Errorf("error"),
+		},
+		{
+			name:     "producer error override by consumer result",
+			producer: func(ctx context.Context) error { return fmt.Errorf("error") },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-ctx.Done()
+				return &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}, nil
+			},
 		},
 		{
 			name:     "consumer error",
@@ -179,7 +187,7 @@ func TestRunProducerConsumer(t *testing.T) {
 			name:     "nil consumer result",
 			producer: func(ctx context.Context) error { return nil },
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, nil },
-			wantErr:  fmt.Errorf("bug: consumer stopped, but result unset"),
+			wantErr:  fmt.Errorf("bug: consumer stopped, but result unset: consumer stopped"),
 		},
 		{
 			name: "producer context canceled on consumer non-nil result",
@@ -204,19 +212,16 @@ func TestRunProducerConsumer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer)
 			if tc.wantErr != nil && err == nil {
-				t.Errorf("expected error, got %v", result)
-				return
+				t.Fatalf("expected error, got %v", result)
 			}
 			if tc.wantErr == nil && err != nil {
-				t.Errorf("expected result, got %v, %v", result, err)
-				return
+				t.Fatalf("expected result, got %v, %v", result, err)
 			}
 			if tc.wantErr != nil && tc.wantErr.Error() != err.Error() {
-				t.Errorf("expected error = %s, got %s", tc.wantErr.Error(), err.Error())
-				return
+				t.Fatalf("expected error = %s, got %s", tc.wantErr.Error(), err.Error())
 			}
 			if result == nil && err == nil {
-				t.Errorf("expected non-nil error when result is nil")
+				t.Fatalf("expected non-nil error when result is nil")
 			}
 		})
 	}

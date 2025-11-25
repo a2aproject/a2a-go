@@ -21,7 +21,15 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/log"
 )
+
+type subscriptionEvent struct {
+	event    a2a.Event
+	terminal bool
+}
+
+type subscriberChan chan subscriptionEvent
 
 // Execution represents an agent invocation in a context of the referenced task.
 // If the invocation was finished Result() will resolve immediately, otherwise it will block.
@@ -29,9 +37,9 @@ type Execution struct {
 	tid        a2a.TaskID
 	controller Executor
 
-	subscribers     map[chan a2a.Event]any
-	subscribeChan   chan chan a2a.Event
-	unsubscribeChan chan chan a2a.Event
+	subscribers     map[subscriberChan]any
+	subscribeChan   chan subscriberChan
+	unsubscribeChan chan subscriberChan
 
 	result *promise
 }
@@ -42,9 +50,9 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 		tid:        tid,
 		controller: controller,
 
-		subscribers:     make(map[chan a2a.Event]any),
-		subscribeChan:   make(chan chan a2a.Event),
-		unsubscribeChan: make(chan chan a2a.Event),
+		subscribers:     make(map[subscriberChan]any),
+		subscribeChan:   make(chan subscriberChan),
+		unsubscribeChan: make(chan subscriberChan),
 
 		result: newPromise(),
 	}
@@ -93,28 +101,37 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 		select {
 		case event := <-eventChan:
 			res, err := e.controller.Process(ctx, event)
-
 			if err != nil {
 				return nil, err
 			}
 
+			// terminal is required because some of the events might not be reported through a subscription channel.
+			// for example, if context gets canceled controller might return Task in failed state, but it won't
+			// reach subscribed event consumers, because we can't use context in select with channel write.
+			// if subscriber doesn't receive a terminal events but their channel gets closed they must treat execution result
+			// as the final event.
+			terminal := res != nil
+			subEvent := subscriptionEvent{event: event, terminal: terminal}
 			for subscriber := range e.subscribers {
 				select {
-				case subscriber <- event:
+				case subscriber <- subEvent:
 				case <-ctx.Done():
-					return nil, ctx.Err()
+					log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
+					return e.processError(ctx, context.Cause(ctx))
 				}
 			}
 
-			if res != nil {
+			if terminal {
 				return *res, nil
 			}
 
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
+			return e.processError(ctx, context.Cause(ctx))
 
 		case err := <-errorChan:
-			return nil, err
+			log.Info(ctx, "error reading from queue", "error", err)
+			return e.processError(ctx, err)
 
 		case s := <-e.subscribeChan:
 			e.subscribers[s] = struct{}{}
@@ -123,4 +140,11 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 			delete(e.subscribers, s)
 		}
 	}
+}
+
+func (e *Execution) processError(ctx context.Context, err error) (a2a.SendMessageResult, error) {
+	if result := e.controller.ProcessError(ctx, err); result != nil {
+		return result, nil
+	}
+	return nil, err
 }

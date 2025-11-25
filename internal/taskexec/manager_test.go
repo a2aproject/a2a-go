@@ -17,7 +17,6 @@ package taskexec
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/google/go-cmp/cmp"
 )
 
 func newManager() *Manager {
@@ -38,6 +38,9 @@ type testProcessor struct {
 
 	contextCanceled bool
 	block           chan struct{}
+
+	processErrorResult a2a.SendMessageResult
+	processErrorErr    error
 }
 
 func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
@@ -62,6 +65,13 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.Send
 	}
 
 	return nil, nil
+}
+
+func (e *testProcessor) ProcessError(ctx context.Context, err error) a2a.SendMessageResult {
+	if e.processErrorResult == nil && e.processErrorErr == nil {
+		return nil
+	}
+	return e.processErrorResult
 }
 
 type testExecutor struct {
@@ -138,6 +148,29 @@ func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
 	}
 }
 
+func consumeEvents(t *testing.T, sub *Subscription) (chan []a2a.Event, chan error) {
+	consumedEventsChan := make(chan []a2a.Event, 1)
+	terminalErrChan := make(chan error, 1)
+	go func() {
+		consumedEvents := []a2a.Event{}
+		var terminalErr error
+		for ev, err := range sub.Events(t.Context()) {
+			if err != nil {
+				terminalErr = err
+			} else {
+				consumedEvents = append(consumedEvents, ev)
+			}
+		}
+		consumedEventsChan <- consumedEvents
+		if terminalErr != nil {
+			terminalErrChan <- terminalErr
+		} else {
+			close(terminalErrChan)
+		}
+	}()
+	return consumedEventsChan, terminalErrChan
+}
+
 func TestManager_Execute(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
@@ -145,7 +178,7 @@ func TestManager_Execute(t *testing.T) {
 	executor := newExecutor()
 	executor.nextEventTerminal = true
 	execution, subscription, err := manager.Execute(ctx, tid, executor)
-	subscription.cancel()
+	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
@@ -157,6 +190,13 @@ func TestManager_Execute(t *testing.T) {
 	if got, err := execution.Result(ctx); err != nil || got != want {
 		t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
 	}
+	subEvents, subErr := <-subEventsChan, <-subErrChan
+	if subErr != nil {
+		t.Fatalf("subscription error = %v, want nil", subErr)
+	}
+	if diff := cmp.Diff([]a2a.Event{want}, subEvents); diff != "" {
+		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+	}
 }
 
 func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
@@ -166,7 +206,7 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 	executor := newExecutor()
 	executor.processErr = errors.New("test error")
 	execution, subscription, err := manager.Execute(ctx, tid, executor)
-	subscription.cancel()
+	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -177,6 +217,13 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.processErr) {
 		t.Fatalf("execution.Result() failed with %v, want %v", err, executor.processErr)
 	}
+	subEvents, subErr := <-subEventsChan, <-subErrChan
+	if !errors.Is(subErr, executor.processErr) {
+		t.Fatalf("subscription error = %v, want %v", subErr, executor.processErr)
+	}
+	if diff := cmp.Diff([]a2a.Event{}, subEvents); diff != "" {
+		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+	}
 }
 
 func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
@@ -186,13 +233,20 @@ func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 	executor := newExecutor()
 	executor.executeErr = errors.New("test error")
 	execution, subscription, err := manager.Execute(ctx, tid, executor)
-	subscription.cancel()
+	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.executeErr) {
 		t.Fatalf("execution.Result() = %v, want %v", err, executor.executeErr)
+	}
+	subEvents, subErr := <-subEventsChan, <-subErrChan
+	if !errors.Is(subErr, executor.executeErr) {
+		t.Fatalf("subscription error = %v, want %v", subErr, executor.executeErr)
+	}
+	if diff := cmp.Diff([]a2a.Event{}, subEvents); diff != "" {
+		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
 	}
 }
 
@@ -245,6 +299,40 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	}
 }
 
+func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
+	t.Parallel()
+	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
+
+	wantResult := &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}
+	executor := newExecutor()
+	executor.block = make(chan struct{})
+	executor.executeErr = errors.New("test error!")
+	executor.processErrorResult = wantResult
+
+	execution, subscription, err := manager.Execute(ctx, tid, executor)
+	subEventsChan, subErrChan := consumeEvents(t, subscription)
+	if err != nil {
+		t.Fatalf("manager.Execute() failed: %v", err)
+	}
+
+	<-executor.executeCalled
+	close(executor.block)
+	result, err := execution.Result(ctx)
+	if err != nil {
+		t.Fatalf("expected processing context to be canceled")
+	}
+	if diff := cmp.Diff(wantResult, result); diff != "" {
+		t.Fatalf("execution.Result() incorrect (+got,-want) diff = %s", diff)
+	}
+	if subErr := <-subErrChan; subErr != nil {
+		t.Fatalf("subscription error = %v, want nil", subErr)
+	}
+	subEvents := <-subEventsChan
+	if diff := cmp.Diff([]a2a.Event{wantResult}, subEvents); diff != "" {
+		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+	}
+}
+
 func TestManager_FanOutExecutionEvents(t *testing.T) {
 	t.Parallel()
 	ctx, tid, manager := t.Context(), a2a.NewTaskID(), newManager()
@@ -260,13 +348,15 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	// subscribe ${consumerCount} consumers to execution events
 	consumerCount := 3
 	var waitSubscribed sync.WaitGroup
+	waitSubscribed.Add(consumerCount)
+
 	var waitStopped sync.WaitGroup
+	waitStopped.Add(consumerCount)
+
 	var waitConsumed sync.WaitGroup
 	var mu sync.Mutex
 	consumed := map[int][]a2a.Event{}
 	for consumerI := range consumerCount {
-		waitSubscribed.Add(1)
-		waitStopped.Add(1)
 		go func() {
 			defer waitStopped.Done()
 
@@ -359,8 +449,7 @@ func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
 	}
 
 	eventCount := 0
-	for v, err := range execution.Events(ctx) {
-		fmt.Println(v, err)
+	for range execution.Events(ctx) {
 		eventCount++
 	}
 	if eventCount != 0 {
@@ -505,7 +594,7 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	execution, subscription, err := manager.Execute(ctx, tid, executor)
 	subscription.cancel()
 	if err != nil {
-		t.Fatalf("maanger.Execute() failed with %v", err)
+		t.Fatalf("manager.Execute() failed with %v", err)
 	}
 
 	<-executor.executeCalled

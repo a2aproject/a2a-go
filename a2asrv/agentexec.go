@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -122,7 +123,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 		}
 	}
 
-	e.processor.init(taskupdate.NewManager(e.taskStore, task))
+	e.processor.init(taskupdate.NewManager(e.taskStore, task), reqCtx)
 
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, reqCtx)
@@ -200,7 +201,15 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	if err != nil {
 		return fmt.Errorf("failed to load a task: %w", err)
 	}
-	c.processor.init(taskupdate.NewManager(c.taskStore, task))
+
+	reqCtx := &RequestContext{
+		TaskID:     task.ID,
+		StoredTask: task,
+		ContextID:  task.ContextID,
+		Metadata:   c.params.Metadata,
+	}
+
+	c.processor.init(taskupdate.NewManager(c.taskStore, task), reqCtx)
 
 	if task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, task)
@@ -208,13 +217,6 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 
 	if task.Status.State.Terminal() {
 		return fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
-	}
-
-	reqCtx := &RequestContext{
-		TaskID:     task.ID,
-		StoredTask: task,
-		ContextID:  task.ContextID,
-		Metadata:   c.params.Metadata,
 	}
 
 	for _, interceptor := range c.interceptors {
@@ -234,6 +236,15 @@ type processor struct {
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
+
+	reqCtx         *RequestContext
+	processedCount int
+
+	// initialized is set to true when init() finishes. The function is called from executor goroutine, but the
+	// fields it sets might be accessed by ProcessError() invoked from processor goroutine.
+	// ProcessError() can be invoked before or during init() if processor encountered an error.
+	// Process() can ignore the flag because Process(event) happens after Executor.Write(event).
+	initialized atomic.Bool
 }
 
 func newProcessor(store PushConfigStore, sender PushSender) *processor {
@@ -243,11 +254,13 @@ func newProcessor(store PushConfigStore, sender PushSender) *processor {
 	}
 }
 
-func (p *processor) init(um *taskupdate.Manager) {
+func (p *processor) init(um *taskupdate.Manager, reqCtx *RequestContext) {
 	p.updateManager = um
+	p.reqCtx = reqCtx
+	p.initialized.Store(true)
 }
 
-// Process implements taskexec.Processor interface.
+// Process implements taskexec.Processor interface method.
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
@@ -259,13 +272,11 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 
 	task, err := p.updateManager.Process(ctx, event)
 	if err != nil {
-		p.updateManager.SetTaskFailed(ctx, err)
-		return nil, err
+		return p.setTaskFailed(ctx, err)
 	}
 
 	if err := p.sendPushNotifications(ctx, task); err != nil {
-		p.updateManager.SetTaskFailed(ctx, err)
-		return nil, err
+		return p.setTaskFailed(ctx, err)
 	}
 
 	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
@@ -290,6 +301,30 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 	}
 
 	return nil, nil
+}
+
+// ProcessError implements taskexec.ProcessError interface method.
+// Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
+func (p *processor) ProcessError(ctx context.Context, cause error) a2a.SendMessageResult {
+	if !p.initialized.Load() {
+		return nil
+	}
+
+	if p.reqCtx == nil || (p.reqCtx.StoredTask == nil && p.processedCount == 0) {
+		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
+		return nil
+	}
+
+	return p.updateManager.SetTaskFailed(ctx, cause)
+}
+
+func (p *processor) setTaskFailed(ctx context.Context, err error) (*a2a.SendMessageResult, error) {
+	task := p.updateManager.SetTaskFailed(ctx, err)
+	if task != nil {
+		var result a2a.SendMessageResult = task
+		return &result, nil
+	}
+	return nil, err
 }
 
 func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) error {

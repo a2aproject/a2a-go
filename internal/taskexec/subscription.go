@@ -25,7 +25,7 @@ import (
 // Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the subscription.
 // A default subscription is created when an Execution is started.
 type Subscription struct {
-	eventsChan chan a2a.Event
+	eventsChan subscriberChan
 	execution  *Execution
 	consumed   bool
 }
@@ -33,7 +33,7 @@ type Subscription struct {
 // newSubscription tries to subscribe a channel to Execution events. If the Execution ends,
 // an "empty" subscription is returned.
 func newSubscription(ctx context.Context, e *Execution) (*Subscription, error) {
-	ch := make(chan a2a.Event)
+	ch := make(subscriberChan)
 
 	select {
 	case <-ctx.Done():
@@ -50,7 +50,7 @@ func newSubscription(ctx context.Context, e *Execution) (*Subscription, error) {
 // newDefaultSubscription is called on Execution which is not yet running.
 // Using newSubscription() might lead to Execute() callers missing first events.
 func newDefaultSubscription(e *Execution) *Subscription {
-	ch := make(chan a2a.Event)
+	ch := make(subscriberChan)
 	e.subscribers[ch] = struct{}{}
 	return &Subscription{eventsChan: ch, execution: e}
 }
@@ -71,7 +71,7 @@ func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 
 		defer s.cancel()
 
-		executionFinished := false
+		terminalReported, executionFinished := false, false
 		for !executionFinished {
 			select {
 			case <-ctx.Done():
@@ -81,22 +81,22 @@ func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 			case <-s.execution.result.done:
 				executionFinished = true
 
-			case event, ok := <-s.eventsChan:
+			case subEvent, ok := <-s.eventsChan:
 				if !ok {
 					executionFinished = true
 					break
 				}
-				if !yield(event, nil) {
+				terminalReported = subEvent.terminal
+				if !yield(subEvent.event, nil) {
 					return
 				}
 			}
 		}
 
-		// check if execution terminated unsuccessfully and report it:
-		if executionFinished {
-			if _, err := s.execution.Result(ctx); err != nil {
-				yield(nil, err)
-			}
+		// execution might not report the terminal event in case context was canceled which
+		// might happen if event producer panics.
+		if result, err := s.execution.Result(ctx); !terminalReported || err != nil {
+			yield(result, err)
 		}
 	}
 }
