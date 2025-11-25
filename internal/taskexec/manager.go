@@ -81,10 +81,8 @@ func NewLocalManager(cfg Config) *LocalManager {
 func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if execution, ok := m.executions[taskID]; ok {
-		return execution, true
-	}
-	return nil, false
+	execution, ok := m.executions[taskID]
+	return execution, ok
 }
 
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and

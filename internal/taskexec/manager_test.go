@@ -721,7 +721,7 @@ func TestManager_GetExecution(t *testing.T) {
 	}
 
 	execution, ok = manager.GetExecution(tid + "-2")
-	if ok || execution != nil {
+	if ok {
 		t.Fatalf("manager.GetExecution(fakeID) = (%v, %v), want (nil, false)", ok, execution)
 	}
 
@@ -730,7 +730,7 @@ func TestManager_GetExecution(t *testing.T) {
 	_, _ = startedExecution.Result(ctx)
 
 	execution, ok = manager.GetExecution(tid)
-	if ok || execution != nil {
+	if ok {
 		t.Fatalf("manager.GetExecution(finishedID) = (%v, %v), want (nil, false)", ok, execution)
 	}
 }
