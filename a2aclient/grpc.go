@@ -57,6 +57,15 @@ func NewGRPCTransport(conn *grpc.ClientConn) Transport {
 	}
 }
 
+// NewGRPCTransportFromClient creates a gRPC transport where the connection is managed
+// externally and encapsulated in the service client. The transport's Destroy method is a no-op.
+func NewGRPCTransportFromClient(client a2apb.A2AServiceClient) Transport {
+	return &grpcTransport{
+		client:      client,
+		closeConnFn: func() error { return nil },
+	}
+}
+
 // grpcTransport implements Transport by delegating to a2apb.A2AServiceClient.
 type grpcTransport struct {
 	client      a2apb.A2AServiceClient

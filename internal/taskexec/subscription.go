@@ -22,14 +22,14 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the localSubscription.
+// A default localSubscription is created when an Execution is started.
 type Subscription interface {
 	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
 
 	cancel()
 }
 
-// Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the localSubscription.
-// A default localSubscription is created when an Execution is started.
 type localSubscription struct {
 	eventsChan subscriberChan
 	execution  *localExecution
@@ -100,7 +100,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 		}
 
 		// execution might not report the terminal event in case context was canceled which
-		// might happen if event producer panic.
+		// might happen if event producer panics.
 		if result, err := s.execution.Result(ctx); !terminalReported || err != nil {
 			yield(result, err)
 		}
