@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -34,7 +35,7 @@ type RESTTransport struct {
 	httpClient *http.Client
 }
 
-// NewRESTTransport creates a new REST Transport for A2A protocol and comunication
+// NewRESTTransport creates a new REST Transport for A2A protocol and communication
 // By default, an HTTP client with 5-second timeout is used.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
@@ -74,19 +75,19 @@ func (t *RESTTransport) sendRequest(ctx context.Context, method string, path str
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
 
-	if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusNoContent {
+	if httpResp.StatusCode != http.StatusOK {
 		defer func() {
 			if err := httpResp.Body.Close(); err != nil {
 				log.Error(ctx, "failed to close http response body", err)
 			}
 		}()
-		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+		return nil, rest.ToA2AError(httpResp)
 	}
 
 	return httpResp, nil
 }
 
-// doRequest is an adapter for SIngle Response calls
+// doRequest is an adapter for Single Response calls
 func (t *RESTTransport) doRequest(ctx context.Context, method string, path string, payload any, result any) error {
 	resp, err := t.sendRequest(ctx, method, path, payload, "application/json")
 	if err != nil {

@@ -399,9 +399,6 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs/config-123" {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
-
-		// Mock response
-		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
