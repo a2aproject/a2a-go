@@ -17,10 +17,10 @@ package a2asrv
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
 
@@ -98,46 +98,39 @@ type AgentExecutor interface {
 	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
 
-type executor struct {
-	*processor
-	taskID          a2a.TaskID
+type factory struct {
 	taskStore       TaskStore
+	pushSender      PushSender
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
-	params          *a2a.MessageSendParams
 	interceptors    []RequestContextInterceptor
 }
 
-func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
-	reqCtx, task, err := e.loadExecRequestContext(ctx)
+var _ taskexec.Factory = (*factory)(nil)
+
+func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (taskexec.Executor, taskexec.Processor, error) {
+	reqCtx, task, err := f.loadExecRequestContext(ctx, tid, params)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	if e.params.Config != nil && e.params.Config.PushConfig != nil {
-		if e.pushConfigStore == nil || e.pushSender == nil {
-			return a2a.ErrPushNotificationNotSupported
+	if params.Config != nil && params.Config.PushConfig != nil {
+		if f.pushConfigStore == nil || f.pushSender == nil {
+			return nil, nil, a2a.ErrPushNotificationNotSupported
 		}
-		if _, err := e.pushConfigStore.Save(ctx, e.taskID, e.params.Config.PushConfig); err != nil {
-			return fmt.Errorf("failed to save %v: %w", e.params.Config.PushConfig, err)
-		}
-	}
-
-	e.processor.init(taskupdate.NewManager(e.taskStore, task), reqCtx)
-
-	for _, interceptor := range e.interceptors {
-		ctx, err = interceptor.Intercept(ctx, reqCtx)
-		if err != nil {
-			return fmt.Errorf("interceptor failed: %w", err)
+		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
+			return nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
 		}
 	}
 
-	return e.agent.Execute(ctx, reqCtx, q)
+	executor := &executor{agent: f.agent, reqCtx: reqCtx, interceptors: f.interceptors}
+	processor := newProcessor(taskupdate.NewManager(f.taskStore, task), f.pushConfigStore, f.pushSender, reqCtx)
+	return executor, processor, nil
 }
 
 // loadExecRequestContext returns the RequestContext for AgentExecutor and a Task for initializing taskupdate.Manager with.
-func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext, *a2a.Task, error) {
-	msg := e.params.Message
+func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*RequestContext, *a2a.Task, error) {
+	msg := params.Message
 
 	if msg.TaskID == "" {
 		contextID := msg.ContextID
@@ -146,18 +139,18 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 		}
 		reqCtx := &RequestContext{
 			Message:   msg,
-			TaskID:    e.taskID,
+			TaskID:    tid,
 			ContextID: contextID,
 			Metadata:  msg.Metadata,
 		}
 		return reqCtx, a2a.NewSubmittedTask(reqCtx, msg), nil
 	}
 
-	if msg.TaskID != e.taskID {
+	if msg.TaskID != tid {
 		return nil, nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
 
-	storedTask, err := e.taskStore.Get(ctx, msg.TaskID)
+	storedTask, err := f.taskStore.Get(ctx, msg.TaskID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("task loading failed: %w", err)
 	}
@@ -174,7 +167,7 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	}
 
 	storedTask.History = append(storedTask.History, msg)
-	if err := e.taskStore.Save(ctx, storedTask); err != nil {
+	if err := f.taskStore.Save(ctx, storedTask); err != nil {
 		return nil, nil, fmt.Errorf("task message history update failed: %w", err)
 	}
 
@@ -188,45 +181,66 @@ func (e *executor) loadExecRequestContext(ctx context.Context) (*RequestContext,
 	return reqCtx, storedTask, nil
 }
 
-type canceler struct {
-	*processor
-	agent        AgentExecutor
-	taskStore    TaskStore
-	params       *a2a.TaskIDParams
-	interceptors []RequestContextInterceptor
-}
-
-func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
-	task, err := c.taskStore.Get(ctx, c.params.ID)
+func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, error) {
+	task, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
-		return fmt.Errorf("failed to load a task: %w", err)
+		return nil, nil, fmt.Errorf("failed to load a task: %w", err)
+	}
+
+	if task.Status.State.Terminal() && task.Status.State != a2a.TaskStateCanceled {
+		return nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
 	reqCtx := &RequestContext{
 		TaskID:     task.ID,
 		StoredTask: task,
 		ContextID:  task.ContextID,
-		Metadata:   c.params.Metadata,
+		Metadata:   params.Metadata,
 	}
 
-	c.processor.init(taskupdate.NewManager(c.taskStore, task), reqCtx)
+	canceler := &canceler{agent: f.agent, reqCtx: reqCtx, task: task, interceptors: f.interceptors}
+	processor := newProcessor(taskupdate.NewManager(f.taskStore, task), f.pushConfigStore, f.pushSender, reqCtx)
+	return canceler, processor, nil
+}
 
-	if task.Status.State == a2a.TaskStateCanceled {
-		return q.Write(ctx, task)
+type executor struct {
+	agent        AgentExecutor
+	reqCtx       *RequestContext
+	interceptors []RequestContextInterceptor
+}
+
+func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
+	var err error
+	for _, interceptor := range e.interceptors {
+		ctx, err = interceptor.Intercept(ctx, e.reqCtx)
+		if err != nil {
+			return fmt.Errorf("interceptor failed: %w", err)
+		}
+	}
+	return e.agent.Execute(ctx, e.reqCtx, q)
+}
+
+type canceler struct {
+	agent        AgentExecutor
+	task         *a2a.Task
+	reqCtx       *RequestContext
+	interceptors []RequestContextInterceptor
+}
+
+func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
+	if c.task.Status.State == a2a.TaskStateCanceled {
+		return q.Write(ctx, c.task)
 	}
 
-	if task.Status.State.Terminal() {
-		return fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
-	}
-
+	var err error
 	for _, interceptor := range c.interceptors {
-		ctx, err = interceptor.Intercept(ctx, reqCtx)
+		ctx, err = interceptor.Intercept(ctx, c.reqCtx)
 		if err != nil {
 			return fmt.Errorf("interceptor failed: %w", err)
 		}
 	}
 
-	return c.agent.Cancel(ctx, reqCtx, q)
+	return c.agent.Cancel(ctx, c.reqCtx, q)
 }
 
 type processor struct {
@@ -236,28 +250,18 @@ type processor struct {
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
+	reqCtx          *RequestContext
 
-	reqCtx         *RequestContext
 	processedCount int
-
-	// initialized is set to true when init() finishes. The function is called from executor goroutine, but the
-	// fields it sets might be accessed by ProcessError() invoked from processor goroutine.
-	// ProcessError() can be invoked before or during init() if processor encountered an error.
-	// Process() can ignore the flag because Process(event) happens after Executor.Write(event).
-	initialized atomic.Bool
 }
 
-func newProcessor(store PushConfigStore, sender PushSender) *processor {
+func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *RequestContext) *processor {
 	return &processor{
+		updateManager:   updateManager,
 		pushConfigStore: store,
 		pushSender:      sender,
+		reqCtx:          reqCtx,
 	}
-}
-
-func (p *processor) init(um *taskupdate.Manager, reqCtx *RequestContext) {
-	p.updateManager = um
-	p.reqCtx = reqCtx
-	p.initialized.Store(true)
 }
 
 // Process implements taskexec.Processor interface method.
@@ -305,17 +309,13 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
-func (p *processor) ProcessError(ctx context.Context, cause error) a2a.SendMessageResult {
-	if !p.initialized.Load() {
-		return nil
-	}
-
-	if p.reqCtx == nil || (p.reqCtx.StoredTask == nil && p.processedCount == 0) {
+func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
+	if p.reqCtx.StoredTask == nil && p.processedCount == 0 {
 		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
-		return nil
+		return nil, cause
 	}
 
-	return p.updateManager.SetTaskFailed(ctx, cause)
+	return p.updateManager.SetTaskFailed(ctx, cause), nil
 }
 
 func (p *processor) setTaskFailed(ctx context.Context, err error) (*a2a.SendMessageResult, error) {

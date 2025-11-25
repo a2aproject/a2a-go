@@ -15,6 +15,7 @@
 package taskexec
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -125,8 +126,17 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, tid := t.Context(), a2a.NewTaskID()
-			manager := NewManager(Config{ConcurrencyConfig: tc.config})
+			ctx := t.Context()
+			nextExecutorChan := make(chan *testExecutor, 1)
+			manager := NewLocalManager(Config{
+				ConcurrencyConfig: tc.config,
+				Factory: &testFactory{
+					CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
+						executor := <-nextExecutorChan
+						return executor, executor, nil
+					},
+				},
+			})
 
 			type runningExec struct {
 				proceed  chan struct{} // execution blocks on channel until it is time to end
@@ -155,17 +165,24 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 				}
 				go func() {
 					scopedCtx := limiter.WithScope(ctx, ev.scope)
+
 					executor := newExecutor()
 					executor.nextEventTerminal = true
-					execution, subscription, err := manager.Execute(scopedCtx, a2a.TaskID(fmt.Sprintf("task-%d", i)), executor)
-					subscription.cancel()
+					if !ev.wantErr {
+						nextExecutorChan <- executor
+					}
+
+					tid := a2a.TaskID(fmt.Sprintf("task-%d", i))
+					execution, subscription, err := manager.Execute(scopedCtx, tid, &a2a.MessageSendParams{})
 					if err != nil {
 						exec.err <- err
 						return
 					}
+					subscription.cancel()
+					<-executor.executeCalled
 					close(exec.err)
 					<-exec.proceed
-					<-executor.executeCalled
+
 					executor.mustWrite(t, &a2a.Task{ID: tid})
 					if _, err := execution.Result(scopedCtx); err != nil {
 						t.Errorf("execution.Result() error = %v", err)
