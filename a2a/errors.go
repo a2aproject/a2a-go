@@ -59,4 +59,12 @@ var (
 	// ErrAuthenticatedExtendedCardNotConfigured indicates that the agent does not have an Authenticated
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
+
+	// ErrExtensionSupportRequied indicates that the Client requested use of an extension marked as 
+	// required: true in the Agent Card but the client did not declare support for it in the request.
+	ErrExtensionSupportRequired = errors.New("extension support required")
+
+	// ErrVersionNotSupported indicates that the The A2A protocol version specified in the request 
+	// (via A2A-Version service parameter) is not supported by the agent.
+	ErrVersionNotSupported = errors.New("this version is not supported")
 )
