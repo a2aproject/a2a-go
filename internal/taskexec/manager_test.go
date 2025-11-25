@@ -49,8 +49,8 @@ func (f *testFactory) CreateCanceler(ctx context.Context, params *a2a.TaskIDPara
 	return nil, nil, fmt.Errorf("not implemented")
 }
 
-func newStaticExecutorManager(executor *testExecutor, canceler *testCanceler) *Manager {
-	return NewManager(Config{
+func newStaticExecutorManager(executor *testExecutor, canceler *testCanceler) *LocalManager {
+	return NewLocalManager(Config{
 		Factory: &testFactory{
 			CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
 				return executor, executor, nil
@@ -561,7 +561,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 	canceler2.cancelErr = errors.New("test error") // this should never be returned
 
 	var callCount atomic.Int32
-	manager := NewManager(Config{
+	manager := NewLocalManager(Config{
 		Factory: &testFactory{
 			CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
 				if callCount.CompareAndSwap(0, 1) {
@@ -681,7 +681,7 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	}()
 
 	callCount := 0
-	manager := NewManager(Config{
+	manager := NewLocalManager(Config{
 		Factory: &testFactory{
 			CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
 				callCount++

@@ -64,7 +64,7 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	execManager   *taskexec.Manager
+	execManager   *taskexec.LocalManager
 
 	pushSender        PushSender
 	queueManager      eventqueue.Manager
@@ -118,7 +118,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		option(ih, h)
 	}
 
-	h.execManager = taskexec.NewManager(taskexec.Config{
+	h.execManager = taskexec.NewLocalManager(taskexec.Config{
 		QueueManager:      h.queueManager,
 		ConcurrencyConfig: h.concurrencyConfig,
 		Factory: &factory{
