@@ -16,8 +16,8 @@ package taskexec
 
 import (
 	"context"
-	"fmt"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
