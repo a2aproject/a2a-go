@@ -23,10 +23,10 @@ import (
 )
 
 type Error struct {
-	Type 	string 	`json:"type"`
-	Title 	string 	`json:"title"`
-	Status 	int  	`json:"status"`
-	Detail 	string 	`json:"detail"`
+	Type   string `json:"type"`
+	Title  string `json:"title"`
+	Status int    `json:"status"`
+	Detail string `json:"detail"`
 }
 
 // ToA2AError returns A2A error  based on HTTP status codes and messages
@@ -35,7 +35,7 @@ func ToA2AError(resp *http.Response) error {
 	if contentType != "application/problem+json" {
 		return a2a.ErrServerError
 	}
-	
+
 	var e Error
 	if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
 		return fmt.Errorf("failed to decode error details: %w", err)
@@ -65,9 +65,6 @@ func ToA2AError(resp *http.Response) error {
 	default:
 		return a2a.ErrServerError
 	}
-	
+
 	return fmt.Errorf("%s: %w", e.Detail, A2AError)
 }
-
-
-

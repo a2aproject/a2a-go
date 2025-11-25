@@ -154,8 +154,8 @@ func TestError_ToA2AError(t *testing.T) {
 			wantDetail: "",
 		},
 		{
-			name:        "Invalid Content-Type (Standard JSON)",
-			contentType: "application/json",
+			name:         "Invalid Content-Type (Standard JSON)",
+			contentType:  "application/json",
 			responseBody: `{"error": "generic error"}`,
 			wantError:    a2a.ErrServerError,
 			wantDetail:   "",
