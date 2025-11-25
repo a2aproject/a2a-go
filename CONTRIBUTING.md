@@ -2,6 +2,11 @@
 
 We'd love to accept your patches and contributions to this project.
 
+Before starting work on a new feature or significant change, please open an
+issue to discuss your proposed approach with the maintainers. This helps ensure
+your contribution aligns with the project's goals and prevents duplicated effort
+or wasted work.
+
 ## Contribution process
 
 ### Code reviews
