@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -41,24 +42,19 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 	return mux
 }
 
-// TODO No need to check method here if we use http.ServeMux with separate handlers per method.
 func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "POST" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
 		var message a2a.MessageSendParams
 		if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
-			writeRESTError(ctx, rw, a2a.ErrParseError)
+			writeRESTError(ctx, rw, a2a.ErrParseError, "")
 			return
 		}
 
 		result, err := handler.OnSendMessage(ctx, &message)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, "")
 			return
 		}
 
@@ -71,22 +67,17 @@ func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "POST" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		// Decode request params
 		var message a2a.MessageSendParams
 		if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
-			writeRESTError(ctx, rw, a2a.ErrParseError)
+			writeRESTError(ctx, rw, a2a.ErrParseError, "")
 			return
 		}
 
 		// Create SSE writer
 		sseWriter, err := sse.NewWriter(rw)
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, "")
 			return
 		}
 		sseWriter.WriteHeaders()
@@ -155,14 +146,9 @@ func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 func handleGetTask(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "GET" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		taskID := req.URL.Query().Get("id")
 		if taskID == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, "")
 			return
 		}
 
@@ -172,7 +158,7 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 
 		result, err := handler.OnGetTask(ctx, id)
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, taskID)
 			return
 		}
 
@@ -185,14 +171,9 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "POST" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		idAndAction := req.PathValue("idAndAction")
 		if idAndAction == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, "")
 			return
 		}
 
@@ -205,7 +186,7 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 			taskID := strings.TrimSuffix(idAndAction, ":subscribe")
 			handleResubscribeTask(handler, taskID, rw, req)
 		} else {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, "")
 			return
 		}
 	}
@@ -221,7 +202,7 @@ func handleCancelTask(handler RequestHandler, taskID string, rw http.ResponseWri
 	result, err := handler.OnCancelTask(ctx, id)
 
 	if err != nil {
-		writeRESTError(ctx, rw, err)
+		writeRESTError(ctx, rw, err, taskID)
 		return
 	}
 
@@ -239,7 +220,7 @@ func handleResubscribeTask(handler RequestHandler, taskID string, rw http.Respon
 
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
-		writeRESTError(ctx, rw, err)
+		writeRESTError(ctx, rw, err, taskID)
 		return
 	}
 	sseWriter.WriteHeaders()
@@ -306,20 +287,15 @@ func handleResubscribeTask(handler RequestHandler, taskID string, rw http.Respon
 func handleSetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "POST" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		taskID := req.URL.Query().Get("id")
 		if taskID == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, taskID)
 			return
 		}
 
 		config := &a2a.PushConfig{}
 		if err := json.NewDecoder(req.Body).Decode(config); err != nil {
-			writeRESTError(ctx, rw, a2a.ErrParseError)
+			writeRESTError(ctx, rw, a2a.ErrParseError, taskID)
 			return
 		}
 
@@ -331,7 +307,7 @@ func handleSetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 		result, err := handler.OnSetTaskPushConfig(ctx, params)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, taskID)
 			return
 		}
 
@@ -345,14 +321,10 @@ func handleSetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "GET" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
 		taskID := req.URL.Query().Get("id")
 		configID := req.URL.Query().Get("configId")
 		if taskID == "" || configID == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, taskID)
 			return
 		}
 
@@ -364,7 +336,7 @@ func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 		result, err := handler.OnGetTaskPushConfig(ctx, params)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, taskID)
 			return
 		}
 
@@ -378,13 +350,9 @@ func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "GET" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
 		taskID := req.URL.Query().Get("id")
 		if taskID == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, taskID)
 			return
 		}
 
@@ -395,7 +363,7 @@ func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 		result, err := handler.OnListTaskPushConfig(ctx, params)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, taskID)
 			return
 		}
 
@@ -408,15 +376,10 @@ func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "DELETE" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		taskID := req.URL.Query().Get("id")
 		configID := req.URL.Query().Get("configId")
 		if taskID == "" || configID == "" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, taskID)
 			return
 		}
 
@@ -428,26 +391,19 @@ func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 		err := handler.OnDeleteTaskPushConfig(ctx, params)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, taskID)
 			return
 		}
-
-		rw.WriteHeader(http.StatusNoContent)
 	}
 }
 
 func handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if req.Method != "GET" {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest)
-			return
-		}
-
 		result, err := handler.OnGetExtendedAgentCard(ctx)
 
 		if err != nil {
-			writeRESTError(ctx, rw, err)
+			writeRESTError(ctx, rw, err, "")
 			return
 		}
 
@@ -457,11 +413,12 @@ func handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error) {
-	rw.Header().Set("Content-Type", "application/json")
-	rw.WriteHeader(http.StatusBadRequest)
-	resp := map[string]string{"error": err.Error()}
-	if err := json.NewEncoder(rw).Encode(resp); err != nil {
-		log.Error(ctx, "failed to send error response", err)
+func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, taskID string) {
+	errResp := rest.ToRESTError(err, taskID)
+	rw.Header().Set("Content-Type", "application/problem+json")
+	rw.WriteHeader(errResp.Status)
+
+	if err := json.NewEncoder(rw).Encode(errResp); err != nil {
+		log.Error(ctx, "failed to write error response", err)
 	}
 }

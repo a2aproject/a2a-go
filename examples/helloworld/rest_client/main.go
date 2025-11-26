@@ -57,7 +57,7 @@ func testGetTask(client *http.Client) {
 		log.Fatalf("Failed to read response body: %v", err)
 	}
 
-	log.Printf("I am here: Response status: %d", resp.StatusCode)
+	log.Printf("Response status: %d", resp.StatusCode)
 	log.Printf("Response body: %s", string(body))
 
 	if resp.StatusCode == http.StatusOK {

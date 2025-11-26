@@ -184,3 +184,119 @@ func TestError_ToA2AError(t *testing.T) {
 		})
 	}
 }
+
+func TestToRESTError(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		taskID     string
+		wantStatus int
+		wantType   string
+		wantTitle  string
+	}{
+		{
+			name:       "Task Not Found",
+			err:        a2a.ErrTaskNotFound,
+			taskID:     "task-123",
+			wantStatus: http.StatusNotFound,
+			wantType:   "https://a2a-protocol.org/errors/task-not-found",
+			wantTitle:  "Task Not Found",
+		},
+		{
+			name:       "Task Not Cancelable",
+			err:        a2a.ErrTaskNotCancelable,
+			taskID:     "task-123",
+			wantStatus: http.StatusConflict,
+			wantType:   "https://a2a-protocol.org/errors/task-not-cancelable",
+			wantTitle:  "Task Not Cancelable",
+		},
+		{
+			name:       "Push Notification Not Supported",
+			err:        a2a.ErrPushNotificationNotSupported,
+			taskID:     "task-123",
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/push-notification-not-supported",
+			wantTitle:  "Push Notification Not Supported",
+		},
+		{
+			name:       "Unsupported Operation",
+			err:        a2a.ErrUnsupportedOperation,
+			taskID:     "task-123",
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/unsupported-operation",
+			wantTitle:  "Unsupported Operation",
+		},
+		{
+			name:       "Content Type Not Supported",
+			err:        a2a.ErrUnsupportedContentType,
+			taskID:     "task-123",
+			wantStatus: http.StatusUnsupportedMediaType,
+			wantType:   "https://a2a-protocol.org/errors/content-type-not-supported",
+			wantTitle:  "Content Type Not Supported",
+		},
+		{
+			name:       "Invalid Agent Response",
+			err:        a2a.ErrInvalidAgentResponse,
+			wantStatus: http.StatusBadGateway,
+			wantType:   "https://a2a-protocol.org/errors/invalid-agent-response",
+			wantTitle:  "Invalid Agent Response",
+		},
+		{
+			name:       "Extended Agent Card Not Configured",
+			err:        a2a.ErrAuthenticatedExtendedCardNotConfigured,
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
+			wantTitle:  "Extended Agent Card Not Configured",
+		},
+		{
+			name:       "Extension Support Required",
+			err:        a2a.ErrExtensionSupportRequired,
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/extension-support-required",
+			wantTitle:  "Extension Support Required",
+		},
+		{
+			name:       "Version Not Supported",
+			err:        a2a.ErrVersionNotSupported,
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/version-not-supported",
+			wantTitle:  "Version Not Supported",
+		},
+		{
+			name:       "Parse Error",
+			err:        a2a.ErrParseError,
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/parse-error",
+			wantTitle:  "Parse Error",
+		},
+		{
+			name:       "Invalid Request",
+			err:        a2a.ErrInvalidRequest,
+			wantStatus: http.StatusBadRequest,
+			wantType:   "https://a2a-protocol.org/errors/invalid-request",
+			wantTitle:  "Invalid Request",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ToRESTError(tt.err, tt.taskID)
+
+			if got.Status != tt.wantStatus {
+				t.Errorf("ToRESTError() status = %v, want %v", got.Status, tt.wantStatus)
+			}
+			if got.Type != tt.wantType {
+				t.Errorf("ToRESTError type = %v, want %v", got.Type, tt.wantType)
+			}
+			if got.Title != tt.wantTitle {
+				t.Errorf("ToRESTError title = %v, want %v", got.Title, tt.wantTitle)
+			}
+			if got.TaskID != "" && got.TaskID != tt.taskID {
+				t.Errorf("ToRESTError taskID = %v, want %v", got.TaskID, tt.taskID)
+			}
+			if got.Detail == "" {
+				t.Error("ToRESTError() detail is empty")
+			}
+		})
+	}
+}
