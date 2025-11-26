@@ -58,7 +58,7 @@ func WithRESTTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolHTTPJSON,
 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewJSONRPCTransport(url, client), nil
+			return NewRESTTransport(url, client), nil
 		}),
 	)
 }
