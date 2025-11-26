@@ -16,33 +16,21 @@ package rest
 
 import (
 	"encoding/json"
-<<<<<<< HEAD
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
-=======
-	"fmt"
-	"net/http"
->>>>>>> release/spec-v1
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
 type Error struct {
-<<<<<<< HEAD
 	Type      string `json:"type"`
 	Title     string `json:"title"`
 	Status    int    `json:"status"`
 	Detail    string `json:"detail"`
 	TaskID    string `json:"taskId,omitempty"`
 	Timestamp string `json:"timestamp,omitempty"`
-=======
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail"`
->>>>>>> release/spec-v1
 }
 
 // ToA2AError returns A2A error  based on HTTP status codes and messages

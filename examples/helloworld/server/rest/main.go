@@ -15,9 +15,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -39,6 +41,20 @@ func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext,
 	return nil
 }
 
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		log.Printf("-> Request: [%s] %s", r.Method, r.URL.Path)
+		if len(bodyBytes) > 0 {
+			log.Printf("-> Data: %s", string(bodyBytes))
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
 var (
 	port = flag.Int("port", 9001, "Port for REST A2A server to listen on.")
 )
@@ -49,8 +65,8 @@ func main() {
 	agentCard := &a2a.AgentCard{
 		Name:               "REST Hello World Agent",
 		Description:        "Just a rest hello world agent",
-		URL:                fmt.Sprintf("http://127.0.0.1:%d/invoke", *port),
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
+		URL:                fmt.Sprintf("http://127.0.0.1:%d", *port),
+		PreferredTransport: a2a.TransportProtocolHTTPJSON,
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: true},
@@ -58,7 +74,7 @@ func main() {
 			{
 				ID:          "",
 				Name:        "REST Hello world!",
-				Description: "Returns a 'REST Hello world!'",
+				Description: "Returns a 'Hello from REST server!'",
 				Tags:        []string{"hello world"},
 				Examples:    []string{"hi", "hello"},
 			},
@@ -80,5 +96,11 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", a2asrv.NewRESTHandler(requestHandler))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(agentCard))
-	err = http.Serve(listener, mux)
+
+	loggedRouter := loggingMiddleware(mux)
+	err = http.Serve(listener, loggedRouter)
+
+	if err != nil {
+		log.Fatal(err)
+	}
 }
