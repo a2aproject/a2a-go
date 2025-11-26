@@ -53,13 +53,23 @@ func NewRESTTransport(url string, client *http.Client) Transport {
 	return t
 }
 
+// WithRESTTransport returns a Client factory option that enables REST transport support.
+func WithRESTTransport(client *http.Client) FactoryOption {
+	return WithTransport(
+		a2a.TransportProtocolHTTPJSON,
+		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
+			return NewRESTTransport(url, client), nil
+		}),
+	)
+}
+
 // sendRequest prepares the HTTP request and sends it to the server.
 // It returns the HTTP response with the Body OPEN.
 // The caller is responsible for closing the response body.
 func (t *RESTTransport) sendRequest(ctx context.Context, method string, path string, payload any, acceptHeader string) (*http.Response, error) {
 	reqBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w: %w", err, a2a.ErrInvalidRequest)
 	}
 
 	fullURL := t.url + path

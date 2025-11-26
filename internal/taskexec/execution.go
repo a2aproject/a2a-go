@@ -21,30 +21,44 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/log"
 )
+
+type Execution interface {
+	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
+
+	Result(ctx context.Context) (a2a.SendMessageResult, error)
+}
+
+type subscriptionEvent struct {
+	event    a2a.Event
+	terminal bool
+}
+
+type subscriberChan chan subscriptionEvent
 
 // Execution represents an agent invocation in a context of the referenced task.
 // If the invocation was finished Result() will resolve immediately, otherwise it will block.
-type Execution struct {
-	tid        a2a.TaskID
-	controller Executor
+type localExecution struct {
+	tid    a2a.TaskID
+	params *a2a.MessageSendParams
 
-	subscribers     map[chan a2a.Event]any
-	subscribeChan   chan chan a2a.Event
-	unsubscribeChan chan chan a2a.Event
+	subscribers     map[subscriberChan]any
+	subscribeChan   chan subscriberChan
+	unsubscribeChan chan subscriberChan
 
 	result *promise
 }
 
 // Not exported, because Executions are created by Executor.
-func newExecution(tid a2a.TaskID, controller Executor) *Execution {
-	return &Execution{
-		tid:        tid,
-		controller: controller,
+func newLocalExecution(tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
+	return &localExecution{
+		tid:    tid,
+		params: params,
 
-		subscribers:     make(map[chan a2a.Event]any),
-		subscribeChan:   make(chan chan a2a.Event),
-		unsubscribeChan: make(chan chan a2a.Event),
+		subscribers:     make(map[subscriberChan]any),
+		subscribeChan:   make(chan subscriberChan),
+		unsubscribeChan: make(chan subscriberChan),
 
 		result: newPromise(),
 	}
@@ -52,9 +66,9 @@ func newExecution(tid a2a.TaskID, controller Executor) *Execution {
 
 // Events subscribes to the events an agent is producing during an active Execution.
 // If the Execution was finished the sequence will be empty.
-func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
+func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		subscription, err := newSubscription(ctx, e)
+		subscription, err := newLocalSubscription(ctx, e)
 		if err != nil {
 			yield(nil, fmt.Errorf("failed to subscribe to execution events: %w", err))
 			return
@@ -72,11 +86,11 @@ func (e *Execution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 }
 
 // Result resolves immediately for the finished Execution or blocks until it is complete.
-func (e *Execution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
+func (e *localExecution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
 }
 
-func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
+func (e *localExecution) processEvents(ctx context.Context, queue eventqueue.Queue, processor Processor) (a2a.SendMessageResult, error) {
 	defer func() {
 		for sub := range e.subscribers {
 			close(sub)
@@ -92,29 +106,38 @@ func (e *Execution) processEvents(ctx context.Context, queue eventqueue.Queue) (
 	for {
 		select {
 		case event := <-eventChan:
-			res, err := e.controller.Process(ctx, event)
-
+			res, err := processor.Process(ctx, event)
 			if err != nil {
 				return nil, err
 			}
 
+			// terminal is required because some of the events might not be reported through a subscription channel.
+			// for example, if context gets canceled controller might return Task in failed state, but it won't
+			// reach subscribed event consumers, because we can't use context in select with channel write.
+			// if subscriber doesn't receive a terminal events but their channel gets closed they must treat execution result
+			// as the final event.
+			terminal := res != nil
+			subEvent := subscriptionEvent{event: event, terminal: terminal}
 			for subscriber := range e.subscribers {
 				select {
-				case subscriber <- event:
+				case subscriber <- subEvent:
 				case <-ctx.Done():
-					return nil, ctx.Err()
+					log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
+					return processor.ProcessError(ctx, context.Cause(ctx))
 				}
 			}
 
-			if res != nil {
+			if terminal {
 				return *res, nil
 			}
 
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
+			return processor.ProcessError(ctx, context.Cause(ctx))
 
 		case err := <-errorChan:
-			return nil, err
+			log.Info(ctx, "error reading from queue", "error", err)
+			return processor.ProcessError(ctx, err)
 
 		case s := <-e.subscribeChan:
 			e.subscribers[s] = struct{}{}

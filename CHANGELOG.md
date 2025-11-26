@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.2](https://github.com/a2aproject/a2a-go/compare/v0.3.1...v0.3.2) (2025-11-14)
+
+
+### Bug Fixes
+
+* allow request meta extension and hide mistakenly exported type ([#106](https://github.com/a2aproject/a2a-go/issues/106)) ([46fa0cb](https://github.com/a2aproject/a2a-go/commit/46fa0cb89d3af2690aed1a65e5f43191db3cd727))
+
+## [0.3.1](https://github.com/a2aproject/a2a-go/compare/v0.3.0...v0.3.1) (2025-11-13)
+
+
+### Bug Fixes
+
+* nil meta becomes empty struct in send message conversion ([#105](https://github.com/a2aproject/a2a-go/issues/105)) ([60d3fcb](https://github.com/a2aproject/a2a-go/commit/60d3fcb0ef74271a12c0b035aa779fd573760a45))
+* remove keep-alive messages ([#100](https://github.com/a2aproject/a2a-go/issues/100)) ([493e497](https://github.com/a2aproject/a2a-go/commit/493e49785b3e7ec8512addf20d44ea7810d5f387))
+* use UUIDv7 in type ID generators ([#102](https://github.com/a2aproject/a2a-go/issues/102)) ([3a809ea](https://github.com/a2aproject/a2a-go/commit/3a809eaf262d28dd96a5ac0ace39f90fc7af346e)), closes [#101](https://github.com/a2aproject/a2a-go/issues/101)
+
 ## 0.3.0 (2025-11-04)
 
 

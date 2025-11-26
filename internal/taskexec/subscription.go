@@ -22,43 +22,49 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the subscription.
-// A default subscription is created when an Execution is started.
-type Subscription struct {
-	eventsChan chan a2a.Event
-	execution  *Execution
+// Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the localSubscription.
+// A default localSubscription is created when an Execution is started.
+type Subscription interface {
+	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
+
+	cancel()
+}
+
+type localSubscription struct {
+	eventsChan subscriberChan
+	execution  *localExecution
 	consumed   bool
 }
 
-// newSubscription tries to subscribe a channel to Execution events. If the Execution ends,
+// newLocalSubscription tries to subscribe a channel to Execution events. If the Execution ends,
 // an "empty" subscription is returned.
-func newSubscription(ctx context.Context, e *Execution) (*Subscription, error) {
-	ch := make(chan a2a.Event)
+func newLocalSubscription(ctx context.Context, e *localExecution) (*localSubscription, error) {
+	ch := make(subscriberChan)
 
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 
 	case e.subscribeChan <- ch:
-		return &Subscription{eventsChan: ch, execution: e}, nil
+		return &localSubscription{eventsChan: ch, execution: e}, nil
 
 	case <-e.result.done:
-		return &Subscription{}, nil
+		return &localSubscription{}, nil
 	}
 }
 
-// newDefaultSubscription is called on Execution which is not yet running.
+// newDefaultLocalSubscription is called on Execution which is not yet running.
 // Using newSubscription() might lead to Execute() callers missing first events.
-func newDefaultSubscription(e *Execution) *Subscription {
-	ch := make(chan a2a.Event)
+func newDefaultLocalSubscription(e *localExecution) *localSubscription {
+	ch := make(subscriberChan)
 	e.subscribers[ch] = struct{}{}
-	return &Subscription{eventsChan: ch, execution: e}
+	return &localSubscription{eventsChan: ch, execution: e}
 }
 
 // Events returns a sequence of Events produced during Execution. If Execution resolves to an error
 // the error gets reported. A sequence can only be consumed once. Subscription gets automatically
 // canceled once event consumption stops.
-func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
+func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if s.eventsChan == nil || s.execution == nil {
 			return
@@ -71,7 +77,7 @@ func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 
 		defer s.cancel()
 
-		executionFinished := false
+		terminalReported, executionFinished := false, false
 		for !executionFinished {
 			select {
 			case <-ctx.Done():
@@ -81,29 +87,29 @@ func (s *Subscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 			case <-s.execution.result.done:
 				executionFinished = true
 
-			case event, ok := <-s.eventsChan:
+			case subEvent, ok := <-s.eventsChan:
 				if !ok {
 					executionFinished = true
 					break
 				}
-				if !yield(event, nil) {
+				terminalReported = subEvent.terminal
+				if !yield(subEvent.event, nil) {
 					return
 				}
 			}
 		}
 
-		// check if execution terminated unsuccessfully and report it:
-		if executionFinished {
-			if _, err := s.execution.Result(ctx); err != nil {
-				yield(nil, err)
-			}
+		// execution might not report the terminal event in case context was canceled which
+		// might happen if event producer panics.
+		if result, err := s.execution.Result(ctx); !terminalReported || err != nil {
+			yield(result, err)
 		}
 	}
 }
 
 // cancel unsubscribes events channel from Execution events. If the Execution ends,
 // the operation is a no-op.
-func (s *Subscription) cancel() {
+func (s *localSubscription) cancel() {
 	if s == nil {
 		return
 	}

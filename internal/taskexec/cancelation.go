@@ -19,21 +19,18 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/log"
 )
 
 type cancelation struct {
-	tid      a2a.TaskID
-	canceler Canceler
-	result   *promise
+	params *a2a.TaskIDParams
+	result *promise
 }
 
-func newCancelation(tid a2a.TaskID, controller Canceler) *cancelation {
+func newCancelation(params *a2a.TaskIDParams) *cancelation {
 	return &cancelation{
-		tid:      tid,
-		canceler: controller,
-		result:   newPromise(),
+		params: params,
+		result: newPromise(),
 	}
 }
 
@@ -56,22 +53,4 @@ func (c *cancelation) wait(ctx context.Context) (*a2a.Task, error) {
 	}
 
 	return task, nil
-}
-
-func (c *cancelation) processEvents(ctx context.Context, queue eventqueue.Queue) (a2a.SendMessageResult, error) {
-	for {
-		event, err := queue.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := c.canceler.Process(ctx, event)
-		if err != nil {
-			return nil, err
-		}
-
-		if res != nil {
-			return *res, nil
-		}
-	}
 }

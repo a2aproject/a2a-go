@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
@@ -63,10 +64,11 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	execManager   *taskexec.Manager
+	execManager   *taskexec.LocalManager
 
-	pushSender   PushSender
-	queueManager eventqueue.Manager
+	pushSender        PushSender
+	queueManager      eventqueue.Manager
+	concurrencyConfig limiter.ConcurrencyConfig
 
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
@@ -77,14 +79,6 @@ type defaultRequestHandler struct {
 
 // RequestHandlerOption can be used to customize the default [RequestHandler] implementation behavior.
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
-
-// WithTaskStore overrides TaskStore with a custom implementation. If not provided,
-// default to an in-memory implementation.
-func WithTaskStore(store TaskStore) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.taskStore = store
-	}
-}
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
 // on method invocations. Any injected dependency will be able to access the logger using
@@ -103,42 +97,10 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	}
 }
 
-// WithPushNotifications adds support for push notifications. If dependencies are not provided
-// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
-func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHandlerOption {
+// WithConcurrencyConfig allows to set limits on the number of concurrent executions.
+func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.pushConfigStore = store
-		h.pushSender = sender
-	}
-}
-
-// WithRequestContextInterceptor overrides the default RequestContextInterceptor with a custom implementation.
-func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
-	}
-}
-
-// WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
-func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		ih.Interceptors = append(ih.Interceptors, interceptor)
-	}
-}
-
-// WithExtendedAgentCard sets a static extended authenticated agent card.
-func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
-			return card, nil
-		})
-	}
-}
-
-// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
-func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.authenticatedCardProducer = cardProducer
+		h.concurrencyConfig = config
 	}
 }
 
@@ -156,7 +118,17 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		option(ih, h)
 	}
 
-	h.execManager = taskexec.NewManager(h.queueManager)
+	h.execManager = taskexec.NewLocalManager(taskexec.Config{
+		QueueManager:      h.queueManager,
+		ConcurrencyConfig: h.concurrencyConfig,
+		Factory: &factory{
+			agent:           h.agentExecutor,
+			taskStore:       h.taskStore,
+			pushSender:      h.pushSender,
+			pushConfigStore: h.pushConfigStore,
+			interceptors:    h.reqContextInterceptors,
+		},
+	})
 
 	return ih
 }
@@ -190,15 +162,7 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 		return nil, a2a.ErrInvalidParams
 	}
 
-	canceler := &canceler{
-		processor:    newProcessor(h.pushConfigStore, h.pushSender),
-		agent:        h.agentExecutor,
-		taskStore:    h.taskStore,
-		params:       params,
-		interceptors: h.reqContextInterceptors,
-	}
-
-	response, err := h.execManager.Cancel(ctx, params.ID, canceler)
+	response, err := h.execManager.Cancel(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel: %w", err)
 	}
@@ -265,7 +229,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (*taskexec.Execution, *taskexec.Subscription, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Execution, taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
@@ -277,15 +241,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 		taskID = params.Message.TaskID
 	}
 
-	return h.execManager.Execute(ctx, taskID, &executor{
-		processor:       newProcessor(h.pushConfigStore, h.pushSender),
-		agent:           h.agentExecutor,
-		taskStore:       h.taskStore,
-		pushConfigStore: h.pushConfigStore,
-		taskID:          taskID,
-		params:          params,
-		interceptors:    h.reqContextInterceptors,
-	})
+	return h.execManager.Execute(ctx, taskID, params)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {

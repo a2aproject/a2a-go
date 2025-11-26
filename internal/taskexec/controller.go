@@ -21,6 +21,15 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
+// Factory is used to setup task execution or cancelation context.
+type Factory interface {
+	// CreateExecutor is used to create initialized Executor and Processor for a Task execution which will run in separate goroutines.
+	CreateExecutor(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error)
+
+	// CreateCanceler is used to create initialized Canceler and Processor for a Task cancelation which will run in separate goroutines.
+	CreateCanceler(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error)
+}
+
 // Processor implementation handles events produced during AgentExecution.
 type Processor interface {
 	// Process is called for each event produced by the started Execution.
@@ -28,18 +37,21 @@ type Processor interface {
 	// the terminal value becomes the result of the execution.
 	// Called in a separate goroutine.
 	Process(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
+
+	// ProcessError is called when an execution error is encountered to try recovering from it.
+	// If it returns a result, the returned value will become the result of execution. If error can't be handled
+	// either a modified error or the original error cause is returned.
+	ProcessError(context.Context, error) (a2a.SendMessageResult, error)
 }
 
 // Executor implementation starts an agent execution.
 type Executor interface {
-	Processor
 	// Start starts publishing events to the queue. Called in a separate goroutine.
 	Execute(context.Context, eventqueue.Queue) error
 }
 
 // Canceler implementation sends a Task cancelation signal.
 type Canceler interface {
-	Processor
 	// Cancel attempts to cancel a Task.
 	// Expected to produce a Task update event with canceled state.
 	Cancel(context.Context, eventqueue.Queue) error

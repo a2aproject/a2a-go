@@ -40,6 +40,22 @@ func (fn AgentCardProducerFn) Card(ctx context.Context) (*a2a.AgentCard, error) 
 	return fn(ctx)
 }
 
+// WithExtendedAgentCard sets a static extended authenticated agent card.
+func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
+			return card, nil
+		})
+	}
+}
+
+// WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
+func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.authenticatedCardProducer = cardProducer
+	}
+}
+
 // NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard]
 // which is not expected to change while the program is running.
 // The method panics if the argument json marhsaling fails.

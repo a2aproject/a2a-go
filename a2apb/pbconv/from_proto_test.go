@@ -340,8 +340,21 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 				t.Errorf("fromProtoSendMessageRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+			if tt.wantErr {
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("fromProtoSendMessageRequest() = %v, want %v", got, tt.want)
+				return
+			}
+
+			gotBack, err := ToProtoSendMessageRequest(got)
+			if err != nil {
+				t.Errorf("ToProtoSendMessageRequest() error = %v", err)
+				return
+			}
+			if !reflect.DeepEqual(gotBack, tt.req) {
+				t.Errorf("ToProtoSendMessageRequest() = %v, want %v", gotBack, tt.req)
 			}
 		})
 	}

@@ -254,7 +254,7 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 				input: &a2a.MessageSendParams{
 					Message: &a2a.Message{TaskID: completedTaskSeed.ID, ContextID: completedTaskSeed.ContextID, ID: "test-message"},
 				},
-				wantErr: fmt.Errorf("task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
+				wantErr: fmt.Errorf("setup failed: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
 			},
 		}
 	}
@@ -664,16 +664,15 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(pushConfigStore, sender))
 
 	result, err := handler.OnSendMessage(ctx, input)
-	if err == nil {
-		t.Fatalf("OnSendMessage() = %v, want error", result)
-	}
-
-	task, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: taskSeed.ID})
 	if err != nil {
-		t.Fatalf("OnGetTask() error = %v", err)
+		t.Fatalf("OnSendMessage() error = %v", err)
+	}
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
 	}
 	if task.Status.State != a2a.TaskStateFailed {
-		t.Fatalf("task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateFailed)
+		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
@@ -688,43 +687,65 @@ func TestRequestHandler_TaskExecutionFailOnInvalidEvent(t *testing.T) {
 	handler := NewHandler(executor, WithTaskStore(store))
 
 	result, err := handler.OnSendMessage(ctx, input)
-	if err == nil {
-		t.Fatalf("OnSendMessage() = %v, want error", result)
-	}
-
-	task, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: taskSeed.ID})
 	if err != nil {
-		t.Fatalf("OnGetTask() error = %v", err)
+		t.Fatalf("OnSendMessage() error = %v", err)
+	}
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
 	}
 	if task.Status.State != a2a.TaskStateFailed {
-		t.Fatalf("task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateFailed)
+		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_RequiredPushFails(t *testing.T) {
+func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 	ctx := t.Context()
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
-	input := &a2a.MessageSendParams{
-		Message: newUserMessage(taskSeed, "work"),
-		Config:  &a2a.MessageSendConfig{PushConfig: pushConfig},
-	}
-	agentEvents := []a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!")}
-	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
-	wantResult.History = []*a2a.Message{input.Message}
-
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	executor := newEventReplayAgent(agentEvents, nil)
-	ps := testutil.NewTestPushConfigStore()
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task) error {
+		if task.Status.State == a2a.TaskStateFailed {
+			return fmt.Errorf("exploded")
+		}
+		return store.Mem.Save(ctx, task)
+	}
+	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
-	wantErr := errors.New("failed push fails execution")
-	pn := testutil.NewTestPushSender(t).SetSendPushError(wantErr)
-	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+	executor := newEventReplayAgent([]a2a.Event{&a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID()}}, nil)
+	handler := NewHandler(executor, WithTaskStore(store))
 
+	wantErr := "wrong id"
 	_, err := handler.OnSendMessage(ctx, input)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("OnSendMessage() err = %v, want %v", err, wantErr)
+	if !strings.Contains(err.Error(), wantErr) {
+		t.Fatalf("OnSendMessage() err = %v, want to contain %q", err, wantErr)
+	}
+}
+
+func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
+	ctx := t.Context()
+
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
+
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			panic("problem")
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	result, err := handler.OnSendMessage(ctx, input)
+	if err != nil {
+		t.Fatalf("OnSendMessage() error = %v", err)
+	}
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+	}
+	if task.Status.State != a2a.TaskStateFailed {
+		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
@@ -1026,12 +1047,12 @@ func TestRequestHandler_OnCancelTask(t *testing.T) {
 		{
 			name:    "task not found",
 			params:  &a2a.TaskIDParams{ID: a2a.NewTaskID()},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: failed to load a task: %w", a2a.ErrTaskNotFound),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
 		},
 		{
 			name:    "task already completed",
 			params:  &a2a.TaskIDParams{ID: completedTask.ID},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
 		},
 		{
 			name:   "task already canceled",
