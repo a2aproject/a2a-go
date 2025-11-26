@@ -19,17 +19,20 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/log"
 )
 
 type cancelation struct {
 	params *a2a.TaskIDParams
+	pipe   *eventpipe.Local
 	result *promise
 }
 
 func newCancelation(params *a2a.TaskIDParams) *cancelation {
 	return &cancelation{
 		params: params,
+		pipe:   eventpipe.NewLocal(),
 		result: newPromise(),
 	}
 }
