@@ -17,7 +17,7 @@ package eventpipe
 import (
 	"context"
 	"fmt"
-	"sync"
+	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -42,8 +42,7 @@ type Local struct {
 	// TODO(yarolegovich): change to eventqueue.Writer when AgentExecutor interface is updated
 	Writer eventqueue.Queue
 
-	closeWriterOnce sync.Once
-	closeWriter     func()
+	closeWriter func()
 }
 
 func NewLocal(opts ...LocalPipeOption) *Local {
@@ -65,45 +64,46 @@ func NewLocal(opts ...LocalPipeOption) *Local {
 type pipeWriter struct {
 	events chan a2a.Event
 
-	closed    bool
+	closed    atomic.Bool
 	closeChan chan struct{}
 }
 
-func (q *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
-	if q.closed {
+func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
+	if w.closed.Load() {
 		return eventqueue.ErrQueueClosed
 	}
 
 	select {
-	case q.events <- event:
+	case w.events <- event:
 		return nil
-	case <-q.closeChan:
+	case <-w.closeChan:
 		return eventqueue.ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (q *pipeWriter) Read(ctx context.Context) (a2a.Event, error) {
+func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, error) {
 	return nil, fmt.Errorf("only queue write is allowed")
 }
 
-func (q *pipeWriter) Close() error {
+func (w *pipeWriter) Close() error {
 	return fmt.Errorf("only queue write is allowed")
 }
 
-func (q *pipeWriter) close() {
-	q.closed = true
-	close(q.closeChan)
+func (w *pipeWriter) close() {
+	if w.closed.CompareAndSwap(false, true) {
+		close(w.closeChan)
+	}
 }
 
 type pipeReader struct {
 	events chan a2a.Event
 }
 
-func (q *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
+func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
 	select { // readers are allowed to drain the channel after pipe is closed
-	case event, ok := <-q.events:
+	case event, ok := <-r.events:
 		if !ok {
 			return nil, eventqueue.ErrQueueClosed
 		}
@@ -113,7 +113,6 @@ func (q *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
 	}
 }
 
-func (q *Local) Close() error {
-	q.closeWriterOnce.Do(q.closeWriter)
-	return nil
+func (q *Local) Close() {
+	q.closeWriter()
 }

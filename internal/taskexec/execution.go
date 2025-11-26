@@ -81,11 +81,7 @@ func (e *localExecution) Result(ctx context.Context) (a2a.SendMessageResult, err
 }
 
 func (e *localExecution) processEvents(ctx context.Context, processor Processor, broadcast eventqueue.Writer) (a2a.SendMessageResult, error) {
-	defer func() {
-		if err := e.pipe.Close(); err != nil {
-			log.Warn(ctx, "failed to close local pipe reader", "error", err)
-		}
-	}()
+	defer e.pipe.Close()
 
 	for {
 		event, err := e.pipe.Reader.Read(ctx)

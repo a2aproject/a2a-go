@@ -48,7 +48,8 @@ func (m *TestEventQueue) Close() error {
 	if m.CloseFunc != nil {
 		return m.CloseFunc()
 	}
-	return m.pipe.Close()
+	m.pipe.Close()
+	return nil
 }
 
 // SetReadOverride overrides Read execution

@@ -31,13 +31,6 @@ func mustWrite(t *testing.T, pipe *Local, event a2a.Event) {
 	}
 }
 
-func mustClose(t *testing.T, pipe *Local) {
-	t.Helper()
-	if err := pipe.Close(); err != nil {
-		t.Fatalf("pipe.Close() error = %v", err)
-	}
-}
-
 func mustRead(t *testing.T, pipe *Local) a2a.Event {
 	t.Helper()
 	res, err := pipe.Reader.Read(t.Context())
@@ -63,7 +56,7 @@ func TestLocalPipe_WriteCloseRead(t *testing.T) {
 	pipe := NewLocal()
 	want := &a2a.Message{ID: a2a.NewMessageID()}
 	mustWrite(t, pipe, want)
-	mustClose(t, pipe)
+	pipe.Close()
 	got := mustRead(t, pipe)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("Read() wrong result (+got,-want) diff = %s", diff)
@@ -75,7 +68,7 @@ func TestLocalPipe_CloseWrite(t *testing.T) {
 	ctx := t.Context()
 	pipe := NewLocal()
 	event := &a2a.Message{ID: a2a.NewMessageID()}
-	mustClose(t, pipe)
+	pipe.Close()
 	if err := pipe.Writer.Write(ctx, event); !errors.Is(err, eventqueue.ErrQueueClosed) {
 		t.Fatalf("pipe.Writer.Write() error = %v, want %v", err, eventqueue.ErrQueueClosed)
 	}
