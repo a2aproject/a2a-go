@@ -20,9 +20,22 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aclient"
 )
 
 func TestREST_handleGetTask(t *testing.T) {
+	testCases := []struct {
+		method string
+		call   func(ctx context.Context, client *a2aclient.Client) (any, error)
+	}{
+		{
+			method: "OnGetTask",
+			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
+				return client.GetTask(ctx, &a2a.TaskQueryParams{ID: "test-id"})
+			},
+		},
+	}
+
 	ctx := t.Context()
 	lastCalledMethod := make(chan string, 1)
 	interceptor := &mockInterceptor{
@@ -39,5 +52,20 @@ func TestREST_handleGetTask(t *testing.T) {
 
 	server := httptest.NewServer(NewRESTHandler(reqHandler))
 
-	
+	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
+		{URL: server.URL, Transport: a2a.TransportProtocolHTTPJSON},
+	})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method, func(t *testing.T) {
+			_, _ = tc.call(ctx, client)
+			calledMethod := <-lastCalledMethod
+			if calledMethod != tc.method {
+				t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
+			}
+		})
+	}
 }
