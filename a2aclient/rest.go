@@ -69,7 +69,7 @@ func WithRESTTransport(client *http.Client) FactoryOption {
 func (t *RESTTransport) sendRequest(ctx context.Context, method string, path string, payload any, acceptHeader string) (*http.Response, error) {
 	reqBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w: %w", err, a2a.ErrInvalidRequest)
 	}
 
 	fullURL := t.url + path
