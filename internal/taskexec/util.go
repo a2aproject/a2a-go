@@ -25,25 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-func readQueueToChannels(ctx context.Context, queue eventqueue.Reader, eventChan chan a2a.Event, errorChan chan error) {
-	for {
-		event, err := queue.Read(ctx)
-		if err != nil {
-			select {
-			case errorChan <- err:
-			case <-ctx.Done():
-			}
-			return
-		}
-
-		select {
-		case eventChan <- event:
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
 type eventProducerFn func(context.Context) error
 type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
 
@@ -98,7 +79,7 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 	return nil, fmt.Errorf("bug: consumer stopped, but result unset: %w", groupErr)
 }
 
-func processEvents(ctx context.Context, queue eventqueue.Queue, processor Processor) (a2a.SendMessageResult, error) {
+func processEvents(ctx context.Context, queue eventqueue.Reader, processor Processor) (a2a.SendMessageResult, error) {
 	for {
 		event, err := queue.Read(ctx)
 		if err != nil {

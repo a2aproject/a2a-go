@@ -231,6 +231,7 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 				wantErr: a2a.ErrInvalidParams,
 			},
 			{
+
 				name:    "fails on non-existent task reference",
 				input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 				wantErr: a2a.ErrTaskNotFound,
@@ -832,7 +833,7 @@ func TestRequestHandler_OnSendMessage_QueueReadFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("Read() failed")
 	queue := testutil.NewTestEventQueue().SetReadOverride(nil, wantErr)
-	qm := testutil.NewTestQueueManager().SetGetOrCreateOverride(queue, nil)
+	qm := testutil.NewTestQueueManager().SetGetOrCreateOverride(queue, nil).SetGetOverride(queue, true)
 	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: &a2a.Message{}})
