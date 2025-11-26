@@ -283,6 +283,10 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return p.setTaskFailed(ctx, err)
 	}
 
+	if task.Status.State == a2a.TaskStateUnknown {
+		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
+	}
+
 	if taskupdate.IsFinal(event) {
 		var result a2a.SendMessageResult = task
 		return &result, nil

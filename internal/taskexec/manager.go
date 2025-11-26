@@ -88,7 +88,7 @@ func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *LocalManager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
 	execution, err := m.createExecution(ctx, tid, params)
 	if err != nil {
 		return nil, nil, err
@@ -113,7 +113,7 @@ func (m *Manager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.Messa
 	return execution, newLocalSubscription(execution, defaultSubReadQueue), nil
 }
 
-func (m *Manager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
+func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -169,7 +169,7 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	return cancel.wait(ctx)
 }
 
-func (m *Manager) cleanupExecution(ctx context.Context, execution *localExecution) {
+func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
 	m.destroyQueue(ctx, execution.tid)
 
 	m.mu.Lock()
@@ -183,7 +183,7 @@ func (m *Manager) cleanupExecution(ctx context.Context, execution *localExecutio
 // Execution is started in one of them. Another is processing events until a result or error
 // is returned.
 // The returned value is set as Execution result.
-func (m *Manager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
+func (m *LocalManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
 	defer m.cleanupExecution(ctx, execution)
 
 	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
@@ -282,13 +282,9 @@ func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	cancel.result.setValue(result)
 }
 
-<<<<<<< HEAD
 func (m *LocalManager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
-=======
-func (e *Manager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
->>>>>>> 4a94b73 (integrate new queues and pipes)
 	// TODO(yarolegovich): consider not destroying queues until a Task reaches terminal state
-	if err := e.queueManager.Destroy(ctx, tid); err != nil {
+	if err := m.queueManager.Destroy(ctx, tid); err != nil {
 		log.Error(ctx, "failed to destroy a queue", err)
 	}
 }

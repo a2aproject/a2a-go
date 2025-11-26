@@ -28,7 +28,11 @@ func IsFinal(event a2a.Event) bool {
 		return statusUpdate.Final
 	}
 
-	task := event.(*a2a.Task)
+	task, ok := event.(*a2a.Task)
+	if !ok {
+		return false
+	}
+
 	if task.Status.State.Terminal() || task.Status.State == a2a.TaskStateInputRequired {
 		return true
 	}
