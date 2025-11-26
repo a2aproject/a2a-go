@@ -283,23 +283,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return p.setTaskFailed(ctx, err)
 	}
 
-	if _, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
-		return nil, nil
-	}
-
-	if statusUpdate, ok := event.(*a2a.TaskStatusUpdateEvent); ok {
-		if statusUpdate.Final {
-			var result a2a.SendMessageResult = task
-			return &result, nil
-		}
-		return nil, nil
-	}
-
-	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
-	}
-
-	if task.Status.State.Terminal() || task.Status.State == a2a.TaskStateInputRequired {
+	if taskupdate.IsFinal(event) {
 		var result a2a.SendMessageResult = task
 		return &result, nil
 	}
