@@ -18,12 +18,12 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
 // TestEventQueue is a mock of eventqueue.Queue
 type TestEventQueue struct {
-	eventqueue.Queue
+	pipe *eventpipe.Local
 
 	ReadFunc  func(ctx context.Context) (a2a.Event, error)
 	WriteFunc func(ctx context.Context, event a2a.Event) error
@@ -34,21 +34,21 @@ func (m *TestEventQueue) Read(ctx context.Context) (a2a.Event, error) {
 	if m.ReadFunc != nil {
 		return m.ReadFunc(ctx)
 	}
-	return m.Queue.Read(ctx)
+	return m.pipe.Reader.Read(ctx)
 }
 
 func (m *TestEventQueue) Write(ctx context.Context, event a2a.Event) error {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, event)
 	}
-	return m.Queue.Write(ctx, event)
+	return m.pipe.Writer.Write(ctx, event)
 }
 
 func (m *TestEventQueue) Close() error {
 	if m.CloseFunc != nil {
 		return m.CloseFunc()
 	}
-	return m.Queue.Close()
+	return m.pipe.Close()
 }
 
 // SetReadOverride overrides Read execution
@@ -79,6 +79,6 @@ func (m *TestEventQueue) SetCloseError(err error) *TestEventQueue {
 // Without any overrides it defaults to in memory implementation.
 func NewTestEventQueue() *TestEventQueue {
 	return &TestEventQueue{
-		Queue: eventqueue.NewInMemoryQueue(512),
+		pipe: eventpipe.NewLocal(),
 	}
 }

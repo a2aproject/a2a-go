@@ -178,7 +178,7 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 						exec.err <- err
 						return
 					}
-					subscription.cancel()
+					_, _ = consumeEvents(t, subscription)
 					<-executor.executeCalled
 					close(exec.err)
 					<-exec.proceed
