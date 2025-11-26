@@ -53,6 +53,16 @@ func NewRESTTransport(url string, client *http.Client) Transport {
 	return t
 }
 
+// WithRESTTransport returns a Client factory option that enables REST transport support.
+func WithRESTTransport(client *http.Client) FactoryOption {
+	return WithTransport(
+		a2a.TransportProtocolHTTPJSON,
+		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
+			return NewJSONRPCTransport(url, client), nil
+		}),
+	)
+}
+
 // sendRequest prepares the HTTP request and sends it to the server.
 // It returns the HTTP response with the Body OPEN.
 // The caller is responsible for closing the response body.
