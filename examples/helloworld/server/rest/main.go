@@ -43,14 +43,17 @@ func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext,
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bodyBytes, _ := io.ReadAll(r.Body)
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("Error reading request body: %v", err)
+			return
+		}
 		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
 		log.Printf("-> Request: [%s] %s", r.Method, r.URL.Path)
 		if len(bodyBytes) > 0 {
 			log.Printf("-> Data: %s", string(bodyBytes))
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }

@@ -66,6 +66,8 @@ func ToA2AError(resp *http.Response) error {
 		A2AError = a2a.ErrExtensionSupportRequired
 	case "https://a2a-protocol.org/errors/version-not-supported":
 		A2AError = a2a.ErrVersionNotSupported
+	case "https://a2a-protocol.org/errors/parse-error":
+		A2AError = a2a.ErrParseError
 	default:
 		return a2a.ErrServerError
 	}
