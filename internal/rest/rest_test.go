@@ -280,7 +280,7 @@ func TestToRESTError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ToRESTError(tt.err, tt.taskID)
+			got := ToRESTError(tt.err, a2a.TaskID(tt.taskID))
 
 			if got.Status != tt.wantStatus {
 				t.Errorf("ToRESTError() status = %v, want %v", got.Status, tt.wantStatus)

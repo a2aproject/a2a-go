@@ -159,25 +159,21 @@ func TestREST_Validations(t *testing.T) {
 			name:    "SendMessageStream",
 			methods: []string{http.MethodPost},
 			path:    "/v1/message:stream",
-			body:    nil,
 		},
 		{
 			name:    "GetTask",
 			methods: []string{http.MethodGet},
 			path:    "/v1/tasks/" + string(taskID),
-			body:    nil,
 		},
 		{
 			name:    "CancelTask",
 			methods: []string{http.MethodPost},
 			path:    "/v1/tasks/" + string(taskID) + ":cancel",
-			body:    nil,
 		},
 		{
 			name:    "ResubscribeToTask",
 			methods: []string{http.MethodPost},
 			path:    "/v1/tasks/" + string(taskID) + ":subscribe",
-			body:    nil,
 		},
 		{
 			name:    "SetAndListTaskPushConfig",
@@ -195,7 +191,6 @@ func TestREST_Validations(t *testing.T) {
 			name:    "GetExtendedAgentCard",
 			methods: []string{http.MethodGet},
 			path:    "/v1/card",
-			body:    nil,
 		},
 	}
 
@@ -270,7 +265,7 @@ func TestREST_Validations(t *testing.T) {
 	}
 }
 
-func TestREST_InvalidPayloadsForSendAndStream(t *testing.T) {
+func TestREST_InvalidPayloads(t *testing.T) {
 	method := http.MethodPost
 	payload := "[]"
 	expectedErr := a2a.ErrParseError
