@@ -18,15 +18,82 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
 type Error struct {
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	Detail string `json:"detail"`
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	Status    int    `json:"status"`
+	Detail    string `json:"detail"`
+	TaskID    string `json:"taskId,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+type errorDetails struct {
+	status int
+	uri    string
+	title  string
+}
+
+var errToDetails = map[error]errorDetails{
+	a2a.ErrTaskNotFound: errorDetails{
+		status: http.StatusNotFound,
+		uri:    "https://a2a-protocol.org/errors/task-not-found",
+		title:  "Task Not Found",
+	},
+	a2a.ErrTaskNotCancelable: errorDetails{
+		status: http.StatusConflict,
+		uri:    "https://a2a-protocol.org/errors/task-not-cancelable",
+		title:  "Task Not Cancelable",
+	},
+	a2a.ErrPushNotificationNotSupported: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/push-notification-not-supported",
+		title:  "Push Notification Not Supported",
+	},
+	a2a.ErrUnsupportedOperation: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/unsupported-operation",
+		title:  "Unsupported Operation",
+	},
+	a2a.ErrUnsupportedContentType: errorDetails{
+		status: http.StatusUnsupportedMediaType,
+		uri:    "https://a2a-protocol.org/errors/content-type-not-supported",
+		title:  "Content Type Not Supported",
+	},
+	a2a.ErrInvalidAgentResponse: errorDetails{
+		status: http.StatusBadGateway,
+		uri:    "https://a2a-protocol.org/errors/invalid-agent-response",
+		title:  "Invalid Agent Response",
+	},
+	a2a.ErrAuthenticatedExtendedCardNotConfigured: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
+		title:  "Extended Agent Card Not Configured",
+	},
+	a2a.ErrExtensionSupportRequired: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/extension-support-required",
+		title:  "Extension Support Required",
+	},
+	a2a.ErrVersionNotSupported: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/version-not-supported",
+		title:  "Version Not Supported",
+	},
+	a2a.ErrParseError: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/parse-error",
+		title:  "Parse Error",
+	},
+	a2a.ErrInvalidRequest: errorDetails{
+		status: http.StatusBadRequest,
+		uri:    "https://a2a-protocol.org/errors/invalid-request",
+		title:  "Invalid Request",
+	},
 }
 
 // ToA2AError returns A2A error  based on HTTP status codes and messages
@@ -41,30 +108,33 @@ func ToA2AError(resp *http.Response) error {
 		return fmt.Errorf("failed to decode error details: %w", err)
 	}
 
-	var A2AError error
-
-	switch e.Type {
-	case "https://a2a-protocol.org/errors/task-not-found":
-		A2AError = a2a.ErrTaskNotFound
-	case "https://a2a-protocol.org/errors/task-not-cancelable":
-		A2AError = a2a.ErrTaskNotCancelable
-	case "https://a2a-protocol.org/errors/push-notification-not-supported":
-		A2AError = a2a.ErrPushNotificationNotSupported
-	case "https://a2a-protocol.org/errors/unsupported-operation":
-		A2AError = a2a.ErrUnsupportedOperation
-	case "https://a2a-protocol.org/errors/content-type-not-supported":
-		A2AError = a2a.ErrUnsupportedContentType
-	case "https://a2a-protocol.org/errors/invalid-agent-response":
-		A2AError = a2a.ErrInvalidAgentResponse
-	case "https://a2a-protocol.org/errors/extended-agent-card-not-configured":
-		A2AError = a2a.ErrAuthenticatedExtendedCardNotConfigured
-	case "https://a2a-protocol.org/errors/extension-support-required":
-		A2AError = a2a.ErrExtensionSupportRequired
-	case "https://a2a-protocol.org/errors/version-not-supported":
-		A2AError = a2a.ErrVersionNotSupported
-	default:
-		return a2a.ErrServerError
+	a2aError := a2a.ErrInternalError
+	for err, details := range errToDetails {
+		if e.Type == details.uri {
+			a2aError = err
+			break
+		}
 	}
 
-	return fmt.Errorf("%s: %w", e.Detail, A2AError)
+	return fmt.Errorf("%s: %w", e.Detail, a2aError)
+}
+
+func ToRESTError(err error, taskID a2a.TaskID) *Error {
+	// Default to Internal Server Error
+	e := &Error{
+		Type:      "https://a2a-protocol.org/errors/internal-error",
+		Title:     "Internal Server Error",
+		Status:    http.StatusInternalServerError,
+		Detail:    err.Error(),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		TaskID:    string(taskID),
+	}
+
+	if details, ok := errToDetails[err]; ok {
+		e.Type = details.uri
+		e.Title = details.title
+		e.Status = details.status
+	}
+
+	return e
 }
