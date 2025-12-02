@@ -43,14 +43,13 @@ type localExecution struct {
 
 // Not exported, because Executions are created by Executor.
 func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
-	e := &localExecution{
+	return &localExecution{
 		tid:          tid,
 		params:       params,
 		queueManager: qm,
 		pipe:         eventpipe.NewLocal(),
 		result:       newPromise(),
 	}
-	return e
 }
 
 // Events subscribes to the events an agent is producing during an active Execution.

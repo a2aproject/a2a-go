@@ -44,7 +44,7 @@ func TestInMemoryManager(t *testing.T) {
 	}
 }
 
-func TestInMemoryManager_ConcurrentAccess(t *testing.T) {
+func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	type taskQueue struct {
 		queue  Queue
 		taskID a2a.TaskID
@@ -74,7 +74,7 @@ func TestInMemoryManager_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 	close(created)
 
-	// group all queues created concurrently by taks ID
+	// group all queues created concurrently by task ID
 	createdMap := map[a2a.TaskID][]Queue{}
 	for got := range created {
 		createdMap[got.taskID] = append(createdMap[got.taskID], got.queue)

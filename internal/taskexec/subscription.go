@@ -72,7 +72,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			}
 		}
 
-		// execution might not report the terminal event in case context was canceled which
+		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
 		if result, err := s.execution.Result(ctx); !terminalReported || err != nil {
 			yield(result, err)

@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -226,11 +227,13 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		return
 	}
 
+	pipe := eventpipe.NewLocal()
+
 	result, err := runProducerConsumer(
 		ctx,
-		func(ctx context.Context) error { return canceler.Cancel(ctx, cancel.pipe.Writer) },
+		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
 		func(ctx context.Context) (a2a.SendMessageResult, error) {
-			return processEvents(ctx, cancel.pipe.Reader, processor)
+			return processEvents(ctx, pipe.Reader, processor)
 		},
 	)
 	if err != nil {
