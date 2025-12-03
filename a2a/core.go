@@ -745,7 +745,7 @@ type ListTasksResponse struct {
 	// TotalSize is the total number of tasks available (before pagination).
 	TotalSize int `json:"total_size,omitempty" yaml:"total_size,omitempty" mapstructure:"total_size,omitempty"`
 
-	// PageSize is the maximumnumber of tasks returned in the response.
+	// PageSize is the maximum number of tasks returned in the response.
 	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
 
 	// NextPageToken is the token for retrieving the next page of results.
