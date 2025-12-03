@@ -603,7 +603,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 		wg.Done()
 	}()
 	<-ready
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	close(canceler1.block)
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
