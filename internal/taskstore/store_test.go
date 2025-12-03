@@ -151,7 +151,7 @@ func TestInMemoryTaskStore_List_Basic(t *testing.T) {
 	}
 	if len(listResponse.Tasks) != 3 {
 		t.Fatalf("Unexpected list length: got = %v, wanted 3", len(listResponse.Tasks))
-	}	
+	}
 	if listResponse.Tasks[0].ID != task1.ID {
 		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[0].ID, task1.ID)
 	}
@@ -164,88 +164,88 @@ func TestInMemoryTaskStore_List_Basic(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
-		store := NewMem(WithAuthInfoProviderFn(getUserName))
-		task1 := &a2a.Task{
-			ID: a2a.NewTaskID(), 
-			ContextID: "id1", 
-			Status: a2a.TaskStatus{State: a2a.TaskStateWorking}, 
-			Artifacts: []*a2a.Artifact{{Name: "foo"}},
-		}
-		task2 := &a2a.Task{
-			ID: a2a.NewTaskID(), 
-			ContextID: "id2", 
-			Status: a2a.TaskStatus{State: a2a.TaskStateWorking}, 
-			Artifacts: []*a2a.Artifact{{Name: "bar"}},
-		}
-		task3 := &a2a.Task{
-			ID: a2a.NewTaskID(), 
-			ContextID: "id3", 
-			Status: a2a.TaskStatus{State: a2a.TaskStateWorking}, 
-			Artifacts: []*a2a.Artifact{{Name: "baz"}},
-		}
-		mustSave(t, store, task1)
-		mustSave(t, store, task2)
-		mustSave(t, store, task3)
-		listResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{
-			IncludeArtifacts: true,
-		})
+	store := NewMem(WithAuthInfoProviderFn(getUserName))
+	task1 := &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: "id1",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+		Artifacts: []*a2a.Artifact{{Name: "foo"}},
+	}
+	task2 := &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: "id2",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+		Artifacts: []*a2a.Artifact{{Name: "bar"}},
+	}
+	task3 := &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: "id3",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+		Artifacts: []*a2a.Artifact{{Name: "baz"}},
+	}
+	mustSave(t, store, task1)
+	mustSave(t, store, task2)
+	mustSave(t, store, task3)
+	listResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{
+		IncludeArtifacts: true,
+	})
 
-		if err != nil {
-			t.Fatalf("Unexpected error: got = %v, wanted nil", err)
-		}
+	if err != nil {
+		t.Fatalf("Unexpected error: got = %v, wanted nil", err)
+	}
 
-		listResponse.Tasks[0].ContextID = "modified-context-id"
-		listResponse.Tasks[1].Status.State = a2a.TaskStateCompleted
-		listResponse.Tasks[2].Artifacts[0].Name = "modified-artifact-name"
+	listResponse.Tasks[0].ContextID = "modified-context-id"
+	listResponse.Tasks[1].Status.State = a2a.TaskStateCompleted
+	listResponse.Tasks[2].Artifacts[0].Name = "modified-artifact-name"
 
-		newListResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{})
-		if err != nil {
-			t.Fatalf("Unexpected error: got = %v, wanted nil", err)
-		}
-		if len(newListResponse.Tasks) != 3 {
-			t.Fatalf("Unexpected list length: got = %v, wanted 3", len(newListResponse.Tasks))
-		}
-		if newListResponse.Tasks[0].ContextID != task1.ContextID {
-			t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[0].ContextID, task1.ContextID)
-		}
-		if newListResponse.Tasks[1].ContextID != task2.ContextID {
-			t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[1].ContextID, task2.ContextID)
-		}
-		if newListResponse.Tasks[2].ContextID != task3.ContextID {
-			t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[2].ContextID, task3.ContextID)
-		}
-		
+	newListResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("Unexpected error: got = %v, wanted nil", err)
+	}
+	if len(newListResponse.Tasks) != 3 {
+		t.Fatalf("Unexpected list length: got = %v, wanted 3", len(newListResponse.Tasks))
+	}
+	if newListResponse.Tasks[0].ContextID != task1.ContextID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[0].ContextID, task1.ContextID)
+	}
+	if newListResponse.Tasks[1].ContextID != task2.ContextID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[1].ContextID, task2.ContextID)
+	}
+	if newListResponse.Tasks[2].ContextID != task3.ContextID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[2].ContextID, task3.ContextID)
+	}
+
 }
 
 func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	store := NewMem(WithAuthInfoProviderFn(getUserName))
 	task1 := &a2a.Task{
-		ID: a2a.NewTaskID(), 
-		ContextID: "id1", 
-		Status: a2a.TaskStatus{State: a2a.TaskStateWorking}, 
+		ID:        a2a.NewTaskID(),
+		ContextID: "id1",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
 		Artifacts: []*a2a.Artifact{{Name: "foo"}},
 		History: []*a2a.Message{
-				{
-					ContextID: "contextId1",
-				},
-				{
-					ContextID: "contextId2",
-				},
-				{
-					ContextID: "contextId3",
-				},
+			{
+				ContextID: "contextId1",
 			},
+			{
+				ContextID: "contextId2",
+			},
+			{
+				ContextID: "contextId3",
+			},
+		},
 	}
 	task2 := &a2a.Task{
-		ID: a2a.NewTaskID(), 
-		ContextID: "id2", 
-		Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}, 
+		ID:        a2a.NewTaskID(),
+		ContextID: "id2",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateCanceled},
 		Artifacts: []*a2a.Artifact{{Name: "bar"}},
 	}
 	task3 := &a2a.Task{
-		ID: a2a.NewTaskID(), 
-		ContextID: "id3", 
-		Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}, 
+		ID:        a2a.NewTaskID(),
+		ContextID: "id3",
+		Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
 		Artifacts: []*a2a.Artifact{{Name: "baz"}},
 	}
 	mustSave(t, store, task1)

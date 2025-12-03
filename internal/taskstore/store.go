@@ -26,9 +26,9 @@ import (
 )
 
 type storedTask struct {
-	user 				string
+	user        string
 	lastUpdated time.Time
-	task 				*a2a.Task
+	task        *a2a.Task
 }
 
 type Authenticate struct {
@@ -36,7 +36,7 @@ type Authenticate struct {
 }
 
 type Option func(*Authenticate)
- 
+
 func WithAuthInfoProviderFn(getUserName func(context.Context) (string, bool)) Option {
 	return func(a *Authenticate) {
 		a.getUserName = getUserName
@@ -47,7 +47,7 @@ func WithAuthInfoProviderFn(getUserName func(context.Context) (string, bool)) Op
 type Mem struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask
-	auth 	*Authenticate
+	auth  *Authenticate
 }
 
 func init() {
@@ -66,10 +66,10 @@ func NewMem(opts ...Option) *Mem {
 	for _, opt := range opts {
 		opt(auth)
 	}
-	
+
 	return &Mem{
 		tasks: make(map[a2a.TaskID]*storedTask),
-		auth: auth,
+		auth:  auth,
 	}
 }
 
@@ -77,7 +77,7 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	if err := validateTask(task); err != nil {
 		return err
 	}
-	
+
 	userName, ok := s.auth.getUserName(ctx)
 	if !ok {
 		userName = "anonymous"
@@ -89,9 +89,9 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 
 	s.mu.Lock()
 	s.tasks[task.ID] = &storedTask{
-		user: userName,
+		user:        userName,
 		lastUpdated: time.Now(),
-		task: copy,
+		task:        copy,
 	}
 	s.mu.Unlock()
 
@@ -120,7 +120,7 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if !ok {
 		return nil, a2a.ErrAuthFailed
 	}
-	
+
 	// Filter tasks per request filters
 	var filteredTasks []*storedTask
 	for _, storedTask := range s.tasks {
@@ -128,12 +128,12 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		if storedTask.user != userName {
 			continue
 		}
-		
+
 		// Filter by context ID if it is set
 		if req.ContextID != "" && storedTask.task.ContextID != req.ContextID {
 			continue
 		}
-		// Filter by status if it is set 
+		// Filter by status if it is set
 		if req.Status != a2a.TaskStateUnspecified && storedTask.task.Status.State != req.Status {
 			continue
 		}
