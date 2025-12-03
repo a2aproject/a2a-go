@@ -137,7 +137,6 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		if storedTask.user != userName {
 			continue
 		}
-
 		// Filter by context ID if it is set
 		if req.ContextID != "" && storedTask.task.ContextID != req.ContextID {
 			continue
