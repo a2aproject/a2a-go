@@ -149,14 +149,14 @@ func TestInMemoryTaskStore_List_Basic(t *testing.T) {
 	if len(listResponse.Tasks) != 3 {
 		t.Fatalf("Unexpected list length: got = %v, wanted 3", len(listResponse.Tasks))
 	}
-	if listResponse.Tasks[0].ID != task1.ID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[0].ID, task1.ID)
+	if listResponse.Tasks[0].ID != task3.ID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[0].ID, task3.ID)
 	}
 	if listResponse.Tasks[1].ID != task2.ID {
 		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[1].ID, task2.ID)
 	}
-	if listResponse.Tasks[2].ID != task3.ID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[2].ID, task3.ID)
+	if listResponse.Tasks[2].ID != task1.ID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[2].ID, task1.ID)
 	}
 }
 
@@ -204,14 +204,14 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 	if len(newListResponse.Tasks) != 3 {
 		t.Fatalf("Unexpected list length: got = %v, wanted 3", len(newListResponse.Tasks))
 	}
-	if newListResponse.Tasks[0].ContextID != task1.ContextID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[0].ContextID, task1.ContextID)
+	if newListResponse.Tasks[0].ContextID != task3.ContextID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[2].ContextID, task1.ContextID)
 	}
 	if newListResponse.Tasks[1].ContextID != task2.ContextID {
 		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[1].ContextID, task2.ContextID)
 	}
-	if newListResponse.Tasks[2].ContextID != task3.ContextID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[2].ContextID, task3.ContextID)
+	if newListResponse.Tasks[2].ContextID != task1.ContextID {
+		t.Fatalf("Unexpected task ID: got = %v, wanted %v", newListResponse.Tasks[0].ContextID, task3.ContextID)
 	}
 
 }
