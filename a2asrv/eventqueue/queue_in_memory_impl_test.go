@@ -24,6 +24,15 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+type eventVersionPair struct {
+	event   a2a.Event
+	version a2a.TaskVersion
+}
+
+func newUnversioned(event a2a.Event) *eventVersionPair {
+	return &eventVersionPair{event: event, version: a2a.TaskVersionMissing}
+}
+
 func mustCreate(t *testing.T, qm Manager, tid a2a.TaskID) Queue {
 	t.Helper()
 	q, err := qm.GetOrCreate(t.Context(), tid)
@@ -33,22 +42,22 @@ func mustCreate(t *testing.T, qm Manager, tid a2a.TaskID) Queue {
 	return q
 }
 
-func mustWrite(t *testing.T, q Queue, events ...a2a.Event) {
+func mustWrite(t *testing.T, q Queue, messages ...*eventVersionPair) {
 	t.Helper()
-	for i, event := range events {
-		if err := q.Write(t.Context(), event); err != nil {
+	for i, msg := range messages {
+		if err := q.WriteVersioned(t.Context(), msg.event, msg.version); err != nil {
 			t.Fatalf("q.Write() error = %v at %d", err, i)
 		}
 	}
 }
 
-func mustRead(t *testing.T, q Queue) a2a.Event {
+func mustRead(t *testing.T, q Queue) (a2a.Event, a2a.TaskVersion) {
 	t.Helper()
-	result, err := q.Read(t.Context())
+	result, version, err := q.Read(t.Context())
 	if err != nil {
 		t.Fatalf("q.Read() error = %v", err)
 	}
-	return result
+	return result, version
 }
 
 func newTestManager(t *testing.T, opts ...MemManagerOption) Manager {
@@ -75,11 +84,14 @@ func TestInMemoryQueue_WriteRead(t *testing.T) {
 	tid := a2a.NewTaskID()
 	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 
-	want := &a2a.Message{ID: "test-event"}
+	want := &eventVersionPair{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersionInt(1)}
 	mustWrite(t, writeQueue, want)
-	got := mustRead(t, readQueue)
-	if !reflect.DeepEqual(got, want) {
+	got, gotVersion := mustRead(t, readQueue)
+	if !reflect.DeepEqual(got, want.event) {
 		t.Errorf("Read() got = %v, want %v", got, want)
+	}
+	if gotVersion != a2a.TaskVersionInt(1) {
+		t.Errorf("Read() got version = %v, want %v", gotVersion, a2a.TaskVersionInt(1))
 	}
 }
 
@@ -89,7 +101,10 @@ func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 	ctx, tid := t.Context(), a2a.NewTaskID()
 
 	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
-	want := []a2a.Event{&a2a.Message{ID: "test-event"}, &a2a.Message{ID: "test-event2"}}
+	want := []*eventVersionPair{
+		{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersionInt(1)},
+		{event: &a2a.Message{ID: "test-event2"}, version: a2a.TaskVersionInt(2)},
+	}
 
 	mustWrite(t, writeQueue, want...)
 
@@ -97,23 +112,26 @@ func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 		t.Fatalf("qm.Destroy() error = %v", err)
 	}
 
-	var got []a2a.Event
+	var got []*eventVersionPair
 	for {
-		event, err := readQueue.Read(ctx)
+		event, versions, err := readQueue.Read(ctx)
 		if errors.Is(err, ErrQueueClosed) {
 			break
 		}
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
-		got = append(got, event)
+		got = append(got, &eventVersionPair{event: event, version: versions})
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Read() got = %v, want %v", got, want)
 	}
 	for i, w := range want {
-		if !reflect.DeepEqual(got[i], w) {
+		if !reflect.DeepEqual(got[i].event, w.event) {
 			t.Errorf("Read() got = %v, want %v", got, want)
+		}
+		if got[i].version != w.version {
+			t.Errorf("Read() got version = %v, want %v", got[i].version, w.version)
 		}
 	}
 }
@@ -136,7 +154,7 @@ func TestInMemoryQueue_ReadEmpty(t *testing.T) {
 		t.Fatal("method should be blocking")
 	case <-time.After(15 * time.Millisecond):
 		// unblock blocked code by writing to queue
-		mustWrite(t, writeQueue, &a2a.Message{ID: "test"})
+		mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "test"}))
 	}
 	<-completed
 }
@@ -149,9 +167,9 @@ func TestInMemoryQueue_WriteFull(t *testing.T) {
 	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 	completed := make(chan struct{})
 
-	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
+	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "1"}))
 	go func() {
-		mustWrite(t, writeQueue, &a2a.Message{ID: "2"})
+		mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "2"}))
 		close(completed)
 	}()
 
@@ -171,7 +189,7 @@ func TestInMemoryQueue_WriteWithNoSubscribersDoesNotBlock(t *testing.T) {
 	tid := a2a.NewTaskID()
 
 	writeQueue := mustCreate(t, qm, tid)
-	mustWrite(t, writeQueue, &a2a.Message{ID: "test"})
+	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "test"}))
 }
 
 func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
@@ -189,9 +207,9 @@ func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	event, err := readQueue.Read(ctx)
+	event, version, err := readQueue.Read(ctx)
 	if !errors.Is(err, ErrQueueClosed) {
-		t.Fatalf("readQueue() = (%v, %v), want %v", event, err, ErrQueueClosed)
+		t.Fatalf("readQueue() = (%v, %v, %v), want %v", event, version, err, ErrQueueClosed)
 	}
 }
 
@@ -205,8 +223,7 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	writeQueue, _ := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 
 	// Fill the queue
-	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
-
+	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "1"}))
 	cancel()
 
 	err := writeQueue.Write(ctx, &a2a.Message{ID: "2"})
@@ -231,7 +248,7 @@ func TestInMemoryQueue_BlockedWriteOnFullQueueThenDestroy(t *testing.T) {
 	event := &a2a.Message{ID: "test"}
 
 	// Fill the queue
-	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
+	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "1"}))
 
 	go func() {
 		err := writeQueue.Write(t.Context(), event)
