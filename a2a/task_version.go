@@ -26,6 +26,10 @@ var TaskVersionMissing TaskVersion = taskVersionMissingType{}
 
 func (taskVersionMissingType) After(another TaskVersion) bool {
 	// Consider every state "latest" if the version is not tracked.
+	// It is expected that:
+	// v1 := TaskVersionMissing
+	// v2 := TaskVersionMissing
+	// v1.After(v2) == v2.After(v1)
 	return true
 }
 

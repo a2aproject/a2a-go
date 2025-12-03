@@ -58,15 +58,15 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	version := a2a.TaskVersionInt(1)
 	if stored := s.tasks[task.ID]; stored != nil {
+		if prev != nil && prev != a2a.TaskVersionMissing && stored.version != prev {
+			return nil, fmt.Errorf("concurrent task modification failed")
+		}
 		version = stored.version + 1
 	}
-	s.tasks[task.ID] = &storedTask{
-		task:    copy,
-		version: version,
-	}
-	s.mu.Unlock()
+	s.tasks[task.ID] = &storedTask{task: copy, version: version}
 
 	return a2a.TaskVersion(version), nil
 }

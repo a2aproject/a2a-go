@@ -298,12 +298,12 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 
 	versioned, err := p.updateManager.Process(ctx, event)
 	if err != nil {
-		return p.setTaskFailed(ctx, err)
+		return p.setTaskFailed(ctx, event, err)
 	}
 
 	task := versioned.Task
 	if err := p.sendPushNotifications(ctx, task); err != nil {
-		return p.setTaskFailed(ctx, err)
+		return p.setTaskFailed(ctx, event, err)
 	}
 
 	if task.Status.State == a2a.TaskStateUnknown {
@@ -332,8 +332,8 @@ func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMess
 	return versioned.Task, nil
 }
 
-func (p *processor) setTaskFailed(ctx context.Context, err error) (*taskexec.ProcessorResult, error) {
-	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, err)
+func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, err error) (*taskexec.ProcessorResult, error) {
+	versioned, err := p.updateManager.SetTaskFailed(ctx, event, err)
 	if err != nil {
 		return nil, err
 	}

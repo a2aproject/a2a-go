@@ -24,12 +24,12 @@ import (
 )
 
 func mustSave(t *testing.T, store *Mem, task *a2a.Task) {
-	_ = mustSaveVersioned(t, store, task)
+	_ = mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
 }
 
-func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task) a2a.TaskVersion {
+func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task, prev a2a.TaskVersion) a2a.TaskVersion {
 	t.Helper()
-	version, err := store.Save(t.Context(), task, task, nil)
+	version, err := store.Save(t.Context(), task, task, prev)
 	if err != nil {
 		t.Fatalf("Save() failed: %v", err)
 	}
@@ -117,10 +117,10 @@ func TestInMemoryTaskStore_VersionIncrements(t *testing.T) {
 	store := NewMem()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
-	v1 := mustSaveVersioned(t, store, task)
+	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
 
 	task.ContextID = "id2"
-	v2 := mustSaveVersioned(t, store, task)
+	v2 := mustSaveVersioned(t, store, task, v1)
 
 	if !v2.After(v1) {
 		t.Fatalf("got v1 > v2: v1 = %v, v2 = %v", v1, v2)
@@ -137,7 +137,7 @@ func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
 	versionChan := make(chan a2a.TaskVersion, goroutines)
 	for range goroutines {
 		go func() {
-			versionChan <- mustSaveVersioned(t, store, task)
+			versionChan <- mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
 		}()
 	}
 	var versions []a2a.TaskVersion
@@ -151,5 +151,20 @@ func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
 				t.Fatalf("got v1 <= v2 and v2 <= v1 meaning v1 == v2, want strict ordering: v1 = %v, v2 = %v", versions[i], versions[j])
 			}
 		}
+	}
+}
+
+func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
+	store := NewMem()
+
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+
+	task.ContextID = "id2"
+	_ = mustSaveVersioned(t, store, task, v1)
+
+	task.ContextID = "id3"
+	if _, err := store.Save(t.Context(), task, task, v1); err == nil {
+		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }
