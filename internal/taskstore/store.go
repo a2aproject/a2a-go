@@ -148,7 +148,7 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 
 	// Sort tasks by last updated time
 	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
-		return a.lastUpdated.Compare(b.lastUpdated)
+		return b.lastUpdated.Compare(a.lastUpdated)
 	})
 
 	// From sorted and filtered tasks of type []*storedTask, apply necessary filters and create []*a2a.Task
@@ -161,9 +161,8 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		}
 
 		// If HistoryLength is set, truncate the history, otherwise keep it as is
-		if req.HistoryLength > 0 {
-			lengthToShow := min(len(storedTask.task.History), req.HistoryLength)
-			taskCopy.History = storedTask.task.History[:lengthToShow]
+		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
+			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
 		}
 
 		// If IncludeArtifacts is false, remove the artifacts, otherwise keep it as is

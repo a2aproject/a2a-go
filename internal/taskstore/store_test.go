@@ -89,16 +89,13 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 
 	got := mustGet(t, store, task.ID)
 	if task.Status.State == got.Status.State {
-		// Logic error? want = a2a.TaskStateWorking?
-		t.Fatalf("Unexpected status change: got = %v, want = %v", got.Status, task.Status)
+		t.Fatalf("Unexpected status change: got = %v, want = TaskStateWorking", got.Status)
 	}
 	if task.Artifacts[0].Name == got.Artifacts[0].Name {
-		// Logic error? want = []*a2a.Artifact{{Name: "foo"}}?
-		t.Fatalf("Unexpected artifact change: got = %v, want = %v", got.Artifacts, task.Artifacts)
+		t.Fatalf("Unexpected artifact change: got = %v, want = []*a2a.Artifact{{Name: foo}}", got.Artifacts)
 	}
 	if task.Metadata[metaKey] == got.Metadata[metaKey] {
-		// Logic error? want = empty map[string]any?
-		t.Fatalf("Unexpected metadata change: got = %v, want = %v", got.Metadata, task.Metadata)
+		t.Fatalf("Unexpected metadata change: got = %v, want = empty map[string]any", got.Metadata)
 	}
 }
 
@@ -198,7 +195,9 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 	listResponse.Tasks[1].Status.State = a2a.TaskStateCompleted
 	listResponse.Tasks[2].Artifacts[0].Name = "modified-artifact-name"
 
-	newListResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{})
+	newListResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{
+		IncludeArtifacts: true,
+	})
 	if err != nil {
 		t.Fatalf("Unexpected error: got = %v, wanted nil", err)
 	}
