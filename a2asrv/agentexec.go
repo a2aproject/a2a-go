@@ -297,11 +297,11 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	}
 
 	versioned, err := p.updateManager.Process(ctx, event)
-	task := versioned.Task
 	if err != nil {
 		return p.setTaskFailed(ctx, err)
 	}
 
+	task := versioned.Task
 	if err := p.sendPushNotifications(ctx, task); err != nil {
 		return p.setTaskFailed(ctx, err)
 	}
