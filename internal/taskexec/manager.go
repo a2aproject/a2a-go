@@ -172,6 +172,7 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 
 func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
 	m.destroyQueue(ctx, execution.tid)
+	execution.pipe.Close()
 
 	m.mu.Lock()
 	m.limiter.releaseQuotaLocked(ctx)
@@ -194,12 +195,16 @@ func (m *LocalManager) handleExecution(ctx context.Context, execution *localExec
 		return
 	}
 
+	handler := &executionHandler{
+		agentEvents:       execution.pipe.Reader,
+		handledEventQueue: eventBroadcast,
+		handleEventFn:     processor.Process,
+		handleErrorFn:     processor.ProcessError,
+	}
 	result, err := runProducerConsumer(
 		ctx,
 		func(ctx context.Context) error { return executor.Execute(ctx, execution.pipe.Writer) },
-		func(ctx context.Context) (a2a.SendMessageResult, error) {
-			return execution.processEvents(ctx, processor, eventBroadcast)
-		},
+		handler.processEvents,
 	)
 
 	if err != nil {
@@ -228,13 +233,13 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 	}
 
 	pipe := eventpipe.NewLocal()
+	defer pipe.Close()
 
+	handler := &executionHandler{agentEvents: pipe.Reader, handleEventFn: processor.Process}
 	result, err := runProducerConsumer(
 		ctx,
 		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
-		func(ctx context.Context) (a2a.SendMessageResult, error) {
-			return processEvents(ctx, pipe.Reader, processor)
-		},
+		handler.processEvents,
 	)
 	if err != nil {
 		cancel.result.setError(err)

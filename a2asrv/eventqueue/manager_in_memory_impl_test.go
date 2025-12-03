@@ -91,7 +91,7 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 			t.Fatalf("writeQueue.Write() error = %v", err)
 		}
 		for _, readQueue := range queues {
-			got, err := readQueue.Read(ctx)
+			got, _, err := readQueue.Read(ctx)
 			if err != nil {
 				t.Fatalf("readQueue.Read() error = %v", err)
 			}

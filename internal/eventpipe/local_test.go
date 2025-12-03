@@ -120,7 +120,7 @@ func TestLocalPipeWriter_ReadAndCloseFail(t *testing.T) {
 	if err := pipe.Writer.Close(); err == nil {
 		t.Fatal("pipe.Writer.Close() error = nil, want to fail")
 	}
-	if _, err := pipe.Writer.Read(ctx); err == nil {
+	if _, _, err := pipe.Writer.Read(ctx); err == nil {
 		t.Fatal("pipe.Writer.Read() error = nil, want to fail")
 	}
 }

@@ -30,14 +30,22 @@ var (
 // A2A server stack reads events written by [a2asrv.AgentExecutor].
 type Reader interface {
 	// Read dequeues an event or blocks if the queue is empty.
-	Read(ctx context.Context) (a2a.Event, error)
+	// TaskVersion is expected to be the same as was provided to [Writer.WriteVersioned].
+	Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error)
 }
 
 // Writer defines the interface for writing events to a queue.
 // [a2asrv.AgentExecutor] translates agent responses to Messages, Tasks or Task update events.
 type Writer interface {
 	// Write enqueues an event or blocks if a bounded queue is full.
+	//
+	// Kept to maintain AgentExecutor API until a breaking SDK release.
+	// The code other than AgentExecutor must use WriteVersioned.
 	Write(ctx context.Context, event a2a.Event) error
+
+	// WriteVersioned enqueues an event with information about which version the task was moved
+	// to after the event was applied. Blocks if a bounded queue is full.
+	WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error
 }
 
 // Queue defines the interface for publishing and consuming

@@ -75,7 +75,7 @@ func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestC
 
 	tasks := make([]*a2a.Task, 0, len(msg.ReferenceTasks))
 	for _, taskID := range msg.ReferenceTasks {
-		task, err := ri.Store.Get(ctx, taskID)
+		task, _, err := ri.Store.Get(ctx, taskID)
 		if err != nil {
 			log.Info(ctx, "failed to get a referenced task", "referenced_task_id", taskID)
 			continue

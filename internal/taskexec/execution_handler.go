@@ -23,7 +23,48 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/log"
 )
+
+type executionHandler struct {
+	agentEvents       eventpipe.Reader
+	handledEventQueue eventqueue.Writer
+	handleEventFn     func(context.Context, a2a.Event) (*ProcessorResult, error)
+	handleErrorFn     func(context.Context, error) (a2a.SendMessageResult, error)
+}
+
+func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageResult, error) {
+	for {
+		event, err := h.agentEvents.Read(ctx)
+		if err != nil && ctx.Err() != nil {
+			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
+			return h.handleErrorFn(ctx, context.Cause(ctx))
+		}
+
+		if err != nil {
+			log.Info(ctx, "error reading from queue", "error", err)
+			return h.handleErrorFn(ctx, err)
+		}
+
+		processResult, err := h.handleEventFn(ctx, event)
+		if err != nil {
+			log.Info(ctx, "processor error", "error", err)
+			return nil, err
+		}
+
+		if h.handledEventQueue != nil {
+			if err := h.handledEventQueue.WriteVersioned(ctx, event, processResult.TaskVersion); err != nil {
+				log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
+				return h.handleErrorFn(ctx, context.Cause(ctx))
+			}
+		}
+
+		if processResult.ExecutionResult != nil {
+			return processResult.ExecutionResult, nil
+		}
+	}
+}
 
 type eventProducerFn func(context.Context) error
 type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
@@ -77,22 +118,4 @@ func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer
 	}
 
 	return nil, fmt.Errorf("bug: consumer stopped, but result unset: %w", groupErr)
-}
-
-func processEvents(ctx context.Context, queue eventqueue.Reader, processor Processor) (a2a.SendMessageResult, error) {
-	for {
-		event, err := queue.Read(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := processor.Process(ctx, event)
-		if err != nil {
-			return nil, err
-		}
-
-		if res != nil {
-			return *res, nil
-		}
-	}
 }

@@ -30,17 +30,22 @@ type Factory interface {
 	CreateCanceler(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error)
 }
 
+// ProcessorResult is returned by processor after an event was handled successfuly.
+type ProcessorResult struct {
+	// ExecutionResult becomes the result of the execution if a non-nil value is returned.
+	ExecutionResult a2a.SendMessageResult
+	// TaskVersion is the version of the task after the event was processed.
+	TaskVersion a2a.TaskVersion
+}
+
 // Processor implementation handles events produced during AgentExecution.
 type Processor interface {
-	// Process is called for each event produced by the started Execution.
-	// Execution finishes when either a non-nil result or a non-nil error is returned.
-	// the terminal value becomes the result of the execution.
-	// Called in a separate goroutine.
-	Process(context.Context, a2a.Event) (*a2a.SendMessageResult, error)
+	// Process is called for each event produced by the started Execution. Called in a separate goroutine.
+	Process(context.Context, a2a.Event) (*ProcessorResult, error)
 
 	// ProcessError is called when an execution error is encountered to try recovering from it.
-	// If it returns a result, the returned value will become the result of execution. If error can't be handled
-	// either a modified error or the original error cause is returned.
+	// If it returns a result, the returned value becomes the result of the execution. If an error can't be handled
+	// either a modified error or the original error cause must be returned.
 	ProcessError(context.Context, error) (a2a.SendMessageResult, error)
 }
 

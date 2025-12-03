@@ -21,7 +21,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
-	"github.com/a2aproject/a2a-go/log"
 )
 
 type Execution interface {
@@ -77,36 +76,4 @@ func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error]
 // Result resolves immediately for the finished Execution or blocks until it is complete.
 func (e *localExecution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
-}
-
-func (e *localExecution) processEvents(ctx context.Context, processor Processor, broadcast eventqueue.Writer) (a2a.SendMessageResult, error) {
-	defer e.pipe.Close()
-
-	for {
-		event, err := e.pipe.Reader.Read(ctx)
-		if err != nil && ctx.Err() != nil {
-			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
-			return processor.ProcessError(ctx, context.Cause(ctx))
-		}
-
-		if err != nil {
-			log.Info(ctx, "error reading from queue", "error", err)
-			return processor.ProcessError(ctx, err)
-		}
-
-		res, err := processor.Process(ctx, event)
-		if err != nil {
-			log.Info(ctx, "processor error", "error", err)
-			return nil, err
-		}
-
-		if err := broadcast.Write(ctx, event); err != nil {
-			log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
-			return processor.ProcessError(ctx, context.Cause(ctx))
-		}
-
-		if res != nil {
-			return *res, nil
-		}
-	}
 }

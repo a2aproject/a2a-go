@@ -24,8 +24,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func newTestTask() *a2a.Task {
-	return &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+func newTestTask() *VersionedTask {
+	return &VersionedTask{
+		Task:    &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()},
+		Version: a2a.TaskVersionMissing,
+	}
 }
 
 func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
@@ -37,16 +40,18 @@ func getText(m *a2a.Message) string {
 }
 
 type testSaver struct {
-	saved *a2a.Task
-	fail  error
+	saved   *a2a.Task
+	version a2a.TaskVersionInt
+	fail    error
 }
 
-func (s *testSaver) Save(ctx context.Context, task *a2a.Task) error {
+func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.fail != nil {
-		return s.fail
+		return nil, s.fail
 	}
 	s.saved = task
-	return nil
+	s.version = s.version + 1
+	return s.version, nil
 }
 
 func makeTextParts(texts ...string) a2a.ContentParts {
@@ -59,13 +64,13 @@ func makeTextParts(texts ...string) a2a.ContentParts {
 
 func TestManager_TaskSaved(t *testing.T) {
 	saver := &testSaver{}
-	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	task := newTestTask()
 	m := NewManager(saver, task)
 
 	newState := a2a.TaskStateCanceled
 	updated := &a2a.Task{
-		ID:        m.lastSavedTask.ID,
-		ContextID: m.lastSavedTask.ContextID,
+		ID:        m.lastSaved.Task.ID,
+		ContextID: m.lastSaved.Task.ContextID,
 		Status:    a2a.TaskStatus{State: newState},
 	}
 	result, err := m.Process(t.Context(), updated)
@@ -76,11 +81,11 @@ func TestManager_TaskSaved(t *testing.T) {
 	if updated != saver.saved {
 		t.Fatalf("task not saved: got = %v, want = %v", saver.saved, updated)
 	}
-	if updated != result {
+	if updated != result.Task {
 		t.Fatalf("manager task not updated: got = %v, want = %v", result, updated)
 	}
-	if result.Status.State != newState {
-		t.Fatalf("task state not updated: got = %v, want = %v", result.Status.State, newState)
+	if result.Task.Status.State != newState {
+		t.Fatalf("task state not updated: got = %v, want = %v", result.Task.Status.State, newState)
 	}
 }
 
@@ -90,7 +95,7 @@ func TestManager_SaverError(t *testing.T) {
 
 	wantErr := errors.New("saver failed")
 	saver.fail = wantErr
-	if _, err := m.Process(t.Context(), m.lastSavedTask); !errors.Is(err, wantErr) {
+	if _, err := m.Process(t.Context(), m.lastSaved.Task); !errors.Is(err, wantErr) {
 		t.Fatalf("m.Process() = %v, want %v", err, wantErr)
 	}
 }
@@ -98,19 +103,19 @@ func TestManager_SaverError(t *testing.T) {
 func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
-	m.lastSavedTask.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
+	m.lastSaved.Task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
 	for _, state := range states {
-		event := newStatusUpdate(m.lastSavedTask)
+		event := newStatusUpdate(m.lastSaved.Task)
 		event.Status.State = state
 
-		task, err := m.Process(t.Context(), event)
+		versioned, err := m.Process(t.Context(), event)
 		if err != nil {
 			t.Fatalf("m.Process() failed to set state %q: %v", state, err)
 		}
-		if task.Status.State != state {
-			t.Fatalf("task state not updated: got = %v, want = %v", state, task.Status.State)
+		if versioned.Task.Status.State != state {
+			t.Fatalf("task state not updated: got = %v, want = %v", state, versioned.Task.Status.State)
 		}
 	}
 }
@@ -119,28 +124,28 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	saver := &testSaver{}
 	m := NewManager(saver, newTestTask())
 
-	var lastResult *a2a.Task
+	var lastResult *VersionedTask
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
-		event := newStatusUpdate(m.lastSavedTask)
+		event := newStatusUpdate(m.lastSaved.Task)
 		textPart := a2a.TextPart{Text: msg}
 		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
 
-		result, err := m.Process(t.Context(), event)
+		versioned, err := m.Process(t.Context(), event)
 		if err != nil {
 			t.Fatalf("m.Process() failed to set status %d-th time: %v", i, err)
 		}
-		lastResult = result
+		lastResult = versioned
 	}
 
-	status := getText(lastResult.Status.Message)
+	status := getText(lastResult.Task.Status.Message)
 	if status != messages[len(messages)-1] {
 		t.Fatalf("wrong status text: got = %q, want = %q", status, messages[len(messages)-1])
 	}
-	if len(lastResult.History) != len(messages)-1 {
-		t.Fatalf("wrong history length: got = %d, want = %d", len(lastResult.History), len(messages)-1)
+	if len(lastResult.Task.History) != len(messages)-1 {
+		t.Fatalf("wrong history length: got = %d, want = %d", len(lastResult.Task.History), len(messages)-1)
 	}
-	for i, msg := range lastResult.History {
+	for i, msg := range lastResult.Task.History {
 		if getText(msg) != messages[i] {
 			t.Fatalf("wrong history text: got = %q, want = %q", getText(msg), messages[i])
 		}
@@ -159,14 +164,14 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 
 	var lastResult *a2a.Task
 	for i, metadata := range updates {
-		event := newStatusUpdate(m.lastSavedTask)
+		event := newStatusUpdate(m.lastSaved.Task)
 		event.Metadata = metadata
 
 		result, err := m.Process(t.Context(), event)
 		if err != nil {
 			t.Fatalf("m.Process() failed to set %d-th metadata: %v", i, err)
 		}
-		lastResult = result
+		lastResult = result.Task
 	}
 
 	got := lastResult.Metadata
@@ -366,15 +371,18 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			saver := &testSaver{}
 			task := &a2a.Task{ID: tid, ContextID: ctxid}
-			m := NewManager(saver, task)
+			m := NewManager(saver, &VersionedTask{Task: task, Version: a2a.TaskVersionMissing})
 
 			var gotErr error
-			var lastResult *a2a.Task
+			var lastResult *VersionedTask
 			for _, ev := range tc.events {
 				result, err := m.Process(t.Context(), ev)
 				if err != nil {
 					gotErr = err
 					break
+				}
+				if lastResult != nil && !result.Version.After(lastResult.Version) {
+					t.Fatalf("event.version <= prevEvent.version, want increasing, got %v, want %v", result.Version, lastResult.Version)
 				}
 				lastResult = result
 			}
@@ -388,7 +396,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			}
 			var got []*a2a.Artifact
 			if lastResult != nil {
-				got = lastResult.Artifacts
+				got = lastResult.Task.Artifacts
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("wrong result (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", got, tc.want, diff)
@@ -401,8 +409,9 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 }
 
 func TestManager_IDValidationFailure(t *testing.T) {
-	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	m := NewManager(&testSaver{}, task)
+	versioned := newTestTask()
+	task := versioned.Task
+	m := NewManager(&testSaver{}, versioned)
 
 	testCases := []a2a.Event{
 		&a2a.Task{ID: task.ID + "1", ContextID: task.ContextID},
@@ -429,7 +438,7 @@ func TestManager_IDValidationFailure(t *testing.T) {
 }
 
 func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
-	seedTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	seedTask := newTestTask()
 	invalidMeta := map[string]any{"invalid": func() {}}
 
 	testCases := []struct {
@@ -439,16 +448,16 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 		{
 			name: "task update",
 			invalidUpdate: &a2a.Task{
-				ID:        seedTask.ID,
-				ContextID: seedTask.ContextID,
+				ID:        seedTask.Task.ID,
+				ContextID: seedTask.Task.ContextID,
 				Metadata:  invalidMeta,
 			},
 		},
 		{
 			name: "artifact update",
 			invalidUpdate: &a2a.TaskArtifactUpdateEvent{
-				TaskID:    seedTask.ID,
-				ContextID: seedTask.ContextID,
+				TaskID:    seedTask.Task.ID,
+				ContextID: seedTask.Task.ContextID,
 				Artifact: &a2a.Artifact{
 					ID:       a2a.NewArtifactID(),
 					Metadata: invalidMeta,
@@ -458,8 +467,8 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 		{
 			name: "task status update",
 			invalidUpdate: &a2a.TaskStatusUpdateEvent{
-				TaskID:    seedTask.ID,
-				ContextID: seedTask.ContextID,
+				TaskID:    seedTask.Task.ID,
+				ContextID: seedTask.Task.ContextID,
 				Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
 				Metadata:  invalidMeta,
 			},
@@ -471,16 +480,18 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 			ctx := t.Context()
 			store := taskstore.NewMem()
 
-			task := *seedTask
-			m := NewManager(store, &task)
+			m := NewManager(store, seedTask)
 			_, err := m.Process(ctx, tc.invalidUpdate)
 			if err == nil {
 				t.Fatalf("m.Process() error = nil, expected serialization failure")
 			}
 
-			storedTask := m.SetTaskFailed(ctx, err)
-			if storedTask.Status.State != a2a.TaskStateFailed {
-				t.Errorf("task.Status.State = %q, want %q", storedTask.Status.State, a2a.TaskStateFailed)
+			versioned, err := m.SetTaskFailed(ctx, tc.invalidUpdate, err)
+			if err != nil {
+				t.Fatalf("m.SetTaskFailed() error = %v, want nil", err)
+			}
+			if versioned.Task.Status.State != a2a.TaskStateFailed {
+				t.Errorf("task.Status.State = %q, want %q", versioned.Task.Status.State, a2a.TaskStateFailed)
 			}
 		})
 	}
