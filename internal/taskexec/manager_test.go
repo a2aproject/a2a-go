@@ -216,7 +216,7 @@ func TestManager_Execute(t *testing.T) {
 	}
 
 	<-executor.executeCalled
-	want := &a2a.Task{ID: tid}
+	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 	executor.mustWrite(t, want)
 
 	if got, err := execution.Result(ctx); err != nil || got != want {
@@ -294,7 +294,7 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	executor.block = make(chan struct{})
 	executor.testProcessor.block = make(chan struct{})
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	executor.block = make(chan struct{})
 	executor.processErr = errors.New("test error")
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -397,8 +397,13 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 	for consumerI := range consumerCount {
 		go func() {
 			defer waitStopped.Done()
-
-			sub, _ := newLocalSubscription(t.Context(), execution.(*localExecution))
+			localExec := execution.(*localExecution)
+			queue, ok := localExec.queueManager.Get(t.Context(), localExec.tid)
+			if !ok {
+				t.Error("broadcastManager.Get() non-ok result")
+				return
+			}
+			sub := newLocalSubscription(localExec, queue)
 			waitSubscribed.Done()
 
 			for event := range sub.Events(ctx) {
@@ -443,7 +448,7 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 	manager := newStaticExecutorManager(executor, canceler)
 	executor.nextEventTerminal = true
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -474,7 +479,7 @@ func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
 	manager := newStaticExecutorManager(executor, nil)
 	executor.nextEventTerminal = true
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -523,7 +528,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	manager := newStaticExecutorManager(executor, canceler)
 	executor.nextEventTerminal = true
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
@@ -598,7 +603,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 		wg.Done()
 	}()
 	<-ready
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	close(canceler1.block)
 	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
@@ -653,7 +658,7 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	}
 
 	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed with %v", err)
 	}
@@ -711,7 +716,7 @@ func TestManager_GetExecution(t *testing.T) {
 	manager := newStaticExecutorManager(executor, nil)
 	executor.nextEventTerminal = true
 	startedExecution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subscription.cancel()
+	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
