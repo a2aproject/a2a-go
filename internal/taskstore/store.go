@@ -17,16 +17,22 @@ package taskstore
 import (
 	"context"
 	"encoding/gob"
+	"fmt"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
+type storedTask struct {
+	task    *a2a.Task
+	version a2a.TaskVersionInt
+}
+
 // Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
 	mu    sync.RWMutex
-	tasks map[a2a.TaskID]*a2a.Task
+	tasks map[a2a.TaskID]*storedTask
 }
 
 func init() {
@@ -37,35 +43,47 @@ func init() {
 // NewMem creates an empty [Mem] store.
 func NewMem() *Mem {
 	return &Mem{
-		tasks: make(map[a2a.TaskID]*a2a.Task),
+		tasks: make(map[a2a.TaskID]*storedTask),
 	}
 }
 
-func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
+func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if err := validateTask(task); err != nil {
-		return err
+		return nil, err
 	}
 
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	s.mu.Lock()
-	s.tasks[task.ID] = copy
+	version := a2a.TaskVersionInt(1)
+	if stored := s.tasks[task.ID]; stored != nil {
+		version = stored.version + 1
+	}
+	s.tasks[task.ID] = &storedTask{
+		task:    copy,
+		version: version,
+	}
 	s.mu.Unlock()
 
-	return nil
+	return a2a.TaskVersion(version), nil
 }
 
-func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 	s.mu.RLock()
-	task, ok := s.tasks[taskID]
+	stored, ok := s.tasks[taskID]
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, a2a.ErrTaskNotFound
+		return nil, nil, a2a.ErrTaskNotFound
 	}
 
-	return utils.DeepCopy(task)
+	task, err := utils.DeepCopy(stored.task)
+	if err != nil {
+		return nil, nil, fmt.Errorf("task copy failed: %w", err)
+	}
+
+	return task, a2a.TaskVersion(stored.version), nil
 }
