@@ -109,7 +109,7 @@ type factory struct {
 var _ taskexec.Factory = (*factory)(nil)
 
 func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (taskexec.Executor, taskexec.Processor, error) {
-	reqCtx, task, err := f.loadExecRequestContext(ctx, tid, params)
+	execCtx, err := f.loadExecutionContext(ctx, tid, params)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,13 +123,23 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		}
 	}
 
-	executor := &executor{agent: f.agent, reqCtx: reqCtx, interceptors: f.interceptors}
-	processor := newProcessor(taskupdate.NewManager(f.taskStore, task), f.pushConfigStore, f.pushSender, reqCtx)
+	executor := &executor{agent: f.agent, reqCtx: execCtx.reqCtx, interceptors: f.interceptors}
+	processor := newProcessor(
+		taskupdate.NewManager(f.taskStore, execCtx.task),
+		f.pushConfigStore,
+		f.pushSender,
+		execCtx.reqCtx,
+	)
 	return executor, processor, nil
 }
 
-// loadExecRequestContext returns the RequestContext for AgentExecutor and a Task for initializing taskupdate.Manager with.
-func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*RequestContext, *a2a.Task, error) {
+type executionContext struct {
+	reqCtx *RequestContext
+	task   *taskupdate.VersionedTask
+}
+
+// loadExecutionContext returns the information necessary for creating agent executor and agent event processor.
+func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
 	msg := params.Message
 
 	if msg.TaskID == "" {
@@ -143,46 +153,58 @@ func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, pa
 			ContextID: contextID,
 			Metadata:  msg.Metadata,
 		}
-		return reqCtx, a2a.NewSubmittedTask(reqCtx, msg), nil
+		return &executionContext{
+			reqCtx: reqCtx,
+			task: &taskupdate.VersionedTask{
+				Task:    a2a.NewSubmittedTask(reqCtx, msg),
+				Version: a2a.TaskVersionMissing,
+			},
+		}, nil
 	}
 
 	if msg.TaskID != tid {
-		return nil, nil, fmt.Errorf("bug: message task id different from executor task id")
+		return nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
 
-	storedTask, err := f.taskStore.Get(ctx, msg.TaskID)
+	storedTask, lastVersion, err := f.taskStore.Get(ctx, msg.TaskID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("task loading failed: %w", err)
+		return nil, fmt.Errorf("task loading failed: %w", err)
 	}
 	if storedTask == nil {
-		return nil, nil, a2a.ErrTaskNotFound
+		return nil, a2a.ErrTaskNotFound
 	}
 
 	if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-		return nil, nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
 	}
 
 	if storedTask.Status.State.Terminal() {
-		return nil, nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
 	}
 
 	storedTask.History = append(storedTask.History, msg)
-	if err := f.taskStore.Save(ctx, storedTask); err != nil {
-		return nil, nil, fmt.Errorf("task message history update failed: %w", err)
+	lastVersion, err = f.taskStore.Save(ctx, storedTask, nil, lastVersion)
+	if err != nil {
+		return nil, fmt.Errorf("task message history update failed: %w", err)
 	}
 
-	reqCtx := &RequestContext{
-		Message:    msg,
-		StoredTask: storedTask,
-		TaskID:     storedTask.ID,
-		ContextID:  storedTask.ContextID,
-		Metadata:   msg.Metadata,
-	}
-	return reqCtx, storedTask, nil
+	return &executionContext{
+		task: &taskupdate.VersionedTask{
+			Task:    storedTask,
+			Version: lastVersion,
+		},
+		reqCtx: &RequestContext{
+			Message:    msg,
+			StoredTask: storedTask,
+			TaskID:     storedTask.ID,
+			ContextID:  storedTask.ContextID,
+			Metadata:   msg.Metadata,
+		},
+	}, nil
 }
 
 func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, error) {
-	task, err := f.taskStore.Get(ctx, params.ID)
+	task, version, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load a task: %w", err)
 	}
@@ -199,7 +221,8 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 	}
 
 	canceler := &canceler{agent: f.agent, reqCtx: reqCtx, task: task, interceptors: f.interceptors}
-	processor := newProcessor(taskupdate.NewManager(f.taskStore, task), f.pushConfigStore, f.pushSender, reqCtx)
+	updateManager := taskupdate.NewManager(f.taskStore, &taskupdate.VersionedTask{Task: task, Version: version})
+	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, reqCtx)
 	return canceler, processor, nil
 }
 
@@ -267,14 +290,14 @@ func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, send
 // Process implements taskexec.Processor interface method.
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
-func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
+func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {
-		var result a2a.SendMessageResult = msg
-		return &result, nil
+		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
 	}
 
-	task, err := p.updateManager.Process(ctx, event)
+	versioned, err := p.updateManager.Process(ctx, event)
+	task := versioned.Task
 	if err != nil {
 		return p.setTaskFailed(ctx, err)
 	}
@@ -287,12 +310,11 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMess
 		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
 	}
 
+	result := &taskexec.ProcessorResult{TaskVersion: versioned.Version}
 	if taskupdate.IsFinal(event) {
-		var result a2a.SendMessageResult = task
-		return &result, nil
+		result.ExecutionResult = task
 	}
-
-	return nil, nil
+	return result, nil
 }
 
 // ProcessError implements taskexec.ProcessError interface method.
@@ -303,16 +325,22 @@ func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMess
 		return nil, cause
 	}
 
-	return p.updateManager.SetTaskFailed(ctx, cause), nil
+	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, cause)
+	if err != nil {
+		return nil, err
+	}
+	return versioned.Task, nil
 }
 
-func (p *processor) setTaskFailed(ctx context.Context, err error) (*a2a.SendMessageResult, error) {
-	task := p.updateManager.SetTaskFailed(ctx, err)
-	if task != nil {
-		var result a2a.SendMessageResult = task
-		return &result, nil
+func (p *processor) setTaskFailed(ctx context.Context, err error) (*taskexec.ProcessorResult, error) {
+	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, err)
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	return &taskexec.ProcessorResult{
+		ExecutionResult: versioned.Task,
+		TaskVersion:     versioned.Version,
+	}, nil
 }
 
 func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) error {

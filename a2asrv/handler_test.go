@@ -705,11 +705,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task) error {
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		if task.Status.State == a2a.TaskStateFailed {
-			return fmt.Errorf("exploded")
+			return a2a.TaskVersionMissing, fmt.Errorf("exploded")
 		}
-		return store.Mem.Save(ctx, task)
+		return store.Mem.Save(ctx, task, event, version)
 	}
 	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
@@ -880,13 +880,13 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 	getCalled := 0
 	savedCalled := 0
 	mockStore := testutil.NewTestTaskStore()
-	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 		getCalled += 1
-		return nil, nil
+		return nil, a2a.TaskVersionMissing, nil
 	}
-	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task) error {
+	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		savedCalled += 1
-		return nil
+		return version, nil
 	}
 
 	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
@@ -1015,7 +1015,7 @@ func TestRequestHandler_OnGetTask(t *testing.T) {
 func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to get task: store get failed")
-	ts := testutil.NewTestTaskStore().SetGetOverride(nil, wantErr)
+	ts := testutil.NewTestTaskStore().SetGetOverride(nil, a2a.TaskVersionMissing, wantErr)
 	handler := newTestHandler(WithTaskStore(ts))
 
 	result, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: a2a.NewTaskID()})
@@ -1156,13 +1156,13 @@ func TestRequestHandler_OnCancelTask_AgentCancelFails(t *testing.T) {
 	store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel)
 	executor := &mockAgentExecutor{
 		CancelFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			return wantErr
+			return fmt.Errorf("agent cancel error")
 		},
 	}
 	handler := NewHandler(executor, WithTaskStore(store))
 
 	result, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{ID: taskToCancel.ID})
-	if result != nil || !errors.Is(err, wantErr) {
+	if result != nil || err.Error() != wantErr.Error() {
 		t.Fatalf("OnCancelTask() error = %v, wantErr %v", err, wantErr)
 	}
 }
