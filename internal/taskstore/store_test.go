@@ -157,26 +157,12 @@ func TestInMemoryTaskStore_List_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: got = %v, want nil", err)
 	}
-<<<<<<< HEAD
 
 	slices.Reverse(tasks)
 	for i := range taskCount {
 		if listResponse.Tasks[i].ID != tasks[i].ID {
 			t.Fatalf("Unexpected task ID: got = %v, want %v", listResponse.Tasks[i].ID, tasks[i].ID)
 		}
-=======
-	if len(listResponse.Tasks) != 3 {
-		t.Fatalf("Unexpected list length: got = %v, wanted 3", len(listResponse.Tasks))
-	}
-	if listResponse.Tasks[0].ID != task3.ID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[0].ID, task3.ID)
-	}
-	if listResponse.Tasks[1].ID != task2.ID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[1].ID, task2.ID)
-	}
-	if listResponse.Tasks[2].ID != task1.ID {
-		t.Fatalf("Unexpected task ID: got = %v, wanted %v", listResponse.Tasks[2].ID, task1.ID)
->>>>>>> 1effc65 (gemini-code-assist review changes)
 	}
 }
 
