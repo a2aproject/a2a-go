@@ -730,7 +730,7 @@ type ListTasksRequest struct {
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength int `json:"history_length,omitempty" yaml:"history_length,omitempty" mapstructure:"history_length,omitempty"`
 
-	// LastUpdatedAfter is the timestamp to list tasks updated after.
+	// LastUpdatedAfter is the time to list tasks updated after.
 	LastUpdatedAfter *time.Time `json:"last_updated_after,omitempty" yaml:"last_updated_after,omitempty" mapstructure:"last_updated_after,omitempty"`
 
 	// IncludeArtifacts is whether to include artifacts in the response.
