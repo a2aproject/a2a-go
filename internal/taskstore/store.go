@@ -26,28 +26,37 @@ import (
 )
 
 type storedTask struct {
-	user        string
+	user        UserName
 	lastUpdated time.Time
 	task        *a2a.Task
 }
 
-type Authenticate struct {
-	getUserName func(context.Context) (string, bool)
+type UserName string
+
+type Authenticator func(context.Context) (UserName, bool)
+
+type TimeProvider func() time.Time
+
+type Option func(*Mem)
+
+func WithAuthenticator(a Authenticator) Option {
+	return func(m *Mem) {
+		m.authenticator = a
+	}
 }
 
-type Option func(*Authenticate)
-
-func WithAuthInfoProviderFn(getUserName func(context.Context) (string, bool)) Option {
-	return func(a *Authenticate) {
-		a.getUserName = getUserName
+func WithTimeProvider(tp TimeProvider) Option {
+	return func(m *Mem) {
+		m.timeProvider = tp
 	}
 }
 
 // Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
-	mu    sync.RWMutex
-	tasks map[a2a.TaskID]*storedTask
-	auth  *Authenticate
+	mu            sync.RWMutex
+	tasks         map[a2a.TaskID]*storedTask
+	authenticator Authenticator
+	timeProvider  TimeProvider
 }
 
 func init() {
@@ -57,20 +66,21 @@ func init() {
 
 // NewMem creates an empty [Mem] store.
 func NewMem(opts ...Option) *Mem {
-	auth := &Authenticate{
-		getUserName: func(ctx context.Context) (string, bool) {
+	m := &Mem{
+		tasks:         make(map[a2a.TaskID]*storedTask),
+		authenticator: func(ctx context.Context) (UserName, bool) {
 			return "", false
+		},
+		timeProvider: func() time.Time {
+			return time.Now()
 		},
 	}
 
 	for _, opt := range opts {
-		opt(auth)
+		opt(m)
 	}
 
-	return &Mem{
-		tasks: make(map[a2a.TaskID]*storedTask),
-		auth:  auth,
-	}
+	return m
 }
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
@@ -78,7 +88,7 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 		return err
 	}
 
-	userName, ok := s.auth.getUserName(ctx)
+	userName, ok := s.authenticator(ctx)
 	if !ok {
 		userName = "anonymous"
 	}
@@ -90,7 +100,7 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	s.mu.Lock()
 	s.tasks[task.ID] = &storedTask{
 		user:        userName,
-		lastUpdated: time.Now(),
+		lastUpdated: s.timeProvider(),
 		task:        copy,
 	}
 	s.mu.Unlock()
@@ -111,10 +121,7 @@ func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 }
 
 func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	userName, ok := s.auth.getUserName(ctx)
+	userName, ok := s.authenticator(ctx)
 
 	// Only proceed if user name is available for authentication
 	if !ok {
@@ -123,6 +130,7 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 
 	// Filter tasks per request filters
 	var filteredTasks []*storedTask
+	s.mu.RLock()
 	for _, storedTask := range s.tasks {
 		// Retrieve only tasks created by the user
 		if storedTask.user != userName {
@@ -139,12 +147,13 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		}
 
 		// Filter by LastUpdatedTime if it is set
-		if req.LastUpdatedTime != nil && storedTask.lastUpdated.Before(*req.LastUpdatedTime) {
+		if req.LastUpdatedAfter != nil && storedTask.lastUpdated.Before(*req.LastUpdatedAfter) {
 			continue
 		}
 
 		filteredTasks = append(filteredTasks, storedTask)
 	}
+	s.mu.RUnlock()
 
 	// Sort tasks by last updated time
 	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
