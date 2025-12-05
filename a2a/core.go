@@ -724,20 +724,20 @@ type ListTasksRequest struct {
 	// ContextID is the ID of the context to list tasks for.
 	ContextID string `json:"context_id,omitempty" yaml:"context_id,omitempty" mapstructure:"context_id,omitempty"`
 
-	// Status is the current status state of the tasks to list.
+	// Status is the current state of the tasks to list.
 	Status TaskState `json:"status,omitempty" yaml:"status,omitempty" mapstructure:"status,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength int `json:"history_length,omitempty" yaml:"history_length,omitempty" mapstructure:"history_length,omitempty"`
 
-	// LastUpdatedTime is the time to list tasks updated after.
-	LastUpdatedTime *time.Time `json:"last_updated_time,omitempty" yaml:"last_updated_time,omitempty" mapstructure:"last_updated_time,omitempty"`
+	// LastUpdatedAfter is the timestamp to list tasks updated after.
+	LastUpdatedAfter *time.Time `json:"last_updated_after,omitempty" yaml:"last_updated_after,omitempty" mapstructure:"last_updated_after,omitempty"`
 
 	// IncludeArtifacts is whether to include artifacts in the response.
 	IncludeArtifacts bool `json:"include_artifacts,omitempty" yaml:"include_artifacts,omitempty" mapstructure:"include_artifacts,omitempty"`
 }
 
-// ListTasksResponse defines the response for a request to list tasks.
+// ListTasksResponse defines the response for a request to tasks/list.
 type ListTasksResponse struct {
 	// Tasks is the list of tasks matching the specified criteria.
 	Tasks []*Task `json:"tasks,omitempty" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`

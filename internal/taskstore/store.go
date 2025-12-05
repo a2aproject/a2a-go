@@ -67,7 +67,7 @@ func init() {
 // NewMem creates an empty [Mem] store.
 func NewMem(opts ...Option) *Mem {
 	m := &Mem{
-		tasks:         make(map[a2a.TaskID]*storedTask),
+		tasks: make(map[a2a.TaskID]*storedTask),
 		authenticator: func(ctx context.Context) (UserName, bool) {
 			return "", false
 		},

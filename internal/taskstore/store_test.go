@@ -222,52 +222,52 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	cutoffTime := startTime.Add(2 * time.Second)
 	testCases := []struct {
-		name 					string 
-		request 			*a2a.ListTasksRequest
-		givenTasks 		[]*a2a.Task	
-		wantResponse 	*a2a.ListTasksResponse
+		name         string
+		request      *a2a.ListTasksRequest
+		givenTasks   []*a2a.Task
+		wantResponse *a2a.ListTasksResponse
 	}{
 		{
-			name: 				"ContextID filter",
-			request: 			&a2a.ListTasksRequest{ContextID: "id1"},
+			name:         "ContextID filter",
+			request:      &a2a.ListTasksRequest{ContextID: "id1"},
 			givenTasks:   []*a2a.Task{{ID: id1, ContextID: "id1"}, {ID: id2, ContextID: "id2"}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id1, ContextID: "id1"}}},
 		},
 		{
-			name: 				"Status filter",
-			request: 			&a2a.ListTasksRequest{Status: a2a.TaskStateCanceled},
-			givenTasks: 	[]*a2a.Task{{ID: id1, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, {ID: id2, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			name:         "Status filter",
+			request:      &a2a.ListTasksRequest{Status: a2a.TaskStateCanceled},
+			givenTasks:   []*a2a.Task{{ID: id1, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, {ID: id2, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id1, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}}},
 		},
 		{
-			name: 				"LastUpdatedAfter filter",
-			request: 			&a2a.ListTasksRequest{LastUpdatedAfter: &cutoffTime},
-			givenTasks: 	[]*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			name:         "LastUpdatedAfter filter",
+			request:      &a2a.ListTasksRequest{LastUpdatedAfter: &cutoffTime},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
 		},
 		{
-			name:					"HistoryLength filter",
-			request: 			&a2a.ListTasksRequest{HistoryLength: 2},
-			givenTasks: 	[]*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			name:         "HistoryLength filter",
+			request:      &a2a.ListTasksRequest{HistoryLength: 2},
+			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
-			name: 				"IncludeArtifacts true filter",
-			request: 			&a2a.ListTasksRequest{IncludeArtifacts: true},
-			givenTasks: 	[]*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}},
+			name:         "IncludeArtifacts true filter",
+			request:      &a2a.ListTasksRequest{IncludeArtifacts: true},
+			givenTasks:   []*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}}},
 		},
 		{
-			name: 				"IncludeArtifacts false filter",
-			request: 			&a2a.ListTasksRequest{IncludeArtifacts: false},
-			givenTasks: 	[]*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}},
+			name:         "IncludeArtifacts false filter",
+			request:      &a2a.ListTasksRequest{IncludeArtifacts: false},
+			givenTasks:   []*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			
+
 			timeOffsetIndex = 0
 			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
 			mustSave(t, store, tc.givenTasks...)
@@ -278,7 +278,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			if len(listResponse.Tasks) != len(tc.wantResponse.Tasks) {
 				t.Fatalf("Unexpected list length: got = %v, want %v", len(listResponse.Tasks), len(tc.wantResponse.Tasks))
 			}
-			
+
 			for i := range listResponse.Tasks {
 				if listResponse.Tasks[i].ID != tc.wantResponse.Tasks[i].ID {
 					t.Fatalf("Unexpected task ID: got = %v, want %v", listResponse.Tasks[i].ID, tc.wantResponse.Tasks[i].ID)
