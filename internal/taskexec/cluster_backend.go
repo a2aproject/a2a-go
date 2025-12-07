@@ -1,0 +1,125 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package taskexec
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/log"
+)
+
+type clusterBackend struct {
+	queueManager eventqueue.Manager
+	taskStore    TaskStore
+	factory      Factory
+}
+
+func newClusterBackend(cfg *ClusterConfig) *clusterBackend {
+	backend := &clusterBackend{
+		queueManager: cfg.QueueManager,
+		taskStore:    cfg.TaskStore,
+		factory:      cfg.Factory,
+	}
+	go func() {
+		ctx := context.Background()
+		for {
+			// TODO: acquire quota
+			msg, err := cfg.WorkQueue.Read(ctx)
+			if errors.Is(err, workqueue.ErrQueueClosed) {
+				log.Info(ctx, "cluster backend stopped because work queue was closed")
+				return
+			}
+			if err != nil {
+				// TODO: circuit breaker
+				continue
+			}
+			go func() {
+				result, handleErr := backend.handle(ctx, msg)
+				if handleErr != nil {
+					if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
+						log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
+					} else {
+						log.Info(ctx, "failed to handle work item", "error", handleErr)
+					}
+					return
+				}
+				if err := msg.Complete(ctx, result); err != nil {
+					log.Warn(ctx, "failed to mark work item as completed", "error", err)
+				}
+			}()
+		}
+	}()
+	return backend
+}
+
+func (b *clusterBackend) handle(ctx context.Context, msg workqueue.Message) (a2a.SendMessageResult, error) {
+	payload := msg.Payload()
+
+	pipe := eventpipe.NewLocal()
+	defer pipe.Close()
+
+	var eventProducer eventProducerFn
+	var eventProcessor Processor
+
+	switch payload.Type {
+	case workqueue.PayloadTypeExecute:
+		log.Info(ctx, "executing task", "task_id", payload.TaskID)
+
+		executor, processor, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteParams)
+		if err != nil {
+			return nil, fmt.Errorf("setup failed: %w", err)
+		}
+		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, pipe.Writer) }
+		eventProcessor = processor
+
+	case workqueue.PayloadTypeCancel:
+		canceler, processor, err := b.factory.CreateCanceler(ctx, payload.CancelParams)
+		if err != nil {
+			return nil, fmt.Errorf("setup failed: %w", err)
+		}
+		eventProducer = func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) }
+		eventProcessor = processor
+
+	default:
+		return nil, fmt.Errorf("unknown payload type: %q", payload.Type)
+	}
+
+	queue, err := b.queueManager.GetOrCreate(ctx, payload.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a queue: %w", err)
+	}
+
+	defer func() {
+		if closeErr := queue.Close(); closeErr != nil {
+			log.Warn(ctx, "queue close failed", "error", closeErr)
+		}
+	}()
+
+	handler := &executionHandler{
+		agentEvents:       pipe.Reader,
+		handledEventQueue: queue,
+		handleEventFn:     eventProcessor.Process,
+		handleErrorFn:     eventProcessor.ProcessError,
+	}
+
+	// TODO: handle message heartbeater
+	return runProducerConsumer(ctx, eventProducer, handler.processEvents)
+}
