@@ -16,6 +16,7 @@ package taskexec
 
 import (
 	"context"
+	"fmt"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -23,14 +24,20 @@ import (
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
-type Execution interface {
-	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
-
-	Result(ctx context.Context) (a2a.SendMessageResult, error)
-}
-
 // Execution represents an agent invocation in a context of the referenced task.
 // If the invocation was finished Result() will resolve immediately, otherwise it will block.
+type Execution interface {
+	// Events subscribes to the events an agent is producing during an active Execution.
+	// If the Execution was finished the sequence will be empty.
+	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
+
+	// Result resolves immediately for the finished Execution or blocks until it is complete.
+	Result(ctx context.Context) (a2a.SendMessageResult, error)
+
+	// internal, used for testing
+	newSubscription(context.Context) (Subscription, error)
+}
+
 type localExecution struct {
 	tid    a2a.TaskID
 	params *a2a.MessageSendParams
@@ -39,6 +46,8 @@ type localExecution struct {
 	pipe         *eventpipe.Local
 	queueManager eventqueue.Manager
 }
+
+var _ Execution = (*localExecution)(nil)
 
 // Not exported, because Executions are created by Executor.
 func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
@@ -51,16 +60,12 @@ func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.Messag
 	}
 }
 
-// Events subscribes to the events an agent is producing during an active Execution.
-// If the Execution was finished the sequence will be empty.
 func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		queue, ok := e.queueManager.Get(ctx, e.tid)
-		if !ok { // execution finished
+		subscription, err := e.newSubscription(ctx)
+		if err != nil { // execution finished
 			return
 		}
-
-		subscription := newLocalSubscription(e, queue)
 		for event, err := range subscription.Events(ctx) {
 			if err != nil {
 				yield(nil, err)
@@ -73,7 +78,14 @@ func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error]
 	}
 }
 
-// Result resolves immediately for the finished Execution or blocks until it is complete.
 func (e *localExecution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	return e.result.wait(ctx)
+}
+
+func (e *localExecution) newSubscription(ctx context.Context) (Subscription, error) {
+	queue, ok := e.queueManager.Get(ctx, e.tid)
+	if !ok {
+		return nil, fmt.Errorf("execution finished")
+	}
+	return newLocalSubscription(e, queue), nil
 }

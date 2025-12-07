@@ -36,6 +36,12 @@ var (
 	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
+type Manager interface {
+	GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool)
+	Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error)
+	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
+}
+
 // LocalManager provides an API for executing and canceling tasks in a way that ensures
 // concurrent calls don't interfere with one another in unexpected ways.
 // The following guarantees are provided:
@@ -55,6 +61,8 @@ type LocalManager struct {
 	limiter      *concurrencyLimiter
 }
 
+var _ Manager = (*LocalManager)(nil)
+
 // Config contains Manager configuration parameters.
 type Config struct {
 	QueueManager      eventqueue.Manager
@@ -63,7 +71,7 @@ type Config struct {
 }
 
 // NewLocalManager is a [LocalManager] constructor function.
-func NewLocalManager(cfg Config) *LocalManager {
+func NewLocalManager(cfg Config) Manager {
 	manager := &LocalManager{
 		queueManager: cfg.QueueManager,
 		factory:      cfg.Factory,
@@ -79,7 +87,7 @@ func NewLocalManager(cfg Config) *LocalManager {
 
 // GetExecution is used to get a reference to an active [Execution]. The method can be used
 // to resubscribe to execution events or wait for its completion.
-func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
+func (m *LocalManager) GetExecution(_ context.Context, taskID a2a.TaskID) (Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	execution, ok := m.executions[taskID]
@@ -150,7 +158,7 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	cancel, cancelInProgress := m.cancelations[tid]
 
 	if cancel == nil {
-		cancel = newCancelation(params)
+		cancel = newCancelation(params, newPromise())
 		m.cancelations[tid] = cancel
 	}
 	m.mu.Unlock()

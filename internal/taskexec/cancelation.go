@@ -27,8 +27,8 @@ type cancelation struct {
 	result *promise
 }
 
-func newCancelation(params *a2a.TaskIDParams) *cancelation {
-	return &cancelation{params: params, result: newPromise()}
+func newCancelation(params *a2a.TaskIDParams, promise *promise) *cancelation {
+	return &cancelation{params: params, result: promise}
 }
 
 func (c *cancelation) wait(ctx context.Context) (*a2a.Task, error) {
