@@ -16,6 +16,10 @@ type dbTaskStore struct {
 	db *sql.DB
 }
 
+func newDBTaskStore(db *sql.DB) *dbTaskStore {
+	return &dbTaskStore{db: db}
+}
+
 var _ a2asrv.TaskStore = (*dbTaskStore)(nil)
 
 func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
@@ -104,4 +108,19 @@ func (s *dbTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2
 	}
 
 	return &task, a2a.TaskVersionInt(version), nil
+}
+
+func getEventType(e a2a.Event) string {
+	switch e.(type) {
+	case *a2a.Message:
+		return "message"
+	case *a2a.Task:
+		return "task"
+	case *a2a.TaskStatusUpdateEvent:
+		return "status-update"
+	case *a2a.TaskArtifactUpdateEvent:
+		return "artifact-update"
+	default:
+		return "unknown"
+	}
 }
