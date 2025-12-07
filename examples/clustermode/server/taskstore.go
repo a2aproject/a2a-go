@@ -71,11 +71,11 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 		return nil, fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	eventID, eventType := uuid.NewString(), getEventType(event)
+	eventID, eventType := uuid.Must(uuid.NewV7()).String(), getEventType(event)
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO task_event (id, task_id, type, created, last_updated, event_json)
+		INSERT INTO task_event (id, task_id, type, created, last_updated, task_version, event_json)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, eventID, task.ID, eventType, time.Now(), newVersion, string(eventJSON))
+	`, eventID, task.ID, eventType, time.Now(), newVersion, newVersion, string(eventJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert event: %w", err)
 	}
