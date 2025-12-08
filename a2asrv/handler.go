@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
+	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
@@ -64,7 +65,7 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	execManager   *taskexec.LocalManager
+	execManager   taskexec.Manager
 
 	pushSender        PushSender
 	queueManager      eventqueue.Manager
@@ -72,6 +73,7 @@ type defaultRequestHandler struct {
 
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
+	workQueue              workqueue.Queue
 	reqContextInterceptors []RequestContextInterceptor
 
 	authenticatedCardProducer AgentCardProducer
@@ -104,31 +106,54 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 	}
 }
 
+// WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
+func WithClusterMode(queue workqueue.Queue) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.workQueue = queue
+	}
+}
+
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
-	h := &defaultRequestHandler{
-		agentExecutor: executor,
-		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewMem(),
-		// push notifications are not supported by default
-	}
+	h := &defaultRequestHandler{agentExecutor: executor}
 	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
 	}
 
-	h.execManager = taskexec.NewLocalManager(taskexec.Config{
-		QueueManager:      h.queueManager,
-		ConcurrencyConfig: h.concurrencyConfig,
-		Factory: &factory{
-			agent:           h.agentExecutor,
-			taskStore:       h.taskStore,
-			pushSender:      h.pushSender,
-			pushConfigStore: h.pushConfigStore,
-			interceptors:    h.reqContextInterceptors,
-		},
-	})
+	execFactory := &factory{
+		agent:           h.agentExecutor,
+		taskStore:       h.taskStore,
+		pushSender:      h.pushSender,
+		pushConfigStore: h.pushConfigStore,
+		interceptors:    h.reqContextInterceptors,
+	}
+	if h.workQueue != nil {
+		if h.taskStore == nil || h.queueManager == nil {
+			panic("TaskStore and QueueManager must be provided for cluster mode")
+		}
+		h.execManager = taskexec.NewClusterFrontend(&taskexec.ClusterConfig{
+			WorkQueue:         h.workQueue,
+			TaskStore:         h.taskStore,
+			QueueManager:      h.queueManager,
+			ConcurrencyConfig: h.concurrencyConfig,
+			Factory:           execFactory,
+		})
+	} else {
+		if h.queueManager == nil {
+			h.queueManager = eventqueue.NewInMemoryManager()
+		}
+		if h.taskStore == nil {
+			h.taskStore = taskstore.NewMem()
+			execFactory.taskStore = h.taskStore
+		}
+		h.execManager = taskexec.NewLocalManager(taskexec.Config{
+			QueueManager:      h.queueManager,
+			ConcurrencyConfig: h.concurrencyConfig,
+			Factory:           execFactory,
+		})
+	}
 
 	return ih
 }
@@ -215,7 +240,7 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			return
 		}
 
-		exec, ok := h.execManager.GetExecution(params.ID)
+		exec, ok := h.execManager.GetExecution(ctx, params.ID)
 		if !ok {
 			yield(nil, a2a.ErrTaskNotFound)
 			return
@@ -233,15 +258,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
-
-	var taskID a2a.TaskID
-	if len(params.Message.TaskID) == 0 {
-		taskID = a2a.NewTaskID()
-	} else {
-		taskID = params.Message.TaskID
-	}
-
-	return h.execManager.Execute(ctx, taskID, params)
+	return h.execManager.Execute(ctx, params)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {

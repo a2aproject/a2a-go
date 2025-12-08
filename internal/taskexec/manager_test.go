@@ -25,6 +25,8 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -49,16 +51,20 @@ func (f *testFactory) CreateCanceler(ctx context.Context, params *a2a.TaskIDPara
 	return nil, nil, fmt.Errorf("not implemented")
 }
 
-func newStaticExecutorManager(executor *testExecutor, canceler *testCanceler) *LocalManager {
-	return NewLocalManager(Config{
-		Factory: &testFactory{
-			CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
-				return executor, executor, nil
-			},
-			CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
-				return canceler, canceler, nil
-			},
+func newStaticFactory(executor *testExecutor, canceler *testCanceler) Factory {
+	return &testFactory{
+		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
+			return executor, executor, nil
 		},
+		CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
+			return canceler, canceler, nil
+		},
+	}
+}
+
+func newStaticExecutorManager(executor *testExecutor, canceler *testCanceler) Manager {
+	return NewLocalManager(Config{
+		Factory: newStaticFactory(executor, canceler),
 	})
 }
 
@@ -201,50 +207,129 @@ func consumeEvents(t *testing.T, sub Subscription) (chan []a2a.Event, chan error
 	return consumedEventsChan, terminalErrChan
 }
 
+type testWorkQueueMessage struct {
+	payload *workqueue.Payload
+}
+
+var _ workqueue.Message = (*testWorkQueueMessage)(nil)
+
+func (m *testWorkQueueMessage) Payload() *workqueue.Payload {
+	return m.payload
+}
+
+func (m *testWorkQueueMessage) Complete(ctx context.Context, result a2a.SendMessageResult) error {
+	return nil
+}
+
+func (m *testWorkQueueMessage) Return(ctx context.Context, err error) error {
+	return nil
+}
+
+type testWorkQueue struct {
+	payloadChan chan *workqueue.Payload
+}
+
+var _ workqueue.Queue = (*testWorkQueue)(nil)
+
+func (q *testWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2a.TaskID, error) {
+	select {
+	case q.payloadChan <- payload:
+		return payload.TaskID, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (q *testWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case msg := <-q.payloadChan:
+		return &testWorkQueueMessage{payload: msg}, nil
+	}
+}
+
+func (q *testWorkQueue) Close() error {
+	return nil
+}
+
+func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore TaskStore) Manager {
+	config := &ClusterConfig{
+		WorkQueue:    &testWorkQueue{payloadChan: make(chan *workqueue.Payload)},
+		QueueManager: eventqueue.NewInMemoryManager(),
+		Factory:      newStaticFactory(executor, canceler),
+		TaskStore:    taskStore,
+	}
+	return NewClusterFrontend(config)
+}
+
+type clusterMode bool
+
+func (m clusterMode) newStaticManager(executor *testExecutor, canceler *testCanceler) (Manager, *testutil.TestTaskStore) {
+	taskStore := testutil.NewTestTaskStore()
+	if m {
+		return newStaticClusterManager(executor, canceler, taskStore), taskStore
+	}
+	return newStaticExecutorManager(executor, canceler), taskStore
+}
+
+func (m clusterMode) newTestName(name string) string {
+	if m {
+		return name + " (cluster)"
+	}
+	return name
+}
+
 func TestManager_Execute(t *testing.T) {
-	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	for _, clusterMode := range []clusterMode{false, true} {
+		t.Run(clusterMode.newTestName("execute"), func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
 
-	executor := newExecutor()
-	manager := newStaticExecutorManager(executor, nil)
-	executor.nextEventTerminal = true
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	subEventsChan, subErrChan := consumeEvents(t, subscription)
-	if err != nil {
-		t.Fatalf("Execute() failed: %v", err)
-	}
+			executor := newExecutor()
+			manager, _ := clusterMode.newStaticManager(executor, nil)
+			executor.nextEventTerminal = true
+			execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{
+				Message: a2a.NewMessage(a2a.MessageRoleUser),
+			})
+			subEventsChan, subErrChan := consumeEvents(t, subscription)
+			if err != nil {
+				t.Fatalf("Execute() failed: %v", err)
+			}
 
-	<-executor.executeCalled
-	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
-	executor.mustWrite(t, want)
+			<-executor.executeCalled
+			want := &a2a.Task{ID: execution.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+			executor.mustWrite(t, want)
 
-	if got, err := execution.Result(ctx); err != nil || got != want {
-		t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
-	}
-	subEvents, subErr := <-subEventsChan, <-subErrChan
-	if subErr != nil {
-		t.Fatalf("subscription error = %v, want nil", subErr)
-	}
-	if diff := cmp.Diff([]a2a.Event{want}, subEvents); diff != "" {
-		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+			if got, err := execution.Result(ctx); err != nil || got != want {
+				t.Fatalf("execution.Result() = (%v, %v), want %v", got, err, want)
+			}
+			subEvents, subErr := <-subEventsChan, <-subErrChan
+			if subErr != nil {
+				t.Fatalf("subscription error = %v, want nil", subErr)
+			}
+			if diff := cmp.Diff([]a2a.Event{want}, subEvents); diff != "" {
+				t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+			}
+		})
 	}
 }
 
 func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.processErr = errors.New("test error")
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
-	executor.mustWrite(t, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: execution.TaskID()})
 
 	if _, err = execution.Result(ctx); !errors.Is(err, executor.processErr) {
 		t.Fatalf("execution.Result() failed with %v, want %v", err, executor.processErr)
@@ -260,12 +345,12 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 
 func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.executeErr = errors.New("test error")
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
@@ -285,21 +370,21 @@ func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 
 func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.executeErr = errors.New("test error")
 	executor.block = make(chan struct{})
 	executor.testProcessor.block = make(chan struct{})
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
-	executor.mustWrite(t, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: execution.TaskID()})
 	for executor.testProcessor.callCount.Load() == 0 {
 		time.Sleep(1 * time.Millisecond)
 	}
@@ -313,20 +398,20 @@ func TestManager_ExecuteFailureCancelsProcessingContext(t *testing.T) {
 
 func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.block = make(chan struct{})
 	executor.processErr = errors.New("test error")
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
-	executor.mustWrite(t, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: execution.TaskID()})
 	_, _ = execution.Result(ctx)
 
 	if !executor.contextCanceled {
@@ -336,7 +421,7 @@ func TestManager_ProcessingFailureCancelsExecuteContext(t *testing.T) {
 
 func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	wantResult := &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}
 	executor := newExecutor()
@@ -345,7 +430,7 @@ func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
 	executor.executeErr = errors.New("test error!")
 	executor.processErrorResult = wantResult
 
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	subEventsChan, subErrChan := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
@@ -370,96 +455,100 @@ func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
 }
 
 func TestManager_FanOutExecutionEvents(t *testing.T) {
-	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	for _, clusterMode := range []clusterMode{false, true} {
+		t.Run(clusterMode.newTestName("fan-out"), func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
 
-	executor := newExecutor()
-	manager := newStaticExecutorManager(executor, nil)
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
-	_, _ = consumeEvents(t, subscription)
-	if err != nil {
-		t.Fatalf("manager.Execute() failed: %v", err)
-	}
-	<-executor.executeCalled
-
-	// subscribe ${consumerCount} consumers to execution events
-	consumerCount := 3
-	var waitSubscribed sync.WaitGroup
-	waitSubscribed.Add(consumerCount)
-
-	var waitStopped sync.WaitGroup
-	waitStopped.Add(consumerCount)
-
-	var waitConsumed sync.WaitGroup
-	var mu sync.Mutex
-	consumed := map[int][]a2a.Event{}
-	for consumerI := range consumerCount {
-		go func() {
-			defer waitStopped.Done()
-			localExec := execution.(*localExecution)
-			queue, ok := localExec.queueManager.Get(t.Context(), localExec.tid)
-			if !ok {
-				t.Error("broadcastManager.Get() non-ok result")
-				return
+			executor := newExecutor()
+			manager, _ := clusterMode.newStaticManager(executor, nil)
+			execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{
+				Message: a2a.NewMessage(a2a.MessageRoleUser),
+			})
+			_, _ = consumeEvents(t, subscription)
+			if err != nil {
+				t.Fatalf("manager.Execute() failed: %v", err)
 			}
-			sub := newLocalSubscription(localExec, queue)
-			waitSubscribed.Done()
+			<-executor.executeCalled
 
-			for event := range sub.Events(ctx) {
-				mu.Lock()
-				consumed[consumerI] = append(consumed[consumerI], event)
-				mu.Unlock()
-				waitConsumed.Done()
+			// subscribe ${consumerCount} consumers to execution events
+			consumerCount := 3
+			var waitSubscribed sync.WaitGroup
+			waitSubscribed.Add(consumerCount)
+
+			var waitStopped sync.WaitGroup
+			waitStopped.Add(consumerCount)
+
+			var waitConsumed sync.WaitGroup
+			var mu sync.Mutex
+			consumed := map[int][]a2a.Event{}
+			for consumerI := range consumerCount {
+				go func() {
+					defer waitStopped.Done()
+					sub, err := execution.newSubscription(t.Context())
+					if err != nil {
+						t.Error("execution.newSubscription() failed", "error", err)
+						return
+					}
+					waitSubscribed.Done()
+
+					for event := range sub.Events(ctx) {
+						mu.Lock()
+						consumed[consumerI] = append(consumed[consumerI], event)
+						mu.Unlock()
+						waitConsumed.Done()
+					}
+				}()
 			}
-		}()
-	}
-	waitSubscribed.Wait()
+			waitSubscribed.Wait()
 
-	// for each produced event wait for all consumers to consume it
-	states := []a2a.TaskState{a2a.TaskStateSubmitted, a2a.TaskStateWorking, a2a.TaskStateCompleted}
-	for i, state := range states {
-		waitConsumed.Add(consumerCount)
-		executor.nextEventTerminal = i == len(states)-1
-		executor.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: state}})
-		waitConsumed.Wait()
-	}
-
-	for i, list := range consumed {
-		if len(list) != len(states) {
-			t.Fatalf("got %d events for consumer %d, want %d", len(list), i, len(states))
-		}
-		for eventI, event := range list {
-			state := event.(*a2a.Task).Status.State
-			if state != states[eventI] {
-				t.Fatalf("got %v event state for consumer %d, want %v", state, i, states[eventI])
+			// for each produced event wait for all consumers to consume it
+			states := []a2a.TaskState{a2a.TaskStateSubmitted, a2a.TaskStateWorking, a2a.TaskStateCompleted}
+			for i, state := range states {
+				waitConsumed.Add(consumerCount)
+				executor.nextEventTerminal = i == len(states)-1
+				executor.mustWrite(t, &a2a.Task{ID: execution.TaskID(), Status: a2a.TaskStatus{State: state}})
+				waitConsumed.Wait()
 			}
-		}
-	}
 
-	waitStopped.Wait()
+			for i, list := range consumed {
+				if len(list) != len(states) {
+					t.Fatalf("got %d events for consumer %d, want %d", len(list), i, len(states))
+				}
+				for eventI, event := range list {
+					state := event.(*a2a.Task).Status.State
+					if state != states[eventI] {
+						t.Fatalf("got %v event state for consumer %d, want %v", state, i, states[eventI])
+					}
+				}
+			}
+
+			waitStopped.Wait()
+		})
+	}
 }
 
 func TestManager_CancelActiveExecution(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor, canceler := newExecutor(), newCanceler()
 	manager := newStaticExecutorManager(executor, canceler)
 	executor.nextEventTerminal = true
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 	<-executor.executeCalled
 
-	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+	want := &a2a.Task{ID: execution.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
 	go func() {
 		<-canceler.cancelCalled
 		canceler.mustWrite(t, want)
 	}()
 
-	task, err := manager.Cancel(ctx, &a2a.TaskIDParams{ID: tid})
+	task, err := manager.Cancel(ctx, &a2a.TaskIDParams{ID: execution.TaskID()})
 	if err != nil || task != want {
 		t.Fatalf("manager.Cancel() = (%v, %v), want %v", task, err, want)
 	}
@@ -472,19 +561,19 @@ func TestManager_CancelActiveExecution(t *testing.T) {
 
 func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.nextEventTerminal = true
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
 	<-executor.executeCalled
-	want := &a2a.Task{ID: tid}
+	want := &a2a.Task{ID: execution.TaskID()}
 	executor.mustWrite(t, want)
 
 	if got, err := execution.Result(ctx); err != nil || got != want {
@@ -501,32 +590,38 @@ func TestManager_EventsEmptyAfterExecutionFinished(t *testing.T) {
 }
 
 func TestManager_CancelWithoutActiveExecution(t *testing.T) {
-	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	for _, clusterMode := range []clusterMode{false, true} {
+		t.Run(clusterMode.newTestName("cancel"), func(t *testing.T) {
+			t.Parallel()
+			ctx, tid := t.Context(), a2a.NewTaskID()
 
-	canceler := newCanceler()
-	manager := newStaticExecutorManager(nil, canceler)
-	canceler.nextEventTerminal = true
-	want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
-	go func() {
-		<-canceler.cancelCalled
-		canceler.mustWrite(t, want)
-	}()
+			canceler := newCanceler()
+			manager, taskStore := clusterMode.newStaticManager(nil, canceler)
+			taskStore.WithTasks(t, &a2a.Task{ID: tid})
+			canceler.nextEventTerminal = true
 
-	task, err := manager.Cancel(ctx, &a2a.TaskIDParams{})
-	if err != nil || task != want {
-		t.Fatalf("manager.Cancel() = (%v, %v), want %v", task, err, want)
+			want := &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+			go func() {
+				<-canceler.cancelCalled
+				canceler.mustWrite(t, want)
+			}()
+
+			task, err := manager.Cancel(ctx, &a2a.TaskIDParams{ID: tid})
+			if err != nil || task != want {
+				t.Fatalf("manager.Cancel() = (%v, %v), want %v", task, err, want)
+			}
+		})
 	}
 }
 
 func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor, canceler := newExecutor(), newCanceler()
 	manager := newStaticExecutorManager(executor, canceler)
 	executor.nextEventTerminal = true
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
@@ -536,7 +631,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	canceler.block = make(chan struct{})
 	cancelErr := make(chan error)
 	go func() {
-		task, err := manager.Cancel(ctx, &a2a.TaskIDParams{ID: tid})
+		task, err := manager.Cancel(ctx, &a2a.TaskIDParams{ID: execution.TaskID()})
 		if task != nil || err == nil {
 			t.Errorf("manager.Cancel() = %v, expected to fail", task)
 		}
@@ -544,7 +639,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	}()
 	<-canceler.cancelCalled
 
-	executor.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
+	executor.mustWrite(t, &a2a.Task{ID: execution.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 	_, _ = execution.Result(ctx)
 	close(canceler.block)
 
@@ -630,7 +725,9 @@ func TestManager_NotAllowedToExecuteWhileCanceling(t *testing.T) {
 	}()
 	<-canceler.cancelCalled
 
-	execution, _, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, _, err := manager.Execute(ctx, &a2a.MessageSendParams{
+		Message: a2a.NewMessageForTask(a2a.MessageRoleUser, &a2a.Task{ID: tid}),
+	})
 	if execution != nil || !errors.Is(err, ErrCancelationInProgress) {
 		t.Fatalf("manager.Execute() = (%v, %v), want %v", execution, err, ErrCancelationInProgress)
 	}
@@ -641,7 +738,7 @@ func TestManager_NotAllowedToExecuteWhileCanceling(t *testing.T) {
 
 func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 	t.Parallel()
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	// First cancelation fails
 	canceler := newCanceler()
@@ -656,14 +753,14 @@ func TestManager_CanExecuteAfterCancelFailed(t *testing.T) {
 		t.Fatalf("manager.Cancel() = %v, want error", task)
 	}
 
-	execution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	execution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed with %v", err)
 	}
 
 	<-executor.executeCalled
-	executor.mustWrite(t, &a2a.Task{ID: tid})
+	executor.mustWrite(t, &a2a.Task{ID: execution.TaskID()})
 
 	if _, err := execution.Result(ctx); err != nil {
 		t.Fatalf("execution.Result() wailed with %v", err)
@@ -709,23 +806,24 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 }
 
 func TestManager_GetExecution(t *testing.T) {
-	ctx, tid := t.Context(), a2a.NewTaskID()
+	ctx := t.Context()
 
 	executor := newExecutor()
 	manager := newStaticExecutorManager(executor, nil)
 	executor.nextEventTerminal = true
-	startedExecution, subscription, err := manager.Execute(ctx, tid, &a2a.MessageSendParams{})
+	startedExecution, subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{})
 	_, _ = consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
-	execution, ok := manager.GetExecution(tid)
+	tid := startedExecution.TaskID()
+	execution, ok := manager.GetExecution(ctx, tid)
 	if !ok || execution != startedExecution {
 		t.Fatalf("manager.GetExecution() = (%v, %v), want %v", ok, execution, startedExecution)
 	}
 
-	execution, ok = manager.GetExecution(tid + "-2")
+	execution, ok = manager.GetExecution(ctx, tid+"-2")
 	if ok {
 		t.Fatalf("manager.GetExecution(fakeID) = (%v, %v), want (nil, false)", ok, execution)
 	}
@@ -734,7 +832,7 @@ func TestManager_GetExecution(t *testing.T) {
 	executor.mustWrite(t, &a2a.Task{ID: tid})
 	_, _ = startedExecution.Result(ctx)
 
-	execution, ok = manager.GetExecution(tid)
+	execution, ok = manager.GetExecution(ctx, tid)
 	if ok {
 		t.Fatalf("manager.GetExecution(finishedID) = (%v, %v), want (nil, false)", ok, execution)
 	}

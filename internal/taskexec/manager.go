@@ -36,6 +36,12 @@ var (
 	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
+type Manager interface {
+	GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool)
+	Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error)
+	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
+}
+
 // LocalManager provides an API for executing and canceling tasks in a way that ensures
 // concurrent calls don't interfere with one another in unexpected ways.
 // The following guarantees are provided:
@@ -55,6 +61,8 @@ type LocalManager struct {
 	limiter      *concurrencyLimiter
 }
 
+var _ Manager = (*LocalManager)(nil)
+
 // Config contains Manager configuration parameters.
 type Config struct {
 	QueueManager      eventqueue.Manager
@@ -63,7 +71,7 @@ type Config struct {
 }
 
 // NewLocalManager is a [LocalManager] constructor function.
-func NewLocalManager(cfg Config) *LocalManager {
+func NewLocalManager(cfg Config) Manager {
 	manager := &LocalManager{
 		queueManager: cfg.QueueManager,
 		factory:      cfg.Factory,
@@ -79,7 +87,7 @@ func NewLocalManager(cfg Config) *LocalManager {
 
 // GetExecution is used to get a reference to an active [Execution]. The method can be used
 // to resubscribe to execution events or wait for its completion.
-func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
+func (m *LocalManager) GetExecution(_ context.Context, taskID a2a.TaskID) (Execution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	execution, ok := m.executions[taskID]
@@ -89,7 +97,14 @@ func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *LocalManager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+	var tid a2a.TaskID
+	if params.Message == nil || len(params.Message.TaskID) == 0 {
+		tid = a2a.NewTaskID()
+	} else {
+		tid = params.Message.TaskID
+	}
+
 	execution, err := m.createExecution(ctx, tid, params)
 	if err != nil {
 		return nil, nil, err
@@ -155,19 +170,16 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	}
 	m.mu.Unlock()
 
-	if cancelInProgress {
-		return cancel.wait(ctx)
+	if !cancelInProgress {
+		detachedCtx := context.WithoutCancel(ctx)
+		if execution != nil {
+			go m.handleCancelWithConcurrentRun(detachedCtx, cancel, execution)
+		} else {
+			go m.handleCancel(detachedCtx, cancel)
+		}
 	}
 
-	detachedCtx := context.WithoutCancel(ctx)
-
-	if execution != nil {
-		go m.handleCancelWithConcurrentRun(detachedCtx, cancel, execution)
-	} else {
-		go m.handleCancel(detachedCtx, cancel)
-	}
-
-	return cancel.wait(ctx)
+	return convertToCancelationResult(ctx, cancel.result)
 }
 
 func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
@@ -205,6 +217,7 @@ func (m *LocalManager) handleExecution(ctx context.Context, execution *localExec
 		ctx,
 		func(ctx context.Context) error { return executor.Execute(ctx, execution.pipe.Writer) },
 		handler.processEvents,
+		nil,
 	)
 
 	if err != nil {
@@ -240,6 +253,7 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		ctx,
 		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
 		handler.processEvents,
+		nil,
 	)
 	if err != nil {
 		cancel.result.setError(err)
