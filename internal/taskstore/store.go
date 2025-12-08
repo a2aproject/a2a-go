@@ -17,16 +17,47 @@ package taskstore
 import (
 	"context"
 	"encoding/gob"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
+type storedTask struct {
+	user        UserName
+	lastUpdated time.Time
+	task        *a2a.Task
+}
+
+type UserName string
+
+type Authenticator func(context.Context) (UserName, bool)
+
+type TimeProvider func() time.Time
+
+type Option func(*Mem)
+
+func WithAuthenticator(a Authenticator) Option {
+	return func(m *Mem) {
+		m.authenticator = a
+	}
+}
+
+func WithTimeProvider(tp TimeProvider) Option {
+	return func(m *Mem) {
+		m.timeProvider = tp
+	}
+}
+
 // Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
 	mu    sync.RWMutex
-	tasks map[a2a.TaskID]*a2a.Task
+	tasks map[a2a.TaskID]*storedTask
+
+	authenticator Authenticator
+	timeProvider  TimeProvider
 }
 
 func init() {
@@ -35,10 +66,22 @@ func init() {
 }
 
 // NewMem creates an empty [Mem] store.
-func NewMem() *Mem {
-	return &Mem{
-		tasks: make(map[a2a.TaskID]*a2a.Task),
+func NewMem(opts ...Option) *Mem {
+	m := &Mem{
+		tasks: make(map[a2a.TaskID]*storedTask),
+		authenticator: func(ctx context.Context) (UserName, bool) {
+			return "", false
+		},
+		timeProvider: func() time.Time {
+			return time.Now()
+		},
 	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	return m
 }
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
@@ -46,13 +89,21 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 		return err
 	}
 
+	userName, ok := s.authenticator(ctx)
+	if !ok {
+		userName = "anonymous"
+	}
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
 		return err
 	}
 
 	s.mu.Lock()
-	s.tasks[task.ID] = copy
+	s.tasks[task.ID] = &storedTask{
+		user:        userName,
+		lastUpdated: s.timeProvider(),
+		task:        copy,
+	}
 	s.mu.Unlock()
 
 	return nil
@@ -60,12 +111,76 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 
 func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 	s.mu.RLock()
-	task, ok := s.tasks[taskID]
+	storedTask, ok := s.tasks[taskID]
 	s.mu.RUnlock()
 
 	if !ok {
 		return nil, a2a.ErrTaskNotFound
 	}
 
-	return utils.DeepCopy(task)
+	return utils.DeepCopy(storedTask.task)
+}
+
+func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	userName, ok := s.authenticator(ctx)
+
+	// Only proceed if user name is available for authentication
+	if !ok {
+		return nil, a2a.ErrAuthFailed
+	}
+
+	// Filter tasks per request filters
+	var filteredTasks []*storedTask
+	s.mu.RLock()
+	for _, storedTask := range s.tasks {
+		// Retrieve only tasks created by the user
+		if storedTask.user != userName {
+			continue
+		}
+
+		// Filter by context ID if it is set
+		if req.ContextID != "" && storedTask.task.ContextID != req.ContextID {
+			continue
+		}
+		// Filter by status if it is set
+		if req.Status != a2a.TaskStateUnspecified && storedTask.task.Status.State != req.Status {
+			continue
+		}
+
+		// Filter by LastUpdatedTime if it is set
+		if req.LastUpdatedAfter != nil && storedTask.lastUpdated.Before(*req.LastUpdatedAfter) {
+			continue
+		}
+
+		filteredTasks = append(filteredTasks, storedTask)
+	}
+	s.mu.RUnlock()
+
+	// Sort tasks by last updated time
+	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
+		return b.lastUpdated.Compare(a.lastUpdated)
+	})
+
+	// From sorted and filtered tasks of type []*storedTask, apply necessary filters and create []*a2a.Task
+	var result []*a2a.Task
+	for _, storedTask := range filteredTasks {
+		// Copy the task to avoid modifying the original
+		taskCopy, err := utils.DeepCopy(storedTask.task)
+		if err != nil {
+			return nil, err
+		}
+
+		// If HistoryLength is set, truncate the history, otherwise keep it as is
+		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
+			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
+		}
+
+		// If IncludeArtifacts is false, remove the artifacts, otherwise keep it as is
+		if !req.IncludeArtifacts {
+			taskCopy.Artifacts = nil
+		}
+
+		result = append(result, taskCopy)
+	}
+	return &a2a.ListTasksResponse{Tasks: result}, nil
 }
