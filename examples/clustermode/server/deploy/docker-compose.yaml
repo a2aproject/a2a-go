@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile.mysql
     environment:
-      MYSQL_DATABASE: a2a
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
@@ -19,9 +19,7 @@ services:
     build:
       context: ../../../../
       dockerfile: examples/clustermode/server/deploy/Dockerfile.app
-    environment:
-      - DB_DSN=root:rootpassword@tcp(mysql:3306)/a2a?parseTime=true
-    command: ["-db", "root:rootpassword@tcp(mysql:3306)/a2a?parseTime=true"]
+    command: ["-db", "root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE}?parseTime=true"]
     depends_on:
       mysql:
         condition: service_healthy

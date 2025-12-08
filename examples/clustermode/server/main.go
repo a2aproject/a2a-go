@@ -57,7 +57,7 @@ func main() {
 		WorkQueue:    newDBWorkQueue(db, workerID),
 	}
 	requestHandler := a2asrv.NewHandler(
-		&agentExecutor{port: *port},
+		&agentExecutor{},
 		a2asrv.WithClusterMode(conf),
 	)
 	mux := http.NewServeMux()
@@ -71,20 +71,19 @@ func main() {
 }
 
 func openDB() *sql.DB {
-	var db *sql.DB
-	if *dbName != "" {
-		var err error
-		db, err = sql.Open("mysql", *dbName)
-		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
-		}
-		db.SetConnMaxLifetime(3 * time.Minute)
-		db.SetMaxOpenConns(10)
-		db.SetMaxIdleConns(10)
+	if *dbName == "" {
+		log.Fatal("Database connection string (DSN) is required. Please provide it using -db flag.")
+	}
+	db, err := sql.Open("mysql", *dbName)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	db.SetConnMaxLifetime(3 * time.Minute)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(10)
 
-		if err := db.Ping(); err != nil {
-			log.Fatalf("Failed to ping database: %v", err)
-		}
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
 	}
 	return db
 }

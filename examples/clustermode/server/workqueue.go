@@ -105,26 +105,26 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 	}
 }
 
-func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) error {
+func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2a.TaskID, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	executionID := uuid.New().String()
+	taskID, executionID := payload.TaskID, uuid.New().String()
 
 	if payload.Type == workqueue.PayloadTypeCancel {
 		_, err = q.db.ExecContext(ctx, `
 			INSERT INTO task_execution (id, task_id, state, work_type, payload_json)
 			VALUES (?, ?, 'pending', ?, ?)
 		`, executionID, payload.TaskID, payload.Type, string(payloadJSON))
-		return err
+		return taskID, err
 	}
 
 	// For other types (Execute), check for concurrent execution
 	tx, err := q.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tx.Rollback()
 
@@ -133,25 +133,25 @@ func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) err
 		SELECT state FROM task_execution
 		WHERE task_id = ? AND state != 'completed'
 		FOR UPDATE
-	`, payload.TaskID).Scan(&existingState)
+	`, taskID).Scan(&existingState)
 
 	if err == nil {
-		return fmt.Errorf("concurrent execution in progress for task %s (state: %s)", payload.TaskID, existingState)
+		return "", fmt.Errorf("concurrent execution in progress for task %s (state: %s)", taskID, existingState)
 	}
 	if err != sql.ErrNoRows {
-		return err
+		return "", err
 	}
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO task_execution (id, task_id, state, work_type, payload_json)
 		VALUES (?, ?, 'pending', ?, ?)
-	`, executionID, payload.TaskID, payload.Type, string(payloadJSON))
+	`, executionID, taskID, payload.Type, string(payloadJSON))
 
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return tx.Commit()
+	return taskID, tx.Commit()
 }
 
 type dbWorkMessage struct {

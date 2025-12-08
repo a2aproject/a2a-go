@@ -1,4 +1,3 @@
-START TRANSACTION;
 
 CREATE TABLE `task` (
     `id` CHAR(36) PRIMARY KEY,
@@ -39,4 +38,3 @@ CREATE TABLE `task_execution` (
 CREATE INDEX `idx_task_execution_task_id` ON `task_execution` (`task_id`);
 CREATE INDEX `idx_task_execution_state_last_updated` ON `task_execution` (`state`, `last_updated`);
 
-COMMIT;
