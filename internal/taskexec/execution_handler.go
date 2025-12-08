@@ -90,7 +90,7 @@ func runProducerConsumer(
 				case <-ctx.Done():
 					return ctx.Err()
 				case <-timer.C:
-					if err := heartbeater.Hearbeat(ctx); err != nil {
+					if err := heartbeater.Heartbeat(ctx); err != nil {
 						return err
 					}
 				}

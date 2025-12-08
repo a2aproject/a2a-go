@@ -48,8 +48,8 @@ type Message interface {
 type Heartbeater interface {
 	// HeartbeatInterval returns the interval between heartbeats.
 	HeartbeatInterval() time.Duration
-	// Hearbeat is called at heartbeat interval to mark the message as still being handled.
-	Hearbeat(ctx context.Context) error
+	// Heartbeat is called at heartbeat interval to mark the message as still being handled.
+	Heartbeat(ctx context.Context) error
 }
 
 // Queue is an interface for the work distribution component.
