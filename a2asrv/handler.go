@@ -146,6 +146,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		}
 		if h.taskStore == nil {
 			h.taskStore = taskstore.NewMem()
+			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.Config{
 			QueueManager:      h.queueManager,
