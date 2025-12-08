@@ -162,6 +162,20 @@ type dbWorkMessage struct {
 }
 
 var _ workqueue.Message = (*dbWorkMessage)(nil)
+var _ workqueue.Heartbeater = (*dbWorkMessage)(nil)
+
+func (m *dbWorkMessage) HeartbeatInterval() time.Duration {
+	return 5 * time.Second
+}
+
+func (m *dbWorkMessage) Heartbeat(ctx context.Context) error {
+	_, err := m.db.ExecContext(ctx, `
+		UPDATE task_execution
+		SET last_updated = NOW()
+		WHERE id = ?
+	`, m.executionID)
+	return err
+}
 
 func (m *dbWorkMessage) Payload() *workqueue.Payload {
 	return m.payload
