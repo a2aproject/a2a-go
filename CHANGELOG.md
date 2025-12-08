@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.3](https://github.com/a2aproject/a2a-go/compare/v0.3.2...v0.3.3) (2025-12-08)
+
+
+### Features
+
+* allow creating grpc transport from service client ([#117](https://github.com/a2aproject/a2a-go/issues/117)) ([e95c064](https://github.com/a2aproject/a2a-go/commit/e95c0644be3f25976994879ecbd064a20c8e80f6))
+* concurrency control ([#110](https://github.com/a2aproject/a2a-go/issues/110)) ([4e8bcc1](https://github.com/a2aproject/a2a-go/commit/4e8bcc106872b74ce871828e85f774bc27df8195))
+
+
+### Bug Fixes
+
+* increase default timeout on jsonrpc client to account for streaming ([#134](https://github.com/a2aproject/a2a-go/issues/134)) ([6d7290b](https://github.com/a2aproject/a2a-go/commit/6d7290b35491aab2d121b61b059f7b5e06e5052b)), closes [#125](https://github.com/a2aproject/a2a-go/issues/125)
+* make log package capture the source properly ([#112](https://github.com/a2aproject/a2a-go/issues/112)) ([0ec064d](https://github.com/a2aproject/a2a-go/commit/0ec064d000af0a4a34bf4957ccf5014c61f2a60d))
+* return a task in failed state as a result ([#114](https://github.com/a2aproject/a2a-go/issues/114)) ([80e20aa](https://github.com/a2aproject/a2a-go/commit/80e20aa7a01a611e1bf6a2093ceb69bae2e806ff))
+
+
+### Documentation
+
+* Added CONTRIBUTING.md. ([#119](https://github.com/a2aproject/a2a-go/issues/119)) ([f666ec6](https://github.com/a2aproject/a2a-go/commit/f666ec6aa08c522e93f0351ae8014175ebe13296))
+
 ## [0.3.2](https://github.com/a2aproject/a2a-go/compare/v0.3.1...v0.3.2) (2025-11-14)
 
 
