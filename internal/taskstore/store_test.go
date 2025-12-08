@@ -273,7 +273,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			mustSave(t, store, tc.givenTasks...)
 
 			listResponse, err := store.List(t.Context(), tc.request)
-	
+
 			if err != nil {
 				t.Fatalf("Unexpected error: got = %v, want nil", err)
 			}

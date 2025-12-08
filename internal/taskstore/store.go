@@ -53,9 +53,9 @@ func WithTimeProvider(tp TimeProvider) Option {
 
 // Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
-	mu            sync.RWMutex
-	tasks         map[a2a.TaskID]*storedTask
-	
+	mu    sync.RWMutex
+	tasks map[a2a.TaskID]*storedTask
+
 	authenticator Authenticator
 	timeProvider  TimeProvider
 }
