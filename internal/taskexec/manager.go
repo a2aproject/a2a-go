@@ -210,6 +210,7 @@ func (m *LocalManager) handleExecution(ctx context.Context, execution *localExec
 		ctx,
 		func(ctx context.Context) error { return executor.Execute(ctx, execution.pipe.Writer) },
 		handler.processEvents,
+		nil,
 	)
 
 	if err != nil {
@@ -245,6 +246,7 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		ctx,
 		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
 		handler.processEvents,
+		nil,
 	)
 	if err != nil {
 		cancel.result.setError(err)

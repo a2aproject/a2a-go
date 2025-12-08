@@ -18,11 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -72,8 +74,29 @@ type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
 // runProducerConsumer starts producer and consumer goroutines in an error group and waits
 // for both of them to finish or one of them to fail. If both complete successfuly and consumer produces a result,
 // the result is returned, otherwise an error is returned.
-func runProducerConsumer(ctx context.Context, producer eventProducerFn, consumer eventConsumerFn) (a2a.SendMessageResult, error) {
+func runProducerConsumer(
+	ctx context.Context,
+	producer eventProducerFn,
+	consumer eventConsumerFn,
+	heartbeater workqueue.Heartbeater,
+) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
+
+	if heartbeater != nil {
+		group.Go(func() error {
+			timer := time.NewTimer(heartbeater.HeartbeatInterval())
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-timer.C:
+					if err := heartbeater.Hearbeat(ctx); err != nil {
+						return err
+					}
+				}
+			}
+		})
+	}
 
 	group.Go(func() (err error) {
 		defer func() {

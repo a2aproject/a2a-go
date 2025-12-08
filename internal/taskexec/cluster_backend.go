@@ -120,6 +120,10 @@ func (b *clusterBackend) handle(ctx context.Context, msg workqueue.Message) (a2a
 		handleErrorFn:     eventProcessor.ProcessError,
 	}
 
-	// TODO: handle message heartbeater
-	return runProducerConsumer(ctx, eventProducer, handler.processEvents)
+	var heartbeater workqueue.Heartbeater
+	if h, ok := msg.(workqueue.Heartbeater); ok {
+		heartbeater = h
+	}
+
+	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater)
 }

@@ -32,7 +32,7 @@ type Message interface {
 	Return(ctx context.Context, cause error) error
 }
 
-type Hearbeater interface {
+type Heartbeater interface {
 	HeartbeatInterval() time.Duration
 
 	Hearbeat(ctx context.Context) error
