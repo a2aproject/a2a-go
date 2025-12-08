@@ -146,7 +146,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 
 	storedTask, lastVersion, err := f.taskStore.Get(ctx, tid)
 	if errors.Is(err, a2a.ErrTaskNotFound) && msg.TaskID == "" {
-		return f.createNewExecutionCotnext(tid, params)
+		return f.createNewExecutionContext(tid, params)
 	}
 
 	if err != nil {
@@ -195,7 +195,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}, nil
 }
 
-func (f *factory) createNewExecutionCotnext(tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
+func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
 	msg := params.Message
 	contextID := msg.ContextID
 	if contextID == "" {
