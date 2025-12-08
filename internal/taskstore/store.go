@@ -55,6 +55,7 @@ func WithTimeProvider(tp TimeProvider) Option {
 type Mem struct {
 	mu            sync.RWMutex
 	tasks         map[a2a.TaskID]*storedTask
+	
 	authenticator Authenticator
 	timeProvider  TimeProvider
 }

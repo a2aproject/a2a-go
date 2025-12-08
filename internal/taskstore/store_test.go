@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 func mustSave(t *testing.T, store *Mem, tasks ...*a2a.Task) {
@@ -267,33 +268,18 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			timeOffsetIndex = 0
 			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
 			mustSave(t, store, tc.givenTasks...)
+
 			listResponse, err := store.List(t.Context(), tc.request)
+	
 			if err != nil {
 				t.Fatalf("Unexpected error: got = %v, want nil", err)
 			}
-			if len(listResponse.Tasks) != len(tc.wantResponse.Tasks) {
-				t.Fatalf("Unexpected list length: got = %v, want %v", len(listResponse.Tasks), len(tc.wantResponse.Tasks))
-			}
-
 			for i := range listResponse.Tasks {
-				if listResponse.Tasks[i].ID != tc.wantResponse.Tasks[i].ID {
-					t.Fatalf("Unexpected task ID: got = %v, want %v", listResponse.Tasks[i].ID, tc.wantResponse.Tasks[i].ID)
-				}
-				if listResponse.Tasks[i].ContextID != tc.wantResponse.Tasks[i].ContextID {
-					t.Fatalf("Unexpected task context ID: got = %v, want %v", listResponse.Tasks[i].ContextID, tc.wantResponse.Tasks[i].ContextID)
-				}
-				if listResponse.Tasks[i].Status != tc.wantResponse.Tasks[i].Status {
-					t.Fatalf("Unexpected task status: got = %v, want %v", listResponse.Tasks[i].Status, tc.wantResponse.Tasks[i].Status)
-				}
-				if !reflect.DeepEqual(listResponse.Tasks[i].History, tc.wantResponse.Tasks[i].History) {
-					t.Fatalf("Unexpected task history: got = %v, want %v", listResponse.Tasks[i].History, tc.wantResponse.Tasks[i].History)
-				}
-				if !reflect.DeepEqual(listResponse.Tasks[i].Artifacts, tc.wantResponse.Tasks[i].Artifacts) {
-					t.Fatalf("Unexpected task artifacts: got = %v, want %v", listResponse.Tasks[i].Artifacts, tc.wantResponse.Tasks[i].Artifacts)
+				if diff := cmp.Diff(listResponse.Tasks[i], tc.wantResponse.Tasks[i]); diff != "" {
+					t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
 				}
 			}
 		})
