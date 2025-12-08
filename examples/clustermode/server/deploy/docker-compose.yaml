@@ -1,0 +1,42 @@
+services:
+  mysql:
+    build:
+      context: .
+      dockerfile: Dockerfile.mysql
+    environment:
+      MYSQL_DATABASE: a2a
+      MYSQL_ROOT_PASSWORD: rootpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  a2asrv:
+    build:
+      context: ../../../../
+      dockerfile: examples/clustermode/server/deploy/Dockerfile.app
+    environment:
+      - DB_DSN=root:rootpassword@tcp(mysql:3306)/a2a?parseTime=true
+    command: ["-db", "root:rootpassword@tcp(mysql:3306)/a2a?parseTime=true"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+    deploy:
+      replicas: 3
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - a2asrv
+
+volumes:
+  mysql_data:

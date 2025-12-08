@@ -1,3 +1,17 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -42,13 +56,14 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 				return nil, err
 			}
 
-			reclaimCutoff := time.Now().Add(-taskReclaimTimeout).UnixNano()
+			reclaimCutoff := time.Now().Add(-taskReclaimTimeout)
+			// TODO(yarolegovich): fetch in batches
 			err = tx.QueryRowContext(ctx, `
 				SELECT id, task_id, payload_json
 				FROM task_execution
 				WHERE state != 'completed' AND last_updated < ?
-				LIMIT 1 // TODO: fetch in batches
-				FOR UPDATE SKIP LOCKED // avoid contention
+				LIMIT 1 
+				FOR UPDATE SKIP LOCKED
 			`, reclaimCutoff).Scan(&executionID, &taskID, &payloadJSON)
 
 			if err == sql.ErrNoRows {
@@ -62,9 +77,9 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 
 			_, err = tx.ExecContext(ctx, `
 				UPDATE task_execution
-				SET state = 'working', last_updated = ?, worker_id = ?
+				SET state = 'working', worker_id = ?
 				WHERE id = ?
-			`, time.Now().UnixNano(), q.workerID, executionID)
+			`, q.workerID, executionID)
 
 			if err != nil {
 				tx.Rollback()
@@ -96,15 +111,13 @@ func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) err
 		return err
 	}
 
-	now := time.Now()
-	nowNano := now.UnixNano()
 	executionID := uuid.New().String()
 
 	if payload.Type == workqueue.PayloadTypeCancel {
 		_, err = q.db.ExecContext(ctx, `
-			INSERT INTO task_execution (id, task_id, state, work_type, created, last_updated, payload_json)
-			VALUES (?, ?, 'pending', ?, ?, ?, ?)
-		`, executionID, payload.TaskID, payload.Type, now, nowNano, string(payloadJSON))
+			INSERT INTO task_execution (id, task_id, state, work_type, payload_json)
+			VALUES (?, ?, 'pending', ?, ?)
+		`, executionID, payload.TaskID, payload.Type, string(payloadJSON))
 		return err
 	}
 
@@ -130,9 +143,9 @@ func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) err
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO task_execution (id, task_id, state, work_type, created, last_updated, payload_json)
-		VALUES (?, ?, 'pending', ?, ?, ?, ?)
-	`, executionID, payload.TaskID, payload.Type, now, nowNano, string(payloadJSON))
+		INSERT INTO task_execution (id, task_id, state, work_type, payload_json)
+		VALUES (?, ?, 'pending', ?, ?)
+	`, executionID, payload.TaskID, payload.Type, string(payloadJSON))
 
 	if err != nil {
 		return err
@@ -165,8 +178,8 @@ func (m *dbWorkMessage) Return(ctx context.Context, cause error) error {
 func (m *dbWorkMessage) setCompleted(ctx context.Context, cause string) error {
 	_, err := m.db.ExecContext(ctx, `
 		UPDATE task_execution
-		SET state = 'completed', cause = ?, last_updated = ?
+		SET state = 'completed', cause = ?
 		WHERE id = ?
-	`, cause, time.Now().UnixNano(), m.executionID)
+	`, cause, m.executionID)
 	return err
 }
