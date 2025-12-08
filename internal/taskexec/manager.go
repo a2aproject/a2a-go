@@ -158,24 +158,21 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	cancel, cancelInProgress := m.cancelations[tid]
 
 	if cancel == nil {
-		cancel = newCancelation(params, newPromise())
+		cancel = newCancelation(params)
 		m.cancelations[tid] = cancel
 	}
 	m.mu.Unlock()
 
-	if cancelInProgress {
-		return cancel.wait(ctx)
+	if !cancelInProgress {
+		detachedCtx := context.WithoutCancel(ctx)
+		if execution != nil {
+			go m.handleCancelWithConcurrentRun(detachedCtx, cancel, execution)
+		} else {
+			go m.handleCancel(detachedCtx, cancel)
+		}
 	}
 
-	detachedCtx := context.WithoutCancel(ctx)
-
-	if execution != nil {
-		go m.handleCancelWithConcurrentRun(detachedCtx, cancel, execution)
-	} else {
-		go m.handleCancel(detachedCtx, cancel)
-	}
-
-	return cancel.wait(ctx)
+	return convertToCancelationResult(ctx, cancel.result)
 }
 
 func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {

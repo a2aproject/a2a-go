@@ -25,16 +25,16 @@ import (
 )
 
 type remoteExecution struct {
-	tid     a2a.TaskID
-	store   TaskStore
-	qm      eventqueue.Manager
-	promise *promise
+	tid    a2a.TaskID
+	store  TaskStore
+	qm     eventqueue.Manager
+	result *promise
 }
 
 var _ Execution = (*remoteExecution)(nil)
 
 func newRemoteExecution(qm eventqueue.Manager, store TaskStore, tid a2a.TaskID) *remoteExecution {
-	return &remoteExecution{tid: tid, qm: qm, store: store, promise: newPromise()}
+	return &remoteExecution{tid: tid, qm: qm, store: store, result: newPromise()}
 }
 
 func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
@@ -56,26 +56,26 @@ func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error
 			}
 
 			if taskupdate.IsFinal(event) {
-				defer e.promise.signalDone()
+				defer e.result.signalDone()
 
 				if result, ok := event.(a2a.SendMessageResult); ok {
-					e.promise.setValue(result)
+					e.result.setValue(result)
 					yield(event, nil)
 					return
 				}
 
 				task, _, err := e.store.Get(ctx, e.tid)
 				if err != nil {
-					e.promise.setError(fmt.Errorf("failed to load execution result: %w", err))
+					e.result.setError(fmt.Errorf("failed to load execution result: %w", err))
 					yield(event, nil)
 					return
 				}
 
 				// TODO: for resubscription case when task is in input required we should stay subscribed to events
 				if !task.Status.State.Terminal() && task.Status.State != a2a.TaskStateInputRequired {
-					e.promise.setError(fmt.Errorf("execution finished in unexpected task state: %s", task.Status.State))
+					e.result.setError(fmt.Errorf("execution finished in unexpected task state: %s", task.Status.State))
 				} else {
-					e.promise.setValue(task)
+					e.result.setValue(task)
 				}
 				yield(event, nil)
 				return
@@ -90,14 +90,14 @@ func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error
 
 func (e *remoteExecution) Result(ctx context.Context) (a2a.SendMessageResult, error) {
 	if e.finished() {
-		return e.promise.value, e.promise.err
+		return e.result.value, e.result.err
 	}
 	for _, err := range e.Events(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("failed waiting for terminal event: %w", err)
 		}
 	}
-	return e.promise.value, e.promise.err
+	return e.result.value, e.result.err
 }
 
 func (e *remoteExecution) newSubscription(ctx context.Context) (Subscription, error) {
@@ -109,5 +109,5 @@ func (e *remoteExecution) newSubscription(ctx context.Context) (Subscription, er
 }
 
 func (e *remoteExecution) finished() bool {
-	return e.promise.value != nil || e.promise.err != nil
+	return e.result.value != nil || e.result.err != nil
 }
