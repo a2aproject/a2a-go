@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -44,14 +43,14 @@ func newDBEventQueueManager(db *sql.DB) *dbEventQueueManager {
 var _ eventqueue.Manager = (*dbEventQueueManager)(nil)
 
 func (m *dbEventQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
-	var pollFromID string
+	var pollFromID sql.NullString
 	err := m.db.QueryRowContext(ctx, `SELECT MAX(id) FROM task_event WHERE task_id = ?`, taskID).Scan(&pollFromID)
 
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err != nil {
 		return nil, fmt.Errorf("failed to query latest event version: %w", err)
 	}
 
-	q := newDBEventQueue(m.db, taskID, pollFromID)
+	q := newDBEventQueue(m.db, taskID, pollFromID.String)
 
 	m.mu.Lock()
 	m.queues[taskID] = append(m.queues[taskID], q)
