@@ -64,9 +64,14 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 }
 
 // NewJSONRPCTransport creates a new JSON-RPC transport for A2A protocol communication.
-// By default, an HTTP client with 5-second timeout is used.
+// By default, an HTTP client will use a 3-minute timeout.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
+//
+// To create an A2A client with custom HTTP client use WithJSONRPCTransport option:
+//
+//	httpClient := &http.Client{Timeout: 5q * time.Minute}
+//	client := NewFromCard(ctx, card, WithJSONRPCTransport(httpClient))
 func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
 		url:        url,
@@ -74,9 +79,7 @@ func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	}
 
 	if t.httpClient == nil {
-		t.httpClient = &http.Client{
-			Timeout: 5 * time.Second, // Match Python SDK httpx.AsyncClient default
-		}
+		t.httpClient = &http.Client{Timeout: 3 * time.Minute}
 	}
 
 	return t

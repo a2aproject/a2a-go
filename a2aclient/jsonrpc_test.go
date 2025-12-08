@@ -505,19 +505,6 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 	})
 }
 
-func TestJSONRPCTransport_DefaultTimeout(t *testing.T) {
-	// Test that default transport has 5-second timeout (matching Python SDK)
-	transport := NewJSONRPCTransport("http://example.com", nil)
-
-	// Access internal transport to check HTTP client timeout
-	jt := transport.(*jsonrpcTransport)
-	expectedTimeout := 5 * time.Second
-
-	if jt.httpClient.Timeout != expectedTimeout {
-		t.Errorf("got timeout %v, want %v", jt.httpClient.Timeout, expectedTimeout)
-	}
-}
-
 func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	customClient := &http.Client{
 		Timeout: 10 * time.Second,
