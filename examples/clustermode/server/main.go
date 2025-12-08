@@ -57,7 +57,7 @@ func main() {
 		WorkQueue:    newDBWorkQueue(db, workerID),
 	}
 	requestHandler := a2asrv.NewHandler(
-		&agentExecutor{},
+		newAgentExecutor(workerID),
 		a2asrv.WithClusterMode(conf),
 	)
 	mux := http.NewServeMux()

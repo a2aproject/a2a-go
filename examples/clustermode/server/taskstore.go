@@ -50,10 +50,11 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 	}
 
 	if prev == nil || prev == a2a.TaskVersionMissing {
-		_, err = tx.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			INSERT INTO task (id, state, last_updated, task_json)
 			VALUES (?, ?, ?, ?)
 		`, task.ID, task.Status.State, newVersion, string(taskJSON))
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert task: %w", err)
 		}

@@ -16,7 +16,9 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -142,34 +144,19 @@ type executionContext struct {
 func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
 	msg := params.Message
 
-	if msg.TaskID == "" {
-		contextID := msg.ContextID
-		if contextID == "" {
-			contextID = a2a.NewContextID()
-		}
-		reqCtx := &RequestContext{
-			Message:   msg,
-			TaskID:    tid,
-			ContextID: contextID,
-			Metadata:  msg.Metadata,
-		}
-		return &executionContext{
-			reqCtx: reqCtx,
-			task: &taskupdate.VersionedTask{
-				Task:    a2a.NewSubmittedTask(reqCtx, msg),
-				Version: a2a.TaskVersionMissing,
-			},
-		}, nil
+	storedTask, lastVersion, err := f.taskStore.Get(ctx, tid)
+	if errors.Is(err, a2a.ErrTaskNotFound) && msg.TaskID == "" {
+		return f.createNewExecutionCotnext(tid, params)
 	}
 
-	if msg.TaskID != tid {
-		return nil, fmt.Errorf("bug: message task id different from executor task id")
-	}
-
-	storedTask, lastVersion, err := f.taskStore.Get(ctx, msg.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("task loading failed: %w", err)
 	}
+
+	if msg.TaskID != "" && msg.TaskID != tid {
+		return nil, fmt.Errorf("bug: message task id different from executor task id")
+	}
+
 	if storedTask == nil {
 		return nil, a2a.ErrTaskNotFound
 	}
@@ -182,10 +169,15 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 		return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
 	}
 
-	storedTask.History = append(storedTask.History, msg)
-	lastVersion, err = f.taskStore.Save(ctx, storedTask, nil, lastVersion)
-	if err != nil {
-		return nil, fmt.Errorf("task message history update failed: %w", err)
+	updateHistory := !slices.ContainsFunc(storedTask.History, func(m *a2a.Message) bool {
+		return m.ID == msg.ID
+	})
+	if updateHistory {
+		storedTask.History = append(storedTask.History, msg)
+		lastVersion, err = f.taskStore.Save(ctx, storedTask, nil, lastVersion)
+		if err != nil {
+			return nil, fmt.Errorf("task message history update failed: %w", err)
+		}
 	}
 
 	return &executionContext{
@@ -199,6 +191,27 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			TaskID:     storedTask.ID,
 			ContextID:  storedTask.ContextID,
 			Metadata:   msg.Metadata,
+		},
+	}, nil
+}
+
+func (f *factory) createNewExecutionCotnext(tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
+	msg := params.Message
+	contextID := msg.ContextID
+	if contextID == "" {
+		contextID = a2a.NewContextID()
+	}
+	reqCtx := &RequestContext{
+		Message:   msg,
+		TaskID:    tid,
+		ContextID: contextID,
+		Metadata:  msg.Metadata,
+	}
+	return &executionContext{
+		reqCtx: reqCtx,
+		task: &taskupdate.VersionedTask{
+			Task:    a2a.NewSubmittedTask(reqCtx, msg),
+			Version: a2a.TaskVersionMissing,
 		},
 	}, nil
 }

@@ -49,12 +49,12 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 			return nil, ctx.Err()
 
 		case <-ticker.C:
-			var executionID, taskID, payloadJSON string
-
 			tx, err := q.db.BeginTx(ctx, nil)
 			if err != nil {
 				return nil, err
 			}
+
+			var executionID, taskID, payloadJSON string
 
 			reclaimCutoff := time.Now().Add(-taskReclaimTimeout)
 			// TODO(yarolegovich): fetch in batches
@@ -77,9 +77,9 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 
 			_, err = tx.ExecContext(ctx, `
 				UPDATE task_execution
-				SET state = 'working', worker_id = ?
+				SET state = 'working', worker_id = ?, last_updated = ?
 				WHERE id = ?
-			`, q.workerID, executionID)
+			`, q.workerID, time.Now(), executionID)
 
 			if err != nil {
 				tx.Rollback()
@@ -165,15 +165,11 @@ var _ workqueue.Message = (*dbWorkMessage)(nil)
 var _ workqueue.Heartbeater = (*dbWorkMessage)(nil)
 
 func (m *dbWorkMessage) HeartbeatInterval() time.Duration {
-	return 5 * time.Second
+	return 500 * time.Millisecond
 }
 
 func (m *dbWorkMessage) Heartbeat(ctx context.Context) error {
-	_, err := m.db.ExecContext(ctx, `
-		UPDATE task_execution
-		SET last_updated = NOW()
-		WHERE id = ?
-	`, m.executionID)
+	_, err := m.db.ExecContext(ctx, `UPDATE task_execution SET last_updated = ? WHERE id = ?`, time.Now(), m.executionID)
 	return err
 }
 
@@ -190,10 +186,9 @@ func (m *dbWorkMessage) Return(ctx context.Context, cause error) error {
 }
 
 func (m *dbWorkMessage) setCompleted(ctx context.Context, cause string) error {
-	_, err := m.db.ExecContext(ctx, `
-		UPDATE task_execution
-		SET state = 'completed', cause = ?
-		WHERE id = ?
-	`, cause, m.executionID)
+	if len(cause) > 255 {
+		cause = cause[:252] + "..."
+	}
+	_, err := m.db.ExecContext(ctx, `UPDATE task_execution SET state = 'completed', cause = ? WHERE id = ?`, cause, m.executionID)
 	return err
 }
