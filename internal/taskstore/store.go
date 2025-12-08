@@ -16,8 +16,11 @@ package taskstore
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/gob"
+	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,9 +131,25 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if !ok {
 		return nil, a2a.ErrAuthFailed
 	}
+	pageSize := req.PageSize
+	if pageSize == 0 {
+		pageSize = 50
+	} else if pageSize < 1 || pageSize > 100 {
+		return nil, fmt.Errorf("invalid page size: %d", pageSize)
+	}
 
-	// Filter tasks per request filters
-	var filteredTasks []*storedTask
+	var cursorTime time.Time
+	var cursorTaskID a2a.TaskID
+	var err error
+	if req.PageToken != "" {
+		cursorTime, cursorTaskID, err = s.base64Decode(req.PageToken)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Filter tasks per request filters before pagination
+	var prefilteredTasks []*storedTask
 	s.mu.RLock()
 	for _, storedTask := range s.tasks {
 		// Retrieve only tasks created by the user
@@ -151,14 +170,53 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 			continue
 		}
 
-		filteredTasks = append(filteredTasks, storedTask)
+		prefilteredTasks = append(prefilteredTasks, storedTask)
 	}
 	s.mu.RUnlock()
 
-	// Sort tasks by last updated time
-	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
-		return b.lastUpdated.Compare(a.lastUpdated)
+	// Count total number of tasks before pagination and after all other filters are applied
+	totalSize := len(prefilteredTasks)
+
+	// Sort tasks by last updated time by descending order, if they are equal sort by task ID
+	slices.SortFunc(prefilteredTasks, func(a, b *storedTask) int {
+		if timeCmp := b.lastUpdated.Compare(a.lastUpdated); timeCmp != 0 {
+			return timeCmp
+		}
+		return strings.Compare(string(a.task.ID), string(b.task.ID))
 	})
+
+	// Filter tasks after pagination
+	var filteredTasks []*storedTask
+	if req.PageToken != "" {
+		for _, storedTask := range prefilteredTasks {
+			timeCmp := storedTask.lastUpdated.Compare(cursorTime)
+			if timeCmp < 0 {
+				filteredTasks = append(filteredTasks, storedTask)
+			} else if timeCmp == 0 {
+				taskIDCmp := strings.Compare(string(storedTask.task.ID), string(cursorTaskID))
+				if taskIDCmp < 0 {
+					filteredTasks = append(filteredTasks, storedTask)
+				}
+			}
+		}
+	} else {
+		filteredTasks = prefilteredTasks
+	}
+	// Filter tasks per page size
+	var hasNextPage bool
+	if pageSize > len(filteredTasks) {
+		pageSize = len(filteredTasks)
+		hasNextPage = false
+	} else {
+		hasNextPage = true
+	}
+	filteredTasks = filteredTasks[:pageSize]
+
+	var nextPageToken string
+	if hasNextPage {
+		lastElement := filteredTasks[len(filteredTasks)-1]
+		nextPageToken = s.base64Encode(lastElement.lastUpdated, lastElement.task.ID)
+	}
 
 	// From sorted and filtered tasks of type []*storedTask, apply necessary filters and create []*a2a.Task
 	var result []*a2a.Task
@@ -181,5 +239,36 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 
 		result = append(result, taskCopy)
 	}
-	return &a2a.ListTasksResponse{Tasks: result}, nil
+	return &a2a.ListTasksResponse{
+		Tasks:         result,
+		TotalSize:     totalSize,
+		PageSize:      pageSize,
+		NextPageToken: nextPageToken,
+	}, nil
+}
+
+func (s *Mem) base64Encode(updatedTime time.Time, taskID a2a.TaskID) string {
+	timeStrNano := updatedTime.Format(time.RFC3339Nano)
+	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
+}
+
+func (s *Mem) base64Decode(nextPageToken string) (time.Time, a2a.TaskID, error) {
+	decoded, err := base64.URLEncoding.DecodeString(nextPageToken)
+	if err != nil {
+		return time.Time{}, "", err
+	}
+
+	parts := strings.Split(string(decoded), "_")
+	if len(parts) != 2 {
+		return time.Time{}, "", a2a.ErrParseError
+	}
+
+	taskID := a2a.TaskID(parts[1])
+
+	updatedTime, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, "", a2a.ErrParseError
+	}
+
+	return updatedTime, taskID, nil
 }

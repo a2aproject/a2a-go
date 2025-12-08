@@ -16,6 +16,7 @@ package taskstore
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -219,6 +220,12 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 	}
 }
 
+func createPageToken(t *testing.T, updatedTime time.Time, taskID a2a.TaskID) string {
+	t.Helper()
+	timeStrNano := updatedTime.Format(time.RFC3339Nano)
+	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
+}
+
 func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	cutoffTime := startTime.Add(2 * time.Second)
@@ -251,6 +258,18 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			request:      &a2a.ListTasksRequest{HistoryLength: 2},
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
+		},
+		{
+			name:         "PageSize filter",
+			request:      &a2a.ListTasksRequest{PageSize: 2},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
+		},
+		{
+			name:         "PageToken filter",
+			request:      &a2a.ListTasksRequest{PageSize: 1, PageToken: createPageToken(t, startTime.Add(3*time.Second), id3)},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2}}},
 		},
 		{
 			name:         "IncludeArtifacts true filter",
