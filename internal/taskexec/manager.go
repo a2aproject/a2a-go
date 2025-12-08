@@ -38,7 +38,7 @@ var (
 
 type Manager interface {
 	GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool)
-	Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error)
+	Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error)
 	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
 }
 
@@ -97,7 +97,14 @@ func (m *LocalManager) GetExecution(_ context.Context, taskID a2a.TaskID) (Execu
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *LocalManager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+	var tid a2a.TaskID
+	if params.Message == nil || len(params.Message.TaskID) == 0 {
+		tid = a2a.NewTaskID()
+	} else {
+		tid = params.Message.TaskID
+	}
+
 	execution, err := m.createExecution(ctx, tid, params)
 	if err != nil {
 		return nil, nil, err

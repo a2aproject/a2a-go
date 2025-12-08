@@ -27,6 +27,7 @@ import (
 // Execution represents an agent invocation in a context of the referenced task.
 // If the invocation was finished Result() will resolve immediately, otherwise it will block.
 type Execution interface {
+	TaskID() a2a.TaskID
 	// Events subscribes to the events an agent is producing during an active Execution.
 	// If the Execution was finished the sequence will be empty.
 	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
@@ -58,6 +59,10 @@ func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.Messag
 		pipe:         eventpipe.NewLocal(),
 		result:       newPromise(),
 	}
+}
+
+func (e *localExecution) TaskID() a2a.TaskID {
+	return e.tid
 }
 
 func (e *localExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {

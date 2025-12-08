@@ -258,15 +258,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a
 	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
-
-	var taskID a2a.TaskID
-	if len(params.Message.TaskID) == 0 {
-		taskID = a2a.NewTaskID()
-	} else {
-		taskID = params.Message.TaskID
-	}
-
-	return h.execManager.Execute(ctx, taskID, params)
+	return h.execManager.Execute(ctx, params)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {

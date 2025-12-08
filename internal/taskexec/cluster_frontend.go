@@ -67,7 +67,7 @@ func (m *clusterFrontend) GetExecution(ctx context.Context, taskID a2a.TaskID) (
 	return newRemoteExecution(m.queueManager, m.taskStore, taskID), true
 }
 
-func (m *clusterFrontend) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
 	if params == nil || params.Message == nil {
 		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
@@ -103,11 +103,12 @@ func (m *clusterFrontend) Execute(ctx context.Context, tid a2a.TaskID, params *a
 		return nil, nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
 
-	if err := m.workQueue.Write(ctx, &workqueue.Payload{
+	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeExecute,
 		TaskID:        taskID,
 		ExecuteParams: params,
-	}); err != nil {
+	})
+	if err != nil {
 		if closeErr := queue.Close(); closeErr != nil {
 			log.Warn(ctx, "queue close failed", "error", closeErr)
 		}
@@ -133,7 +134,7 @@ func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) 
 		return nil, fmt.Errorf("task in non-cancelable state %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
-	if err := m.workQueue.Write(ctx, &workqueue.Payload{
+	if _, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:         workqueue.PayloadTypeCancel,
 		TaskID:       params.ID,
 		CancelParams: params,

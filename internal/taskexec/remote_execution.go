@@ -37,6 +37,10 @@ func newRemoteExecution(qm eventqueue.Manager, store TaskStore, tid a2a.TaskID) 
 	return &remoteExecution{tid: tid, qm: qm, store: store, result: newPromise()}
 }
 
+func (e *remoteExecution) TaskID() a2a.TaskID {
+	return e.tid
+}
+
 func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if e.finished() {
