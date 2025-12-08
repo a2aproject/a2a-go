@@ -70,7 +70,7 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 //
 // To create an A2A client with custom HTTP client use WithJSONRPCTransport option:
 //
-//	httpClient := &http.Client{Timeout: 5q * time.Minute}
+//	httpClient := &http.Client{Timeout: 5 * time.Minute}
 //	client := NewFromCard(ctx, card, WithJSONRPCTransport(httpClient))
 func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
