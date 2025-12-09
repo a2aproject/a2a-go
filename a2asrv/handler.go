@@ -106,10 +106,19 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 	}
 }
 
+// ClusterConfig groups the necessary dependencies for A2A cluster mode operation.
+type ClusterConfig struct {
+	QueueManager eventqueue.Manager
+	WorkQueue    workqueue.Queue
+	TaskStore    TaskStore
+}
+
 // WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
-func WithClusterMode(queue workqueue.Queue) RequestHandlerOption {
+func WithClusterMode(config *ClusterConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.workQueue = queue
+		h.workQueue = config.WorkQueue
+		h.taskStore = config.TaskStore
+		h.queueManager = config.QueueManager
 	}
 }
 

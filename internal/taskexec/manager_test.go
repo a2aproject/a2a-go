@@ -229,7 +229,7 @@ type testWorkQueue struct {
 	payloadChan chan *workqueue.Payload
 }
 
-var _ workqueue.Queue = (*testWorkQueue)(nil)
+var _ workqueue.ReadWriter = (*testWorkQueue)(nil)
 
 func (q *testWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2a.TaskID, error) {
 	select {
@@ -255,7 +255,7 @@ func (q *testWorkQueue) Close() error {
 
 func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore TaskStore) Manager {
 	config := &ClusterConfig{
-		WorkQueue:    &testWorkQueue{payloadChan: make(chan *workqueue.Payload)},
+		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}),
 		QueueManager: eventqueue.NewInMemoryManager(),
 		Factory:      newStaticFactory(executor, canceler),
 		TaskStore:    taskStore,

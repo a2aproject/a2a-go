@@ -16,7 +16,6 @@ package taskexec
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -38,41 +37,11 @@ func newClusterBackend(cfg *ClusterConfig) *clusterBackend {
 		taskStore:    cfg.TaskStore,
 		factory:      cfg.Factory,
 	}
-	go func() {
-		ctx := context.Background()
-		for {
-			// TODO: acquire quota
-			msg, err := cfg.WorkQueue.Read(ctx)
-			if errors.Is(err, workqueue.ErrQueueClosed) {
-				log.Info(ctx, "cluster backend stopped because work queue was closed")
-				return
-			}
-			if err != nil {
-				// TODO: circuit breaker
-				continue
-			}
-			go func() {
-				result, handleErr := backend.handle(ctx, msg)
-				if handleErr != nil {
-					if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
-						log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
-					} else {
-						log.Info(ctx, "failed to handle work item", "error", handleErr)
-					}
-					return
-				}
-				if err := msg.Complete(ctx, result); err != nil {
-					log.Warn(ctx, "failed to mark work item as completed", "error", err)
-				}
-			}()
-		}
-	}()
+	cfg.WorkQueue.RegisterHandler(cfg.ConcurrencyConfig, backend.handle)
 	return backend
 }
 
-func (b *clusterBackend) handle(ctx context.Context, msg workqueue.Message) (a2a.SendMessageResult, error) {
-	payload := msg.Payload()
-
+func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload) (a2a.SendMessageResult, error) {
 	pipe := eventpipe.NewLocal()
 	defer pipe.Close()
 
@@ -121,8 +90,8 @@ func (b *clusterBackend) handle(ctx context.Context, msg workqueue.Message) (a2a
 	}
 
 	var heartbeater workqueue.Heartbeater
-	if h, ok := msg.(workqueue.Heartbeater); ok {
-		heartbeater = h
+	if hb, ok := workqueue.HearbeaterFrom(ctx); ok {
+		heartbeater = hb
 	}
 
 	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater)

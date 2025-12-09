@@ -1,11 +1,25 @@
+// Copyright 2025 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package workqueue
 
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 )
 
 // ErrQueueClosed is returned when a queue is closed. This will stop execution backend.
@@ -33,29 +47,17 @@ type Payload struct {
 	ExecuteParams *a2a.MessageSendParams
 }
 
-// Message defines the message for execution or cancelation.
-type Message interface {
-	// Payload returns the payload of the message.
-	Payload() *Payload
-	// Complete marks the message as completed after it was handled by a worker.
-	Complete(ctx context.Context, result a2a.SendMessageResult) error
-	// Return returns the message to the queue after worker failed to handle it.
-	Return(ctx context.Context, cause error) error
-}
+type HandlerFn func(context.Context, *Payload) (a2a.SendMessageResult, error)
 
-// Heartbeater defines an optional heartbeat policy for message handler. Heartbeats are sent according
-// to it while worker is handling a message if the message implements this interface.
-type Heartbeater interface {
-	// HeartbeatInterval returns the interval between heartbeats.
-	HeartbeatInterval() time.Duration
-	// Heartbeat is called at heartbeat interval to mark the message as still being handled.
-	Heartbeat(ctx context.Context) error
+type Writer interface {
+	// Write puts a new payload into the queue. It can return a TaskID to handle idempotency.
+	Write(context.Context, *Payload) (a2a.TaskID, error)
 }
 
 // Queue is an interface for the work distribution component.
 type Queue interface {
-	// Write puts a new payload into the queue. It can return a TaskID to handle idempotency.
-	Write(context.Context, *Payload) (a2a.TaskID, error)
-	// Read returns a new message from the queue.
-	Read(context.Context) (Message, error)
+	Writer
+
+	// RegisterHandler registers an executor.
+	RegisterHandler(limiter.ConcurrencyConfig, HandlerFn)
 }
