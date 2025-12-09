@@ -135,17 +135,7 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if pageSize == 0 {
 		pageSize = 50
 	} else if pageSize < 1 || pageSize > 100 {
-		return nil, fmt.Errorf("invalid page size: %d", pageSize)
-	}
-
-	var cursorTime time.Time
-	var cursorTaskID a2a.TaskID
-	var err error
-	if req.PageToken != "" {
-		cursorTime, cursorTaskID, err = s.base64Decode(req.PageToken)
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("must be between 1 and 100 inclusive, got %d", pageSize)
 	}
 
 	// Filter tasks per request filters before pagination
@@ -182,8 +172,18 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		if timeCmp := b.lastUpdated.Compare(a.lastUpdated); timeCmp != 0 {
 			return timeCmp
 		}
-		return strings.Compare(string(a.task.ID), string(b.task.ID))
+		return strings.Compare(string(b.task.ID), string(a.task.ID))
 	})
+
+	var cursorTime time.Time
+	var cursorTaskID a2a.TaskID
+	var err error
+	if req.PageToken != "" {
+		cursorTime, cursorTaskID, err = s.base64Decode(req.PageToken)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Filter tasks after pagination
 	var filteredTasks []*storedTask
@@ -211,7 +211,6 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		hasNextPage = true
 	}
 	filteredTasks = filteredTasks[:pageSize]
-
 	var nextPageToken string
 	if hasNextPage {
 		lastElement := filteredTasks[len(filteredTasks)-1]
@@ -230,6 +229,8 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		// If HistoryLength is set, truncate the history, otherwise keep it as is
 		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
 			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
+		} else if req.HistoryLength < 0 {
+			return nil, fmt.Errorf("must be non-negative integer, got %d", req.HistoryLength)
 		}
 
 		// If IncludeArtifacts is false, remove the artifacts, otherwise keep it as is
