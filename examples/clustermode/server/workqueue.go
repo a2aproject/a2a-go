@@ -33,11 +33,11 @@ type dbWorkQueue struct {
 	workerID string
 }
 
-func newDBWorkQueue(db *sql.DB, workerID string) *dbWorkQueue {
-	return &dbWorkQueue{db: db, workerID: workerID}
+func newDBWorkQueue(db *sql.DB, workerID string) workqueue.Queue {
+	return workqueue.NewPullQueue(&dbWorkQueue{db: db, workerID: workerID})
 }
 
-var _ workqueue.Queue = (*dbWorkQueue)(nil)
+var _ workqueue.ReadWriter = (*dbWorkQueue)(nil)
 
 func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 	ticker := time.NewTicker(500 * time.Millisecond)
