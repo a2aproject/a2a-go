@@ -304,3 +304,81 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	}
 }
 
+func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
+	id1, id2, id3, id4, id5 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	testCases := []struct {
+		name            string
+		pageSize        int
+		givenTasks      []*a2a.Task
+		result          []*a2a.Task
+		wantCalls       int
+		sameLastUpdated bool
+	}{
+		{
+			name:       "All tasks",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  3,
+		},
+		{
+			name:       "Page Size greater than number of tasks",
+			pageSize:   10,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  1,
+		},
+		{
+			name:       "Empty list",
+			pageSize:   3,
+			givenTasks: []*a2a.Task{},
+			result:     []*a2a.Task{},
+			wantCalls:  1,
+		},
+		{
+			name:            "Same lastUpdated",
+			pageSize:        2,
+			givenTasks:      []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			result:          []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:       2,
+			sameLastUpdated: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			timeOffsetIndex = 0
+			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
+			if tc.sameLastUpdated {
+				mustSave(t, store, tc.givenTasks[0])
+				timeOffsetIndex--
+				mustSave(t, store, tc.givenTasks[1])
+				timeOffsetIndex--
+				mustSave(t, store, tc.givenTasks[2])
+			} else {
+				mustSave(t, store, tc.givenTasks...)
+			}
+
+			result := []*a2a.Task{}
+			actualCalls := 0
+			var pageToken string
+			for {
+				listResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: tc.pageSize, PageToken: pageToken})
+				if err != nil {
+					t.Fatalf("Unexpected error: got = %v, want nil", err)
+				}
+				result = append(result, listResponse.Tasks...)
+				actualCalls++
+				pageToken = listResponse.NextPageToken
+				if pageToken == "" {
+					break
+				}
+			}
+			if diff := cmp.Diff(result, tc.result); diff != "" {
+				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+			}
+			if actualCalls != tc.wantCalls {
+				t.Fatalf("Unexpected number of calls: got = %v, want %v", actualCalls, tc.wantCalls)
+			}
+		})
+	}
+}
