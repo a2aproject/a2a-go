@@ -20,6 +20,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -178,30 +179,31 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	var cursorTime time.Time
 	var cursorTaskID a2a.TaskID
 	var err error
+
+	// Filter tasks after pagination
+	var filteredTasks []*storedTask
 	if req.PageToken != "" {
 		cursorTime, cursorTaskID, err = s.base64Decode(req.PageToken)
 		if err != nil {
 			return nil, err
 		}
-	}
+		pageStartIndex := sort.Search(len(prefilteredTasks), func(i int) bool {
+			task := prefilteredTasks[i]
 
-	// Filter tasks after pagination
-	var filteredTasks []*storedTask
-	if req.PageToken != "" {
-		for _, storedTask := range prefilteredTasks {
-			timeCmp := storedTask.lastUpdated.Compare(cursorTime)
+			timeCmp := task.lastUpdated.Compare(cursorTime)
 			if timeCmp < 0 {
-				filteredTasks = append(filteredTasks, storedTask)
-			} else if timeCmp == 0 {
-				taskIDCmp := strings.Compare(string(storedTask.task.ID), string(cursorTaskID))
-				if taskIDCmp < 0 {
-					filteredTasks = append(filteredTasks, storedTask)
-				}
+				return true
 			}
-		}
+			if timeCmp > 0 {
+				return false
+			}
+			return strings.Compare(string(task.task.ID), string(cursorTaskID)) < 0
+		})
+		filteredTasks = prefilteredTasks[pageStartIndex:]
 	} else {
 		filteredTasks = prefilteredTasks
 	}
+
 	// Filter tasks per page size
 	var hasNextPage bool
 	if pageSize > len(filteredTasks) {

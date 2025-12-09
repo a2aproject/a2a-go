@@ -295,10 +295,8 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Unexpected error: got = %v, want nil", err)
 			}
-			for i := range listResponse.Tasks {
-				if diff := cmp.Diff(listResponse.Tasks[i], tc.wantResponse.Tasks[i]); diff != "" {
-					t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
-				}
+			if diff := cmp.Diff(listResponse.Tasks, tc.wantResponse.Tasks); diff != "" {
+				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
 			}
 		})
 	}
