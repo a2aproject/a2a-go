@@ -41,7 +41,7 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer rollbackTx(ctx, tx)
 
 	newVersion := time.Now().UnixNano()
 	taskJSON, err := json.Marshal(task)

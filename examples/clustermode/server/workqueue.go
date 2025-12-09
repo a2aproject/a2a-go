@@ -67,11 +67,11 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 			`, reclaimCutoff).Scan(&executionID, &taskID, &payloadJSON)
 
 			if err == sql.ErrNoRows {
-				tx.Rollback()
+				rollbackTx(ctx, tx)
 				continue
 			}
 			if err != nil {
-				tx.Rollback()
+				rollbackTx(ctx, tx)
 				return nil, err
 			}
 
@@ -82,7 +82,7 @@ func (q *dbWorkQueue) Read(ctx context.Context) (workqueue.Message, error) {
 			`, q.workerID, time.Now(), executionID)
 
 			if err != nil {
-				tx.Rollback()
+				rollbackTx(ctx, tx)
 				return nil, err
 			}
 
@@ -126,7 +126,7 @@ func (q *dbWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer rollbackTx(ctx, tx)
 
 	var existingState string
 	err = tx.QueryRowContext(ctx, `

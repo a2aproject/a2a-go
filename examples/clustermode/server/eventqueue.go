@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -127,7 +127,7 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 					var version int64
 					var eventJSON, id string
 					if err := rows.Scan(&eventJSON, &version, &id); err != nil {
-						rows.Close()
+						closeSQLRows(ctx, rows)
 						continue
 					}
 					event, err := a2a.UnmarshalEventJSON([]byte(eventJSON))
@@ -141,12 +141,12 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 						version: a2a.TaskVersionInt(version),
 					}:
 					case <-queue.closeSignal:
-						rows.Close()
+						closeSQLRows(ctx, rows)
 						return
 					}
 					pollFromID = id
 				}
-				rows.Close()
+				closeSQLRows(ctx, rows)
 			}
 		}
 	}()
