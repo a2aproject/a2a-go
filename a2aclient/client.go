@@ -16,10 +16,12 @@ package a2aclient
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
@@ -268,6 +270,26 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	}
 
 	return resp, err
+}
+
+func Invoke[Req, Resp any](ctx context.Context, client *Client, method *a2aext.UnaryClientMethod[Req, Resp], arg *Req) (*Resp, error) {
+	ctx, err := client.interceptBefore(ctx, method.Name(), arg)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.transport.Invoke(ctx, method, arg)
+	if errOverride := client.interceptAfter(ctx, method.Name(), resp, err); errOverride != nil {
+		return nil, errOverride
+	}
+
+	typedResp, ok := resp.(*Resp)
+	if !ok {
+		var want Resp
+		return nil, fmt.Errorf("unexpected extension method result type %T, want pointer to %T", resp, want)
+	}
+
+	return typedResp, err
 }
 
 func (c *Client) Destroy() error {
