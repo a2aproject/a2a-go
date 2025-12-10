@@ -118,12 +118,22 @@ func getAuthInfo(ctx context.Context) (UserName, bool) {
 	return "testName", true
 }
 
-var timeOffsetIndex int
 var startTime = time.Date(2025, 12, 4, 15, 50, 0, 0, time.UTC)
 
-func setFixedTime() time.Time {
-	timeOffsetIndex++
-	return startTime.Add(time.Duration(timeOffsetIndex) * time.Second)
+func newTimeProvider(startTime time.Time, offsets []int64) func() time.Time {
+	return func() time.Time {
+		current, rest := offsets[0], offsets[1:]
+		offsets = rest
+		return startTime.Add(time.Duration(current) * time.Second)
+	}
+}
+
+func newIncreasingTimeProvider(startTime time.Time) func() time.Time {
+	timeOffsetIndex := 0
+	return func() time.Time {
+		timeOffsetIndex++
+		return startTime.Add(time.Duration(timeOffsetIndex) * time.Second)
+	}
 }
 
 func TestInMemoryTaskStore_List_NoAuth(t *testing.T) {
@@ -220,8 +230,7 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 	}
 }
 
-func createPageToken(t *testing.T, updatedTime time.Time, taskID a2a.TaskID) string {
-	t.Helper()
+func createPageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 	timeStrNano := updatedTime.Format(time.RFC3339Nano)
 	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
 }
@@ -267,7 +276,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 		},
 		{
 			name:         "PageToken filter",
-			request:      &a2a.ListTasksRequest{PageSize: 1, PageToken: createPageToken(t, startTime.Add(3*time.Second), id3)},
+			request:      &a2a.ListTasksRequest{PageSize: 1, PageToken: createPageToken(startTime.Add(3*time.Second), id3)},
 			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2}}},
 		},
@@ -287,8 +296,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			timeOffsetIndex = 0
-			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
+			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(newIncreasingTimeProvider(startTime)))
 			mustSave(t, store, tc.givenTasks...)
 
 			listResponse, err := store.List(t.Context(), tc.request)
@@ -305,19 +313,26 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 	id1, id2, id3, id4, id5 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	testCases := []struct {
-		name            string
-		pageSize        int
-		givenTasks      []*a2a.Task
-		result          []*a2a.Task
-		wantCalls       int
-		sameLastUpdated bool
+		name               string
+		pageSize           int
+		lastUpdatedOffsets []int64
+		givenTasks         []*a2a.Task
+		result             []*a2a.Task
+		wantCalls          int
 	}{
 		{
-			name:       "All tasks",
+			name:       "All tasks with incomplete last page",
 			pageSize:   2,
 			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
 			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
 			wantCalls:  3,
+		},
+		{
+			name:       "All tasks with complete last page",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}},
+			result:     []*a2a.Task{{ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  2,
 		},
 		{
 			name:       "Page Size greater than number of tasks",
@@ -334,27 +349,23 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 			wantCalls:  1,
 		},
 		{
-			name:            "Same lastUpdated",
-			pageSize:        2,
-			givenTasks:      []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
-			result:          []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}},
-			wantCalls:       2,
-			sameLastUpdated: true,
+			name:               "Same lastUpdated",
+			pageSize:           2,
+			lastUpdatedOffsets: []int64{0, 0, 0},
+			givenTasks:         []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			result:             []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:          2,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			timeOffsetIndex = 0
-			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
-			if tc.sameLastUpdated {
-				mustSave(t, store, tc.givenTasks[0])
-				timeOffsetIndex--
-				mustSave(t, store, tc.givenTasks[1])
-				timeOffsetIndex--
-				mustSave(t, store, tc.givenTasks[2])
-			} else {
-				mustSave(t, store, tc.givenTasks...)
+			timeProvider := newIncreasingTimeProvider(startTime)
+			if tc.lastUpdatedOffsets != nil {
+				timeProvider = newTimeProvider(startTime, tc.lastUpdatedOffsets)
 			}
+
+			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(timeProvider))
+			mustSave(t, store, tc.givenTasks...)
 
 			result := []*a2a.Task{}
 			actualCalls := 0

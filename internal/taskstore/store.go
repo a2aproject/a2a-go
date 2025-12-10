@@ -132,17 +132,55 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if !ok {
 		return nil, a2a.ErrAuthFailed
 	}
+	// Validate page size
 	pageSize := req.PageSize
 	if pageSize == 0 {
 		pageSize = 50
 	} else if pageSize < 1 || pageSize > 100 {
-		return nil, fmt.Errorf("must be between 1 and 100 inclusive, got %d", pageSize)
+		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d", pageSize)
+	}
+	// Validate history length
+	if req.HistoryLength < 0 {
+		return nil, fmt.Errorf("history length must be non-negative integer, got %d", req.HistoryLength)
+	}
+	// Filter tasks per request filters before pagination
+	s.mu.RLock()
+	filteredTasks := filterTasks(s.tasks, userName, req)
+	s.mu.RUnlock()
+
+	// Count total number of tasks before pagination and after all other filters are applied
+	totalSize := len(filteredTasks)
+
+	// Sort tasks by last updated time by descending order, if they are equal sort by task ID
+	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
+		if timeCmp := b.lastUpdated.Compare(a.lastUpdated); timeCmp != 0 {
+			return timeCmp
+		}
+		return strings.Compare(string(b.task.ID), string(a.task.ID))
+	})
+
+	tasksPage, nextPageToken, err := applyPagination(filteredTasks, pageSize, req)
+	if err != nil {
+		return nil, err
 	}
 
-	// Filter tasks per request filters before pagination
-	var prefilteredTasks []*storedTask
-	s.mu.RLock()
-	for _, storedTask := range s.tasks {
+	// Apply transformations to tasksPage (include history/artifacts)
+	transformedTasks, err := transformTasks(tasksPage, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &a2a.ListTasksResponse{
+		Tasks:         transformedTasks,
+		TotalSize:     totalSize,
+		PageSize:      pageSize,
+		NextPageToken: nextPageToken,
+	}, nil
+}
+
+func filterTasks(tasks map[a2a.TaskID]*storedTask, userName UserName, req *a2a.ListTasksRequest) []*storedTask {
+	var filteredTasks []*storedTask
+	for _, storedTask := range tasks {
 		// Retrieve only tasks created by the user
 		if storedTask.user != userName {
 			continue
@@ -161,34 +199,25 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 			continue
 		}
 
-		prefilteredTasks = append(prefilteredTasks, storedTask)
+		filteredTasks = append(filteredTasks, storedTask)
 	}
-	s.mu.RUnlock()
+	return filteredTasks
+}
 
-	// Count total number of tasks before pagination and after all other filters are applied
-	totalSize := len(prefilteredTasks)
-
-	// Sort tasks by last updated time by descending order, if they are equal sort by task ID
-	slices.SortFunc(prefilteredTasks, func(a, b *storedTask) int {
-		if timeCmp := b.lastUpdated.Compare(a.lastUpdated); timeCmp != 0 {
-			return timeCmp
-		}
-		return strings.Compare(string(b.task.ID), string(a.task.ID))
-	})
-
+func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTasksRequest) ([]*storedTask, string, error) {
 	var cursorTime time.Time
 	var cursorTaskID a2a.TaskID
 	var err error
 
 	// Filter tasks after pagination
-	var filteredTasks []*storedTask
+	var tasksPage []*storedTask
 	if req.PageToken != "" {
-		cursorTime, cursorTaskID, err = s.base64Decode(req.PageToken)
+		cursorTime, cursorTaskID, err = decodePageToken(req.PageToken)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		pageStartIndex := sort.Search(len(prefilteredTasks), func(i int) bool {
-			task := prefilteredTasks[i]
+		pageStartIndex := sort.Search(len(filteredTasks), func(i int) bool {
+			task := filteredTasks[i]
 
 			timeCmp := task.lastUpdated.Compare(cursorTime)
 			if timeCmp < 0 {
@@ -199,29 +228,26 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 			}
 			return strings.Compare(string(task.task.ID), string(cursorTaskID)) < 0
 		})
-		filteredTasks = prefilteredTasks[pageStartIndex:]
+		tasksPage = filteredTasks[pageStartIndex:]
 	} else {
-		filteredTasks = prefilteredTasks
+		tasksPage = filteredTasks
 	}
 
-	// Filter tasks per page size
-	var hasNextPage bool
-	if pageSize > len(filteredTasks) {
-		pageSize = len(filteredTasks)
-		hasNextPage = false
-	} else {
-		hasNextPage = true
-	}
-	filteredTasks = filteredTasks[:pageSize]
+	// Filter tasks per page size and set nextPageToken
 	var nextPageToken string
-	if hasNextPage {
-		lastElement := filteredTasks[len(filteredTasks)-1]
-		nextPageToken = s.base64Encode(lastElement.lastUpdated, lastElement.task.ID)
+	if pageSize >= len(tasksPage) {
+		pageSize = len(tasksPage)
+	} else {
+		lastElement := tasksPage[pageSize-1]
+		nextPageToken = encodePageToken(lastElement.lastUpdated, lastElement.task.ID)
 	}
+	tasksPage = tasksPage[:pageSize]
+	return tasksPage, nextPageToken, nil
+}
 
-	// From sorted and filtered tasks of type []*storedTask, apply necessary filters and create []*a2a.Task
-	var result []*a2a.Task
-	for _, storedTask := range filteredTasks {
+func transformTasks(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
+	var transformedTasks []*a2a.Task
+	for _, storedTask := range tasks {
 		// Copy the task to avoid modifying the original
 		taskCopy, err := utils.DeepCopy(storedTask.task)
 		if err != nil {
@@ -231,8 +257,6 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		// If HistoryLength is set, truncate the history, otherwise keep it as is
 		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
 			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
-		} else if req.HistoryLength < 0 {
-			return nil, fmt.Errorf("must be non-negative integer, got %d", req.HistoryLength)
 		}
 
 		// If IncludeArtifacts is false, remove the artifacts, otherwise keep it as is
@@ -240,22 +264,17 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 			taskCopy.Artifacts = nil
 		}
 
-		result = append(result, taskCopy)
+		transformedTasks = append(transformedTasks, taskCopy)
 	}
-	return &a2a.ListTasksResponse{
-		Tasks:         result,
-		TotalSize:     totalSize,
-		PageSize:      pageSize,
-		NextPageToken: nextPageToken,
-	}, nil
+	return transformedTasks, nil
 }
 
-func (s *Mem) base64Encode(updatedTime time.Time, taskID a2a.TaskID) string {
+func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 	timeStrNano := updatedTime.Format(time.RFC3339Nano)
 	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
 }
 
-func (s *Mem) base64Decode(nextPageToken string) (time.Time, a2a.TaskID, error) {
+func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 	decoded, err := base64.URLEncoding.DecodeString(nextPageToken)
 	if err != nil {
 		return time.Time{}, "", err
