@@ -16,123 +16,165 @@ package eventqueue
 
 import (
 	"context"
-	"sync"
+	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-const defaultMaxQueueSize = 1024
-
-type semaphore struct {
-	tokens chan any
+type broadcast struct {
+	sender     *inMemoryQueue // sender does not receive its own broadcasts
+	payload    a2a.Event
+	dispatched chan struct{} // closed after all registered Queues-s received the broadcast.
 }
 
-// Implements Queue interface
-type inMemoryQueue struct {
-	// semaphore plays the role of a mutex for events channel, but provides acquireInContext
-	// method which resolves to error if context.Context get canceled.
-	// The semaphore might be held for a long time if Write() blocks on trying to write to a full channel.
-	semaphore *semaphore
-	// events channel is where Write() sends events to and Read() receives events from.
-	events chan a2a.Event
+// inMemoryEventBroker manages a goroutine which acts as an event bus for registeted Queue-s.
+type inMemoryEventBroker struct {
+	registered     map[*inMemoryQueue]any
+	destroySignal  chan struct{} // used to request broker destruction
+	destroyed      chan struct{} // closed after broker is destroyed
+	registerChan   chan *inMemoryQueue
+	unregisterChan chan *inMemoryQueue
+	broadcastChan  chan *broadcast
 
-	// closeMu is acquired by Close() for the whole duration of method execution.
-	// If there are concurrent Close() calls the first one to acquire the mutex ensures the queue
-	// is canceled, and other calls wait for it to finish.
-	// We do this to guarantee that no Writes are accepted after Close() exits.
-	closeMu sync.Mutex
-	// closed indicates that the queue has been closed but still can be drained by Read().
-	// Close() updates the field and Write() reads it, so it requires both closeMu and semaphore
-	// for the race detector to be happy.
-	closed bool
-	// closeChan is closed by Close() to ensure Write() calls are not blocked on trying to write
-	// to a full events channel, preventing Close() to close it.
-	closeChan chan struct{}
+	queueBufferSize int
 }
 
-func newSemaphore(count int) *semaphore {
-	return &semaphore{tokens: make(chan any, count)}
+func newInMemoryEventBroker(queueBufferSize int) *inMemoryEventBroker {
+	broker := &inMemoryEventBroker{
+		registered:      make(map[*inMemoryQueue]any),
+		registerChan:    make(chan *inMemoryQueue),
+		unregisterChan:  make(chan *inMemoryQueue),
+		broadcastChan:   make(chan *broadcast),
+		destroySignal:   make(chan struct{}),
+		destroyed:       make(chan struct{}),
+		queueBufferSize: queueBufferSize,
+	}
+	go func() {
+		defer func() {
+			for queue := range broker.registered {
+				queue.destroy()
+			}
+			close(broker.destroyed)
+		}()
+
+		for {
+			select {
+			case b := <-broker.broadcastChan:
+				for queue := range broker.registered {
+					if queue == b.sender {
+						continue
+					}
+
+					select {
+					case queue.eventsChan <- b.payload:
+					case <-broker.destroySignal:
+						return
+					}
+				}
+				close(b.dispatched)
+
+			case sub := <-broker.registerChan:
+				broker.registered[sub] = struct{}{}
+
+			case sub := <-broker.unregisterChan:
+				if _, ok := broker.registered[sub]; ok {
+					delete(broker.registered, sub)
+					sub.destroy()
+				}
+
+			case <-broker.destroySignal:
+				return
+			}
+		}
+	}()
+	return broker
 }
 
-func (s *semaphore) acquire() {
-	s.tokens <- struct{}{}
-}
-
-func (s *semaphore) acquireWithContext(ctx context.Context) error {
+func (b *inMemoryEventBroker) connect() (*inMemoryQueue, error) {
+	conn := &inMemoryQueue{
+		broker:     b,
+		closedChan: make(chan struct{}),
+		eventsChan: make(chan a2a.Event, b.queueBufferSize),
+	}
 	select {
-	case s.tokens <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-b.destroyed:
+		return nil, fmt.Errorf("broker destroyed")
+	case b.registerChan <- conn:
+		return conn, nil
 	}
 }
 
-func (s *semaphore) release() {
-	<-s.tokens
+func (b *inMemoryEventBroker) destroy() {
+	select {
+	case <-b.destroyed: // already destroyed
+		return
+	case b.destroySignal <- struct{}{}: // send destroy signal
+	}
+	<-b.destroyed
 }
 
-// NewInMemoryQueue creates a new queue of desired size
-func NewInMemoryQueue(size int) Queue {
-	return &inMemoryQueue{
-		// todo: consider using https://pkg.go.dev/golang.org/x/sync/semaphore instead
-		semaphore: newSemaphore(1),
-		// todo: explore dynamically growing implementations (with a max-cap) to avoid preallocating a large buffered channel
-		// examples:
-		// https://github.com/modelcontextprotocol/go-sdk/blob/a76bae3a11c008d59488083185d05a74b86f429c/mcp/transport.go#L305
-		// https://github.com/golang/net/blob/master/quic/queue.go
-		events:    make(chan a2a.Event, size),
-		closeChan: make(chan struct{}),
-	}
+// inMemoryQueue implements Queue interface.
+type inMemoryQueue struct {
+	broker     *inMemoryEventBroker
+	closedChan chan struct{}
+	eventsChan chan a2a.Event
+	closed     bool
 }
 
 func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
-	if err := q.semaphore.acquireWithContext(ctx); err != nil {
-		return err
-	}
-	defer q.semaphore.release()
-
 	if q.closed {
 		return ErrQueueClosed
 	}
 
+	broadcast := &broadcast{sender: q, payload: event, dispatched: make(chan struct{})}
+
 	select {
-	case q.events <- event:
-		return nil
-	case <-q.closeChan:
-		return ErrQueueClosed
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-q.closedChan:
+		return ErrQueueClosed
+	case q.broker.broadcastChan <- broadcast:
 	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-q.closedChan:
+		return ErrQueueClosed
+	case <-broadcast.dispatched:
+		// all subscribers received the broadcast
+	}
+	return nil
 }
 
 func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, error) {
-	// q.closed is not checked so that the readers can drain the queue.
 	select {
-	case event, ok := <-q.events:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case event, ok := <-q.eventsChan: // allow to drain
 		if !ok {
 			return nil, ErrQueueClosed
 		}
 		return event, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
 	}
 }
 
 func (q *inMemoryQueue) Close() error {
-	q.closeMu.Lock()
-	defer q.closeMu.Unlock()
-
-	if q.closed {
-		return nil
+	// loop to ensure we drain q.eventsChan, so that the broker is not blocked trying to send us a broadcast
+	for {
+		select {
+		case _, ok := <-q.eventsChan:
+			if !ok {
+				return nil
+			}
+		case q.broker.unregisterChan <- q:
+			return nil
+		}
 	}
+}
 
-	// Ensure there's no Write() holding the semaphore blocked on trying to write to a full channel.
-	close(q.closeChan)
-	q.semaphore.acquire()
-	defer q.semaphore.release()
-
-	close(q.events)
+func (q *inMemoryQueue) destroy() {
 	q.closed = true
-
-	return nil
+	close(q.eventsChan)
+	close(q.closedChan)
 }

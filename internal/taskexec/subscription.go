@@ -16,119 +16,66 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // Subscription encapsulates the logic of subscribing a channel to [Execution] events and canceling the localSubscription.
 // A default localSubscription is created when an Execution is started.
 type Subscription interface {
 	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
-
-	cancel()
 }
 
 type localSubscription struct {
-	eventsChan subscriberChan
-	execution  *localExecution
-	consumed   bool
+	execution *localExecution
+	queue     eventqueue.Queue
+	consumed  bool
 }
 
-// newLocalSubscription tries to subscribe a channel to Execution events. If the Execution ends,
-// an "empty" subscription is returned.
-func newLocalSubscription(ctx context.Context, e *localExecution) (*localSubscription, error) {
-	ch := make(subscriberChan)
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-
-	case e.subscribeChan <- ch:
-		return &localSubscription{eventsChan: ch, execution: e}, nil
-
-	case <-e.result.done:
-		return &localSubscription{}, nil
-	}
+func newLocalSubscription(e *localExecution, q eventqueue.Queue) *localSubscription {
+	return &localSubscription{execution: e, queue: q}
 }
 
-// newDefaultLocalSubscription is called on Execution which is not yet running.
-// Using newSubscription() might lead to Execute() callers missing first events.
-func newDefaultLocalSubscription(e *localExecution) *localSubscription {
-	ch := make(subscriberChan)
-	e.subscribers[ch] = struct{}{}
-	return &localSubscription{eventsChan: ch, execution: e}
-}
-
-// Events returns a sequence of Events produced during Execution. If Execution resolves to an error
-// the error gets reported. A sequence can only be consumed once. Subscription gets automatically
-// canceled once event consumption stops.
 func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		if s.eventsChan == nil || s.execution == nil {
-			return
-		}
 		if s.consumed {
 			yield(nil, fmt.Errorf("subscription already consumed"))
 			return
 		}
 		s.consumed = true
 
-		defer s.cancel()
+		defer func() {
+			if err := s.queue.Close(); err != nil {
+				log.Warn(ctx, "subscription cancel failed", "error", err)
+			}
+		}()
 
-		terminalReported, executionFinished := false, false
-		for !executionFinished {
-			select {
-			case <-ctx.Done():
-				yield(nil, ctx.Err())
+		terminalReported := false
+		for {
+			event, err := s.queue.Read(ctx)
+			if errors.Is(err, eventqueue.ErrQueueClosed) {
+				break
+			}
+			if err != nil {
+				yield(nil, err)
 				return
-
-			case <-s.execution.result.done:
-				executionFinished = true
-
-			case subEvent, ok := <-s.eventsChan:
-				if !ok {
-					executionFinished = true
-					break
-				}
-				terminalReported = subEvent.terminal
-				if !yield(subEvent.event, nil) {
-					return
-				}
+			}
+			terminalReported = taskupdate.IsFinal(event)
+			if !yield(event, nil) {
+				return
 			}
 		}
 
-		// execution might not report the terminal event in case context was canceled which
+		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
 		if result, err := s.execution.Result(ctx); !terminalReported || err != nil {
 			yield(result, err)
-		}
-	}
-}
-
-// cancel unsubscribes events channel from Execution events. If the Execution ends,
-// the operation is a no-op.
-func (s *localSubscription) cancel() {
-	if s == nil {
-		return
-	}
-	if s.eventsChan == nil || s.execution == nil {
-		return
-	}
-
-	for {
-		select {
-		case <-s.eventsChan:
-			// Do not block processor goroutine on trying to notify the subscription
-			// which is trying to unsubscribe from events mid-execution.
-
-		case s.execution.unsubscribeChan <- s.eventsChan:
-			return
-
-		case <-s.execution.result.done:
-			// Execution goroutine was stopped disposing all subscriptions.
-			return
 		}
 	}
 }

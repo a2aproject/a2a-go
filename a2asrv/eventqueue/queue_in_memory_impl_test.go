@@ -24,48 +24,85 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+func mustCreate(t *testing.T, qm Manager, tid a2a.TaskID) Queue {
+	t.Helper()
+	q, err := qm.GetOrCreate(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.GetOrCreate() error = %v", err)
+	}
+	return q
+}
+
+func mustWrite(t *testing.T, q Queue, events ...a2a.Event) {
+	t.Helper()
+	for i, event := range events {
+		if err := q.Write(t.Context(), event); err != nil {
+			t.Fatalf("q.Write() error = %v at %d", err, i)
+		}
+	}
+}
+
+func mustRead(t *testing.T, q Queue) a2a.Event {
+	t.Helper()
+	result, err := q.Read(t.Context())
+	if err != nil {
+		t.Fatalf("q.Read() error = %v", err)
+	}
+	return result
+}
+
+func newTestManager(t *testing.T, opts ...MemManagerOption) Manager {
+	qm := NewInMemoryManager(opts...)
+	t.Cleanup(func() {
+		manager := qm.(*inMemoryManager)
+		var ids []a2a.TaskID
+		for tid := range manager.brokers {
+			ids = append(ids, tid)
+		}
+		for _, tid := range ids {
+			if err := qm.Destroy(t.Context(), tid); err != nil {
+				t.Fatalf("qm.Destroy() error = %v", err)
+			}
+		}
+	})
+	return qm
+}
+
 func TestInMemoryQueue_WriteRead(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	q := NewInMemoryQueue(3)
-	defer func() {
-		if err := q.Close(); err != nil {
-			t.Fatalf("failed to close event queue: %v", err)
-		}
-	}()
+	qm := newTestManager(t)
+
+	tid := a2a.NewTaskID()
+	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
+
 	want := &a2a.Message{ID: "test-event"}
-	if err := q.Write(ctx, want); err != nil {
-		t.Fatalf("Write() error = %v", err)
-	}
-	got, err := q.Read(ctx)
-	if err != nil {
-		t.Fatalf("Read() error = %v", err)
-	}
+	mustWrite(t, writeQueue, want)
+	got := mustRead(t, readQueue)
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
 }
 
-func TestInMemoryQueue_WriteCloseRead(t *testing.T) {
+func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	q := NewInMemoryQueue(3)
-	want := []*a2a.Message{
-		{ID: "test-event"},
-		{ID: "test-event2"},
+	qm := newTestManager(t)
+	ctx, tid := t.Context(), a2a.NewTaskID()
+
+	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
+	want := []a2a.Event{&a2a.Message{ID: "test-event"}, &a2a.Message{ID: "test-event2"}}
+
+	mustWrite(t, writeQueue, want...)
+
+	if err := qm.Destroy(ctx, tid); err != nil {
+		t.Fatalf("qm.Destroy() error = %v", err)
 	}
-	for _, w := range want {
-		if err := q.Write(ctx, w); err != nil {
-			t.Fatalf("Write() error = %v", err)
-		}
-	}
-	if err := q.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
+
 	var got []a2a.Event
-	typedQ := q.(*inMemoryQueue)
-	for range len(typedQ.events) {
-		event, err := q.Read(ctx)
+	for {
+		event, err := readQueue.Read(ctx)
+		if errors.Is(err, ErrQueueClosed) {
+			break
+		}
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
@@ -83,109 +120,96 @@ func TestInMemoryQueue_WriteCloseRead(t *testing.T) {
 
 func TestInMemoryQueue_ReadEmpty(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	q := NewInMemoryQueue(3)
+	qm := newTestManager(t)
+	tid := a2a.NewTaskID()
+
+	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 	completed := make(chan struct{})
 
 	go func() {
-		_, err := q.Read(ctx)
-		if err != nil {
-			t.Errorf("Read() error = %v", err)
-			return
-		}
+		mustRead(t, readQueue)
 		close(completed)
 	}()
 
 	select {
 	case <-completed:
 		t.Fatal("method should be blocking")
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(15 * time.Millisecond):
 		// unblock blocked code by writing to queue
-		err := q.Write(ctx, &a2a.Message{ID: "test"})
-		if err != nil {
-			t.Fatalf("Write() error = %v", err)
-		}
+		mustWrite(t, writeQueue, &a2a.Message{ID: "test"})
 	}
+	<-completed
 }
 
 func TestInMemoryQueue_WriteFull(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	q := NewInMemoryQueue(1)
+	qm := newTestManager(t, WithQueueBufferSize(1))
+	tid := a2a.NewTaskID()
+
+	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 	completed := make(chan struct{})
 
-	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
-		t.Fatalf("Write() failed unexpectedly: %v", err)
-	}
-
+	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
 	go func() {
-		err := q.Write(ctx, &a2a.Message{ID: "2"})
-		if err != nil {
-			t.Errorf("Write() error = %v", err)
-			return
-		}
+		mustWrite(t, writeQueue, &a2a.Message{ID: "2"})
 		close(completed)
 	}()
 
 	select {
 	case <-completed:
 		t.Fatal("method should be blocking")
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(15 * time.Millisecond):
 		// unblock blocked code by realising queue buffer
-		_, err := q.Read(ctx)
-		if err != nil {
-			t.Fatalf("Read() error = %v", err)
-		}
+		mustRead(t, readQueue)
 	}
+	<-completed
 }
 
-func TestInMemoryQueue_Close(t *testing.T) {
+func TestInMemoryQueue_WriteWithNoSubscribersDoesNotBlock(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	q := NewInMemoryQueue(3)
+	qm := newTestManager(t, WithQueueBufferSize(0))
+	tid := a2a.NewTaskID()
 
-	if err := q.Close(); err != nil {
+	writeQueue := mustCreate(t, qm, tid)
+	mustWrite(t, writeQueue, &a2a.Message{ID: "test"})
+}
+
+func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(0))
+	ctx, tid := t.Context(), a2a.NewTaskID()
+
+	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
+
+	if err := readQueue.Close(); err != nil {
 		t.Fatalf("failed to close event queue: %v", err)
 	}
 
-	// Writing to a closed queue should fail
-	err := q.Write(ctx, &a2a.Message{ID: "test"})
-	if err == nil {
-		t.Error("Write() to closed queue should have returned an error, but got nil")
-	}
-	wantErr := ErrQueueClosed
-	if !errors.Is(err, wantErr) {
-		t.Errorf("Write() error = %v, want %v", err, wantErr)
+	if err := writeQueue.Write(ctx, &a2a.Message{ID: "test"}); err != nil {
+		t.Fatalf("Write() error = %v", err)
 	}
 
-	// Reading from a closed queue should fail
-	_, err = q.Read(ctx)
-	if err == nil {
-		t.Error("Read() from closed queue should have returned an error, but got nil")
-	}
-	if !errors.Is(err, wantErr) {
-		t.Errorf("Read() error = %v, want %v", err, wantErr)
-	}
-
-	// Closing again should be a no-op and not panic
-	if err := q.Close(); err != nil {
-		t.Fatalf("failed to close event queue: %v", err)
+	event, err := readQueue.Read(ctx)
+	if !errors.Is(err, ErrQueueClosed) {
+		t.Fatalf("readQueue() = (%v, %v), want %v", event, err, ErrQueueClosed)
 	}
 }
 
 func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
-	q := NewInMemoryQueue(1)
+
+	qm := newTestManager(t, WithQueueBufferSize(1))
+
+	tid := a2a.NewTaskID()
+	writeQueue, _ := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 
 	// Fill the queue
-	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
-		t.Fatalf("Write() failed unexpectedly: %v", err)
-	}
+	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
 
 	cancel()
 
-	err := q.Write(ctx, &a2a.Message{ID: "2"})
+	err := writeQueue.Write(ctx, &a2a.Message{ID: "2"})
 	if err == nil {
 		t.Error("Write() with canceled context should have returned an error, but got nil")
 	}
@@ -194,49 +218,39 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueue_BlockedWriteOnFullQueueThenClose(t *testing.T) {
+func TestInMemoryQueue_BlockedWriteOnFullQueueThenDestroy(t *testing.T) {
 	t.Parallel()
-	q := NewInMemoryQueue(1)
 	ctx := t.Context()
-	completed1 := make(chan struct{})
-	completed2 := make(chan struct{})
+	completed := make(chan struct{})
+
+	qm := newTestManager(t, WithQueueBufferSize(1))
+
+	tid := a2a.NewTaskID()
+	writeQueue, _ := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
+
 	event := &a2a.Message{ID: "test"}
 
 	// Fill the queue
-	if err := q.Write(ctx, &a2a.Message{ID: "1"}); err != nil {
-		t.Fatalf("Write() failed unexpectedly: %v", err)
-	}
+	mustWrite(t, writeQueue, &a2a.Message{ID: "1"})
 
 	go func() {
-		ctx1 := t.Context()
-		err := q.Write(ctx1, event) // blocks on trying to write to a full channel
+		err := writeQueue.Write(t.Context(), event)
 		if !errors.Is(err, ErrQueueClosed) {
-			t.Errorf("Write1() error = %v, want %v", err, ErrQueueClosed)
+			t.Errorf("Write() error = %v, want %v", err, ErrQueueClosed)
 			return
 		}
-		close(completed1)
-	}()
-
-	go func() {
-		ctx2 := t.Context()
-		err := q.Write(ctx2, event) // blocks on semaphore
-		if !errors.Is(err, ErrQueueClosed) {
-			t.Errorf("Write2() error = %v, want %v", err, ErrQueueClosed)
-			return
-		}
-		close(completed2)
+		close(completed)
 	}()
 
 	select {
-	case <-completed1:
-		t.Fatal("method should be blocking")
-	case <-completed2:
+	case <-completed:
 		t.Fatal("method should be blocking")
 	case <-time.After(20 * time.Millisecond):
 		// unblock blocked code by closing queue
-		err := q.Close()
+		err := qm.Destroy(ctx, tid)
 		if err != nil {
 			t.Fatalf("Close() error = %v", err)
 		}
 	}
+	<-completed
 }

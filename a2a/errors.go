@@ -67,4 +67,7 @@ var (
 	// ErrVersionNotSupported indicates that the The A2A protocol version specified in the request
 	// (via A2A-Version service parameter) is not supported by the agent.
 	ErrVersionNotSupported = errors.New("this version is not supported")
+
+	// ErrAuthFailed indicates that the authentication failed.
+	ErrAuthFailed = errors.New("authentication failed")
 )

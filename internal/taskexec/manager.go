@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -89,32 +90,52 @@ func (m *LocalManager) GetExecution(taskID a2a.TaskID) (Execution, bool) {
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
 func (m *LocalManager) Execute(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+	execution, err := m.createExecution(ctx, tid, params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	eventBroadcastQueue, err := m.queueManager.GetOrCreate(ctx, tid)
+	if err != nil {
+		m.cleanupExecution(ctx, execution)
+		return nil, nil, fmt.Errorf("failed to create a queue: %w", err)
+	}
+
+	defaultSubReadQueue, ok := m.queueManager.Get(ctx, tid)
+	if !ok {
+		m.cleanupExecution(ctx, execution)
+		return nil, nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
+	}
+
+	detachedCtx := context.WithoutCancel(ctx)
+
+	go m.handleExecution(detachedCtx, execution, eventBroadcastQueue)
+
+	return execution, newLocalSubscription(execution, defaultSubReadQueue), nil
+}
+
+func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// TODO(yarolegovich): handle idempotency once spec establishes the key. We can return
 	// an execution in progress here and decide whether to tap it or not on the caller side.
 	if _, ok := m.executions[tid]; ok {
-		return nil, nil, ErrExecutionInProgress
+		return nil, ErrExecutionInProgress
 	}
 
 	if _, ok := m.cancelations[tid]; ok {
-		return nil, nil, ErrCancelationInProgress
+		return nil, ErrCancelationInProgress
 	}
 
 	if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
-		return nil, nil, fmt.Errorf("concurrency quota exceeded: %w", err)
+		return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
 	}
 
-	execution := newLocalExecution(tid, params)
-	subscription := newDefaultLocalSubscription(execution)
+	execution := newLocalExecution(m.queueManager, tid, params)
 	m.executions[tid] = execution
 
-	detachedCtx := context.WithoutCancel(ctx)
-
-	go m.handleExecution(detachedCtx, execution)
-
-	return execution, subscription, nil
+	return execution, nil
 }
 
 // Cancel uses [Canceler] to signal task cancelation and waits for it to take effect.
@@ -149,37 +170,35 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	return cancel.wait(ctx)
 }
 
+func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
+	m.destroyQueue(ctx, execution.tid)
+
+	m.mu.Lock()
+	m.limiter.releaseQuotaLocked(ctx)
+	delete(m.executions, execution.tid)
+	execution.result.signalDone()
+	m.mu.Unlock()
+}
+
 // Uses an errogroup to start two goroutines.
 // Execution is started in one of them. Another is processing events until a result or error
 // is returned.
 // The returned value is set as Execution result.
-func (m *LocalManager) handleExecution(ctx context.Context, execution *localExecution) {
-	defer func() {
-		m.mu.Lock()
-		m.limiter.releaseQuotaLocked(ctx)
-		delete(m.executions, execution.tid)
-		execution.result.signalDone()
-		m.mu.Unlock()
-	}()
-
-	queue, err := m.queueManager.GetOrCreate(ctx, execution.tid)
-	if err != nil {
-		execution.result.setError(fmt.Errorf("queue creation failed: %w", err))
-		return
-	}
-	defer m.destroyQueue(ctx, execution.tid)
+func (m *LocalManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
+	defer m.cleanupExecution(ctx, execution)
 
 	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
 	if err != nil {
 		execution.result.setError(fmt.Errorf("setup failed: %w", err))
+		m.destroyQueue(ctx, execution.tid)
 		return
 	}
 
 	result, err := runProducerConsumer(
 		ctx,
-		func(ctx context.Context) error { return executor.Execute(ctx, queue) },
+		func(ctx context.Context) error { return executor.Execute(ctx, execution.pipe.Writer) },
 		func(ctx context.Context) (a2a.SendMessageResult, error) {
-			return execution.processEvents(ctx, queue, processor)
+			return execution.processEvents(ctx, processor, eventBroadcast)
 		},
 	)
 
@@ -208,17 +227,14 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		return
 	}
 
-	queue, err := m.queueManager.GetOrCreate(ctx, cancel.params.ID)
-	if err != nil {
-		cancel.result.setError(fmt.Errorf("queue creation failed: %w", err))
-		return
-	}
-	defer m.destroyQueue(ctx, cancel.params.ID)
+	pipe := eventpipe.NewLocal()
 
 	result, err := runProducerConsumer(
 		ctx,
-		func(ctx context.Context) error { return canceler.Cancel(ctx, queue) },
-		func(ctx context.Context) (a2a.SendMessageResult, error) { return processEvents(ctx, queue, processor) },
+		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
+		func(ctx context.Context) (a2a.SendMessageResult, error) {
+			return processEvents(ctx, pipe.Reader, processor)
+		},
 	)
 	if err != nil {
 		cancel.result.setError(err)
@@ -255,11 +271,9 @@ func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	// non-terminal state (eg. input-required) before receiving the cancelation signal.
 	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
-	if queue, ok := m.queueManager.Get(ctx, cancel.params.ID); ok {
-		if err := canceler.Cancel(ctx, queue); err != nil {
-			cancel.result.setError(err)
-			return
-		}
+	if err := canceler.Cancel(ctx, run.pipe.Writer); err != nil {
+		cancel.result.setError(err)
+		return
 	}
 
 	result, err := run.Result(ctx)
