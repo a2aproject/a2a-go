@@ -16,6 +16,7 @@ package taskstore
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -117,12 +118,22 @@ func getAuthInfo(ctx context.Context) (UserName, bool) {
 	return "testName", true
 }
 
-var timeOffsetIndex int
 var startTime = time.Date(2025, 12, 4, 15, 50, 0, 0, time.UTC)
 
-func setFixedTime() time.Time {
-	timeOffsetIndex++
-	return startTime.Add(time.Duration(timeOffsetIndex) * time.Second)
+func newTimeProvider(startTime time.Time, offsets []int64) func() time.Time {
+	return func() time.Time {
+		current, rest := offsets[0], offsets[1:]
+		offsets = rest
+		return startTime.Add(time.Duration(current) * time.Second)
+	}
+}
+
+func newIncreasingTimeProvider(startTime time.Time) func() time.Time {
+	timeOffsetIndex := 0
+	return func() time.Time {
+		timeOffsetIndex++
+		return startTime.Add(time.Duration(timeOffsetIndex) * time.Second)
+	}
 }
 
 func TestInMemoryTaskStore_List_NoAuth(t *testing.T) {
@@ -219,6 +230,11 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 	}
 }
 
+func createPageToken(updatedTime time.Time, taskID a2a.TaskID) string {
+	timeStrNano := updatedTime.Format(time.RFC3339Nano)
+	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
+}
+
 func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	cutoffTime := startTime.Add(2 * time.Second)
@@ -253,6 +269,18 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
+			name:         "PageSize filter",
+			request:      &a2a.ListTasksRequest{PageSize: 2},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
+		},
+		{
+			name:         "PageToken filter",
+			request:      &a2a.ListTasksRequest{PageSize: 1, PageToken: createPageToken(startTime.Add(3*time.Second), id3)},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2}}},
+		},
+		{
 			name:         "IncludeArtifacts true filter",
 			request:      &a2a.ListTasksRequest{IncludeArtifacts: true},
 			givenTasks:   []*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "foo"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "bar"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "baz"}}}},
@@ -268,19 +296,97 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			timeOffsetIndex = 0
-			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(setFixedTime))
+			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(newIncreasingTimeProvider(startTime)))
 			mustSave(t, store, tc.givenTasks...)
 
 			listResponse, err := store.List(t.Context(), tc.request)
-
 			if err != nil {
 				t.Fatalf("Unexpected error: got = %v, want nil", err)
 			}
-			for i := range listResponse.Tasks {
-				if diff := cmp.Diff(listResponse.Tasks[i], tc.wantResponse.Tasks[i]); diff != "" {
-					t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+			if diff := cmp.Diff(listResponse.Tasks, tc.wantResponse.Tasks); diff != "" {
+				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
+	id1, id2, id3, id4, id5 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	testCases := []struct {
+		name               string
+		pageSize           int
+		lastUpdatedOffsets []int64
+		givenTasks         []*a2a.Task
+		result             []*a2a.Task
+		wantCalls          int
+	}{
+		{
+			name:       "All tasks with incomplete last page",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  3,
+		},
+		{
+			name:       "All tasks with complete last page",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}},
+			result:     []*a2a.Task{{ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  2,
+		},
+		{
+			name:       "Page Size greater than number of tasks",
+			pageSize:   10,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  1,
+		},
+		{
+			name:       "Empty list",
+			pageSize:   3,
+			givenTasks: []*a2a.Task{},
+			result:     []*a2a.Task{},
+			wantCalls:  1,
+		},
+		{
+			name:               "Same lastUpdated",
+			pageSize:           2,
+			lastUpdatedOffsets: []int64{0, 0, 0},
+			givenTasks:         []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			result:             []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:          2,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			timeProvider := newIncreasingTimeProvider(startTime)
+			if tc.lastUpdatedOffsets != nil {
+				timeProvider = newTimeProvider(startTime, tc.lastUpdatedOffsets)
+			}
+
+			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(timeProvider))
+			mustSave(t, store, tc.givenTasks...)
+
+			result := []*a2a.Task{}
+			actualCalls := 0
+			var pageToken string
+			for {
+				listResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: tc.pageSize, PageToken: pageToken})
+				if err != nil {
+					t.Fatalf("Unexpected error: got = %v, want nil", err)
 				}
+				result = append(result, listResponse.Tasks...)
+				actualCalls++
+				pageToken = listResponse.NextPageToken
+				if pageToken == "" {
+					break
+				}
+			}
+			if diff := cmp.Diff(result, tc.result); diff != "" {
+				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+			}
+			if actualCalls != tc.wantCalls {
+				t.Fatalf("Unexpected number of calls: got = %v, want %v", actualCalls, tc.wantCalls)
 			}
 		})
 	}
