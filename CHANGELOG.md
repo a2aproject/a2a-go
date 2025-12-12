@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/a2aproject/a2a-go/compare/v0.3.3...v0.3.4) (2025-12-12)
+
+
+### Features
+
+* taskstore list ([#126](https://github.com/a2aproject/a2a-go/issues/126)) ([9987486](https://github.com/a2aproject/a2a-go/commit/9987486f6d049be709f49d044df18afd7e17cbb9))
+* taskstore pagination ([#136](https://github.com/a2aproject/a2a-go/issues/136)) ([fffb4d4](https://github.com/a2aproject/a2a-go/commit/fffb4d45c57c8cf2081fcbc95151a7a5a152407d))
+
 ## [0.3.3](https://github.com/a2aproject/a2a-go/compare/v0.3.2...v0.3.3) (2025-12-08)
 
 
