@@ -73,6 +73,34 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	return m
 }
 
+func getTestAuthenticator() taskstore.Authenticator {
+	return func(ctx context.Context) (taskstore.UserName, bool) {
+		return "test", true
+	}
+}
+
+// WithTestAuthenticator seeds TaskStore with given authenticator
+func (m *TestTaskStore) WithTestAuthenticator() *TestTaskStore {
+	if m.Mem == nil {
+		m.Mem = taskstore.NewMem(taskstore.WithAuthenticator(getTestAuthenticator()))
+	} else {
+		m.Mem.SetAuthenticator(getTestAuthenticator())
+	}
+	return m
+}
+
+// WithTestTimeProvider seeds TaskStore with given time provider
+func (m *TestTaskStore) WithTestTimeProvider(provider taskstore.TimeProvider) *TestTaskStore {
+	if provider != nil {
+		if m.Mem == nil {
+			m.Mem = taskstore.NewMem(taskstore.WithTimeProvider(provider))
+		} else {
+			m.Mem.SetTimeProvider(provider)
+		}
+	}
+	return m
+}
+
 // NewTestTaskStore allows to mock execution of task store operations.
 // Without any overrides it defaults to in memory implementation.
 func NewTestTaskStore() *TestTaskStore {

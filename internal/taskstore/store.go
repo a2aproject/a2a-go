@@ -55,6 +55,16 @@ func WithTimeProvider(tp TimeProvider) Option {
 	}
 }
 
+// SetAuthenticator updates the private authenticator field.
+func (s *Mem) SetAuthenticator(a Authenticator) {
+    s.authenticator = a
+}
+
+// SetTimeProvider updates the private timeProvider field.
+func (s *Mem) SetTimeProvider(p TimeProvider) {
+    s.timeProvider = p
+}
+
 // Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
 	mu    sync.RWMutex
@@ -87,6 +97,25 @@ func NewMem(opts ...Option) *Mem {
 
 	return m
 }
+
+// DEBUG
+func (m *Mem) Tasks() map[a2a.TaskID]*storedTask {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.tasks 
+}
+func (st *storedTask) User() UserName {
+    return st.user
+}
+
+func (st *storedTask) TaskID() a2a.TaskID {
+    return st.task.ID 
+}
+
+func (st *storedTask) LastUpdated() time.Time {
+    return st.lastUpdated
+}
+// DEBUG
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	if err := validateTask(task); err != nil {
@@ -277,7 +306,7 @@ func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 	decoded, err := base64.URLEncoding.DecodeString(nextPageToken)
 	if err != nil {
-		return time.Time{}, "", err
+		return time.Time{}, "", a2a.ErrParseError
 	}
 
 	parts := strings.Split(string(decoded), "_")

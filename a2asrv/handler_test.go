@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"iter"
@@ -1022,6 +1023,232 @@ func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	if result != nil || !errors.Is(err, wantErr) {
 		t.Fatalf("OnGetTask() = (%v, %v), want error %v", result, err, wantErr)
 	}
+}
+
+func TestRequestHandler_OnListTasks(t *testing.T) {
+	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	startTime := time.Date(2025, time.December, 11, 14, 54, 0, 0, time.UTC)
+	cutOffTime := startTime.Add(2 * time.Second)
+
+	tests := []struct {
+		name 					string
+		givenTasks 		[]*a2a.Task
+		request 			*a2a.ListTasksRequest
+		wantResponse 	*a2a.ListTasksResponse
+		wantErr 			error
+		timeProvider 	taskstore.TimeProvider
+	}{
+		{
+			name: "empty request",
+			givenTasks: []*a2a.Task{},
+			request: &a2a.ListTasksRequest{},
+			wantResponse: &a2a.ListTasksResponse{Tasks: nil, TotalSize: 0, PageSize: 50},
+		},
+		{
+			name: "without filters",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
+		},
+		{
+			name: "with ContextID filter",
+			givenTasks: []*a2a.Task{{ID: id1, ContextID: "ctx1"}, {ID: id2, ContextID: "ctx2"}, {ID: id3, ContextID: "ctx1"}},
+			request: &a2a.ListTasksRequest{ContextID: "ctx1"},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, ContextID: "ctx1"}, {ID: id1, ContextID: "ctx1"}}, TotalSize: 2, PageSize: 50},
+		},
+		{
+			name: "with Status filter",
+			givenTasks: []*a2a.Task{{ID: id1, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, {ID: id2, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}, {ID: id3, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
+			request: &a2a.ListTasksRequest{Status: a2a.TaskStateWorking},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}}, TotalSize: 1, PageSize: 50},
+		},
+		{
+			name: "with LastUpdatedAfter filter",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{LastUpdatedAfter: &cutOffTime},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}, TotalSize: 2, PageSize: 50},
+			timeProvider: newIncreasingTimeProvider(startTime),
+		},
+		{
+			name: "with HistoryLength filter",
+			givenTasks: []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			request: &a2a.ListTasksRequest{HistoryLength: 2},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}, TotalSize: 2, PageSize: 50},
+		},
+		{
+			name: "with negative HistoryLength filter",
+			givenTasks: []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			request: &a2a.ListTasksRequest{HistoryLength: -1},
+			wantErr: fmt.Errorf("failed to list tasks: history length must be non-negative integer, got -1"),
+		},
+		{
+			name: "with PageSize filter",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{PageSize: 2},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}, TotalSize: 3, PageSize: 2, NextPageToken: createPageToken(startTime.Add(2*time.Second), id2)},
+			timeProvider: newIncreasingTimeProvider(startTime),
+		},
+		{
+			name: "with invalid PageSize filter",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{PageSize: 212},
+			wantErr: fmt.Errorf("failed to list tasks: page size must be between 1 and 100 inclusive, got 212"),
+		},
+		{
+			name: "with PageToken filter",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{PageSize: 2, PageToken: createPageToken(startTime.Add(2*time.Second), id2)},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id1}}, TotalSize: 3, PageSize: 2},
+			timeProvider: newIncreasingTimeProvider(startTime),
+		},
+		{
+			name: "with invalid PageToken filter",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request: &a2a.ListTasksRequest{PageSize: 2, PageToken: "invalidPageToken"},
+			wantErr: fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
+		},
+		{
+			name: "with IncludeArtifacts true filter",
+			givenTasks: []*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "artifact1"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "artifact2"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}}},
+			request: &a2a.ListTasksRequest{IncludeArtifacts: true},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "artifact2"}}}, {ID: id1, Artifacts: []*a2a.Artifact{{Name: "artifact1"}}}}, TotalSize: 3, PageSize: 50},
+		},
+		{
+			name: "with IncludeArtifacts false filter",
+			givenTasks: []*a2a.Task{{ID: id1, Artifacts: []*a2a.Artifact{{Name: "artifact1"}}}, {ID: id2, Artifacts: []*a2a.Artifact{{Name: "artifact2"}}}, {ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}}},
+			request: &a2a.ListTasksRequest{IncludeArtifacts: false},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+
+			ts := testutil.NewTestTaskStore().WithTestTimeProvider(tt.timeProvider).WithTestAuthenticator().WithTasks(t, tt.givenTasks...)
+			handler := newTestHandler(WithTaskStore(ts))
+			result, err := handler.OnListTasks(ctx, tt.request)
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("OnListTasks() error = %v, wantErr nil", err)
+					return
+				}
+				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
+					t.Errorf("OnListTasks() mismatch (+got -want): %s", diff)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("OnListTasks() error = nil, wantErr %q", tt.wantErr)
+					return
+				}
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf("OnListTasks() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestRequestHandler_OnListTasks_Pagination(t *testing.T) {
+	id1, id2, id3, id4, id5 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	startTime := time.Date(2025, time.December, 11, 14, 54, 0, 0, time.UTC)
+
+	testCases := []struct {
+		name               string
+		pageSize           int
+		givenTasks         []*a2a.Task
+		result             []*a2a.Task
+		wantCalls          int
+		timeProvider       taskstore.TimeProvider
+	}{
+		{
+			name:       "All tasks with incomplete last page",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  3,
+		},
+		{
+			name:       "All tasks with complete last page",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}},
+			result:     []*a2a.Task{{ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  2,
+		},
+		{
+			name:       "Page Size greater than number of tasks",
+			pageSize:   10,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}, {ID: id4}, {ID: id5}},
+			result:     []*a2a.Task{{ID: id5}, {ID: id4}, {ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  1,
+		},
+		{
+			name:       "Empty list",
+			pageSize:   3,
+			givenTasks: []*a2a.Task{},
+			result:     []*a2a.Task{},
+			wantCalls:  1,
+		},
+		{
+			name:       "Same lastUpdated",
+			pageSize:   2,
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			result:     []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}},
+			wantCalls:  2,
+			timeProvider: newFixedTimeProvider(startTime),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+
+			ts := testutil.NewTestTaskStore().WithTestTimeProvider(tc.timeProvider).WithTestAuthenticator().WithTasks(t, tc.givenTasks...)
+			handler := newTestHandler(WithTaskStore(ts))
+
+			result := []*a2a.Task{}
+			actualCalls := 0
+			var pageToken string
+			for {
+				listResponse, err := handler.OnListTasks(ctx, &a2a.ListTasksRequest{PageSize: tc.pageSize, PageToken: pageToken})
+				if err != nil {
+					t.Fatalf("Unexpected error: got = %v, want nil", err)
+				}
+				result = append(result, listResponse.Tasks...)
+				actualCalls++
+				pageToken = listResponse.NextPageToken
+				if pageToken == "" {
+					break
+				}
+			}
+			if diff := cmp.Diff(result, tc.result); diff != "" {
+				t.Errorf("Tasks mismatch (+got -want): %s", diff)
+			}
+			if actualCalls != tc.wantCalls {
+				t.Errorf("Unexpected number of calls: got = %v, want %v", actualCalls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func newIncreasingTimeProvider(startTime time.Time) taskstore.TimeProvider {
+	timeOffsetIndex := 0
+	return func() time.Time {
+		timeOffsetIndex++
+		return startTime.Add(time.Duration(timeOffsetIndex) * time.Second)
+	}
+}
+
+func newFixedTimeProvider(startTime time.Time) taskstore.TimeProvider {
+	return func() time.Time {
+		return startTime
+	}
+}
+
+func createPageToken(updatedTime time.Time, taskID a2a.TaskID) string {
+	timeStrNano := updatedTime.Format(time.RFC3339Nano)
+	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
 }
 
 func TestRequestHandler_OnCancelTask(t *testing.T) {

@@ -166,23 +166,7 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 		for event, err := range events {
 			if err != nil {
 				// TODO(yarolegovich): clarify how rest bindings sends SSE errors
-				if err != nil {
-					log.Warn(ctx, "unhandled sse error", "error", err)
-					return
-				}
-
-				b, jbErr := json.Marshal(event)
-				if jbErr != nil {
-					log.Warn(ctx, "unhandled sse marshaling error", "error", jbErr)
-					return
-				}
-
-				select {
-				case <-requestCtx.Done():
-					return
-				case sseChan <- b:
-				}
-
+				log.Warn(ctx, "unhandled sse error", "error", err)
 				return
 			}
 
