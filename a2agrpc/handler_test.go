@@ -162,12 +162,6 @@ func (m *mockRequestHandler) OnListTasks(ctx context.Context, req *a2a.ListTasks
 		if req.ContextID != "" && req.ContextID != taskCopy.ContextID {
 			continue
 		}
-		if req.Status != a2a.TaskStateUnspecified && req.Status != taskCopy.Status.State {
-			continue
-		}
-		if req.IncludeArtifacts {
-			taskCopy.Artifacts = nil
-		}
 		tasks = append(tasks, &taskCopy)
 	}
 	sort.Slice(tasks, func(i, j int) bool {
