@@ -466,6 +466,13 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 // ContentParts is an array of content parts that form the message body or an artifact.
 type ContentParts []Part
 
+func (j ContentParts) MarshalJSON() ([]byte, error) {
+	if j == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]Part(j))
+}
+
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
 	type typedPart struct {
 		Kind string `json:"kind"`

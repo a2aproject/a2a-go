@@ -55,17 +55,6 @@ func WithTimeProvider(tp TimeProvider) Option {
 	}
 }
 
-// SetAuthenticator updates the private authenticator field.
-func (s *Mem) SetAuthenticator(a Authenticator) {
-	s.authenticator = a
-}
-
-// SetTimeProvider updates the private timeProvider field.
-func (s *Mem) SetTimeProvider(p TimeProvider) {
-	s.timeProvider = p
-}
-
-// Mem stores deep-copied [a2a.Task]-s in memory.
 type Mem struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask
@@ -79,7 +68,6 @@ func init() {
 	gob.Register([]any{})
 }
 
-// NewMem creates an empty [Mem] store.
 func NewMem(opts ...Option) *Mem {
 	m := &Mem{
 		tasks: make(map[a2a.TaskID]*storedTask),
@@ -137,31 +125,23 @@ func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
 
 func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	userName, ok := s.authenticator(ctx)
-
-	// Only proceed if user name is available for authentication
 	if !ok {
 		return nil, a2a.ErrAuthFailed
 	}
-	// Validate page size
 	pageSize := req.PageSize
 	if pageSize == 0 {
 		pageSize = 50
 	} else if pageSize < 1 || pageSize > 100 {
-		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d: %w", pageSize, a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d", pageSize)
 	}
-	// Validate history length
 	if req.HistoryLength < 0 {
-		return nil, fmt.Errorf("history length must be non-negative integer, got %d: %w", req.HistoryLength, a2a.ErrInvalidRequest)
+		return nil, fmt.Errorf("history length must be non-negative integer, got %d", req.HistoryLength)
 	}
-	// Filter tasks per request filters before pagination
 	s.mu.RLock()
 	filteredTasks := filterTasks(s.tasks, userName, req)
 	s.mu.RUnlock()
 
-	// Count total number of tasks before pagination and after all other filters are applied
 	totalSize := len(filteredTasks)
-
-	// Sort tasks by last updated time by descending order, if they are equal sort by task ID
 	slices.SortFunc(filteredTasks, func(a, b *storedTask) int {
 		if timeCmp := b.lastUpdated.Compare(a.lastUpdated); timeCmp != 0 {
 			return timeCmp
@@ -174,14 +154,13 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 		return nil, err
 	}
 
-	// Apply transformations to tasksPage (include history/artifacts)
-	transformedTasks, err := transformTasks(tasksPage, req)
+	listTasksResult, err := toListTasksResult(tasksPage, req)
 	if err != nil {
 		return nil, err
 	}
 
 	return &a2a.ListTasksResponse{
-		Tasks:         transformedTasks,
+		Tasks:         listTasksResult,
 		TotalSize:     totalSize,
 		PageSize:      pageSize,
 		NextPageToken: nextPageToken,
@@ -191,20 +170,15 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 func filterTasks(tasks map[a2a.TaskID]*storedTask, userName UserName, req *a2a.ListTasksRequest) []*storedTask {
 	var filteredTasks []*storedTask
 	for _, storedTask := range tasks {
-		// Retrieve only tasks created by the user
 		if storedTask.user != userName {
 			continue
 		}
-		// Filter by context ID if it is set
 		if req.ContextID != "" && storedTask.task.ContextID != req.ContextID {
 			continue
 		}
-		// Filter by status if it is set
 		if req.Status != a2a.TaskStateUnspecified && storedTask.task.Status.State != req.Status {
 			continue
 		}
-
-		// Filter by LastUpdatedTime if it is set
 		if req.LastUpdatedAfter != nil && storedTask.lastUpdated.Before(*req.LastUpdatedAfter) {
 			continue
 		}
@@ -219,7 +193,6 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 	var cursorTaskID a2a.TaskID
 	var err error
 
-	// Filter tasks after pagination
 	var tasksPage []*storedTask
 	if req.PageToken != "" {
 		cursorTime, cursorTaskID, err = decodePageToken(req.PageToken)
@@ -243,7 +216,6 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 		tasksPage = filteredTasks
 	}
 
-	// Filter tasks per page size and set nextPageToken
 	var nextPageToken string
 	if pageSize >= len(tasksPage) {
 		pageSize = len(tasksPage)
@@ -255,28 +227,23 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 	return tasksPage, nextPageToken, nil
 }
 
-func transformTasks(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
-	var transformedTasks []*a2a.Task
+func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
+	var result []*a2a.Task
 	for _, storedTask := range tasks {
-		// Copy the task to avoid modifying the original
 		taskCopy, err := utils.DeepCopy(storedTask.task)
 		if err != nil {
 			return nil, err
 		}
-
-		// If HistoryLength is set, truncate the history, otherwise keep it as is
 		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
 			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
 		}
-
-		// If IncludeArtifacts is false, remove the artifacts, otherwise keep it as is
 		if !req.IncludeArtifacts {
 			taskCopy.Artifacts = nil
 		}
 
-		transformedTasks = append(transformedTasks, taskCopy)
+		result = append(result, taskCopy)
 	}
-	return transformedTasks, nil
+	return result, nil
 }
 
 func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
@@ -287,7 +254,7 @@ func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 	decoded, err := base64.URLEncoding.DecodeString(nextPageToken)
 	if err != nil {
-		return time.Time{}, "", a2a.ErrParseError
+		return time.Time{}, "", err
 	}
 
 	parts := strings.Split(string(decoded), "_")
