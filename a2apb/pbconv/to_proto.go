@@ -485,6 +485,47 @@ func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	return result, nil
 }
 
+func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksRequest, error) {
+	if request == nil {
+		return nil, nil
+	}
+
+	var lastUpdatedAfter *timestamppb.Timestamp
+	if request.LastUpdatedAfter != nil {
+		lastUpdatedAfter = timestamppb.New(*request.LastUpdatedAfter)
+	}
+	return &a2apb.ListTasksRequest{
+		ContextId:        request.ContextID,
+		Status:           toProtoTaskState(request.Status),
+		PageSize:         int32(request.PageSize),
+		PageToken:        request.PageToken,
+		HistoryLength:    int32(request.HistoryLength),
+		LastUpdatedTime:  lastUpdatedAfter,
+		IncludeArtifacts: request.IncludeArtifacts,
+	}, nil
+}
+
+func ToProtoListTasksResponse(response *a2a.ListTasksResponse) (*a2apb.ListTasksResponse, error) {
+	if response == nil {
+		return nil, nil
+	}
+	tasks := make([]*a2apb.Task, len(response.Tasks))
+	for i, task := range response.Tasks {
+		taskProto, err := ToProtoTask(task)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert task: %w", err)
+		}
+		tasks[i] = taskProto
+	}
+
+	result := &a2apb.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     int32(response.TotalSize),
+		NextPageToken: response.NextPageToken,
+	}
+	return result, nil
+}
+
 func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	if config == nil {
 		return nil, nil

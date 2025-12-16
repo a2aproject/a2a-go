@@ -57,12 +57,12 @@ func WithTimeProvider(tp TimeProvider) Option {
 
 // SetAuthenticator updates the private authenticator field.
 func (s *Mem) SetAuthenticator(a Authenticator) {
-    s.authenticator = a
+	s.authenticator = a
 }
 
 // SetTimeProvider updates the private timeProvider field.
 func (s *Mem) SetTimeProvider(p TimeProvider) {
-    s.timeProvider = p
+	s.timeProvider = p
 }
 
 // Mem stores deep-copied [a2a.Task]-s in memory.
@@ -97,25 +97,6 @@ func NewMem(opts ...Option) *Mem {
 
 	return m
 }
-
-// DEBUG
-func (m *Mem) Tasks() map[a2a.TaskID]*storedTask {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.tasks 
-}
-func (st *storedTask) User() UserName {
-    return st.user
-}
-
-func (st *storedTask) TaskID() a2a.TaskID {
-    return st.task.ID 
-}
-
-func (st *storedTask) LastUpdated() time.Time {
-    return st.lastUpdated
-}
-// DEBUG
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	if err := validateTask(task); err != nil {
@@ -166,11 +147,11 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if pageSize == 0 {
 		pageSize = 50
 	} else if pageSize < 1 || pageSize > 100 {
-		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d", pageSize)
+		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d: %w", pageSize, a2a.ErrInvalidRequest)
 	}
 	// Validate history length
 	if req.HistoryLength < 0 {
-		return nil, fmt.Errorf("history length must be non-negative integer, got %d", req.HistoryLength)
+		return nil, fmt.Errorf("history length must be non-negative integer, got %d: %w", req.HistoryLength, a2a.ErrInvalidRequest)
 	}
 	// Filter tasks per request filters before pagination
 	s.mu.RLock()

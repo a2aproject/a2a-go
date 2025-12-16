@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/rest"
+	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 )
 
@@ -53,6 +54,12 @@ func TestREST_RequestRouting(t *testing.T) {
 			method: "OnGetTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
 				return client.GetTask(ctx, &a2a.TaskQueryParams{ID: "test-id"})
+			},
+		},
+		{
+			method: "OnListTasks",
+			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
+				return client.ListTasks(ctx, &a2a.ListTasksRequest{})
 			},
 		},
 		{
@@ -141,6 +148,10 @@ func TestREST_Validations(t *testing.T) {
 	}
 	task := &a2a.Task{ID: taskID}
 
+	authenticator := func(ctx context.Context) (taskstore.UserName, bool) {
+		return "TestUser", true
+	}
+
 	methods := []string{"POST", "GET", "PUT", "DELETE", "PATCH"}
 
 	testCases := []struct {
@@ -164,6 +175,11 @@ func TestREST_Validations(t *testing.T) {
 			name:    "GetTask",
 			methods: []string{http.MethodGet},
 			path:    "/v1/tasks/" + string(taskID),
+		},
+		{
+			name:    "ListTasks",
+			methods: []string{http.MethodGet},
+			path:    "/v1/tasks",
 		},
 		{
 			name:    "CancelTask",
@@ -193,8 +209,7 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/v1/card",
 		},
 	}
-
-	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	store := testutil.NewTestTaskStore().WithTasks(t, task).WithTestAuthenticator(authenticator)
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	mock := &mockAgentExecutor{

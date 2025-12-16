@@ -710,6 +710,68 @@ func TestToProto_toProtoTask(t *testing.T) {
 		})
 	}
 }
+
+func TestToProto_toProtoListTasksResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		list *a2a.ListTasksResponse
+		want *a2apb.ListTasksResponse
+	}{
+		{
+			name: "success",
+			list: &a2a.ListTasksResponse{
+				Tasks: []*a2a.Task{
+					{
+						ID:        a2a.TaskID("task-test"),
+						ContextID: "ctx-test",
+						Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+					},
+				},
+				NextPageToken: "next-page-token",
+				TotalSize:     1,
+			},
+			want: &a2apb.ListTasksResponse{
+				Tasks: []*a2apb.Task{
+					{
+						Id:        string(a2a.TaskID("task-test")),
+						ContextId: "ctx-test",
+						Status:    &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_WORKING},
+					},
+				},
+				NextPageToken: "next-page-token",
+				TotalSize:     1,
+			},
+		},
+		{
+			name: "nil list",
+			list: nil,
+			want: nil,
+		},
+		{
+			name: "empty list",
+			list: &a2a.ListTasksResponse{
+				Tasks: []*a2a.Task{},
+			},
+			want: &a2apb.ListTasksResponse{
+				Tasks: []*a2apb.Task{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ToProtoListTasksResponse(tt.list)
+			if err != nil {
+				t.Errorf("toProtoListTasksResponse() error = %v", err)
+				return
+			}
+			if !proto.Equal(got, tt.want) {
+				t.Errorf("toProtoListTasksResponse() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToProto_toProtoAgentCard(t *testing.T) {
 	a2aCard := &a2a.AgentCard{
 		ProtocolVersion:    "1.0",

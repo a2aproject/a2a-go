@@ -73,18 +73,14 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	return m
 }
 
-func getTestAuthenticator() taskstore.Authenticator {
-	return func(ctx context.Context) (taskstore.UserName, bool) {
-		return "test", true
-	}
-}
-
 // WithTestAuthenticator seeds TaskStore with given authenticator
-func (m *TestTaskStore) WithTestAuthenticator() *TestTaskStore {
-	if m.Mem == nil {
-		m.Mem = taskstore.NewMem(taskstore.WithAuthenticator(getTestAuthenticator()))
-	} else {
-		m.Mem.SetAuthenticator(getTestAuthenticator())
+func (m *TestTaskStore) WithTestAuthenticator(auth taskstore.Authenticator) *TestTaskStore {
+	if auth != nil {
+		if m.Mem == nil {
+			m.Mem = taskstore.NewMem(taskstore.WithAuthenticator(auth))
+		} else {
+			m.Mem.SetAuthenticator(auth)
+		}
 	}
 	return m
 }

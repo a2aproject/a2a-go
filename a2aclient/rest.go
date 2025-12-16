@@ -161,6 +161,17 @@ func (t *RESTTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams)
 	return &task, nil
 }
 
+// ListTasks retrieves a list of tasks.
+func (t *RESTTransport) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	path := "/v1/tasks"
+	var result a2a.ListTasksResponse
+
+	if err := t.doRequest(ctx, "GET", path, request, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // CancelTask requests cancellation of a task.
 func (t *RESTTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	path := "/v1/tasks/" + string(id.ID) + ":cancel"

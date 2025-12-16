@@ -32,8 +32,9 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 
 	mux.HandleFunc("POST /v1/message:send", handleSendMessage(handler))
 	mux.HandleFunc("POST /v1/message:stream", handleStreamMessage(handler))
-	mux.HandleFunc("POST /v1/tasks/{idAndAction}", handlePOSTTasks(handler))
 	mux.HandleFunc("GET /v1/tasks/{id}", handleGetTask(handler))
+	mux.HandleFunc("GET /v1/tasks", handleListTasks(handler))
+	mux.HandleFunc("POST /v1/tasks/{idAndAction}", handlePOSTTasks(handler))
 	mux.HandleFunc("POST /v1/tasks/{id}/pushNotificationConfigs", handleSetTaskPushConfig(handler))
 	mux.HandleFunc("GET /v1/tasks/{id}/pushNotificationConfigs/{configId}", handleGetTaskPushConfig(handler))
 	mux.HandleFunc("GET /v1/tasks/{id}/pushNotificationConfigs", handleListTaskPushConfig(handler))
@@ -68,7 +69,6 @@ func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		// Decode request params
 		var message a2a.MessageSendParams
 		if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 			writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
@@ -103,6 +103,26 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
+func handleListTasks(handler RequestHandler) http.HandlerFunc {
+	return func(rw http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		request := &a2a.ListTasksRequest{}
+		if err := json.NewDecoder(req.Body).Decode(request); err != nil {
+			writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
+			return
+		}
+		result, err := handler.OnListTasks(ctx, request)
+		if err != nil {
+			writeRESTError(ctx, rw, err, a2a.TaskID(""))
+			return
+		}
+
+		if err := json.NewEncoder(rw).Encode(result); err != nil {
+			log.Error(ctx, "failed to encode response", err)
+		}
+	}
+}
+
 func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -113,11 +133,9 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 		}
 
 		if strings.HasSuffix(idAndAction, ":cancel") {
-			// Handle cancel task
 			taskID := strings.TrimSuffix(idAndAction, ":cancel")
 			handleCancelTask(handler, taskID, rw, req)
 		} else if strings.HasSuffix(idAndAction, ":subscribe") {
-			// Handle resubscribe to task
 			taskID := strings.TrimSuffix(idAndAction, ":subscribe")
 			handleStreamingRequest(handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{ID: a2a.TaskID(taskID)}), rw, req)
 		} else {
@@ -172,7 +190,6 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 
 			b, jbErr := json.Marshal(event)
 			if jbErr != nil {
-				// send marshal error and stop
 				errObj := map[string]string{"error": jbErr.Error()}
 				if eb, err := json.Marshal(errObj); err == nil {
 					if eb != nil {
