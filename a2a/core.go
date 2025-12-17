@@ -466,6 +466,13 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 // ContentParts is an array of content parts that form the message body or an artifact.
 type ContentParts []Part
 
+func (j ContentParts) MarshalJSON() ([]byte, error) {
+	if j == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]Part(j))
+}
+
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
 	type typedPart struct {
 		Kind string `json:"kind"`
@@ -726,6 +733,13 @@ type ListTasksRequest struct {
 
 	// Status is the current state of the tasks to list.
 	Status TaskState `json:"status,omitempty" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+
+	// PageSize is the maximum number of tasks to return in the response.
+	// Must be between 1 and 100. If not set, the default value is 50.
+	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
+
+	// PageToken is the token for retrieving the next page of results.
+	PageToken string `json:"page_token,omitempty" yaml:"page_token,omitempty" mapstructure:"page_token,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength int `json:"history_length,omitempty" yaml:"history_length,omitempty" mapstructure:"history_length,omitempty"`
