@@ -233,7 +233,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 		},
 	}
 
-	store := testutil.NewTestTaskStore().WithTestAuthenticator(auth).WithTasks(t, task)
+	store := testutil.NewTestTaskStore(taskstore.WithAuthenticator(auth)).WithTasks(t, task)
 	reqHandler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store))
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
 

@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"iter"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/rest"
@@ -106,9 +108,38 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 func handleListTasks(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
+		query := req.URL.Query()
 		request := &a2a.ListTasksRequest{}
-		if err := json.NewDecoder(req.Body).Decode(request); err != nil {
-			writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
+		var err error
+		parse := func(key string, target interface{}) {
+			val := query.Get(key)
+			if val == "" {
+				return
+			}
+			switch t := target.(type) {
+			case *string:
+				*t = val
+			case *a2a.TaskState:
+				*t = a2a.TaskState(val)
+			case *int:
+				*t, err = strconv.Atoi(val)
+			case *bool:
+				*t, err = strconv.ParseBool(val)
+			case *time.Time:
+				var parsedTime time.Time
+				parsedTime, err = time.Parse(time.RFC3339, val)
+				*t = parsedTime
+			}
+		}
+		parse("context_id", &request.ContextID)
+		parse("status", &request.Status)
+		parse("page_size", &request.PageSize)
+		parse("page_token", &request.PageToken)
+		parse("history_length", &request.HistoryLength)
+		parse("last_updated_after", &request.LastUpdatedAfter)
+		parse("include_artifacts", &request.IncludeArtifacts)
+		if err != nil {
+			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return
 		}
 		result, err := handler.OnListTasks(ctx, request)
@@ -116,7 +147,6 @@ func handleListTasks(handler RequestHandler) http.HandlerFunc {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
 		}
-
 		if err := json.NewEncoder(rw).Encode(result); err != nil {
 			log.Error(ctx, "failed to encode response", err)
 		}

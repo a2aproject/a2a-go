@@ -55,14 +55,6 @@ func WithTimeProvider(tp TimeProvider) Option {
 	}
 }
 
-func (s *Mem) SetAuthenticator(a Authenticator) {
-	s.authenticator = a
-}
-
-func (s *Mem) SetTimeProvider(p TimeProvider) {
-	s.timeProvider = p
-}
-
 type Mem struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask

@@ -189,16 +189,16 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 		resp := newResponse(
 			req,
 			json.RawMessage(
-				`{"tasks":[{
-				"kind":"task",
-				"id":"task-1",
-				"contextId":"ctx-1",
-				"status":{"state":"completed"}},
-				{"kind":"task",
-				"id":"task-2",
-				"contextId":"ctx-2",
-				"status":{"state":"working"}}], 
-				"total_size": 2, "page_size": 10, "next_page_token": "test-page-token"}`),
+				`{
+						"tasks":[
+							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
+							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
+						],
+						"total_size": 2,
+						"page_size": 10,
+						"next_page_token": "test-page-token"
+				}`,
+			),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))

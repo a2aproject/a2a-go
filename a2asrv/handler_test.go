@@ -1073,7 +1073,12 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ts := testutil.NewTestTaskStore().WithTestAuthenticator(tt.authenticator).WithTasks(t, tt.givenTasks...)
+			var ts *testutil.TestTaskStore
+			if tt.authenticator == nil {
+				ts = testutil.NewTestTaskStore().WithTasks(t, tt.givenTasks...)
+			} else {
+				ts = testutil.NewTestTaskStore(taskstore.WithAuthenticator(tt.authenticator)).WithTasks(t, tt.givenTasks...)
+			}
 			handler := newTestHandler(WithTaskStore(ts))
 			result, err := handler.OnListTasks(ctx, tt.request)
 

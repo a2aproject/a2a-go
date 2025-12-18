@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -164,9 +166,37 @@ func (t *RESTTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams)
 // ListTasks retrieves a list of tasks.
 func (t *RESTTransport) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	path := "/v1/tasks"
+
+	query := url.Values{}
+	if request.ContextID != "" {
+		query.Add("contextId", string(request.ContextID))
+	}
+	if request.Status != "" {
+		query.Add("status", string(request.Status))
+	}
+	if request.PageSize != 0 {
+		query.Add("page_size", strconv.Itoa(request.PageSize))
+	}
+	if request.PageToken != "" {
+		query.Add("page_token", string(request.PageToken))
+	}
+	if request.HistoryLength != 0 {
+		query.Add("history_length", strconv.Itoa(request.HistoryLength))
+	}
+	if request.LastUpdatedAfter != nil {
+		query.Add("last_updated_after", request.LastUpdatedAfter.Format(time.RFC3339))
+	}
+	if request.IncludeArtifacts {
+		query.Add("include_artifacts", "true")
+	}
+
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
 	var result a2a.ListTasksResponse
 
-	if err := t.doRequest(ctx, "GET", path, request, &result); err != nil {
+	if err := t.doRequest(ctx, "GET", path, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

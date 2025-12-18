@@ -65,16 +65,17 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(
-			`{"tasks":[{
-				"kind":"task",
-				"id":"task-1",
-				"contextId":"ctx-1",
-				"status":{"state":"completed"}},
-				{"kind":"task",
-				"id":"task-2",
-				"contextId":"ctx-2",
-				"status":{"state":"working"}}], 
-				"total_size": 2, "page_size": 50, "next_page_token": "test-page-token"}`))
+			`{
+					"tasks":[
+						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
+						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
+					], 
+					"total_size": 2, 
+					"page_size": 50, 
+					"next_page_token": "test-page-token"
+				}`,
+		),
+		)
 	}))
 	defer server.Close()
 

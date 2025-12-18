@@ -209,7 +209,7 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/v1/card",
 		},
 	}
-	store := testutil.NewTestTaskStore().WithTasks(t, task).WithTestAuthenticator(authenticator)
+	store := testutil.NewTestTaskStore(taskstore.WithAuthenticator(authenticator)).WithTasks(t, task)
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	mock := &mockAgentExecutor{
