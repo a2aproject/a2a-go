@@ -26,7 +26,7 @@ RequestHandler is transport-agnostic and needs to be wrapped in a transport-spec
 like [github.com/a2aproject/a2a-go/a2agrpc.Handler]. JSONRPC transport implementation can be created using NewJSONRPCHandler function
 and registered with the standard [http.Server]:
 
-	handler := a2asrv.NewRequestHandler(
+	handler := a2asrv.NewHandler(
 		agentExecutor,
 		a2asrv.WithTaskStore(customDB),
 		a2asrv.WithPushNotifications(configStore, sender),
