@@ -142,7 +142,7 @@ func TestError_ToA2AError(t *testing.T) {
 			wantDetail: "This version is not supported",
 		},
 		{
-			name:        "Unknown Type defaults to ServerError",
+			name:        "Unknown Type defaults to InternalError",
 			contentType: "application/problem+json",
 			responseBody: `{
 				"type": "https://a2a-protocol.org/errors/unknown-error",
@@ -150,15 +150,13 @@ func TestError_ToA2AError(t *testing.T) {
 				"status": 500,
 				"detail": "Something unexpected happened"
 			}`,
-			wantError:  a2a.ErrServerError,
-			wantDetail: "",
+			wantError:  a2a.ErrInternalError,
 		},
 		{
 			name:         "Invalid Content-Type (Standard JSON)",
 			contentType:  "application/json",
 			responseBody: `{"error": "generic error"}`,
 			wantError:    a2a.ErrServerError,
-			wantDetail:   "",
 		},
 	}
 
