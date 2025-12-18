@@ -131,13 +131,13 @@ func handleListTasks(handler RequestHandler) http.HandlerFunc {
 				*t = parsedTime
 			}
 		}
-		parse("context_id", &request.ContextID)
+		parse("contextId", &request.ContextID)
 		parse("status", &request.Status)
-		parse("page_size", &request.PageSize)
-		parse("page_token", &request.PageToken)
-		parse("history_length", &request.HistoryLength)
-		parse("last_updated_after", &request.LastUpdatedAfter)
-		parse("include_artifacts", &request.IncludeArtifacts)
+		parse("pageSize", &request.PageSize)
+		parse("pageToken", &request.PageToken)
+		parse("historyLength", &request.HistoryLength)
+		parse("lastUpdatedAfter", &request.LastUpdatedAfter)
+		parse("includeArtifacts", &request.IncludeArtifacts)
 		if err != nil {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return

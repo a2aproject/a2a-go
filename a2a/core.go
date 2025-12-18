@@ -729,26 +729,26 @@ func newUUIDString() string {
 // ListTasksRequest defines the parameters for a request to list tasks.
 type ListTasksRequest struct {
 	// ContextID is the ID of the context to list tasks for.
-	ContextID string `json:"context_id,omitempty" yaml:"context_id,omitempty" mapstructure:"context_id,omitempty"`
+	ContextID string `json:"contextId,omitempty" yaml:"contextId,omitempty" mapstructure:"contextId,omitempty"`
 
 	// Status is the current state of the tasks to list.
 	Status TaskState `json:"status,omitempty" yaml:"status,omitempty" mapstructure:"status,omitempty"`
 
 	// PageSize is the maximum number of tasks to return in the response.
 	// Must be between 1 and 100. If not set, the default value is 50.
-	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
+	PageSize int `json:"pageSize,omitempty" yaml:"pageSize,omitempty" mapstructure:"pageSize,omitempty"`
 
 	// PageToken is the token for retrieving the next page of results.
-	PageToken string `json:"page_token,omitempty" yaml:"page_token,omitempty" mapstructure:"page_token,omitempty"`
+	PageToken string `json:"pageToken,omitempty" yaml:"pageToken,omitempty" mapstructure:"pageToken,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
-	HistoryLength int `json:"history_length,omitempty" yaml:"history_length,omitempty" mapstructure:"history_length,omitempty"`
+	HistoryLength int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
 	// LastUpdatedAfter is the time to list tasks updated after.
-	LastUpdatedAfter *time.Time `json:"last_updated_after,omitempty" yaml:"last_updated_after,omitempty" mapstructure:"last_updated_after,omitempty"`
+	LastUpdatedAfter *time.Time `json:"lastUpdatedAfter,omitempty" yaml:"lastUpdatedAfter,omitempty" mapstructure:"lastUpdatedAfter,omitempty"`
 
 	// IncludeArtifacts is whether to include artifacts in the response.
-	IncludeArtifacts bool `json:"include_artifacts,omitempty" yaml:"include_artifacts,omitempty" mapstructure:"include_artifacts,omitempty"`
+	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
 }
 
 // ListTasksResponse defines the response for a request to tasks/list.
@@ -757,12 +757,12 @@ type ListTasksResponse struct {
 	Tasks []*Task `json:"tasks,omitempty" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
 
 	// TotalSize is the total number of tasks available (before pagination).
-	TotalSize int `json:"total_size,omitempty" yaml:"total_size,omitempty" mapstructure:"total_size,omitempty"`
+	TotalSize int `json:"totalSize,omitempty" yaml:"totalSize,omitempty" mapstructure:"totalSize,omitempty"`
 
 	// PageSize is the maximum number of tasks returned in the response.
-	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
+	PageSize int `json:"pageSize,omitempty" yaml:"pageSize,omitempty" mapstructure:"pageSize,omitempty"`
 
 	// NextPageToken is the token for retrieving the next page of results.
 	// Empty string if no more results.
-	NextPageToken string `json:"next_page_token,omitempty" yaml:"next_page_token,omitempty" mapstructure:"next_page_token,omitempty"`
+	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`
 }

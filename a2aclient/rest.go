@@ -175,19 +175,19 @@ func (t *RESTTransport) ListTasks(ctx context.Context, request *a2a.ListTasksReq
 		query.Add("status", string(request.Status))
 	}
 	if request.PageSize != 0 {
-		query.Add("page_size", strconv.Itoa(request.PageSize))
+		query.Add("pageSize", strconv.Itoa(request.PageSize))
 	}
 	if request.PageToken != "" {
-		query.Add("page_token", string(request.PageToken))
+		query.Add("pageToken", string(request.PageToken))
 	}
 	if request.HistoryLength != 0 {
-		query.Add("history_length", strconv.Itoa(request.HistoryLength))
+		query.Add("historyLength", strconv.Itoa(request.HistoryLength))
 	}
 	if request.LastUpdatedAfter != nil {
-		query.Add("last_updated_after", request.LastUpdatedAfter.Format(time.RFC3339))
+		query.Add("lastUpdatedAfter", request.LastUpdatedAfter.Format(time.RFC3339))
 	}
 	if request.IncludeArtifacts {
-		query.Add("include_artifacts", "true")
+		query.Add("includeArtifacts", "true")
 	}
 
 	if encoded := query.Encode(); encoded != "" {

@@ -70,9 +70,9 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
 						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
 					], 
-					"total_size": 2, 
-					"page_size": 50, 
-					"next_page_token": "test-page-token"
+					"totalSize": 2, 
+					"pageSize": 50, 
+					"nextPageToken": "test-page-token"
 				}`,
 		),
 		)
