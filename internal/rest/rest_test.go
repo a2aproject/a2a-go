@@ -151,6 +151,7 @@ func TestError_ToA2AError(t *testing.T) {
 				"detail": "Something unexpected happened"
 			}`,
 			wantError:  a2a.ErrInternalError,
+			wantDetail: "Something unexpected happened",
 		},
 		{
 			name:         "Invalid Content-Type (Standard JSON)",
