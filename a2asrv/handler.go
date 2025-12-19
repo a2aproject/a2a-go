@@ -33,6 +33,9 @@ type RequestHandler interface {
 	// OnGetTask handles the 'tasks/get' protocol method.
 	OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error)
 
+	// OnListTasks handles the 'tasks/list' protocol method.
+	OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+
 	// OnCancelTask handles the 'tasks/cancel' protocol method.
 	OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error)
 
@@ -155,6 +158,14 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 	}
 
 	return task, nil
+}
+
+func (h *defaultRequestHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	listResponse, err := h.taskStore.List(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks: %w", err)
+	}
+	return listResponse, nil
 }
 
 func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {

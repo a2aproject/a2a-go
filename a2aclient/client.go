@@ -80,6 +80,22 @@ func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.
 	return resp, err
 }
 
+func (c *Client) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	method := "ListTasks"
+
+	ctx, err := c.interceptBefore(ctx, method, request)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.ListTasks(ctx, request)
+	if errOverride := c.interceptAfter(ctx, method, resp, err); errOverride != nil {
+		return nil, errOverride
+	}
+
+	return resp, err
+}
+
 func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	method := "CancelTask"
 

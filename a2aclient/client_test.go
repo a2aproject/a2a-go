@@ -28,6 +28,7 @@ import (
 
 type testTransport struct {
 	GetTaskFn              func(context.Context, *a2a.TaskQueryParams) (*a2a.Task, error)
+	ListTasksFn            func(context.Context, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 	CancelTaskFn           func(context.Context, *a2a.TaskIDParams) (*a2a.Task, error)
 	SendMessageFn          func(context.Context, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
 	ResubscribeToTaskFn    func(context.Context, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
@@ -41,6 +42,10 @@ type testTransport struct {
 
 func (t *testTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	return t.GetTaskFn(ctx, query)
+}
+
+func (t *testTransport) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	return t.ListTasksFn(ctx, request)
 }
 
 func (t *testTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -506,6 +511,36 @@ func TestClient_InterceptGetTask(t *testing.T) {
 	}
 	if interceptor.lastResp.Payload != task {
 		t.Fatalf("interceptor.After() payload = %v, want %v", interceptor.lastResp.Payload, task)
+	}
+}
+
+func TestClient_InterceptListTasks(t *testing.T) {
+	ctx := t.Context()
+	task := &a2a.Task{}
+	response := &a2a.ListTasksResponse{Tasks: []*a2a.Task{task}}
+	transport := &testTransport{
+		ListTasksFn: func(ctx context.Context, tqp *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+			return response, nil
+		},
+	}
+	interceptor := &testInterceptor{}
+	client := newTestClient(transport, interceptor)
+	req := &a2a.ListTasksRequest{}
+	resp, err := client.ListTasks(ctx, req)
+	if interceptor.lastReq.Method != "ListTasks" {
+		t.Fatalf("lastReq.Method = %v, want ListTasks", interceptor.lastReq.Method)
+	}
+	if interceptor.lastResp.Method != "ListTasks" {
+		t.Fatalf("lastResp.Method = %v, want ListTasks", interceptor.lastResp.Method)
+	}
+	if err != nil || resp.Tasks[0] != task {
+		t.Fatalf("client.ListTasks() = (%v, %v), want %v", resp, err, task)
+	}
+	if interceptor.lastReq.Payload != req {
+		t.Fatalf("interceptor.Before() payload = %v, want %v", interceptor.lastReq.Payload, req)
+	}
+	if interceptor.lastResp.Payload != response {
+		t.Fatalf("interceptor.After() payload = %v, want %v", interceptor.lastResp.Payload, response)
 	}
 }
 

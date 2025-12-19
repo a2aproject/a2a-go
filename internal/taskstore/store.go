@@ -132,10 +132,10 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	if pageSize == 0 {
 		pageSize = 50
 	} else if pageSize < 1 || pageSize > 100 {
-		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d", pageSize)
+		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d: %w", pageSize, a2a.ErrInvalidRequest)
 	}
 	if req.HistoryLength < 0 {
-		return nil, fmt.Errorf("history length must be non-negative integer, got %d", req.HistoryLength)
+		return nil, fmt.Errorf("history length must be non-negative integer, got %d: %w", req.HistoryLength, a2a.ErrInvalidRequest)
 	}
 	s.mu.RLock()
 	filteredTasks := filterTasks(s.tasks, userName, req)
@@ -254,7 +254,7 @@ func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 	decoded, err := base64.URLEncoding.DecodeString(nextPageToken)
 	if err != nil {
-		return time.Time{}, "", err
+		return time.Time{}, "", a2a.ErrParseError
 	}
 
 	parts := strings.Split(string(decoded), "_")

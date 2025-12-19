@@ -17,12 +17,14 @@ package pbconv
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestFromProto_fromProtoPart(t *testing.T) {
@@ -393,6 +395,120 @@ func TestFromProto_fromProtoGetTaskRequest(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("fromProtoGetTaskRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
+	cutOffTime := time.Date(2025, 12, 15, 13, 17, 22, 0, time.UTC)
+	tests := []struct {
+		name string
+		req  *a2apb.ListTasksRequest
+		want *a2a.ListTasksRequest
+	}{
+		{
+			name: "with pageSize",
+			req:  &a2apb.ListTasksRequest{PageSize: 10},
+			want: &a2a.ListTasksRequest{PageSize: 10},
+		},
+		{
+			name: "with pageToken",
+			req:  &a2apb.ListTasksRequest{PageToken: "test"},
+			want: &a2a.ListTasksRequest{PageToken: "test"},
+		},
+		{
+			name: "with historyLength",
+			req:  &a2apb.ListTasksRequest{HistoryLength: 10},
+			want: &a2a.ListTasksRequest{HistoryLength: 10},
+		},
+		{
+			name: "with lastUpdatedAfter",
+			req:  &a2apb.ListTasksRequest{LastUpdatedTime: timestamppb.New(cutOffTime)},
+			want: &a2a.ListTasksRequest{LastUpdatedAfter: &cutOffTime},
+		},
+		{
+			name: "with includeArtifacts",
+			req:  &a2apb.ListTasksRequest{IncludeArtifacts: true},
+			want: &a2a.ListTasksRequest{IncludeArtifacts: true},
+		},
+		{
+			name: "with all filters",
+			req:  &a2apb.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, LastUpdatedTime: timestamppb.New(cutOffTime)},
+			want: &a2a.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, LastUpdatedAfter: &cutOffTime},
+		},
+		{
+			name: "without filters",
+			req:  &a2apb.ListTasksRequest{},
+			want: &a2a.ListTasksRequest{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FromProtoListTasksRequest(tt.req)
+			if err != nil {
+				t.Errorf("fromProtoListTasksRequest() error = %v", err)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("fromProtoListTasksRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
+	taskID := a2a.NewTaskID()
+	tests := []struct {
+		name string
+		req  *a2apb.ListTasksResponse
+		want *a2a.ListTasksResponse
+	}{
+		{
+			name: "success",
+			req: &a2apb.ListTasksResponse{
+				Tasks: []*a2apb.Task{
+					{
+						Id:     string(taskID),
+						Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_WORKING},
+					},
+				},
+				TotalSize:     1,
+				NextPageToken: "test",
+			},
+			want: &a2a.ListTasksResponse{
+				Tasks: []*a2a.Task{
+					{
+						ID:        taskID,
+						Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+						History:   []*a2a.Message{},
+						Artifacts: []*a2a.Artifact{},
+						ContextID: "",
+					},
+				},
+				TotalSize:     1,
+				PageSize:      1,
+				NextPageToken: "test",
+			},
+		},
+		{
+			name: "empty",
+			req: &a2apb.ListTasksResponse{
+				Tasks:     []*a2apb.Task{},
+				TotalSize: 0,
+			},
+			want: &a2a.ListTasksResponse{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FromProtoListTasksResponse(tt.req)
+			if err != nil {
+				t.Errorf("fromProtoListTasksResponse() error = %v", err)
+				return
+			}
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("fromProtoListTasksResponse() mismatch (+got -want):\n%s", diff)
 			}
 		})
 	}

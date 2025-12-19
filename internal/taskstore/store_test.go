@@ -243,7 +243,14 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 		request      *a2a.ListTasksRequest
 		givenTasks   []*a2a.Task
 		wantResponse *a2a.ListTasksResponse
+		wantErr      error
 	}{
+		{
+			name:         "empty request",
+			request:      &a2a.ListTasksRequest{},
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}},
+		},
 		{
 			name:         "ContextID filter",
 			request:      &a2a.ListTasksRequest{ContextID: "id1"},
@@ -269,16 +276,34 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
+			name:       "with negative HistoryLength filter",
+			givenTasks: []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			request:    &a2a.ListTasksRequest{HistoryLength: -1},
+			wantErr:    fmt.Errorf("history length must be non-negative integer, got -1: %w", a2a.ErrInvalidRequest),
+		},
+		{
 			name:         "PageSize filter",
 			request:      &a2a.ListTasksRequest{PageSize: 2},
 			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
 		},
 		{
+			name:       "Invalid PageSize",
+			request:    &a2a.ListTasksRequest{PageSize: 212},
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantErr:    fmt.Errorf("page size must be between 1 and 100 inclusive, got 212: %w", a2a.ErrInvalidRequest),
+		},
+		{
 			name:         "PageToken filter",
 			request:      &a2a.ListTasksRequest{PageSize: 1, PageToken: createPageToken(startTime.Add(3*time.Second), id3)},
 			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2}}},
+		},
+		{
+			name:       "Invalid PageToken",
+			request:    &a2a.ListTasksRequest{PageSize: 1, PageToken: "invalidPageToken"},
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			wantErr:    a2a.ErrParseError,
 		},
 		{
 			name:         "IncludeArtifacts true filter",
@@ -300,11 +325,20 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			mustSave(t, store, tc.givenTasks...)
 
 			listResponse, err := store.List(t.Context(), tc.request)
-			if err != nil {
-				t.Fatalf("Unexpected error: got = %v, want nil", err)
-			}
-			if diff := cmp.Diff(listResponse.Tasks, tc.wantResponse.Tasks); diff != "" {
-				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+			if tc.wantErr != nil {
+				if err == nil {
+					t.Fatalf("Expected error but got nil")
+				}
+				if diff := cmp.Diff(err.Error(), tc.wantErr.Error()); diff != "" {
+					t.Fatalf("Error mismatch (+got -want):\n%s", diff)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Unexpected error: got = %v, want nil", err)
+				}
+				if diff := cmp.Diff(listResponse.Tasks, tc.wantResponse.Tasks); diff != "" {
+					t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+				}
 			}
 		})
 	}

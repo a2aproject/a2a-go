@@ -20,12 +20,11 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestRESTTransport_GetTask(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
@@ -33,16 +32,12 @@ func TestRESTTransport_GetTask(t *testing.T) {
 			t.Errorf("expected path /v1/tasks/task-123, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`))
 	}))
 	defer server.Close()
-
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call GetTask and log unexpected errors
 	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
@@ -59,10 +54,65 @@ func TestRESTTransport_GetTask(t *testing.T) {
 	}
 }
 
-func TestRESTTransport_CancelTask(t *testing.T) {
-	// Set up a mock HTTP server
+func TestRESTTransport_ListTasks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/tasks" {
+			t.Errorf("expected path /v1/tasks, got %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(
+			`{
+					"tasks":[
+						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
+						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
+					], 
+					"totalSize": 2, 
+					"pageSize": 50, 
+					"nextPageToken": "test-page-token"
+				}`,
+		),
+		)
+	}))
+	defer server.Close()
+
+	transport := NewRESTTransport(server.URL, server.Client())
+	wantResult := &a2a.ListTasksResponse{
+		Tasks: []*a2a.Task{
+			{
+				ID:        "task-1",
+				ContextID: "ctx-1",
+				Status: a2a.TaskStatus{
+					State: a2a.TaskStateCompleted,
+				},
+			},
+			{
+				ID:        "task-2",
+				ContextID: "ctx-2",
+				Status: a2a.TaskStatus{
+					State: a2a.TaskStateWorking,
+				},
+			},
+		},
+		TotalSize:     2,
+		PageSize:      50,
+		NextPageToken: "test-page-token",
+	}
+	listTasksResult, err := transport.ListTasks(t.Context(), &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+
+	if diff := cmp.Diff(listTasksResult, wantResult); diff != "" {
+		t.Errorf("ListTasks() mismatch (+got -want):\n%s", diff)
+	}
+}
+
+func TestRESTTransport_CancelTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
@@ -70,16 +120,12 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 			t.Errorf("expected path /v1/tasks/task-123:cancel, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`))
 	}))
 	defer server.Close()
-
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call CancelTask and log unexpected errors
 	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
 	})
@@ -94,9 +140,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 }
 
 func TestRESTTransport_SendMessage(t *testing.T) {
-	// Set up a mock HTTP
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
@@ -105,16 +149,12 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 			t.Errorf("expected path /v1/message:send, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`))
 	}))
 	defer server.Close()
-
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call SendMessage and log unexpected errors
 	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
@@ -133,9 +173,7 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 }
 
 func TestRESTTransport_ResubscribeToTask(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method, Path and Headers
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
@@ -147,7 +185,6 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
-		// Send task updates via SSE
 		events := []string{
 			`data: {"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"working"}}`,
 			``,
@@ -164,10 +201,8 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call ResubscribeToTask
 	events := []a2a.Event{}
 	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
 		ID: "task-123",
@@ -178,26 +213,19 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		events = append(events, event)
 	}
 
-	// Verify received events, log unexpected results
 	if len(events) != 2 {
 		t.Errorf("got %d events, want 2", len(events))
 	}
-
-	// Verify first event is Task
 	if _, ok := events[0].(*a2a.Task); !ok {
 		t.Errorf("got events[0] type %T, want *Task", events[0])
 	}
-
-	// Verify second event is TaskStatusUpdateEvent
 	if _, ok := events[1].(*a2a.TaskStatusUpdateEvent); !ok {
 		t.Errorf("got events[1] type %T, want *TaskStatusUpdateEvent", events[1])
 	}
 }
 
 func TestRESTTransport_SendStreamingMessage(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method, Path and Headers
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
@@ -209,7 +237,6 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
-		// Send task updates via SSE
 		events := []string{
 			`data: {"kind":"task", "id":"task-123","contextId":"ctx-123","status":{"state":"working"}}`,
 			``,
@@ -228,10 +255,8 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	//Call SendStreamingMessage
 	events := []a2a.Event{}
 	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
@@ -242,31 +267,23 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		events = append(events, event)
 	}
 
-	// Verify received events, log unexpected results
 	if len(events) != 3 {
 		t.Errorf("got %d events, want 3", len(events))
 	}
-
-	//Verify first event is Task
 	if _, ok := events[0].(*a2a.Task); !ok {
 		t.Errorf("got events[0] type %T, want *Task", events[0])
 	}
 
-	// Verify second event is Message
 	if _, ok := events[1].(*a2a.Message); !ok {
 		t.Errorf("got events[1] type %T, want *Message", events[1])
 	}
-
-	// Verify third event is Task
 	if _, ok := events[2].(*a2a.Task); !ok {
 		t.Errorf("got events[2] type %T, want *Task", events[2])
 	}
 }
 
 func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
@@ -274,16 +291,13 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	//Call GetTaskPushConfig and log unexpected errors
 	config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
 		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
@@ -305,9 +319,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 }
 
 func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
@@ -315,7 +327,6 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
 			{"taskId":"task-123","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},
@@ -324,10 +335,8 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call ListTaskPushConfig and log unexpected errors
 	configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{
 		TaskID: a2a.TaskID("task-123"),
 	})
@@ -347,9 +356,7 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 }
 
 func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
@@ -357,16 +364,13 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call SetTaskPushConfig and log unexpected errors
 	config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
 		TaskID: "task-123",
 		Config: a2a.PushConfig{
@@ -390,9 +394,7 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 }
 
 func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodDelete {
 			t.Errorf("expected method DELETE, got %s", r.Method)
 		}
@@ -402,10 +404,8 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call DeleteTaskPushConfig and log unexpected errors
 	err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
 		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
@@ -417,9 +417,7 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 }
 
 func TestRESTTransport_GetAgentCard(t *testing.T) {
-	// Set up a mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify Method and Path
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
@@ -427,16 +425,13 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 			t.Errorf("expected path /v1/card, got %s", r.URL.Path)
 		}
 
-		// Mock response
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"url": "http://example.com", "name": "Test agent", "description":"test"}`))
 	}))
 	defer server.Close()
 
-	// Create the REST transport pointing to the mock server
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	// Call GetAgentCard and log unexpected errors
 	card, err := transport.GetAgentCard(t.Context())
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)

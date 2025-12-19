@@ -16,6 +16,7 @@ package pbconv
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
@@ -192,6 +193,55 @@ func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.TaskQueryParams, e
 		params.HistoryLength = &historyLength
 	}
 	return params, nil
+}
+
+func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	var lastUpdatedAfter *time.Time
+	if req.GetLastUpdatedTime() != nil {
+		t := req.GetLastUpdatedTime().AsTime()
+		lastUpdatedAfter = &t
+	}
+
+	var status a2a.TaskState
+	if req.GetStatus() != 0 {
+		status = a2a.TaskState(req.GetStatus().String())
+	}
+
+	return &a2a.ListTasksRequest{
+		ContextID:        req.GetContextId(),
+		Status:           status,
+		PageSize:         int(req.GetPageSize()),
+		PageToken:        req.GetPageToken(),
+		HistoryLength:    int(req.GetHistoryLength()),
+		LastUpdatedAfter: lastUpdatedAfter,
+		IncludeArtifacts: req.GetIncludeArtifacts(),
+	}, nil
+}
+
+func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksResponse, error) {
+	if resp == nil {
+		return nil, nil
+	}
+
+	var tasks []*a2a.Task
+	for _, task := range resp.GetTasks() {
+		t, err := FromProtoTask(task)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert task: %w", err)
+		}
+		tasks = append(tasks, t)
+	}
+
+	return &a2a.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     int(resp.GetTotalSize()),
+		PageSize:      len(tasks),
+		NextPageToken: resp.GetNextPageToken(),
+	}, nil
 }
 
 func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.TaskPushConfig, error) {
