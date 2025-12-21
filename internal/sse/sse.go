@@ -82,7 +82,7 @@ func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		scanner := bufio.NewScanner(body)
-		buf := make([]byte, 0, 64*1024)
+		buf := make([]byte, 0, bufio.MaxScanTokenSize)
 		scanner.Buffer(buf, MaxSSETokenSize)
 		prefixBytes := []byte(sseDataPrefix)
 

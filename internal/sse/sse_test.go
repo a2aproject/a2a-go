@@ -77,7 +77,7 @@ func TestSSE_Success(t *testing.T) {
 func TestSSE_LargePayload(t *testing.T) {
 	// Create a payload larger than the default 64KB bufio.Scanner buffer
 	// to verify that the increased buffer size works correctly.
-	payloadSize := 100 * 1024 // 100KB
+	const payloadSize = 100 * 1024 // 100KB
 	largePayload := strings.Repeat("x", payloadSize)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
