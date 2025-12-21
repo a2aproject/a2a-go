@@ -31,6 +31,10 @@ const (
 
 	sseIDPrefix   = "id: "
 	sseDataPrefix = "data: "
+
+	// MaxSSETokenSize is the maximum size for SSE data lines (10MB).
+	// The default bufio.Scanner buffer of 64KB is insufficient for large payloads
+	MaxSSETokenSize = 10 * 1024 * 1024 // 10MB
 )
 
 type SSEWriter struct {
@@ -78,6 +82,8 @@ func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		scanner := bufio.NewScanner(body)
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, MaxSSETokenSize)
 		prefixBytes := []byte(sseDataPrefix)
 
 		for scanner.Scan() {
