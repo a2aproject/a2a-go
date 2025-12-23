@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
@@ -44,13 +45,58 @@ type jsonrpcResponse struct {
 	Error   *jsonrpc.Error `json:"error,omitempty"`
 }
 
+type jsonrpcExtensionBinding struct {
+	method       string
+	mapRequest   func(json.RawMessage) (any, error)
+	handler      RequestHandler
+	serverMethod a2aext.ServerMethod
+}
+
+func (b *jsonrpcExtensionBinding) Protocol() a2a.TransportProtocol {
+	return a2a.TransportProtocolJSONRPC
+}
+
+func (b *jsonrpcExtensionBinding) init(h RequestHandler, method a2aext.ServerMethod) {
+	b.handler = h
+	b.serverMethod = method
+}
+
+func NewJSONRPCMethodBinding[Req any](method string) a2aext.Binding {
+	return &jsonrpcExtensionBinding{
+		method: method,
+		mapRequest: func(params json.RawMessage) (any, error) {
+			var req Req
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			return &req, nil
+		},
+	}
+}
+
 type jsonrpcHandler struct {
-	handler RequestHandler
+	handler       RequestHandler
+	methodBinding map[string]*jsonrpcExtensionBinding
 }
 
 // NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC.
 func NewJSONRPCHandler(handler RequestHandler) http.Handler {
-	return &jsonrpcHandler{handler: handler}
+	transport := &jsonrpcHandler{handler: handler, methodBinding: make(map[string]*jsonrpcExtensionBinding)}
+
+	for _, method := range handler.GetExtensionMethods() {
+		binding, ok := method.Binding(a2a.TransportProtocolJSONRPC)
+		if !ok {
+			continue
+		}
+		typedBinding, ok := binding.(*jsonrpcExtensionBinding)
+		if !ok { // fail?
+			continue
+		}
+		typedBinding.init(handler, method)
+		transport.methodBinding[typedBinding.method] = typedBinding
+	}
+
+	return transport
 }
 
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -106,7 +152,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	case jsonrpc.MethodGetExtendedAgentCard:
 		result, err = h.onGetAgentCard(ctx)
 	default:
-		err = a2a.ErrMethodNotFound
+		result, err = h.onUnaryExtensionMethod(ctx, req.Method, req.Params)
 	}
 
 	if err != nil {
@@ -293,6 +339,18 @@ func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 
 func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	return h.handler.OnGetExtendedAgentCard(ctx)
+}
+
+func (h *jsonrpcHandler) onUnaryExtensionMethod(ctx context.Context, method string, raw json.RawMessage) (any, error) {
+	binding, ok := h.methodBinding[method]
+	if !ok {
+		return nil, a2a.ErrMethodNotFound
+	}
+	mapped, err := binding.mapRequest(raw)
+	if err != nil {
+		return nil, newParseError(err)
+	}
+	return binding.handler.Invoke(ctx, binding.serverMethod, mapped)
 }
 
 func newParseError(cause error) error {
