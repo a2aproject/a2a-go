@@ -39,6 +39,8 @@ type testTransport struct {
 	GetAgentCardFn         func(context.Context) (*a2a.AgentCard, error)
 }
 
+var _ Transport = (*testTransport)(nil)
+
 func (t *testTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	return t.GetTaskFn(ctx, query)
 }
@@ -99,6 +101,8 @@ type testInterceptor struct {
 	BeforeFn func(context.Context, *Request) (context.Context, error)
 	AfterFn  func(context.Context, *Response) error
 }
+
+var _ CallInterceptor = (*testInterceptor)(nil)
 
 func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
 	ti.lastReq = req

@@ -91,6 +91,8 @@ type jsonrpcTransport struct {
 	httpClient *http.Client
 }
 
+var _ Transport = (*jsonrpcTransport)(nil)
+
 func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params any) (*http.Request, error) {
 	req := jsonrpcRequest{
 		JSONRPC: jsonrpc.Version,

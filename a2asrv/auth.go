@@ -27,6 +27,8 @@ type AuthenticatedUser struct {
 	UserName string
 }
 
+var _ User = (*AuthenticatedUser)(nil)
+
 func (u *AuthenticatedUser) Name() string {
 	return u.UserName
 }
@@ -36,6 +38,8 @@ func (u *AuthenticatedUser) Authenticated() bool {
 }
 
 type unauthenticatedUser struct{}
+
+var _ User = (*unauthenticatedUser)(nil)
 
 func (unauthenticatedUser) Name() string {
 	return ""

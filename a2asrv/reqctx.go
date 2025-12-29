@@ -63,6 +63,8 @@ type ReferencedTasksLoader struct {
 	Store TaskStore
 }
 
+var _ RequestContextInterceptor = (*ReferencedTasksLoader)(nil)
+
 func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
 	msg := reqCtx.Message
 	if msg == nil {

@@ -30,6 +30,8 @@ type TestQueueManager struct {
 	DestroyFunc     func(ctx context.Context, taskID a2a.TaskID) error
 }
 
+var _ eventqueue.Manager = (*TestQueueManager)(nil)
+
 func (m *TestQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
 	if m.GetOrCreateFunc != nil {
 		return m.GetOrCreateFunc(ctx, taskID)
