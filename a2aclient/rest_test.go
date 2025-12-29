@@ -28,18 +28,19 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123" {
-			t.Errorf("expected path /v1/tasks/task-123, got %s", r.URL.Path)
+		if r.URL.String() != "/v1/tasks/task-123?historyLength=2" {
+			t.Errorf("expected path /v1/tasks/task-123?historyLength=2, got %s", r.URL.String())
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"},"history":[{"state":"completed"},{"state":"working"}]}`))
 	}))
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
-
+	historyLength := 2
 	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
-		ID: "task-123",
+		ID:            "task-123",
+		HistoryLength: &historyLength,
 	})
 
 	if err != nil {
@@ -48,6 +49,9 @@ func TestRESTTransport_GetTask(t *testing.T) {
 
 	if task.ID != "task-123" {
 		t.Errorf("got task ID %s, want task-123", task.ID)
+	}
+	if len(task.History) != historyLength {
+		t.Errorf("got history length %d, want %d", len(task.History), historyLength)
 	}
 	if task.Status.State != a2a.TaskStateCompleted {
 		t.Errorf("got status %s, want completed", task.Status.State)
