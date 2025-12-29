@@ -154,11 +154,13 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, p
 
 // GetTask retrieves the current state of a task.
 func (t *RESTTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	taskId := string(query.ID)
-	historyLength := query.HistoryLength
-	path := "/v1/tasks/" + taskId
-	if historyLength != nil {
-		path += "?historyLength=" + strconv.Itoa(*historyLength)
+	path := "/v1/tasks/" + string(query.ID)
+	q := url.Values{}
+	if query.HistoryLength != nil {
+		q.Add("historyLength", strconv.Itoa(*query.HistoryLength))
+	}
+	if encoded := q.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 	var task a2a.Task
 

@@ -85,14 +85,14 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
 		historyLengthRaw := req.URL.Query().Get("historyLength")
-		var historyLength int
-		var err error
+		var historyLength *int
 		if historyLengthRaw != "" {
-			historyLength, err = strconv.Atoi(historyLengthRaw)
+			val, err := strconv.Atoi(historyLengthRaw)
 			if err != nil {
-				writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+				writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
 				return
 			}
+			historyLength = &val
 		}
 		if taskID == "" {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
@@ -100,7 +100,7 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 		}
 		params := &a2a.TaskQueryParams{
 			ID:            a2a.TaskID(taskID),
-			HistoryLength: &historyLength,
+			HistoryLength: historyLength,
 		}
 
 		result, err := handler.OnGetTask(ctx, params)
