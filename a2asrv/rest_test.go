@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
@@ -132,9 +133,13 @@ func TestREST_RequestRouting(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			_, _ = tc.call(ctx, client)
-			calledMethod := <-lastCalledMethod
-			if calledMethod != tc.method {
-				t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
+			select {
+			case calledMethod := <-lastCalledMethod:
+				if calledMethod != tc.method {
+					t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Routing failed")
 			}
 		})
 	}
