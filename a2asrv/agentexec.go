@@ -141,7 +141,7 @@ func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, pa
 			Message:   msg,
 			TaskID:    tid,
 			ContextID: contextID,
-			Metadata:  msg.Metadata,
+			Metadata:  params.Metadata,
 		}
 		return reqCtx, a2a.NewSubmittedTask(reqCtx, msg), nil
 	}
@@ -176,7 +176,7 @@ func (f *factory) loadExecRequestContext(ctx context.Context, tid a2a.TaskID, pa
 		StoredTask: storedTask,
 		TaskID:     storedTask.ID,
 		ContextID:  storedTask.ContextID,
-		Metadata:   msg.Metadata,
+		Metadata:   params.Metadata,
 	}
 	return reqCtx, storedTask, nil
 }
