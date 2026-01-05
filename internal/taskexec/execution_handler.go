@@ -84,7 +84,7 @@ func runProducerConsumer(
 
 	if heartbeater != nil {
 		group.Go(func() error {
-			timer := time.NewTimer(heartbeater.HeartbeatInterval())
+			timer := time.NewTicker(heartbeater.HeartbeatInterval())
 			for {
 				select {
 				case <-ctx.Done():
