@@ -35,7 +35,7 @@ type Execution interface {
 	// Result resolves immediately for the finished Execution or blocks until it is complete.
 	Result(ctx context.Context) (a2a.SendMessageResult, error)
 
-	// internal, used for testing
+	// internal utility
 	newSubscription(context.Context) (Subscription, error)
 }
 

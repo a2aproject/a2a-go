@@ -47,15 +47,20 @@ func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error
 			return
 		}
 
+		yieldErr := func(err error) {
+			e.result.setError(err)
+			yield(nil, err)
+		}
+
 		subscription, err := e.newSubscription(ctx)
 		if err != nil {
-			yield(nil, err)
+			yieldErr(err)
 			return
 		}
 
 		for event, err := range subscription.Events(ctx) {
 			if err != nil {
-				yield(nil, err)
+				yieldErr(err)
 				return
 			}
 
@@ -70,8 +75,7 @@ func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error
 
 				task, _, err := e.store.Get(ctx, e.tid)
 				if err != nil {
-					e.result.setError(fmt.Errorf("failed to load execution result: %w", err))
-					yield(event, nil)
+					yieldErr(fmt.Errorf("failed to load execution result: %w", err))
 					return
 				}
 

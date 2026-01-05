@@ -114,7 +114,7 @@ type ClusterConfig struct {
 }
 
 // WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
-func WithClusterMode(config *ClusterConfig) RequestHandlerOption {
+func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.workQueue = config.WorkQueue
 		h.taskStore = config.TaskStore

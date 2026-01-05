@@ -153,12 +153,12 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 		return nil, fmt.Errorf("task loading failed: %w", err)
 	}
 
-	if msg.TaskID != "" && msg.TaskID != tid {
+	if msg.TaskID != tid {
 		return nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
 
 	if storedTask == nil {
-		return nil, a2a.ErrTaskNotFound
+		return nil, fmt.Errorf("bug: nil task returned instead of ErrTaskNotFound")
 	}
 
 	if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
@@ -170,7 +170,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	updateHistory := !slices.ContainsFunc(storedTask.History, func(m *a2a.Message) bool {
-		return m.ID == msg.ID
+		return m.ID == msg.ID // message will already be present if we're retrying execution
 	})
 	if updateHistory {
 		storedTask.History = append(storedTask.History, msg)
