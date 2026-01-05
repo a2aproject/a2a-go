@@ -21,11 +21,11 @@ import (
 
 type heartbeaterKeyType struct{}
 
-func WithHearbeater(ctx context.Context, hb Heartbeater) context.Context {
+func WithHeartbeater(ctx context.Context, hb Heartbeater) context.Context {
 	return context.WithValue(ctx, heartbeaterKeyType{}, hb)
 }
 
-func HearbeaterFrom(ctx context.Context) (Heartbeater, bool) {
+func HeartbeaterFrom(ctx context.Context) (Heartbeater, bool) {
 	hb, ok := ctx.Value(heartbeaterKeyType{}).(Heartbeater)
 	return hb, ok
 }

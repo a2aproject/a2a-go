@@ -90,7 +90,7 @@ func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload)
 	}
 
 	var heartbeater workqueue.Heartbeater
-	if hb, ok := workqueue.HearbeaterFrom(ctx); ok {
+	if hb, ok := workqueue.HeartbeaterFrom(ctx); ok {
 		heartbeater = hb
 	}
 

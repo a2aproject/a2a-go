@@ -75,7 +75,7 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 
 			go func() {
 				if hb, ok := msg.(Heartbeater); ok {
-					ctx = WithHearbeater(ctx, hb)
+					ctx = WithHeartbeater(ctx, hb)
 				}
 				result, handleErr := handlerFn(ctx, msg.Payload())
 				if handleErr != nil {
