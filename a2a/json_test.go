@@ -160,6 +160,21 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
+func TestEventMarshalEmptyContentParts(t *testing.T) {
+	event := &TaskArtifactUpdateEvent{Artifact: &Artifact{ID: "art-123"}}
+	jsonBytes, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("Marshal() failed: %v", err)
+	}
+	var decoded TaskArtifactUpdateEvent
+	if err := json.Unmarshal(jsonBytes, &decoded); err != nil {
+		t.Fatalf("Unmarshal() failed: %v", err)
+	}
+	if !strings.Contains(string(jsonBytes), `"parts":[]`) {
+		t.Fatalf("json.Marshal() = %q, want parts to be non-nil", string(jsonBytes))
+	}
+}
+
 func TestAgentCardParsing(t *testing.T) {
 	cardJSON := `
 {

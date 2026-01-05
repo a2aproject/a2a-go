@@ -59,4 +59,7 @@ var (
 	// ErrAuthenticatedExtendedCardNotConfigured indicates that the agent does not have an Authenticated
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
+
+	// ErrAuthFailed indicates that the authentication failed.
+	ErrAuthFailed = errors.New("authentication failed")
 )

@@ -63,6 +63,9 @@ type TaskStore interface {
 
 	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
 	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
+
+	// List retrieves a list of tasks based on the provided request.
+	List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 }
 
 // WithTaskStore overrides TaskStore with a custom implementation. If not provided,

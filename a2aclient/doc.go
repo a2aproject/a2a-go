@@ -28,7 +28,7 @@ If a client is created in multiple places, a [Factory] can be used to share the 
 A client can be created from an [a2a.AgentCard] or a list of known [a2a.AgentInterface] descriptions
 using either package-level functions or [Factory] methods.
 
-	client, err := factory.CreateFromEndpoints(ctx, []a2a.AgentInterface{URL: url, Transport: a2a.TransportProtocolGRPC})
+	client, err := factory.CreateFromEndpoints(ctx, []a2a.AgentInterface{{URL: url, Transport: a2a.TransportProtocolGRPC}})
 
 	// or
 
