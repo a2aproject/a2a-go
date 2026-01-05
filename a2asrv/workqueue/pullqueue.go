@@ -17,6 +17,8 @@ package workqueue
 import (
 	"context"
 	"errors"
+	"math/rand"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
@@ -50,6 +52,8 @@ func NewPullQueue(rw ReadWriter) Queue {
 func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn HandlerFn) {
 	go func() {
 		ctx := context.Background()
+		random := rand.New(rand.NewSource(rand.Int63()))
+		backoff, jitter, maxBackoff := 1*time.Second, 2*time.Second, 30*time.Second
 		for {
 			// TODO: acquire quota
 			msg, err := q.ReadWriter.Read(ctx)
@@ -57,10 +61,18 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 				log.Info(ctx, "cluster backend stopped because work queue was closed")
 				return
 			}
-			if err != nil {
-				// TODO: circuit breaker
+
+			if err != nil { // TODO: circuit breaker?
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+				backoff += time.Duration(float32(jitter) * random.Float32())
+				log.Info(ctx, "work queue read failed", "error", err, "retry_in_s", backoff.Seconds())
 				continue
 			}
+			backoff = 1
+
 			go func() {
 				if hb, ok := msg.(Heartbeater); ok {
 					ctx = WithHearbeater(ctx, hb)
