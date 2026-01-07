@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
@@ -167,4 +168,64 @@ func TestClusterBackend(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClusterBackend_Heartbeater(t *testing.T) {
+	executorBlock := make(chan struct{})
+	heartbeats := 0
+	heartbeater := &testHeartbeater{
+		interval: 5 * time.Millisecond,
+		onHeartbeat: func(ctx context.Context) error {
+			heartbeats++
+			if heartbeats == 3 {
+				close(executorBlock)
+			}
+			return nil
+		},
+	}
+
+	wantTask := &a2a.Task{ID: a2a.NewTaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	executor := newExecutor()
+	executor.testProcessor.nextEventTerminal = true
+	executor.emitTask = wantTask
+	executor.block = executorBlock
+
+	factory := newStaticFactory(executor, nil)
+	wq := testutil.NewTestWorkQueue()
+	cfg := &ClusterConfig{
+		QueueManager: testutil.NewTestQueueManager(),
+		TaskStore:    testutil.NewTestTaskStore(),
+		Factory:      factory,
+		WorkQueue:    wq,
+	}
+	_ = newClusterBackend(cfg)
+
+	ctx := workqueue.WithHeartbeater(t.Context(), heartbeater)
+	gotResult, gotErr := wq.HandlerFn(ctx, &workqueue.Payload{
+		Type:          workqueue.PayloadTypeExecute,
+		TaskID:        executor.emitTask.ID,
+		ExecuteParams: &a2a.MessageSendParams{},
+	})
+	if gotErr != nil {
+		t.Fatalf("handler() error, want nil = %v", gotErr)
+	}
+	if diff := cmp.Diff(wantTask, gotResult); diff != "" {
+		t.Errorf("handle() result mismatch (-want +got):\n%s", diff)
+	}
+}
+
+type testHeartbeater struct {
+	interval    time.Duration
+	onHeartbeat func(ctx context.Context) error
+}
+
+func (t *testHeartbeater) HeartbeatInterval() time.Duration {
+	return t.interval
+}
+
+func (t *testHeartbeater) Heartbeat(ctx context.Context) error {
+	if t.onHeartbeat != nil {
+		return t.onHeartbeat(ctx)
+	}
+	return nil
 }
