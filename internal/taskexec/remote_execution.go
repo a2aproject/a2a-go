@@ -81,10 +81,11 @@ func (e *remoteExecution) Events(ctx context.Context) iter.Seq2[a2a.Event, error
 
 				// TODO: for resubscription case when task is in input required we should stay subscribed to events
 				if !task.Status.State.Terminal() && task.Status.State != a2a.TaskStateInputRequired {
-					e.result.setError(fmt.Errorf("execution finished in unexpected task state: %s", task.Status.State))
-				} else {
-					e.result.setValue(task)
+					yieldErr(fmt.Errorf("execution finished in unexpected task state: %s", task.Status.State))
+					return
 				}
+
+				e.result.setValue(task)
 				yield(event, nil)
 				return
 			}
