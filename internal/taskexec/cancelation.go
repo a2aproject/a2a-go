@@ -31,9 +31,7 @@ func newCancelation(params *a2a.TaskIDParams) *cancelation {
 	return &cancelation{params: params, result: newPromise()}
 }
 
-func convertToCancelationResult(ctx context.Context, p *promise) (*a2a.Task, error) {
-	result, err := p.wait(ctx)
-
+func convertToCancelationResult(ctx context.Context, result a2a.SendMessageResult, err error) (*a2a.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cancelation failed: %w", err)
 	}

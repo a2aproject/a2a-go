@@ -153,6 +153,11 @@ func TestRemoteSubscription_Events(t *testing.T) {
 				events = events[1:]
 				return event, version, nil
 			}
+			queueClosed := false
+			queue.CloseFunc = func() error {
+				queueClosed = true
+				return nil
+			}
 
 			sub := newRemoteSubscription(queue, store, tid)
 			var gotEvents []a2a.Event
@@ -165,6 +170,9 @@ func TestRemoteSubscription_Events(t *testing.T) {
 				gotEvents = append(gotEvents, event)
 			}
 
+			if !queueClosed {
+				t.Fatalf("queue was not closed by consumed subscription")
+			}
 			if gotErr != nil && !tc.wantErr {
 				t.Fatalf("Events() error = %v", gotErr)
 			}

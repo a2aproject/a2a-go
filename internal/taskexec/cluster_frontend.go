@@ -143,6 +143,6 @@ func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) 
 	}
 
 	execution := newRemoteExecution(m.queueManager, m.taskStore, params.ID)
-	_, _ = execution.Result(ctx) // consume to init the result
-	return convertToCancelationResult(ctx, execution.result)
+	result, err := execution.Result(ctx)
+	return convertToCancelationResult(ctx, result, err)
 }

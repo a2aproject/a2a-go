@@ -179,7 +179,8 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 		}
 	}
 
-	return convertToCancelationResult(ctx, cancel.result)
+	result, err := cancel.result.wait(ctx)
+	return convertToCancelationResult(ctx, result, err)
 }
 
 func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
