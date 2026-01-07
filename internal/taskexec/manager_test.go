@@ -54,9 +54,15 @@ func (f *testFactory) CreateCanceler(ctx context.Context, params *a2a.TaskIDPara
 func newStaticFactory(executor *testExecutor, canceler *testCanceler) Factory {
 	return &testFactory{
 		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
+			if executor == nil {
+				return nil, nil, fmt.Errorf("executor was not provided")
+			}
 			return executor, executor, nil
 		},
 		CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
+			if canceler == nil {
+				return nil, nil, fmt.Errorf("canceler was not provided")
+			}
 			return canceler, canceler, nil
 		},
 	}
@@ -118,6 +124,7 @@ type testExecutor struct {
 	queue           eventqueue.Queue
 	contextCanceled bool
 	block           chan struct{}
+	emitTask        *a2a.Task
 }
 
 func newExecutor() *testExecutor {
@@ -137,6 +144,12 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) erro
 		}
 	}
 
+	if e.emitTask != nil {
+		if err := queue.Write(ctx, e.emitTask); err != nil {
+			return err
+		}
+	}
+
 	return e.executeErr
 }
 
@@ -148,6 +161,7 @@ type testCanceler struct {
 	queue           eventqueue.Queue
 	contextCanceled bool
 	block           chan struct{}
+	emitTask        *a2a.Task
 }
 
 func newCanceler() *testCanceler {
@@ -164,6 +178,12 @@ func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error
 		case <-ctx.Done():
 			c.contextCanceled = true
 			return ctx.Err()
+		}
+	}
+
+	if c.emitTask != nil {
+		if err := queue.Write(ctx, c.emitTask); err != nil {
+			return err
 		}
 	}
 
@@ -217,7 +237,7 @@ func (m *testWorkQueueMessage) Payload() *workqueue.Payload {
 	return m.payload
 }
 
-func (m *testWorkQueueMessage) Complete(ctx context.Context, result a2a.SendMessageResult) error {
+func (m *testWorkQueueMessage) Complete(ctx context.Context) error {
 	return nil
 }
 

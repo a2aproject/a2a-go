@@ -38,7 +38,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 		wantEvents      []a2a.Event
 		getTaskErr      error
 		queueReadErr    error
-		wantErr         error
+		wantErrContain  string
 	}{
 		{
 			name:       "terminal task state event subscription",
@@ -108,16 +108,16 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			wantEvents: []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
 		},
 		{
-			name:       "error if task loading fails",
-			getTaskErr: fmt.Errorf("db unavailable"),
-			wantErr:    fmt.Errorf("db unavailable"),
+			name:           "error if task loading fails",
+			getTaskErr:     fmt.Errorf("db unavailable"),
+			wantErrContain: "db unavailable",
 		},
 		{
-			name:         "error if queue read fails",
-			events:       []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
-			queueReadErr: fmt.Errorf("queue failed"),
-			wantEvents:   []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
-			wantErr:      fmt.Errorf("queue failed"),
+			name:           "error if queue read fails",
+			events:         []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			queueReadErr:   fmt.Errorf("queue failed"),
+			wantEvents:     []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			wantErrContain: "queue failed",
 		},
 	}
 
@@ -174,14 +174,14 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			if !queueClosed {
 				t.Fatalf("queue was not closed by consumed subscription")
 			}
-			if gotErr != nil && tc.wantErr == nil {
+			if gotErr != nil && tc.wantErrContain == "" {
 				t.Fatalf("Events() error = %v, want nil", gotErr)
 			}
-			if gotErr == nil && tc.wantErr != nil {
-				t.Fatalf("Events() error = nil, want %v", tc.wantErr)
+			if gotErr == nil && tc.wantErrContain != "" {
+				t.Fatalf("Events() error = nil, want %v", tc.wantErrContain)
 			}
-			if gotErr != nil && !strings.Contains(gotErr.Error(), tc.wantErr.Error()) {
-				t.Fatalf("Events() error = nil, want %v", tc.wantErr)
+			if gotErr != nil && !strings.Contains(gotErr.Error(), tc.wantErrContain) {
+				t.Fatalf("Events() error = nil, want %v", tc.wantErrContain)
 			}
 			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
 				t.Fatalf("Events() result mismatch (+got,-want):\n%s", diff)

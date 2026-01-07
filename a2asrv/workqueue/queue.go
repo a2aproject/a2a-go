@@ -16,10 +16,14 @@ package workqueue
 
 import (
 	"context"
+	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 )
+
+// ErrMalformedPayload is a non-retryable error which can be returned by [HandlerFn].
+var ErrMalformedPayload = errors.New("malformed payload")
 
 // PayloadType defines the type of payload.
 type PayloadType string

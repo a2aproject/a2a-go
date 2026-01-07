@@ -37,7 +37,7 @@ func TestRemoteExecution_Events(t *testing.T) {
 		wantResult     a2a.SendMessageResult
 		getQueueErr    error
 		getTaskErr     error
-		wantErr        error
+		wantErrContain string
 	}{
 		{
 			name: "terminal state task event is returned",
@@ -78,17 +78,17 @@ func TestRemoteExecution_Events(t *testing.T) {
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 			},
-			wantErr: fmt.Errorf("execution finished in unexpected task state: submitted"),
+			wantErrContain: "execution finished in unexpected task state: submitted",
 		},
 		{
-			name:        "queue creation error",
-			getQueueErr: fmt.Errorf("queue creation failed"),
-			wantErr:     fmt.Errorf("queue creation failed"),
+			name:           "queue creation error",
+			getQueueErr:    fmt.Errorf("queue creation failed"),
+			wantErrContain: "queue creation failed",
 		},
 		{
-			name:       "task snapshot loading error",
-			getTaskErr: fmt.Errorf("snapshot loading failed"),
-			wantErr:    fmt.Errorf("snapshot loading failed"),
+			name:           "task snapshot loading error",
+			getTaskErr:     fmt.Errorf("snapshot loading failed"),
+			wantErrContain: "snapshot loading failed",
 		},
 	}
 
@@ -132,14 +132,14 @@ func TestRemoteExecution_Events(t *testing.T) {
 				gotEvents = append(gotEvents, event)
 			}
 
-			if gotErr != nil && tc.wantErr == nil {
+			if gotErr != nil && tc.wantErrContain == "" {
 				t.Fatalf("Events() error = %v, want nil", gotErr)
 			}
-			if gotErr == nil && tc.wantErr != nil {
-				t.Fatalf("Events() error = nil, want %v", tc.wantErr)
+			if gotErr == nil && tc.wantErrContain != "" {
+				t.Fatalf("Events() error = nil, want %v", tc.wantErrContain)
 			}
-			if gotErr != nil && !strings.Contains(gotErr.Error(), tc.wantErr.Error()) {
-				t.Fatalf("Events() error = %v, want %v", gotErr, tc.wantErr)
+			if gotErr != nil && !strings.Contains(gotErr.Error(), tc.wantErrContain) {
+				t.Fatalf("Events() error = %v, want %v", gotErr, tc.wantErrContain)
 			}
 			if gotErr == nil {
 				if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
@@ -148,14 +148,14 @@ func TestRemoteExecution_Events(t *testing.T) {
 			}
 
 			gotResult, gotResultErr := exec.Result(t.Context())
-			if gotResultErr != nil && tc.wantErr == nil {
+			if gotResultErr != nil && tc.wantErrContain == "" {
 				t.Fatalf("Result() error = %v, want nil", gotResultErr)
 			}
-			if gotResultErr == nil && tc.wantErr != nil {
-				t.Fatalf("Result() error = nil, want %v", tc.wantErr)
+			if gotResultErr == nil && tc.wantErrContain != "" {
+				t.Fatalf("Result() error = nil, want %v", tc.wantErrContain)
 			}
-			if gotResultErr != nil && !strings.Contains(gotResultErr.Error(), tc.wantErr.Error()) {
-				t.Fatalf("Result() error = %v, want %v", gotResultErr, tc.wantErr)
+			if gotResultErr != nil && !strings.Contains(gotResultErr.Error(), tc.wantErrContain) {
+				t.Fatalf("Result() error = %v, want %v", gotResultErr, tc.wantErrContain)
 			}
 			if gotResultErr == nil {
 				if diff := cmp.Diff(tc.wantResult, gotResult); diff != "" {

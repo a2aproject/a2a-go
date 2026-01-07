@@ -244,7 +244,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		writeQueueErr  error
 		wantQueueWrite *workqueue.Payload
 		wantResult     *a2a.Task
-		wantErr        error
+		wantErrContain string
 	}{
 		{
 			name: "cancel running task",
@@ -270,7 +270,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				TaskID:       tid,
 				CancelParams: &a2a.TaskIDParams{ID: tid},
 			},
-			wantErr: a2a.ErrTaskNotCancelable,
+			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
 		{
 			name:           "already canceled",
@@ -280,23 +280,23 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		{
 			name:           "non-cancelable state",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
-			wantErr:        a2a.ErrTaskNotCancelable,
+			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
 		{
-			name:       "task not found",
-			getTaskErr: a2a.ErrTaskNotFound,
-			wantErr:    a2a.ErrTaskNotFound,
+			name:           "task not found",
+			getTaskErr:     a2a.ErrTaskNotFound,
+			wantErrContain: a2a.ErrTaskNotFound.Error(),
 		},
 		{
-			name:       "store error",
-			getTaskErr: fmt.Errorf("store failed"),
-			wantErr:    fmt.Errorf("store failed"),
+			name:           "store error",
+			getTaskErr:     fmt.Errorf("store failed"),
+			wantErrContain: "store failed",
 		},
 		{
 			name:           "work queue write error",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			writeQueueErr:  fmt.Errorf("write failed"),
-			wantErr:        fmt.Errorf("write failed"),
+			wantErrContain: "write failed",
 		},
 	}
 
@@ -329,16 +329,16 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 
 			gotTask, err := frontend.Cancel(t.Context(), &a2a.TaskIDParams{ID: tid})
 			if err != nil {
-				if tc.wantErr == nil {
+				if tc.wantErrContain == "" {
 					t.Fatalf("Cancel() error = %v, want nil", err)
 				}
-				if !strings.Contains(err.Error(), tc.wantErr.Error()) {
-					t.Fatalf("Cancel() error = %v, want %v", err, tc.wantErr)
+				if !strings.Contains(err.Error(), tc.wantErrContain) {
+					t.Fatalf("Cancel() error = %v, want %v", err, tc.wantErrContain)
 				}
 				return
 			}
-			if tc.wantErr != nil {
-				t.Fatalf("Cancel() error = nil, want %v", tc.wantErr)
+			if tc.wantErrContain != "" {
+				t.Fatalf("Cancel() error = nil, want %v", tc.wantErrContain)
 			}
 			if tc.wantQueueWrite == nil && len(wq.Payloads) != 0 {
 				t.Fatalf("Cancel() wrote %d payloads, want 0", len(wq.Payloads))

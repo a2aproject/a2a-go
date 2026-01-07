@@ -50,8 +50,9 @@ func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload)
 
 	switch payload.Type {
 	case workqueue.PayloadTypeExecute:
-		log.Info(ctx, "executing task", "task_id", payload.TaskID)
-
+		if payload.ExecuteParams == nil {
+			return nil, fmt.Errorf("execution params not set: %w", workqueue.ErrMalformedPayload)
+		}
 		executor, processor, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteParams)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
@@ -60,6 +61,9 @@ func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload)
 		eventProcessor = processor
 
 	case workqueue.PayloadTypeCancel:
+		if payload.CancelParams == nil {
+			return nil, fmt.Errorf("cancelation params not set: %w", workqueue.ErrMalformedPayload)
+		}
 		canceler, processor, err := b.factory.CreateCanceler(ctx, payload.CancelParams)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
@@ -68,6 +72,7 @@ func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload)
 		eventProcessor = processor
 
 	default:
+		// do not return non-retryable ErrMalformedPayload, the process might be running outdated code
 		return nil, fmt.Errorf("unknown payload type: %q", payload.Type)
 	}
 

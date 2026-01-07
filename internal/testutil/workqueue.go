@@ -23,9 +23,9 @@ import (
 )
 
 type TestWorkQueue struct {
-	RegisteredHandler workqueue.HandlerFn
-	Payloads          []*workqueue.Payload
-	WriteErr          error
+	HandlerFn workqueue.HandlerFn
+	Payloads  []*workqueue.Payload
+	WriteErr  error
 
 	WriteFunc           func(context.Context, *workqueue.Payload) (a2a.TaskID, error)
 	RegisterHandlerFunc func(limiter.ConcurrencyConfig, workqueue.HandlerFn)
@@ -43,7 +43,7 @@ func (m *TestWorkQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, fn workqu
 	if m.RegisterHandlerFunc != nil {
 		m.RegisterHandlerFunc(cfg, fn)
 	}
-	m.RegisteredHandler = fn
+	m.HandlerFn = fn
 }
 
 // NewTestWorkQueue allows to mock execution of work queue operations.

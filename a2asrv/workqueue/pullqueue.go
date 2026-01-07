@@ -19,7 +19,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -32,7 +31,7 @@ type Message interface {
 	// Payload returns the payload of the message which becomes the execution or cancelation input.
 	Payload() *Payload
 	// Complete marks the message as completed after it was handled by a worker.
-	Complete(ctx context.Context, result a2a.SendMessageResult) error
+	Complete(ctx context.Context) error
 	// Return returns the message to the queue after worker failed to handle it.
 	Return(ctx context.Context, cause error) error
 }
@@ -83,6 +82,16 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 				return
 			}
 
+			if errors.Is(err, ErrMalformedPayload) {
+				// TODO: dead-letter queue for this and retry attempt exceeded payloads
+				if completeErr := msg.Complete(ctx); completeErr != nil {
+					log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", err, "error", completeErr)
+				} else {
+					log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", err)
+				}
+				continue
+			}
+
 			if err != nil {
 				retryIn := q.config.ReadRetry.NextDelay(readAttempt)
 				log.Info(ctx, "work queue read failed", "error", err, "retry_in_s", retryIn.Seconds())
@@ -97,7 +106,7 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 					ctx = WithHeartbeater(ctx, hb)
 				}
 
-				result, handleErr := handlerFn(ctx, msg.Payload())
+				_, handleErr := handlerFn(ctx, msg.Payload())
 				if handleErr != nil {
 					if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
 						log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
@@ -107,7 +116,7 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 					return
 				}
 
-				if err := msg.Complete(ctx, result); err != nil {
+				if err := msg.Complete(ctx); err != nil {
 					log.Warn(ctx, "failed to mark work item as completed", "error", err)
 				}
 			}()
