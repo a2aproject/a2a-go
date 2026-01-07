@@ -37,7 +37,7 @@ type pushQueue struct {
 func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 	queue := &pushQueue{Writer: writer}
 	handler := HandlerFn(func(ctx context.Context, p *Payload) (a2a.SendMessageResult, error) {
-		// TODO: acquire concurrency quota
+		// TODO: acquire concurrency quota or return ErrConcurrencyLimitExceeded
 		return queue.handlerFn(ctx, p)
 	})
 	return queue, handler
