@@ -62,6 +62,9 @@ type pullQueue struct {
 // NewPullQueue creates a [Queue] implementation which starts runs a work polling loop until
 // [ErrQueueClosed] is returned from Read.
 func NewPullQueue(rw ReadWriter, cfg *PullQueueConfig) Queue {
+	if cfg == nil {
+		cfg = &PullQueueConfig{}
+	}
 	if cfg.ReadRetry == nil {
 		cfg.ReadRetry = defaultExponentialBackoff
 	}

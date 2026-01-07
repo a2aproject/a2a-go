@@ -255,7 +255,7 @@ func (q *testWorkQueue) Close() error {
 
 func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore TaskStore) Manager {
 	config := &ClusterConfig{
-		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}),
+		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}, nil),
 		QueueManager: eventqueue.NewInMemoryManager(),
 		Factory:      newStaticFactory(executor, canceler),
 		TaskStore:    taskStore,
