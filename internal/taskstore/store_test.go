@@ -31,15 +31,22 @@ import (
 func mustSave(t *testing.T, store *Mem, tasks ...*a2a.Task) {
 	t.Helper()
 	for _, task := range tasks {
-		if err := store.Save(t.Context(), task); err != nil {
-			t.Fatalf("Save() failed: %v", err)
-		}
+		_ = mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
 	}
+}
+
+func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task, prev a2a.TaskVersion) a2a.TaskVersion {
+	t.Helper()
+	version, err := store.Save(t.Context(), task, task, prev)
+	if err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+	return version
 }
 
 func mustGet(t *testing.T, store *Mem, id a2a.TaskID) *a2a.Task {
 	t.Helper()
-	got, err := store.Get(t.Context(), id)
+	got, _, err := store.Get(t.Context(), id)
 	if err != nil {
 		t.Fatalf("Get() failed: %v", err)
 	}
@@ -108,7 +115,7 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
 	store := NewMem()
 
-	_, err := store.Get(t.Context(), a2a.TaskID("invalid"))
+	_, _, err := store.Get(t.Context(), a2a.TaskID("invalid"))
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
 		t.Fatalf("Unexpected error: got = %v, want ErrTaskNotFound", err)
 	}
@@ -423,5 +430,61 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 				t.Fatalf("Unexpected number of calls: got = %v, want %v", actualCalls, tc.wantCalls)
 			}
 		})
+	}
+}
+
+func TestInMemoryTaskStore_VersionIncrements(t *testing.T) {
+	store := NewMem()
+
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+
+	task.ContextID = "id2"
+	v2 := mustSaveVersioned(t, store, task, v1)
+
+	if !v2.After(v1) {
+		t.Fatalf("got v1 > v2: v1 = %v, v2 = %v", v1, v2)
+	}
+}
+
+func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
+	store := NewMem()
+
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+
+	goroutines := 100
+
+	versionChan := make(chan a2a.TaskVersion, goroutines)
+	for range goroutines {
+		go func() {
+			versionChan <- mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+		}()
+	}
+	var versions []a2a.TaskVersion
+	for range goroutines {
+		versions = append(versions, <-versionChan)
+	}
+
+	for i := 0; i < len(versions); i++ {
+		for j := i + 1; j < len(versions); j++ {
+			if !(versions[i].After(versions[j]) || versions[j].After(versions[i])) {
+				t.Fatalf("got v1 <= v2 and v2 <= v1 meaning v1 == v2, want strict ordering: v1 = %v, v2 = %v", versions[i], versions[j])
+			}
+		}
+	}
+}
+
+func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
+	store := NewMem()
+
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
+	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+
+	task.ContextID = "id2"
+	_ = mustSaveVersioned(t, store, task, v1)
+
+	task.ContextID = "id3"
+	if _, err := store.Save(t.Context(), task, task, v1); err == nil {
+		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }

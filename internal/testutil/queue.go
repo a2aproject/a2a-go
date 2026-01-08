@@ -25,21 +25,29 @@ import (
 type TestEventQueue struct {
 	pipe *eventpipe.Local
 
-	ReadFunc  func(ctx context.Context) (a2a.Event, error)
-	WriteFunc func(ctx context.Context, event a2a.Event) error
+	ReadFunc  func(ctx context.Context) (a2a.Event, a2a.TaskVersion, error)
+	WriteFunc func(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error
 	CloseFunc func() error
 }
 
-func (m *TestEventQueue) Read(ctx context.Context) (a2a.Event, error) {
+func (m *TestEventQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
 	if m.ReadFunc != nil {
 		return m.ReadFunc(ctx)
 	}
-	return m.pipe.Reader.Read(ctx)
+	event, err := m.pipe.Reader.Read(ctx)
+	return event, a2a.TaskVersionMissing, err
 }
 
 func (m *TestEventQueue) Write(ctx context.Context, event a2a.Event) error {
 	if m.WriteFunc != nil {
-		return m.WriteFunc(ctx, event)
+		return m.WriteFunc(ctx, event, a2a.TaskVersionMissing)
+	}
+	return m.pipe.Writer.Write(ctx, event)
+}
+
+func (m *TestEventQueue) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
+	if m.WriteFunc != nil {
+		return m.WriteFunc(ctx, event, version)
 	}
 	return m.pipe.Writer.Write(ctx, event)
 }
@@ -54,15 +62,23 @@ func (m *TestEventQueue) Close() error {
 
 // SetReadOverride overrides Read execution
 func (m *TestEventQueue) SetReadOverride(event a2a.Event, err error) *TestEventQueue {
-	m.ReadFunc = func(ctx context.Context) (a2a.Event, error) {
-		return event, err
+	m.ReadFunc = func(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+		return event, a2a.TaskVersionMissing, err
+	}
+	return m
+}
+
+// SetReadOverride overrides Read execution with an option to provide a version.
+func (m *TestEventQueue) SetReadVersionedOverride(event a2a.Event, version a2a.TaskVersion, err error) *TestEventQueue {
+	m.ReadFunc = func(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+		return event, version, err
 	}
 	return m
 }
 
 // SetWriteError overrides Write execution with given error
 func (m *TestEventQueue) SetWriteError(err error) *TestEventQueue {
-	m.WriteFunc = func(ctx context.Context, event a2a.Event) error {
+	m.WriteFunc = func(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
 		return err
 	}
 	return m

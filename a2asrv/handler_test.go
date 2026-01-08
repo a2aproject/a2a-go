@@ -705,11 +705,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task) error {
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		if task.Status.State == a2a.TaskStateFailed {
-			return fmt.Errorf("exploded")
+			return a2a.TaskVersionMissing, fmt.Errorf("exploded")
 		}
-		return store.Mem.Save(ctx, task)
+		return store.Mem.Save(ctx, task, event, version)
 	}
 	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
@@ -721,6 +721,67 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 	if !strings.Contains(err.Error(), wantErr) {
 		t.Fatalf("OnSendMessage() err = %v, want to contain %q", err, wantErr)
 	}
+}
+
+func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
+	ctx := t.Context()
+
+	gotPrevVersions := make([]a2a.TaskVersion, 0)
+	store := testutil.NewTestTaskStore()
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+		gotPrevVersions = append(gotPrevVersions, version)
+		return store.Mem.Save(ctx, task, event, version)
+	}
+
+	statusUpdates := [][]a2a.TaskState{
+		{a2a.TaskStateSubmitted, a2a.TaskStateInputRequired}, // first run
+		{a2a.TaskStateWorking, a2a.TaskStateCompleted},       //second run
+	}
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			events := statusUpdates[0]
+			for i, state := range events {
+				event := a2a.NewStatusUpdateEvent(reqCtx, state, nil)
+				event.Final = i == len(events)-1
+				if err := queue.Write(ctx, event); err != nil {
+					return err
+				}
+			}
+			statusUpdates = statusUpdates[1:]
+			return nil
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	wantPrevVersions := [][]a2a.TaskVersion{
+		{a2a.TaskVersionMissing, a2a.TaskVersion(1)},                 // Save newly created task and update to input-required
+		{a2a.TaskVersion(2), a2a.TaskVersion(3), a2a.TaskVersion(4)}, // Update task history, move to working, move to completed
+	}
+
+	var existingTask *a2a.Task
+	for _, wantPrev := range wantPrevVersions {
+		var msg *a2a.Message
+		if existingTask == nil {
+			msg = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"})
+		} else {
+			msg = a2a.NewMessageForTask(a2a.MessageRoleUser, existingTask, a2a.TextPart{Text: "Hi!"})
+		}
+		res, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+		if err != nil {
+			t.Fatalf("OnSendMessage() error = %v", err)
+		}
+		task, ok := res.(*a2a.Task)
+		if !ok {
+			t.Fatalf("OnSendMessage() returned %T, want *a2a.Task", res)
+		}
+		existingTask = task
+
+		if diff := cmp.Diff(wantPrev, gotPrevVersions); diff != "" {
+			t.Fatalf("Save() was called with %v, want %v", gotPrevVersions, wantPrev)
+		}
+		gotPrevVersions = make([]a2a.TaskVersion, 0)
+	}
+
 }
 
 func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
@@ -880,13 +941,13 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 	getCalled := 0
 	savedCalled := 0
 	mockStore := testutil.NewTestTaskStore()
-	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 		getCalled += 1
-		return nil, nil
+		return nil, a2a.TaskVersionMissing, nil
 	}
-	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task) error {
+	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		savedCalled += 1
-		return nil
+		return version, nil
 	}
 
 	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
@@ -1015,7 +1076,7 @@ func TestRequestHandler_OnGetTask(t *testing.T) {
 func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to get task: store get failed")
-	ts := testutil.NewTestTaskStore().SetGetOverride(nil, wantErr)
+	ts := testutil.NewTestTaskStore().SetGetOverride(nil, a2a.TaskVersionMissing, wantErr)
 	handler := newTestHandler(WithTaskStore(ts))
 
 	result, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: a2a.NewTaskID()})
@@ -1240,13 +1301,13 @@ func TestRequestHandler_OnCancelTask_AgentCancelFails(t *testing.T) {
 	store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel)
 	executor := &mockAgentExecutor{
 		CancelFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			return wantErr
+			return fmt.Errorf("agent cancel error")
 		},
 	}
 	handler := NewHandler(executor, WithTaskStore(store))
 
 	result, err := handler.OnCancelTask(ctx, &a2a.TaskIDParams{ID: taskToCancel.ID})
-	if result != nil || !errors.Is(err, wantErr) {
+	if result != nil || err.Error() != wantErr.Error() {
 		t.Fatalf("OnCancelTask() error = %v, wantErr %v", err, wantErr)
 	}
 }

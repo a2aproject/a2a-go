@@ -25,6 +25,11 @@ import (
 
 const defaultBufferSize = 1024
 
+type Reader interface {
+	// Read dequeues an event or blocks if the queue is empty.
+	Read(ctx context.Context) (a2a.Event, error)
+}
+
 type localOptions struct {
 	bufferSize int
 }
@@ -38,7 +43,7 @@ func WithBufferSize(size int) LocalPipeOption {
 }
 
 type Local struct {
-	Reader eventqueue.Reader
+	Reader Reader
 	// TODO(yarolegovich): change to eventqueue.Writer when AgentExecutor interface is updated
 	Writer eventqueue.Queue
 
@@ -83,8 +88,12 @@ func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
 	}
 }
 
-func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, error) {
-	return nil, fmt.Errorf("only queue write is allowed")
+func (w *pipeWriter) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
+	return fmt.Errorf("versioned write is not allowed")
+}
+
+func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+	return nil, a2a.TaskVersionMissing, fmt.Errorf("only queue write is allowed")
 }
 
 func (w *pipeWriter) Close() error {

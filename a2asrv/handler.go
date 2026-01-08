@@ -142,7 +142,7 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidParams)
 	}
 
-	task, err := h.taskStore.Get(ctx, taskID)
+	task, _, err := h.taskStore.Get(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -192,7 +192,7 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		}
 
 		if taskID, interrupt := shouldInterruptNonStreaming(params, event); interrupt {
-			task, err := h.taskStore.Get(ctx, taskID)
+			task, _, err := h.taskStore.Get(ctx, taskID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load task on event processing interrupt: %w", err)
 			}

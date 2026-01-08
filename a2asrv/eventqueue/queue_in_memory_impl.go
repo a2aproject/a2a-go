@@ -21,9 +21,14 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+type queueMessage struct {
+	event   a2a.Event
+	version a2a.TaskVersion
+}
+
 type broadcast struct {
 	sender     *inMemoryQueue // sender does not receive its own broadcasts
-	payload    a2a.Event
+	payload    *queueMessage
 	dispatched chan struct{} // closed after all registered Queues-s received the broadcast.
 }
 
@@ -94,7 +99,7 @@ func (b *inMemoryEventBroker) connect() (*inMemoryQueue, error) {
 	conn := &inMemoryQueue{
 		broker:     b,
 		closedChan: make(chan struct{}),
-		eventsChan: make(chan a2a.Event, b.queueBufferSize),
+		eventsChan: make(chan *queueMessage, b.queueBufferSize),
 	}
 	select {
 	case <-b.destroyed:
@@ -117,16 +122,21 @@ func (b *inMemoryEventBroker) destroy() {
 type inMemoryQueue struct {
 	broker     *inMemoryEventBroker
 	closedChan chan struct{}
-	eventsChan chan a2a.Event
+	eventsChan chan *queueMessage
 	closed     bool
 }
 
 func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
+	return q.WriteVersioned(ctx, event, a2a.TaskVersionMissing)
+}
+
+func (q *inMemoryQueue) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
 	if q.closed {
 		return ErrQueueClosed
 	}
 
-	broadcast := &broadcast{sender: q, payload: event, dispatched: make(chan struct{})}
+	message := &queueMessage{event: event, version: version}
+	broadcast := &broadcast{sender: q, payload: message, dispatched: make(chan struct{})}
 
 	select {
 	case <-ctx.Done():
@@ -147,15 +157,15 @@ func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	return nil
 }
 
-func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, error) {
+func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case event, ok := <-q.eventsChan: // allow to drain
+		return nil, a2a.TaskVersionMissing, ctx.Err()
+	case message, ok := <-q.eventsChan: // allow to drain
 		if !ok {
-			return nil, ErrQueueClosed
+			return nil, a2a.TaskVersionMissing, ErrQueueClosed
 		}
-		return event, nil
+		return message.event, message.version, nil
 	}
 }
 
