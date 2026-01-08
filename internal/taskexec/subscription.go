@@ -58,7 +58,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 
 		terminalReported := false
 		for {
-			event, err := s.queue.Read(ctx)
+			event, _, err := s.queue.Read(ctx)
 			if errors.Is(err, eventqueue.ErrQueueClosed) {
 				break
 			}

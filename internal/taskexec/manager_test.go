@@ -74,7 +74,7 @@ type testProcessor struct {
 	processErrorErr    error
 }
 
-func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.SendMessageResult, error) {
+func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*ProcessorResult, error) {
 	e.callCount.Add(1)
 
 	if e.block != nil {
@@ -91,11 +91,10 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*a2a.Send
 	}
 
 	if e.nextEventTerminal {
-		result := event.(a2a.SendMessageResult)
-		return &result, nil
+		return &ProcessorResult{ExecutionResult: event.(a2a.SendMessageResult)}, nil
 	}
 
-	return nil, nil
+	return &ProcessorResult{}, nil
 }
 
 func (e *testProcessor) ProcessError(ctx context.Context, err error) (a2a.SendMessageResult, error) {

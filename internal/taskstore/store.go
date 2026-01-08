@@ -30,9 +30,10 @@ import (
 )
 
 type storedTask struct {
+	task        *a2a.Task
+	version     a2a.TaskVersion
 	user        UserName
 	lastUpdated time.Time
-	task        *a2a.Task
 }
 
 type UserName string
@@ -68,6 +69,7 @@ func init() {
 	gob.Register([]any{})
 }
 
+// NewMem creates an empty [Mem] store.
 func NewMem(opts ...Option) *Mem {
 	m := &Mem{
 		tasks: make(map[a2a.TaskID]*storedTask),
@@ -86,9 +88,9 @@ func NewMem(opts ...Option) *Mem {
 	return m
 }
 
-func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
+func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if err := validateTask(task); err != nil {
-		return err
+		return a2a.TaskVersionMissing, err
 	}
 
 	userName, ok := s.authenticator(ctx)
@@ -97,30 +99,45 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task) error {
 	}
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
-		return err
+		return a2a.TaskVersionMissing, err
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	version := a2a.TaskVersion(1)
+	if stored := s.tasks[task.ID]; stored != nil {
+		if prevVersion != a2a.TaskVersionMissing && stored.version != prevVersion {
+			return a2a.TaskVersionMissing, fmt.Errorf("concurrent task modification failed")
+		}
+		version = stored.version + 1
+	}
+
 	s.tasks[task.ID] = &storedTask{
+		task:        copy,
+		version:     version,
 		user:        userName,
 		lastUpdated: s.timeProvider(),
-		task:        copy,
 	}
-	s.mu.Unlock()
 
-	return nil
+	return a2a.TaskVersion(version), nil
 }
 
-func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, error) {
+func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 	s.mu.RLock()
 	storedTask, ok := s.tasks[taskID]
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, a2a.ErrTaskNotFound
+		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 
-	return utils.DeepCopy(storedTask.task)
+	task, err := utils.DeepCopy(storedTask.task)
+	if err != nil {
+		return nil, a2a.TaskVersionMissing, fmt.Errorf("task copy failed: %w", err)
+	}
+
+	return task, a2a.TaskVersion(storedTask.version), nil
 }
 
 func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
