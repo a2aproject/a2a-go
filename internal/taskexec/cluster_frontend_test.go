@@ -59,7 +59,7 @@ func TestClusterFrontend_GetExecution(t *testing.T) {
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 				if tc.getTaskErr != nil {
-					return nil, nil, tc.getTaskErr
+					return nil, a2a.TaskVersionMissing, tc.getTaskErr
 				}
 				return store.Mem.Get(ctx, tid)
 			}
@@ -169,7 +169,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed, terminalStateTaskSeed)
 			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 				if tc.getTaskErr != nil {
-					return nil, nil, tc.getTaskErr
+					return nil, a2a.TaskVersionMissing, tc.getTaskErr
 				}
 				return store.Mem.Get(ctx, tid)
 			}
@@ -308,10 +308,10 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			getResults := tc.getTaskResults
 			store.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 				if len(getResults) == 0 && tc.getTaskErr != nil {
-					return nil, nil, tc.getTaskErr
+					return nil, a2a.TaskVersionMissing, tc.getTaskErr
 				}
 				if len(getResults) == 0 {
-					return nil, nil, a2a.ErrTaskNotFound
+					return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 				}
 				result := getResults[0]
 				getResults = getResults[1:]

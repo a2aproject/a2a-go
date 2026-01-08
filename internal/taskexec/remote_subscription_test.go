@@ -82,7 +82,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 		{
 			name:            "events older than snapshot are skipped",
 			snapshot:        &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
-			snapshotVersion: a2a.TaskVersionInt(2),
+			snapshotVersion: a2a.TaskVersion(2),
 			events: []a2a.Event{
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
@@ -91,9 +91,9 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			},
 			eventVersions: []a2a.TaskVersion{
 				// older than snapshot
-				a2a.TaskVersionInt(1), a2a.TaskVersionInt(2),
+				a2a.TaskVersion(1), a2a.TaskVersion(2),
 				// newer than snapshot
-				a2a.TaskVersionInt(3), a2a.TaskVersionInt(4),
+				a2a.TaskVersion(3), a2a.TaskVersion(4),
 			},
 			wantEvents: []a2a.Event{
 				&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
@@ -127,11 +127,11 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			store := testutil.NewTestTaskStore()
 			if tc.getTaskErr != nil {
 				store.GetFunc = func(context.Context, a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
-					return nil, nil, tc.getTaskErr
+					return nil, a2a.TaskVersionMissing, tc.getTaskErr
 				}
 			} else if tc.snapshot != nil {
 				version := a2a.TaskVersionMissing
-				if tc.snapshotVersion != nil {
+				if tc.snapshotVersion != a2a.TaskVersionMissing {
 					version = tc.snapshotVersion
 				}
 				store.GetFunc = func(context.Context, a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
@@ -143,7 +143,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			events, eventVersions := tc.events, tc.eventVersions
 			queue.ReadFunc = func(context.Context) (a2a.Event, a2a.TaskVersion, error) {
 				if len(events) == 0 {
-					return nil, nil, tc.queueReadErr
+					return nil, a2a.TaskVersionMissing, tc.queueReadErr
 				}
 				version := a2a.TaskVersionMissing
 				if len(eventVersions) > 0 {

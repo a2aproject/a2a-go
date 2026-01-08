@@ -70,7 +70,7 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 
 		for {
 			event, version, err := s.queue.Read(ctx)
-			if snapshotVersion != nil && version != nil && !version.After(snapshotVersion) {
+			if version != a2a.TaskVersionMissing && !version.After(snapshotVersion) {
 				log.Info(ctx, "skipping old event", "event", event, "version", version)
 				continue
 			}

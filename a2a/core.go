@@ -466,6 +466,13 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 // ContentParts is an array of content parts that form the message body or an artifact.
 type ContentParts []Part
 
+func (j ContentParts) MarshalJSON() ([]byte, error) {
+	if j == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]Part(j))
+}
+
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
 	type typedPart struct {
 		Kind string `json:"kind"`
@@ -717,4 +724,45 @@ type MessageSendParams struct {
 // Time-based UUID generally improves index update performance if ID field is indexed in a persistent store.
 func newUUIDString() string {
 	return uuid.Must(uuid.NewV7()).String()
+}
+
+// ListTasksRequest defines the parameters for a request to list tasks.
+type ListTasksRequest struct {
+	// ContextID is the ID of the context to list tasks for.
+	ContextID string `json:"context_id,omitempty" yaml:"context_id,omitempty" mapstructure:"context_id,omitempty"`
+
+	// Status is the current state of the tasks to list.
+	Status TaskState `json:"status,omitempty" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+
+	// PageSize is the maximum number of tasks to return in the response.
+	// Must be between 1 and 100. If not set, the default value is 50.
+	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
+
+	// PageToken is the token for retrieving the next page of results.
+	PageToken string `json:"page_token,omitempty" yaml:"page_token,omitempty" mapstructure:"page_token,omitempty"`
+
+	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
+	HistoryLength int `json:"history_length,omitempty" yaml:"history_length,omitempty" mapstructure:"history_length,omitempty"`
+
+	// LastUpdatedAfter is the time to list tasks updated after.
+	LastUpdatedAfter *time.Time `json:"last_updated_after,omitempty" yaml:"last_updated_after,omitempty" mapstructure:"last_updated_after,omitempty"`
+
+	// IncludeArtifacts is whether to include artifacts in the response.
+	IncludeArtifacts bool `json:"include_artifacts,omitempty" yaml:"include_artifacts,omitempty" mapstructure:"include_artifacts,omitempty"`
+}
+
+// ListTasksResponse defines the response for a request to tasks/list.
+type ListTasksResponse struct {
+	// Tasks is the list of tasks matching the specified criteria.
+	Tasks []*Task `json:"tasks,omitempty" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
+
+	// TotalSize is the total number of tasks available (before pagination).
+	TotalSize int `json:"total_size,omitempty" yaml:"total_size,omitempty" mapstructure:"total_size,omitempty"`
+
+	// PageSize is the maximum number of tasks returned in the response.
+	PageSize int `json:"page_size,omitempty" yaml:"page_size,omitempty" mapstructure:"page_size,omitempty"`
+
+	// NextPageToken is the token for retrieving the next page of results.
+	// Empty string if no more results.
+	NextPageToken string `json:"next_page_token,omitempty" yaml:"next_page_token,omitempty" mapstructure:"next_page_token,omitempty"`
 }

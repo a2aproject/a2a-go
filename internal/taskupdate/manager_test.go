@@ -17,6 +17,7 @@ package taskupdate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -40,17 +41,23 @@ func getText(m *a2a.Message) string {
 }
 
 type testSaver struct {
-	saved   *a2a.Task
-	version a2a.TaskVersionInt
-	fail    error
+	saved      *a2a.Task
+	version    a2a.TaskVersion
+	versionSet bool
+	fail       error
 }
 
 func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.fail != nil {
-		return nil, s.fail
+		return a2a.TaskVersionMissing, s.fail
 	}
-	s.saved = task
+	if s.versionSet {
+		if prev != a2a.TaskVersionMissing && prev != s.version {
+			return a2a.TaskVersionMissing, fmt.Errorf("")
+		}
+	}
 	s.version = s.version + 1
+	s.saved = task
 	return s.version, nil
 }
 

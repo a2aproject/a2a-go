@@ -98,10 +98,10 @@ func TestRemoteExecution_Events(t *testing.T) {
 			getResults := tc.getTaskResults
 			store.GetFunc = func(context.Context, a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 				if len(getResults) == 0 && tc.getTaskErr != nil {
-					return nil, nil, tc.getTaskErr
+					return nil, a2a.TaskVersionMissing, tc.getTaskErr
 				}
 				if len(getResults) == 0 {
-					return nil, nil, a2a.ErrTaskNotFound
+					return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 				}
 				task := getResults[0]
 				getResults = getResults[1:]
