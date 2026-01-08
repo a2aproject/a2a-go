@@ -31,7 +31,7 @@ import (
 
 type storedTask struct {
 	task        *a2a.Task
-	version     a2a.TaskVersionInt
+	version     a2a.TaskVersion
 	user        UserName
 	lastUpdated time.Time
 }
@@ -90,7 +90,7 @@ func NewMem(opts ...Option) *Mem {
 
 func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if err := validateTask(task); err != nil {
-		return nil, err
+		return a2a.TaskVersionMissing, err
 	}
 
 	userName, ok := s.authenticator(ctx)
@@ -99,16 +99,16 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVer
 	}
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
-		return nil, err
+		return a2a.TaskVersionMissing, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	version := a2a.TaskVersionInt(1)
+	version := a2a.TaskVersion(1)
 	if stored := s.tasks[task.ID]; stored != nil {
-		if prevVersion != nil && prevVersion != a2a.TaskVersionMissing && stored.version != prevVersion {
-			return nil, fmt.Errorf("concurrent task modification failed")
+		if prevVersion != a2a.TaskVersionMissing && stored.version != prevVersion {
+			return a2a.TaskVersionMissing, fmt.Errorf("concurrent task modification failed")
 		}
 		version = stored.version + 1
 	}
@@ -129,12 +129,12 @@ func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVe
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, nil, a2a.ErrTaskNotFound
+		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 
 	task, err := utils.DeepCopy(storedTask.task)
 	if err != nil {
-		return nil, nil, fmt.Errorf("task copy failed: %w", err)
+		return nil, a2a.TaskVersionMissing, fmt.Errorf("task copy failed: %w", err)
 	}
 
 	return task, a2a.TaskVersion(storedTask.version), nil

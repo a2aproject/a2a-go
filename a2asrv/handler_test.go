@@ -754,8 +754,8 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 	handler := NewHandler(executor, WithTaskStore(store))
 
 	wantPrevVersions := [][]a2a.TaskVersion{
-		{a2a.TaskVersionMissing, a2a.TaskVersionInt(1)},                       // Save newly created task and update to input-required
-		{a2a.TaskVersionInt(2), a2a.TaskVersionInt(3), a2a.TaskVersionInt(4)}, // Update task history, move to working, move to completed
+		{a2a.TaskVersionMissing, a2a.TaskVersion(1)},                 // Save newly created task and update to input-required
+		{a2a.TaskVersion(2), a2a.TaskVersion(3), a2a.TaskVersion(4)}, // Update task history, move to working, move to completed
 	}
 
 	var existingTask *a2a.Task

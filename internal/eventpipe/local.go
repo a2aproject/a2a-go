@@ -93,7 +93,7 @@ func (w *pipeWriter) WriteVersioned(ctx context.Context, event a2a.Event, versio
 }
 
 func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
-	return nil, nil, fmt.Errorf("only queue write is allowed")
+	return nil, a2a.TaskVersionMissing, fmt.Errorf("only queue write is allowed")
 }
 
 func (w *pipeWriter) Close() error {

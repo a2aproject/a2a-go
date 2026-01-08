@@ -42,18 +42,18 @@ func getText(m *a2a.Message) string {
 
 type testSaver struct {
 	saved      *a2a.Task
-	version    a2a.TaskVersionInt
+	version    a2a.TaskVersion
 	versionSet bool
 	fail       error
 }
 
 func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.fail != nil {
-		return nil, s.fail
+		return a2a.TaskVersionMissing, s.fail
 	}
 	if s.versionSet {
-		if prevVersion, ok := prev.(a2a.TaskVersionInt); !ok || prevVersion != s.version {
-			return nil, fmt.Errorf("")
+		if prev != a2a.TaskVersionMissing && prev != s.version {
+			return a2a.TaskVersionMissing, fmt.Errorf("")
 		}
 	}
 	s.version = s.version + 1
