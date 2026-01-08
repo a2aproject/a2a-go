@@ -17,67 +17,96 @@ package workqueue
 import (
 	"context"
 	"errors"
-	"math/rand"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/log"
 )
 
+// ErrQueueClosed can be returned by Read implementation to stop the polling queue backend.
+var ErrQueueClosed = errors.New("queue closed")
+
 // Message defines the message for execution or cancelation.
 type Message interface {
-	// Payload returns the payload of the message.
+	// Payload returns the payload of the message which becomes the execution or cancelation input.
 	Payload() *Payload
 	// Complete marks the message as completed after it was handled by a worker.
-	Complete(ctx context.Context, result a2a.SendMessageResult) error
+	Complete(ctx context.Context) error
 	// Return returns the message to the queue after worker failed to handle it.
 	Return(ctx context.Context, cause error) error
 }
 
+// ReadWriter is the neccessary pull-queue dependency.
+// Write is used by executor frontend to submit work when a message is received from a client.
+// Read is called periodically from background goroutine to request work. Read blocks if no work is available.
+// [ErrQueueClosed] will stop the polling loop.
 type ReadWriter interface {
 	Writer
-	// Read dequeues a new payload from the queue.
+	// Read dequeues a new message from the queue.
 	Read(context.Context) (Message, error)
+}
+
+// PullQueueConfig provides a way to customize pull-queue behavior.
+type PullQueueConfig struct {
+	// ReadRetry configures the behavior of polling loop in case of workqueue Read errors.
+	ReadRetry ReadRetryPolicy
 }
 
 type pullQueue struct {
 	ReadWriter
+
+	config *PullQueueConfig
 }
 
-func NewPullQueue(rw ReadWriter) Queue {
-	return &pullQueue{ReadWriter: rw}
+// NewPullQueue creates a [Queue] implementation which starts runs a work polling loop until
+// [ErrQueueClosed] is returned from Read.
+func NewPullQueue(rw ReadWriter, cfg *PullQueueConfig) Queue {
+	if cfg == nil {
+		cfg = &PullQueueConfig{}
+	}
+	if cfg.ReadRetry == nil {
+		cfg.ReadRetry = defaultExponentialBackoff
+	}
+	return &pullQueue{ReadWriter: rw, config: cfg}
 }
 
 func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn HandlerFn) {
 	go func() {
+		readAttempt := 0
 		ctx := context.Background()
-		random := rand.New(rand.NewSource(rand.Int63()))
-		backoff, jitter, maxBackoff := 1*time.Second, 2*time.Second, 30*time.Second
 		for {
-			// TODO: acquire quota
+			// TODO: only call Read when concurrency quota permits
 			msg, err := q.ReadWriter.Read(ctx)
 			if errors.Is(err, ErrQueueClosed) {
 				log.Info(ctx, "cluster backend stopped because work queue was closed")
 				return
 			}
 
-			if err != nil { // TODO: circuit breaker?
-				backoff *= 2
-				if backoff > maxBackoff {
-					backoff = maxBackoff
+			if errors.Is(err, ErrMalformedPayload) {
+				// TODO: dead-letter queue for this and retry attempt exceeded payloads
+				if completeErr := msg.Complete(ctx); completeErr != nil {
+					log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", err, "error", completeErr)
+				} else {
+					log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", err)
 				}
-				backoff += time.Duration(float32(jitter) * random.Float32())
-				log.Info(ctx, "work queue read failed", "error", err, "retry_in_s", backoff.Seconds())
 				continue
 			}
-			backoff = 1
+
+			if err != nil {
+				retryIn := q.config.ReadRetry.NextDelay(readAttempt)
+				log.Info(ctx, "work queue read failed", "error", err, "retry_in_s", retryIn.Seconds())
+				time.Sleep(retryIn)
+				readAttempt++
+				continue
+			}
+			readAttempt = 0
 
 			go func() {
 				if hb, ok := msg.(Heartbeater); ok {
 					ctx = WithHeartbeater(ctx, hb)
 				}
-				result, handleErr := handlerFn(ctx, msg.Payload())
+
+				_, handleErr := handlerFn(ctx, msg.Payload())
 				if handleErr != nil {
 					if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
 						log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
@@ -86,7 +115,8 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 					}
 					return
 				}
-				if err := msg.Complete(ctx, result); err != nil {
+
+				if err := msg.Complete(ctx); err != nil {
 					log.Warn(ctx, "failed to mark work item as completed", "error", err)
 				}
 			}()

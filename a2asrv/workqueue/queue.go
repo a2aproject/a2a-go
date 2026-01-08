@@ -22,8 +22,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 )
 
-// ErrQueueClosed is returned when a queue is closed. This will stop execution backend.
-var ErrQueueClosed = errors.New("queue closed")
+// ErrMalformedPayload is a non-retryable error which can be returned by [HandlerFn].
+var ErrMalformedPayload = errors.New("malformed payload")
 
 // PayloadType defines the type of payload.
 type PayloadType string
@@ -47,17 +47,21 @@ type Payload struct {
 	ExecuteParams *a2a.MessageSendParams
 }
 
+// HandlerFn starts agent execution for the provided payload.
 type HandlerFn func(context.Context, *Payload) (a2a.SendMessageResult, error)
 
+// Writer is used by executor frontend to submit work for execution.
 type Writer interface {
-	// Write puts a new payload into the queue. It can return a TaskID to handle idempotency.
+	// Write puts a new payload into the queue. Paylod will contain a TaskID but a different value can be returned to handle idempotency.
 	Write(context.Context, *Payload) (a2a.TaskID, error)
 }
 
 // Queue is an interface for the work distribution component.
+// Executor backend registers itself using RegisterHandler when RequestHandler is created.
+// HandlerFn can be used by work queue implementations to start execution when works is received.
 type Queue interface {
 	Writer
 
-	// RegisterHandler registers an executor.
+	// RegisterHandler registers an executor. This method is called by the SDK.
 	RegisterHandler(limiter.ConcurrencyConfig, HandlerFn)
 }
