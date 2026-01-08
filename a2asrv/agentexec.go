@@ -151,7 +151,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			Message:   msg,
 			TaskID:    tid,
 			ContextID: contextID,
-			Metadata:  msg.Metadata,
+			Metadata:  params.Metadata,
 		}
 		return &executionContext{
 			reqCtx: reqCtx,
@@ -198,7 +198,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			StoredTask: storedTask,
 			TaskID:     storedTask.ID,
 			ContextID:  storedTask.ContextID,
-			Metadata:   msg.Metadata,
+			Metadata:   params.Metadata,
 		},
 	}, nil
 }
