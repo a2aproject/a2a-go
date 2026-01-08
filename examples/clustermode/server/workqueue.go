@@ -34,7 +34,7 @@ type dbWorkQueue struct {
 }
 
 func newDBWorkQueue(db *sql.DB, workerID string) workqueue.Queue {
-	return workqueue.NewPullQueue(&dbWorkQueue{db: db, workerID: workerID})
+	return workqueue.NewPullQueue(&dbWorkQueue{db: db, workerID: workerID}, nil)
 }
 
 var _ workqueue.ReadWriter = (*dbWorkQueue)(nil)
@@ -177,7 +177,7 @@ func (m *dbWorkMessage) Payload() *workqueue.Payload {
 	return m.payload
 }
 
-func (m *dbWorkMessage) Complete(ctx context.Context, result a2a.SendMessageResult) error {
+func (m *dbWorkMessage) Complete(ctx context.Context) error {
 	return m.setCompleted(ctx, "")
 }
 

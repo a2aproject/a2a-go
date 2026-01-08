@@ -27,11 +27,12 @@ import (
 )
 
 type dbTaskStore struct {
-	db *sql.DB
+	db      *sql.DB
+	version a2a.ProtocolVersion
 }
 
-func newDBTaskStore(db *sql.DB) *dbTaskStore {
-	return &dbTaskStore{db: db}
+func newDBTaskStore(db *sql.DB, version a2a.ProtocolVersion) *dbTaskStore {
+	return &dbTaskStore{db: db, version: version}
 }
 
 var _ a2asrv.TaskStore = (*dbTaskStore)(nil)
@@ -51,9 +52,9 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 
 	if prev == nil || prev == a2a.TaskVersionMissing {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO task (id, state, last_updated, task_json)
-			VALUES (?, ?, ?, ?)
-		`, task.ID, task.Status.State, newVersion, string(taskJSON))
+			INSERT INTO task (id, state, last_updated, task_json, protocol_version)
+			VALUES (?, ?, ?, ?, ?)
+		`, task.ID, task.Status.State, newVersion, string(taskJSON), s.version)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert task: %w", err)

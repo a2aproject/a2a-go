@@ -51,8 +51,8 @@ func main() {
 
 	workerID := uuid.NewString()
 	db := openDB()
-	conf := &a2asrv.ClusterConfig{
-		TaskStore:    newDBTaskStore(db),
+	conf := a2asrv.ClusterConfig{
+		TaskStore:    newDBTaskStore(db, a2a.Version),
 		QueueManager: newDBEventQueueManager(db),
 		WorkQueue:    newDBWorkQueue(db, workerID),
 	}

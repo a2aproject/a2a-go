@@ -5,6 +5,7 @@ CREATE TABLE `task` (
     `last_updated` BIGINT,
     `state` VARCHAR(255),
     `user` VARCHAR(255),
+    `protocol_version` VARCHAR(255),
     `task_json` TEXT
 ) ENGINE=InnoDB;
 
