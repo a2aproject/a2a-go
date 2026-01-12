@@ -18,7 +18,8 @@ import subprocess
 import os           
 import sys
 
-TCK_DIR = os.path.abspath("../../../a2a-tck")
+TCK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../a2a-tck"))
+SUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
 TCK_VENV_PYTHON = os.path.join(TCK_DIR, ".venv", "bin", "python")
 SUT_URL = "http://localhost:9999"
 
@@ -62,13 +63,12 @@ def run_shell_command(command, cwd=None):
     env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
     env["UV_INDEX_URL"] = "https://pypi.org/simple"
 
-    result = subprocess.run(command, shell=True, cwd=cwd, env=env)
+    result = subprocess.run(command, shell=True, cwd=cwd, env=env, check=True)
 
 def start_and_test(protocol):
     sut_process = subprocess.Popen(
-        f"go run . --mode {protocol}", 
-        shell=True, 
-        cwd=".",
+        ["go", "run", ".", "--mode", protocol], 
+        cwd=SUT_DIR,
     )
     time.sleep(1) 
     if sut_process.poll() is not None:
@@ -80,16 +80,16 @@ def start_and_test(protocol):
         print("Server failed to start")
         return False
 
-    caregories = ["mandatory", "capabilities"]
+    categories = ["mandatory", "capabilities"]
 
     try:
-        for category in caregories:
+        for category in categories:
             print(f"Running TCK ({category}) for {protocol}...")
             run_shell_command(
                 f"./run_tck.py --sut-url {SUT_URL} --category {category} --transports {protocol}",
                 cwd=TCK_DIR
             )
-            return True
+        return True
     except Exception as e:
         print(f"❌ Error running TCK: {e}")
         return False
@@ -97,7 +97,7 @@ def start_and_test(protocol):
         print("🛑 Stopping SUT...")
         sut_process.terminate()
         sut_process.wait(timeout=5)
-        run_shell_command("fuser -k 9999/tcp || true", cwd=".")
+        run_shell_command("fuser -k 9999/tcp || true", cwd=SUT_DIR)
 
 def main():
     setup_tck_env()
