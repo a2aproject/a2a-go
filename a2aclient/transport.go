@@ -20,6 +20,7 @@ import (
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 )
 
 // A2AClient defines a transport-agnostic interface for making A2A requests.
@@ -55,6 +56,9 @@ type Transport interface {
 	// GetAgentCard resolves the AgentCard.
 	// If extended card is supported calls the 'agent/getAuthenticatedExtendedCard' protocol method.
 	GetAgentCard(ctx context.Context) (*a2a.AgentCard, error)
+
+	// Invoke calls the provided extension method.
+	Invoke(ctx context.Context, client a2aext.Method, arg any) (any, error)
 
 	// Clean up resources associated with the transport (eg. close a gRPC channel).
 	Destroy() error
@@ -119,6 +123,10 @@ func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params *
 }
 
 func (unimplementedTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	return nil, errNotImplemented
+}
+
+func (unimplementedTransport) Invoke(ctx context.Context, client a2aext.Method, arg any) (any, error) {
 	return nil, errNotImplemented
 }
 

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
@@ -45,6 +46,28 @@ type jsonrpcResponse struct {
 	ID      string          `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *jsonrpc.Error  `json:"error,omitempty"`
+}
+
+type jsonrpcExtensionBinding struct {
+	Method            string
+	ResponseFromBytes func(resp []byte) (any, error)
+}
+
+func NewJSONRPCExtensionBinding[Resp any](name string) a2aext.Binding {
+	return &jsonrpcExtensionBinding{
+		Method: name,
+		ResponseFromBytes: func(resp []byte) (any, error) {
+			var zero Resp
+			if err := json.Unmarshal(resp, &zero); err != nil {
+				return nil, err
+			}
+			return &zero, nil
+		},
+	}
+}
+
+func (*jsonrpcExtensionBinding) Protocol() a2a.TransportProtocol {
+	return a2a.TransportProtocolJSONRPC
 }
 
 // JSONRPCOption configures optional parameters for the JSONRPC transport.
@@ -351,6 +374,29 @@ func (t *jsonrpcTransport) SetTaskPushConfig(ctx context.Context, params *a2a.Ta
 func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
 	_, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigDelete, params)
 	return err
+}
+
+func (t *jsonrpcTransport) Invoke(ctx context.Context, method a2aext.Method, req any) (any, error) {
+	binding, ok := method.Binding(a2a.TransportProtocolJSONRPC)
+	if !ok {
+		return nil, fmt.Errorf("method %s is not bound to JSON-RPC", method.Name())
+	}
+
+	typedBinding, ok := binding.(*jsonrpcExtensionBinding)
+	if !ok {
+		return nil, fmt.Errorf("method %s is not bound to JSON-RPC", method.Name())
+	}
+
+	result, err := t.sendRequest(ctx, typedBinding.Method, req)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := typedBinding.ResponseFromBytes(result)
+	if err != nil {
+		return nil, fmt.Errorf("result violates A2A spec - could not determine type: %w; data: %s", err, string(result))
+	}
+	return response, nil
 }
 
 // GetAgentCard retrieves the agent's card.

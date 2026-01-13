@@ -16,6 +16,7 @@ package a2aclient
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"iter"
 	"strings"
@@ -24,9 +25,18 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/a2aproject/a2a-go/a2apb/pbconv"
 )
+
+type grpcExtensionBinding struct {
+	makeCall func(ctx context.Context, req any) (any, error)
+}
+
+func (g *grpcExtensionBinding) Protocol() a2a.TransportProtocol {
+	return a2a.TransportProtocolGRPC
+}
 
 // WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
 func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
@@ -237,6 +247,20 @@ func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error
 	}
 
 	return pbconv.FromProtoAgentCard(pCard)
+}
+
+func (t *grpcTransport) Invoke(ctx context.Context, method a2aext.Method, req any) (any, error) {
+	binding, ok := method.Binding(a2a.TransportProtocolGRPC)
+	if !ok {
+		return nil, fmt.Errorf("method %s is not bound to gRPC", method.Name())
+	}
+
+	typedBinding, ok := binding.(*grpcExtensionBinding)
+	if !ok {
+		return nil, fmt.Errorf("method %s is not bound to JSON-RPC", method.Name())
+	}
+
+	return typedBinding.makeCall(ctx, req)
 }
 
 func (c *grpcTransport) Destroy() error {

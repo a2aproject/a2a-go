@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -225,6 +226,45 @@ func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.A
 		return nil, errOverride
 	}
 	return response, err
+}
+
+func (h *InterceptedHandler) GetExtensionMethods() []a2aext.ServerMethod {
+	return h.Handler.GetExtensionMethods()
+}
+
+func (h *InterceptedHandler) Invoke(ctx context.Context, method a2aext.ServerMethod, arg any) (any, error) {
+	ctx, callCtx := withMethodCallContext(ctx, method.Name())
+	ctx = h.withLoggerContext(ctx)
+	ctx, err := h.interceptBefore(ctx, callCtx, arg)
+	if err != nil {
+		return nil, err
+	}
+	response, err := h.Handler.Invoke(ctx, method, arg)
+	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+		return nil, errOverride
+	}
+	return response, err
+}
+
+func (h *InterceptedHandler) InvokeStreaming(ctx context.Context, method a2aext.ServerMethod, arg any) iter.Seq2[any, error] {
+	return func(yield func(any, error) bool) {
+		ctx, callCtx := withMethodCallContext(ctx, method.Name())
+		ctx = h.withLoggerContext(ctx)
+		ctx, err := h.interceptBefore(ctx, callCtx, arg)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		for event, err := range h.Handler.InvokeStreaming(ctx, method, arg) {
+			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+				yield(nil, errOverride)
+				return
+			}
+			if !yield(event, err) {
+				return
+			}
+		}
+	}
 }
 
 func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {

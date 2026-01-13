@@ -21,6 +21,7 @@ import (
 	"log/slog"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aext"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
@@ -59,6 +60,15 @@ type RequestHandler interface {
 
 	// GetAgentCard returns an extended a2a.AgentCard if configured.
 	OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error)
+
+	// GetAgentCard returns an extended a2a.AgentCard if configured.
+	GetExtensionMethods() []a2aext.ServerMethod
+
+	// Invoke calls a registered extension method.
+	Invoke(ctx context.Context, method a2aext.ServerMethod, arg any) (any, error)
+
+	// InvokeStreaming calls a registered streaming extension method.
+	InvokeStreaming(ctx context.Context, method a2aext.ServerMethod, arg any) iter.Seq2[any, error]
 }
 
 // Implements a2asrv.RequestHandler.
@@ -75,6 +85,8 @@ type defaultRequestHandler struct {
 	reqContextInterceptors []RequestContextInterceptor
 
 	authenticatedCardProducer AgentCardProducer
+
+	extensionMethods []a2aext.ServerMethod
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -106,12 +118,20 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 	}
 }
 
+// WithConcurrencyConfig allows to set limits on the number of concurrent executions.
+func WithExtensionMethod(method a2aext.ServerMethod) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.extensionMethods = append(h.extensionMethods, method)
+	}
+}
+
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{
-		agentExecutor: executor,
-		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewMem(),
+		agentExecutor:    executor,
+		extensionMethods: []a2aext.ServerMethod{},
+		queueManager:     eventqueue.NewInMemoryManager(),
+		taskStore:        taskstore.NewMem(),
 		// push notifications are not supported by default
 	}
 	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
@@ -307,6 +327,18 @@ func (h *defaultRequestHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2
 		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
 	}
 	return h.authenticatedCardProducer.Card(ctx)
+}
+
+func (h *defaultRequestHandler) GetExtensionMethods() []a2aext.ServerMethod {
+	return h.extensionMethods
+}
+
+func (h *defaultRequestHandler) Invoke(ctx context.Context, method a2aext.ServerMethod, arg any) (any, error) {
+	return method.InvokeUnary(ctx, arg)
+}
+
+func (h *defaultRequestHandler) InvokeStreaming(ctx context.Context, method a2aext.ServerMethod, arg any) iter.Seq2[any, error] {
+	return method.InvokeStreaming(ctx, arg)
 }
 
 func shouldInterruptNonStreaming(params *a2a.MessageSendParams, event a2a.Event) (a2a.TaskID, bool) {
