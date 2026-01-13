@@ -40,6 +40,8 @@ type localExecution struct {
 	queueManager eventqueue.Manager
 }
 
+var _ Execution = (*localExecution)(nil)
+
 // Not exported, because Executions are created by Executor.
 func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
 	return &localExecution{

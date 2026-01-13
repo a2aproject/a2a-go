@@ -72,6 +72,8 @@ type grpcTransport struct {
 	closeConnFn func() error
 }
 
+var _ Transport = (*grpcTransport)(nil)
+
 // A2A protocol methods
 
 func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
@@ -244,7 +246,6 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.De
 
 func (c *grpcTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	pCard, err := c.client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
-
 	if err != nil {
 		return nil, err
 	}

@@ -126,6 +126,8 @@ type inMemoryQueue struct {
 	closed     bool
 }
 
+var _ Queue = (*inMemoryQueue)(nil)
+
 func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	return q.WriteVersioned(ctx, event, a2a.TaskVersionMissing)
 }

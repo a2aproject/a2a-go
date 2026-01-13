@@ -47,6 +47,8 @@ type testSaver struct {
 	fail       error
 }
 
+var _ Saver = (*testSaver)(nil)
+
 func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.fail != nil {
 		return a2a.TaskVersionMissing, s.fail
@@ -60,7 +62,6 @@ func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, p
 	s.saved = task
 	return s.version, nil
 }
-
 func makeTextParts(texts ...string) a2a.ContentParts {
 	result := make(a2a.ContentParts, len(texts))
 	for i, text := range texts {

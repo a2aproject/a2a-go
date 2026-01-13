@@ -79,6 +79,8 @@ var errNotImplemented = errors.New("not implemented")
 
 type unimplementedTransport struct{}
 
+var _ Transport = (*unimplementedTransport)(nil)
+
 func (unimplementedTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	return nil, errNotImplemented
 }

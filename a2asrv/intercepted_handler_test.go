@@ -32,6 +32,8 @@ type mockHandler struct {
 	OnSendMessageStreamFn func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
 }
 
+var _ RequestHandler = (*mockHandler)(nil)
+
 func (h *mockHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {

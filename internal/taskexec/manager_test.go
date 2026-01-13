@@ -74,6 +74,8 @@ type testProcessor struct {
 	processErrorErr    error
 }
 
+var _ Processor = (*testProcessor)(nil)
+
 func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*ProcessorResult, error) {
 	e.callCount.Add(1)
 
@@ -96,7 +98,6 @@ func (e *testProcessor) Process(ctx context.Context, event a2a.Event) (*Processo
 
 	return &ProcessorResult{}, nil
 }
-
 func (e *testProcessor) ProcessError(ctx context.Context, err error) (a2a.SendMessageResult, error) {
 	if e.processErrorResult == nil && e.processErrorErr == nil {
 		return nil, err
@@ -113,6 +114,8 @@ type testExecutor struct {
 	contextCanceled bool
 	block           chan struct{}
 }
+
+var _ Executor = (*testExecutor)(nil)
 
 func newExecutor() *testExecutor {
 	return &testExecutor{executeCalled: make(chan struct{}), testProcessor: &testProcessor{}}
@@ -143,6 +146,8 @@ type testCanceler struct {
 	contextCanceled bool
 	block           chan struct{}
 }
+
+var _ Canceler = (*testCanceler)(nil)
 
 func newCanceler() *testCanceler {
 	return &testCanceler{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
