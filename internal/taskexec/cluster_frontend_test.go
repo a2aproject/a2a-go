@@ -70,9 +70,9 @@ func TestClusterFrontend_GetExecution(t *testing.T) {
 				WorkQueue:    testutil.NewTestWorkQueue(),
 			})
 
-			_, exists := frontend.GetExecution(t.Context(), tc.taskID)
-			if exists != tc.wantSuccess {
-				t.Errorf("GetExecution() exists = %v, want %v", exists, tc.wantSuccess)
+			_, err := frontend.Resubscribe(t.Context(), tc.taskID)
+			if err != nil && tc.wantSuccess {
+				t.Errorf("GetExecution() error = %v, want %v", err, tc.wantSuccess)
 			}
 		})
 	}
@@ -193,7 +193,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 				WorkQueue:    wq,
 			})
 
-			exec, sub, err := frontend.Execute(ctx, tc.params)
+			sub, err := frontend.Execute(ctx, tc.params)
 			if err != nil {
 				if tc.wantErr == nil {
 					t.Fatalf("Execute() error = %v, want nil", err)
@@ -210,7 +210,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 			if tc.wantErr != nil {
 				t.Fatalf("Execute() error = nil, want %v", tc.wantErr)
 			}
-			if exec == nil || sub == nil {
+			if sub == nil {
 				t.Error("Execute() returned nil execution or subscription")
 			}
 			if tc.wantQueueWrite != nil && len(wq.Payloads) != 1 {

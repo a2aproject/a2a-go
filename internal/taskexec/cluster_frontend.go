@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -60,16 +61,17 @@ func NewClusterFrontend(cfg *ClusterConfig) Manager {
 	return frontend
 }
 
-func (m *clusterFrontend) GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool) {
-	if _, _, err := m.taskStore.Get(ctx, taskID); err != nil {
-		return nil, false
+func (m *clusterFrontend) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
+	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get event queue: %w", err)
 	}
-	return newRemoteExecution(m.queueManager, m.taskStore, taskID), true
+	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
-func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 
 	var taskID a2a.TaskID
@@ -83,24 +85,24 @@ func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendPa
 	if msg.TaskID != "" {
 		storedTask, _, err := m.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("task loading failed: %w", err)
+			return nil, fmt.Errorf("task loading failed: %w", err)
 		}
 		if storedTask == nil {
-			return nil, nil, a2a.ErrTaskNotFound
+			return nil, a2a.ErrTaskNotFound
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
 		}
 	}
 
 	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get or create queue: %w", err)
+		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
 
 	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
@@ -112,12 +114,10 @@ func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendPa
 		if closeErr := queue.Close(); closeErr != nil {
 			log.Warn(ctx, "queue close failed", "error", closeErr)
 		}
-		return nil, nil, fmt.Errorf("failed to create work item: %w", err)
+		return nil, fmt.Errorf("failed to create work item: %w", err)
 	}
 
-	execution := newRemoteExecution(m.queueManager, m.taskStore, taskID)
-	subscription := newRemoteSubscription(queue, m.taskStore, taskID)
-	return execution, subscription, nil
+	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
 func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -134,6 +134,11 @@ func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) 
 		return nil, fmt.Errorf("task in non-cancelable state %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
+	queue, err := m.queueManager.GetOrCreate(ctx, params.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create queue: %w", err)
+	}
+
 	if _, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:         workqueue.PayloadTypeCancel,
 		TaskID:       params.ID,
@@ -142,7 +147,27 @@ func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) 
 		return nil, fmt.Errorf("failed to create work item: %w", err)
 	}
 
-	execution := newRemoteExecution(m.queueManager, m.taskStore, params.ID)
-	result, err := execution.Result(ctx)
-	return convertToCancelationResult(ctx, result, err)
+	subscription := newRemoteSubscription(queue, m.taskStore, params.ID)
+	var cancelationResult a2a.SendMessageResult
+	var cancelationErr error
+	for event, err := range subscription.Events(ctx) {
+		if err != nil {
+			cancelationErr = err
+		}
+		if taskupdate.IsFinal(event) {
+			if result, ok := event.(a2a.SendMessageResult); ok {
+				cancelationResult = result
+			}
+			break
+		}
+	}
+	if cancelationResult == nil && cancelationErr != nil {
+		task, _, err := m.taskStore.Get(ctx, params.ID)
+		if err != nil {
+			cancelationErr = err
+		} else {
+			cancelationResult = task
+		}
+	}
+	return convertToCancelationResult(ctx, cancelationResult, cancelationErr)
 }

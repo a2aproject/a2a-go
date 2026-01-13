@@ -173,18 +173,18 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 					}
 
 					tid := a2a.TaskID(fmt.Sprintf("task-%d", i))
-					execution, subscription, err := manager.Execute(scopedCtx, &a2a.MessageSendParams{})
+					subscription, err := manager.Execute(scopedCtx, &a2a.MessageSendParams{})
 					if err != nil {
 						exec.err <- err
 						return
 					}
-					_, _ = consumeEvents(t, subscription)
+					_, execErr := consumeEvents(t, subscription)
 					<-executor.executeCalled
 					close(exec.err)
 					<-exec.proceed
 
 					executor.mustWrite(t, &a2a.Task{ID: tid})
-					if _, err := execution.Result(scopedCtx); err != nil {
+					if err := <-execErr; err != nil {
 						t.Errorf("execution.Result() error = %v", err)
 					}
 					close(exec.finished)

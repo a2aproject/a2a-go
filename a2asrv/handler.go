@@ -204,11 +204,12 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	execution, subscription, err := h.handleSendMessage(ctx, params)
+	subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
+	var lastEvent a2a.Event
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
@@ -221,14 +222,23 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 			}
 			return task, nil
 		}
+		lastEvent = event
 	}
 
-	return execution.Result(ctx)
+	if res, ok := lastEvent.(a2a.SendMessageResult); ok {
+		return res, nil
+	}
+
+	task, _, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
+	}
+	return task, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		_, subscription, err := h.handleSendMessage(ctx, params)
+		subscription, err := h.handleSendMessage(ctx, params)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -249,13 +259,13 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			return
 		}
 
-		exec, ok := h.execManager.GetExecution(ctx, params.ID)
-		if !ok {
-			yield(nil, a2a.ErrTaskNotFound)
+		subscription, err := h.execManager.Resubscribe(ctx, params.ID)
+		if err != nil {
+			yield(nil, fmt.Errorf("%w: %w", a2a.ErrTaskNotFound, err))
 			return
 		}
 
-		for ev, err := range exec.Events(ctx) {
+		for ev, err := range subscription.Events(ctx) {
 			if !yield(ev, err) {
 				return
 			}
@@ -263,9 +273,9 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Execution, taskexec.Subscription, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 	return h.execManager.Execute(ctx, params)
 }

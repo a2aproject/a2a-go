@@ -37,8 +37,8 @@ var (
 )
 
 type Manager interface {
-	GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool)
-	Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error)
+	Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error)
+	Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error)
 	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
 }
 
@@ -59,6 +59,20 @@ type LocalManager struct {
 	executions   map[a2a.TaskID]*localExecution
 	cancelations map[a2a.TaskID]*cancelation
 	limiter      *concurrencyLimiter
+}
+
+type cancelation struct {
+	params *a2a.TaskIDParams
+	result *promise
+}
+
+type localExecution struct {
+	tid    a2a.TaskID
+	params *a2a.MessageSendParams
+	result *promise
+
+	pipe         *eventpipe.Local
+	queueManager eventqueue.Manager
 }
 
 var _ Manager = (*LocalManager)(nil)
@@ -85,19 +99,40 @@ func NewLocalManager(cfg Config) Manager {
 	return manager
 }
 
-// GetExecution is used to get a reference to an active [Execution]. The method can be used
+func newCancelation(params *a2a.TaskIDParams) *cancelation {
+	return &cancelation{params: params, result: newPromise()}
+}
+
+func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
+	return &localExecution{
+		tid:          tid,
+		params:       params,
+		queueManager: qm,
+		pipe:         eventpipe.NewLocal(),
+		result:       newPromise(),
+	}
+}
+
+// GetExecution is used to get a reference to an active [execution]. The method can be used
 // to resubscribe to execution events or wait for its completion.
-func (m *LocalManager) GetExecution(_ context.Context, taskID a2a.TaskID) (Execution, bool) {
+func (m *LocalManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	execution, ok := m.executions[taskID]
-	return execution, ok
+	if !ok {
+		return nil, fmt.Errorf("no active execution")
+	}
+	queue, ok := m.queueManager.Get(ctx, taskID)
+	if !ok {
+		return nil, fmt.Errorf("no queue for active execution")
+	}
+	return newLocalSubscription(execution, queue), nil
 }
 
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
 	var tid a2a.TaskID
 	if params.Message == nil || len(params.Message.TaskID) == 0 {
 		tid = a2a.NewTaskID()
@@ -107,26 +142,26 @@ func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParam
 
 	execution, err := m.createExecution(ctx, tid, params)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	eventBroadcastQueue, err := m.queueManager.GetOrCreate(ctx, tid)
 	if err != nil {
 		m.cleanupExecution(ctx, execution)
-		return nil, nil, fmt.Errorf("failed to create a queue: %w", err)
+		return nil, fmt.Errorf("failed to create a queue: %w", err)
 	}
 
 	defaultSubReadQueue, ok := m.queueManager.Get(ctx, tid)
 	if !ok {
 		m.cleanupExecution(ctx, execution)
-		return nil, nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
+		return nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
 	}
 
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go m.handleExecution(detachedCtx, execution, eventBroadcastQueue)
 
-	return execution, newLocalSubscription(execution, defaultSubReadQueue), nil
+	return newLocalSubscription(execution, defaultSubReadQueue), nil
 }
 
 func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
@@ -155,7 +190,7 @@ func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, para
 
 // Cancel uses [Canceler] to signal task cancelation and waits for it to take effect.
 // If there's a cancelation in progress we wait for its result instead of starting a new one.
-// If there's an active [Execution] Canceler will be writing to the same result queue. Consumers
+// If there's an active [execution] Canceler will be writing to the same result queue. Consumers
 // subscribed to the Execution will receive a task cancelation event and handle it accordingly.
 // If there's no active Execution Canceler will be processing task events.
 func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -296,7 +331,7 @@ func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 		return
 	}
 
-	result, err := run.Result(ctx)
+	result, err := run.result.wait(ctx)
 	if err != nil {
 		cancel.result.setError(err)
 		return

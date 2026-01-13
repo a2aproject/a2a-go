@@ -16,8 +16,10 @@ package taskexec
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 type promise struct {
@@ -53,4 +55,23 @@ func (r *promise) wait(ctx context.Context) (a2a.SendMessageResult, error) {
 	case <-r.done:
 		return r.value, r.err
 	}
+}
+
+func convertToCancelationResult(ctx context.Context, result a2a.SendMessageResult, err error) (*a2a.Task, error) {
+	if err != nil {
+		return nil, fmt.Errorf("cancelation failed: %w", err)
+	}
+
+	task, ok := result.(*a2a.Task)
+	if !ok { // a2a.Message was the result of the execution
+		log.Info(ctx, "failed to cancel, because execution resolved to a Message")
+		return nil, a2a.ErrTaskNotCancelable
+	}
+
+	if task.Status.State != a2a.TaskStateCanceled {
+		log.Info(ctx, "task in non-cancelable state", "state", task.Status.State)
+		return nil, a2a.ErrTaskNotCancelable
+	}
+
+	return task, nil
 }
