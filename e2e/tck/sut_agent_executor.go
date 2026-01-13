@@ -54,9 +54,7 @@ func (c *SUTAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestCon
 	if task == nil {
 		return a2a.ErrTaskNotFound
 	}
-	if task.Status.State == a2a.TaskStateCanceled || task.Status.State == a2a.TaskStateCompleted || task.Status.State == a2a.TaskStateFailed {
-		return a2a.ErrTaskNotCancelable
-	}
+
 	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil)
 	event.Final = true
 	if err := q.Write(ctx, event); err != nil {

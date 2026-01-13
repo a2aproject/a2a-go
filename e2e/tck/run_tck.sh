@@ -16,4 +16,4 @@
 
 set -euo pipefail
 
-python3 orchestrate_tck.py
+python3 orchestrate_tck.py "$@"

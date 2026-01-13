@@ -17,11 +17,47 @@ import requests
 import subprocess
 import os           
 import sys
+import argparse
+from pathlib import Path
 
-TCK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../a2a-tck"))
+TCK_REPO = "https://github.com/a2aproject/a2a-tck.git"
+DEFAULT_CLONE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../a2a-tck"))
+TCK_DIR = None
 SUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
-TCK_VENV_PYTHON = os.path.join(TCK_DIR, ".venv", "bin", "python")
 SUT_URL = "http://localhost:9999"
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run A2A TCK tests against the Go SUT.")
+    parser.add_argument(
+        "--path", 
+        type=str, 
+        default="", 
+        help="Path to a local existing a2a-tck repo. If not provided, the repo will be cloned."
+    )
+    return parser.parse_args()
+
+def tck_absolute_path(local_path_arg):
+    global TCK_DIR
+
+    if local_path_arg:
+        tck_path = Path(local_path_arg).resolve()
+        if not tck_path.exists():
+            print(f"TCK directory not found: {tck_path}")
+            sys.exit(1)
+        print(f"Using local TCK directory: {tck_path}")
+        TCK_DIR = tck_path
+    else:
+        tck_path = Path(DEFAULT_CLONE_DIR).resolve()
+        if tck_path.exists():
+            print(f"Using existing TCK directory: {tck_path}")
+        else:
+            print(f"TCK directory not found, cloning from {TCK_REPO}")
+            try:
+                subprocess.run(["git", "clone", TCK_REPO, str(tck_path)], check=True)
+            except Exception as e:
+                print(f"Error cloning TCK: {e}")
+                sys.exit(1)
+        TCK_DIR = tck_path
 
 def wait_for_server(url, expected_status=200, timeout=120, interval=2):
     start_time = time.time()
@@ -59,8 +95,8 @@ def setup_tck_env():
 
 def run_shell_command(command, cwd=None):
     env = os.environ.copy()
-    venv_bin = os.path.dirname(TCK_VENV_PYTHON)
-    env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+    venv_bin = TCK_DIR / ".venv" / "bin"
+    env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
     env["UV_INDEX_URL"] = "https://pypi.org/simple"
 
     result = subprocess.run(command, shell=True, cwd=cwd, env=env, check=True)
@@ -70,10 +106,11 @@ def start_and_test(protocol):
         ["go", "run", ".", "--mode", protocol], 
         cwd=SUT_DIR,
     )
-    time.sleep(1) 
-    if sut_process.poll() is not None:
-        print("❌ Critical Error: The Go SUT failed to start immediately.")
-        sys.exit(1)
+    for _ in range(5):
+        if sut_process.poll() is not None:
+            print("❌ Critical Error: The Go SUT failed to start immediately.")
+            sys.exit(1)
+        time.sleep(1)
 
     card_url = f"{SUT_URL}/.well-known/agent-card.json"
     if not wait_for_server(card_url):
@@ -95,12 +132,14 @@ def start_and_test(protocol):
         return False
     finally:
         print("🛑 Stopping SUT...")
-        sut_process.terminate()
-        sut_process.wait(timeout=5)
-        run_shell_command("fuser -k 9999/tcp || true", cwd=SUT_DIR)
+        requests.post(f"{SUT_URL}/quit")
+       
 
 def main():
+    args = parse_args()
+    tck_absolute_path(args.path)
     setup_tck_env()
+
     protocols = ["jsonrpc", "grpc"] 
     failed = []
     for protocol in protocols:

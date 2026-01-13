@@ -20,6 +20,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2agrpc"
@@ -44,7 +46,7 @@ func main() {
 		preferredTransport = a2a.TransportProtocolGRPC
 	// TODO: handle REST case
 	default:
-		cardUrl = fmt.Sprintf("http://localhost:%d/invoke", *httpPort)
+		cardUrl = fmt.Sprintf("http://localhost:%d", *httpPort)
 		preferredTransport = a2a.TransportProtocolJSONRPC
 	}
 
@@ -109,8 +111,21 @@ func startHTTPServer(port int, card *a2a.AgentCard, handler a2asrv.RequestHandle
 	// serve public card
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 
+	mux.HandleFunc("/quit", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("shutting down")); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
+
+		// Exit in a background goroutine to allow the response to flush
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
+		}()
+	})
+
 	// serve JSON-RPC endpoint
-	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(handler))
+	mux.Handle("/", a2asrv.NewJSONRPCHandler(handler))
 
 	// TODO: serve REST endpoint
 
