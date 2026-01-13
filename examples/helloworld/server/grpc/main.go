@@ -34,6 +34,8 @@ import (
 // It is responsible for invoking an agent, translating its outputs to a2a.Event object and writing them to the provided [eventqueue.Queue].
 type agentExecutor struct{}
 
+var _ a2asrv.AgentExecutor = (*agentExecutor)(nil)
+
 func (*agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
 	response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello, world!"})
 	return q.Write(ctx, response)

@@ -37,6 +37,8 @@ type InterceptedHandler struct {
 	Logger *slog.Logger
 }
 
+var _ RequestHandler = (*InterceptedHandler)(nil)
+
 func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetTask")
 	if query != nil {

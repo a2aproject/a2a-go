@@ -38,6 +38,8 @@ type localSubscription struct {
 	consumed  bool
 }
 
+var _ Subscription = (*localSubscription)(nil)
+
 func newLocalSubscription(e *localExecution, q eventqueue.Queue) *localSubscription {
 	return &localSubscription{execution: e, queue: q}
 }

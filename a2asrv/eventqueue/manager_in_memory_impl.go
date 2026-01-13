@@ -40,6 +40,8 @@ type inMemoryManager struct {
 	bufferSize int
 }
 
+var _ Manager = (*inMemoryManager)(nil)
+
 // NewInMemoryManager creates a new in-memory eventqueue manager.
 // A message dispatcher goroutine is started when the first queue for a task ID is created.
 // All the queues returned for the task ID before Destroy() is called are attached to the same goroutine. Each goroutine must use its own Queue.

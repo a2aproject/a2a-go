@@ -73,6 +73,8 @@ type pipeWriter struct {
 	closeChan chan struct{}
 }
 
+var _ eventqueue.Queue = (*pipeWriter)(nil)
+
 func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
 	if w.closed.Load() {
 		return eventqueue.ErrQueueClosed
