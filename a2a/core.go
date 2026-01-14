@@ -23,6 +23,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// ProtocolVersion is a string constant which represents a version of the protocol.
+type ProtocolVersion string
+
+// Version is the protocol version which SDK implements.
+const Version ProtocolVersion = "0.3.0"
+
 // TaskInfoProvider provides information about the Task.
 type TaskInfoProvider interface {
 	// TaskInfo returns information about the task.
