@@ -64,6 +64,7 @@ func (m *TestTaskStore) SetGetOverride(task *a2a.Task, version a2a.TaskVersion, 
 func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskStore {
 	t.Helper()
 	ctx := t.Context()
+
 	for _, task := range tasks {
 		_, err := m.Save(ctx, task, nil, a2a.TaskVersionMissing)
 		if err != nil {
