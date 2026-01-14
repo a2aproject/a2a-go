@@ -942,7 +942,7 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 	mockStore := testutil.NewTestTaskStore()
 	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 		getCalled += 1
-		return nil, a2a.TaskVersionMissing, nil
+		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		savedCalled += 1
@@ -960,8 +960,8 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 		t.Fatalf("OnSendMessage() = %v, want a2a.Message", result)
 	}
 
-	if getCalled > 0 {
-		t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want 0", getCalled)
+	if getCalled != 1 {
+		t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want 1", getCalled)
 	}
 	if savedCalled > 0 {
 		t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)

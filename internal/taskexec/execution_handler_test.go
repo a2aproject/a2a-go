@@ -102,7 +102,7 @@ func TestRunProducerConsumer(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer)
+			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil)
 			if tc.wantErr != nil && err == nil {
 				t.Fatalf("expected error, got %v", result)
 			}
@@ -117,5 +117,4 @@ func TestRunProducerConsumer(t *testing.T) {
 			}
 		})
 	}
-
 }
