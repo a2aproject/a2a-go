@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.4](https://github.com/a2aproject/a2a-go/compare/v0.3.3...v0.3.4) (2026-01-14)
+
+
+### Features
+
+* introduce and integrate TaskVersion ([#127](https://github.com/a2aproject/a2a-go/issues/127)) ([5cf0332](https://github.com/a2aproject/a2a-go/commit/5cf0332a9d049648a9d116a412703678decada72))
+* taskstore list ([#126](https://github.com/a2aproject/a2a-go/issues/126)) ([9987486](https://github.com/a2aproject/a2a-go/commit/9987486f6d049be709f49d044df18afd7e17cbb9))
+* taskstore pagination ([#136](https://github.com/a2aproject/a2a-go/issues/136)) ([fffb4d4](https://github.com/a2aproject/a2a-go/commit/fffb4d45c57c8cf2081fcbc95151a7a5a152407d))
+* workqueue ([#132](https://github.com/a2aproject/a2a-go/issues/132)) ([dcc3a89](https://github.com/a2aproject/a2a-go/commit/dcc3a893b05fde7dc2593ff32002fd673f4a6b0d)), closes [#115](https://github.com/a2aproject/a2a-go/issues/115)
+
+
+### Bug Fixes
+
+* nil parts must be empty array when encoded to JSON  ([#140](https://github.com/a2aproject/a2a-go/issues/140)) ([049190c](https://github.com/a2aproject/a2a-go/commit/049190c4cde20bd12313ee5cb451440b77c980cc))
+* provide request-level metadata in RequestContext ([#152](https://github.com/a2aproject/a2a-go/issues/152)) ([bf3096c](https://github.com/a2aproject/a2a-go/commit/bf3096c9babf0046d7c8f837bf9c0692a6786f99))
+* **sse:** increase buffer size for large SSE payloads ([#149](https://github.com/a2aproject/a2a-go/issues/149)) ([1287239](https://github.com/a2aproject/a2a-go/commit/1287239a8378f09ec2dd0e7e57704645ed207c9d))
+
 ## [0.3.3](https://github.com/a2aproject/a2a-go/compare/v0.3.2...v0.3.3) (2025-12-08)
 
 
