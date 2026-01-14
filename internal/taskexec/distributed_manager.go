@@ -59,6 +59,9 @@ func NewDistributedManager(cfg *DistributedManagerConfig) Manager {
 }
 
 func (m *distributedManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
+	if _, _, err := m.taskStore.Get(ctx, taskID); err != nil {
+		return nil, a2a.ErrTaskNotFound
+	}
 	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get event queue: %w", err)

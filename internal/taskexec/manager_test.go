@@ -466,10 +466,11 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			ctx := t.Context()
 
 			executor := newExecutor()
-			manager, _ := clusterMode.newStaticManager(executor, nil)
+			manager, taskStore := clusterMode.newStaticManager(executor, nil)
 			subscription, err := manager.Execute(ctx, &a2a.MessageSendParams{
 				Message: a2a.NewMessage(a2a.MessageRoleUser),
 			})
+			_ = taskStore.WithTasks(t, &a2a.Task{ID: subscription.TaskID()})
 			_, _ = consumeEvents(t, subscription)
 			if err != nil {
 				t.Fatalf("manager.Execute() failed: %v", err)
@@ -485,6 +486,9 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			waitStopped.Add(consumerCount)
 
 			var waitConsumed sync.WaitGroup
+			if clusterMode { // task snapshot emitted for each consumer
+				waitConsumed.Add(consumerCount)
+			}
 			var mu sync.Mutex
 			consumed := map[int][]a2a.Event{}
 			for consumerI := range consumerCount {
@@ -517,6 +521,9 @@ func TestManager_FanOutExecutionEvents(t *testing.T) {
 			}
 
 			for i, list := range consumed {
+				if clusterMode { // skip task snapshot to clusterMode subscription
+					list = list[1:]
+				}
 				if len(list) != len(states) {
 					t.Fatalf("got %d events for consumer %d, want %d", len(list), i, len(states))
 				}
