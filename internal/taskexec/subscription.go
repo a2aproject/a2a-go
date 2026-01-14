@@ -85,7 +85,6 @@ type remoteSubscription struct {
 	store    TaskStore
 	queue    eventqueue.Queue
 	consumed bool
-	result   *promise
 }
 
 var _ Subscription = (*remoteSubscription)(nil)
