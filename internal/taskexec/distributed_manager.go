@@ -27,12 +27,9 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-type TaskStore interface {
-	Get(context.Context, a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
-}
-
-// ClusterConfig contains configuration for A2A task execution mode where work is distributed across A2A cluster.
-type ClusterConfig struct {
+// DistributedManagerConfig contains configuration for A2A task execution
+// mode where work is distributed across an A2A cluster.
+type DistributedManagerConfig struct {
 	WorkQueue         workqueue.Queue
 	QueueManager      eventqueue.Manager
 	Factory           Factory
@@ -41,19 +38,19 @@ type ClusterConfig struct {
 	Logger            *slog.Logger
 }
 
-type clusterFrontend struct {
-	backend      *clusterBackend
+type distributedManager struct {
+	workHandler  *workQueueHandler
 	workQueue    workqueue.Queue
 	queueManager eventqueue.Manager
 	taskStore    TaskStore
 }
 
-var _ Manager = (*clusterFrontend)(nil)
+var _ Manager = (*distributedManager)(nil)
 
-// NewClusterFrontend creates a new [Manager] instance which uses WorkQueue for work distribution across A2A cluster.
-func NewClusterFrontend(cfg *ClusterConfig) Manager {
-	frontend := &clusterFrontend{
-		backend:      newClusterBackend(cfg),
+// NewDistributedManager creates a new [Manager] instance which uses WorkQueue for work distribution across A2A cluster.
+func NewDistributedManager(cfg *DistributedManagerConfig) Manager {
+	frontend := &distributedManager{
+		workHandler:  newWorkQueueHandler(cfg),
 		queueManager: cfg.QueueManager,
 		workQueue:    cfg.WorkQueue,
 		taskStore:    cfg.TaskStore,
@@ -61,7 +58,7 @@ func NewClusterFrontend(cfg *ClusterConfig) Manager {
 	return frontend
 }
 
-func (m *clusterFrontend) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
+func (m *distributedManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
 	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get event queue: %w", err)
@@ -69,7 +66,7 @@ func (m *clusterFrontend) Resubscribe(ctx context.Context, taskID a2a.TaskID) (S
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
-func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
+func (m *distributedManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
 	if params == nil || params.Message == nil {
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
@@ -120,7 +117,7 @@ func (m *clusterFrontend) Execute(ctx context.Context, params *a2a.MessageSendPa
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
-func (m *clusterFrontend) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+func (m *distributedManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	task, _, err := m.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load a task: %w", err)

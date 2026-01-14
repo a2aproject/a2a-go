@@ -128,7 +128,7 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			nextExecutorChan := make(chan *testExecutor, 1)
-			manager := NewLocalManager(Config{
+			manager := NewLocalManager(LocalManagerConfig{
 				ConcurrencyConfig: tc.config,
 				Factory: &testFactory{
 					CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {

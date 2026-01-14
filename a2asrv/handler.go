@@ -142,7 +142,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		if h.taskStore == nil || h.queueManager == nil {
 			panic("TaskStore and QueueManager must be provided for cluster mode")
 		}
-		h.execManager = taskexec.NewClusterFrontend(&taskexec.ClusterConfig{
+		h.execManager = taskexec.NewDistributedManager(&taskexec.DistributedManagerConfig{
 			WorkQueue:         h.workQueue,
 			TaskStore:         h.taskStore,
 			QueueManager:      h.queueManager,
@@ -157,7 +157,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			h.taskStore = taskstore.NewMem()
 			execFactory.taskStore = h.taskStore
 		}
-		h.execManager = taskexec.NewLocalManager(taskexec.Config{
+		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
 			Factory:           execFactory,

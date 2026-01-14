@@ -69,7 +69,7 @@ func newStaticFactory(executor *testExecutor, canceler *testCanceler) Factory {
 }
 
 func newStaticExecutorManager(executor *testExecutor, canceler *testCanceler) Manager {
-	return NewLocalManager(Config{
+	return NewLocalManager(LocalManagerConfig{
 		Factory: newStaticFactory(executor, canceler),
 	})
 }
@@ -275,13 +275,13 @@ func (q *testWorkQueue) Close() error {
 }
 
 func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore TaskStore) Manager {
-	config := &ClusterConfig{
+	config := &DistributedManagerConfig{
 		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}, nil),
 		QueueManager: eventqueue.NewInMemoryManager(),
 		Factory:      newStaticFactory(executor, canceler),
 		TaskStore:    taskStore,
 	}
-	return NewClusterFrontend(config)
+	return NewDistributedManager(config)
 }
 
 type clusterMode bool
@@ -634,7 +634,7 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 	canceler2.cancelErr = errors.New("test error") // this should never be returned
 
 	var callCount atomic.Int32
-	manager := NewLocalManager(Config{
+	manager := NewLocalManager(LocalManagerConfig{
 		Factory: &testFactory{
 			CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
 				if callCount.CompareAndSwap(0, 1) {
@@ -757,7 +757,7 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	}()
 
 	callCount := 0
-	manager := NewLocalManager(Config{
+	manager := NewLocalManager(LocalManagerConfig{
 		Factory: &testFactory{
 			CreateCancelerFn: func(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error) {
 				callCount++

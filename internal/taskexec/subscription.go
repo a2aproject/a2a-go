@@ -26,13 +26,6 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// Subscription encapsulates the logic of subscribing to execution events.
-type Subscription interface {
-	TaskID() a2a.TaskID
-
-	Events(ctx context.Context) iter.Seq2[a2a.Event, error]
-}
-
 type localSubscription struct {
 	execution *localExecution
 	queue     eventqueue.Queue

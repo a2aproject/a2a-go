@@ -25,14 +25,14 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-type clusterBackend struct {
+type workQueueHandler struct {
 	queueManager eventqueue.Manager
 	taskStore    TaskStore
 	factory      Factory
 }
 
-func newClusterBackend(cfg *ClusterConfig) *clusterBackend {
-	backend := &clusterBackend{
+func newWorkQueueHandler(cfg *DistributedManagerConfig) *workQueueHandler {
+	backend := &workQueueHandler{
 		queueManager: cfg.QueueManager,
 		taskStore:    cfg.TaskStore,
 		factory:      cfg.Factory,
@@ -41,7 +41,7 @@ func newClusterBackend(cfg *ClusterConfig) *clusterBackend {
 	return backend
 }
 
-func (b *clusterBackend) handle(ctx context.Context, payload *workqueue.Payload) (a2a.SendMessageResult, error) {
+func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payload) (a2a.SendMessageResult, error) {
 	pipe := eventpipe.NewLocal()
 	defer pipe.Close()
 

@@ -16,7 +16,7 @@
 // The manager enforces concurrency control on task level and guarantees that at any given moment
 // there's only one goroutine which is mutating the state of an [a2a.Task].
 //
-// For every [execution] the [LocalManager] starts two goroutines in an [errgroup.Group]:
+// For every [execution] the [localManager] starts two goroutines in an [errgroup.Group]:
 //   - One calls [Executor] and starts producing events writing them to an [eventqueue.Queue].
 //   - The second one reads events in a loop and passes them through [Processor] responsible for deciding when to stop.
 //
