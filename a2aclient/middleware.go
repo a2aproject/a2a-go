@@ -88,6 +88,8 @@ func withCallMeta(ctx context.Context, meta CallMeta) context.Context {
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughInterceptor struct{}
 
+var _ CallInterceptor = (*PassthroughInterceptor)(nil)
+
 func (PassthroughInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
 	return ctx, nil
 }

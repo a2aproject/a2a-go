@@ -53,10 +53,8 @@ func NewManager(saver Saver, task *VersionedTask) *Manager {
 func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*VersionedTask, error) {
 	task := *mgr.lastSaved.Task // copy to update task status
 
-	task.Status = a2a.TaskStatus{
-		State:   a2a.TaskStateFailed,
-		Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: cause.Error()}),
-	}
+	// do not store cause.Error() as part of status to not disclose the cause to clients
+	task.Status = a2a.TaskStatus{State: a2a.TaskStateFailed}
 
 	if _, err := mgr.saveTask(ctx, &task, event); err != nil {
 		return nil, fmt.Errorf("failed to store failed task state: %w: %w", err, cause)

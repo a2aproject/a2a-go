@@ -231,7 +231,6 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 				wantErr: a2a.ErrInvalidParams,
 			},
 			{
-
 				name:    "fails on non-existent task reference",
 				input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 				wantErr: a2a.ErrTaskNotFound,
@@ -721,6 +720,67 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 	if !strings.Contains(err.Error(), wantErr) {
 		t.Fatalf("OnSendMessage() err = %v, want to contain %q", err, wantErr)
 	}
+}
+
+func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
+	ctx := t.Context()
+
+	gotPrevVersions := make([]a2a.TaskVersion, 0)
+	store := testutil.NewTestTaskStore()
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+		gotPrevVersions = append(gotPrevVersions, version)
+		return store.Mem.Save(ctx, task, event, version)
+	}
+
+	statusUpdates := [][]a2a.TaskState{
+		{a2a.TaskStateSubmitted, a2a.TaskStateInputRequired}, // first run
+		{a2a.TaskStateWorking, a2a.TaskStateCompleted},       //second run
+	}
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			events := statusUpdates[0]
+			for i, state := range events {
+				event := a2a.NewStatusUpdateEvent(reqCtx, state, nil)
+				event.Final = i == len(events)-1
+				if err := queue.Write(ctx, event); err != nil {
+					return err
+				}
+			}
+			statusUpdates = statusUpdates[1:]
+			return nil
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	wantPrevVersions := [][]a2a.TaskVersion{
+		{a2a.TaskVersionMissing, a2a.TaskVersion(1)},                 // Save newly created task and update to input-required
+		{a2a.TaskVersion(2), a2a.TaskVersion(3), a2a.TaskVersion(4)}, // Update task history, move to working, move to completed
+	}
+
+	var existingTask *a2a.Task
+	for _, wantPrev := range wantPrevVersions {
+		var msg *a2a.Message
+		if existingTask == nil {
+			msg = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"})
+		} else {
+			msg = a2a.NewMessageForTask(a2a.MessageRoleUser, existingTask, a2a.TextPart{Text: "Hi!"})
+		}
+		res, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+		if err != nil {
+			t.Fatalf("OnSendMessage() error = %v", err)
+		}
+		task, ok := res.(*a2a.Task)
+		if !ok {
+			t.Fatalf("OnSendMessage() returned %T, want *a2a.Task", res)
+		}
+		existingTask = task
+
+		if diff := cmp.Diff(wantPrev, gotPrevVersions); diff != "" {
+			t.Fatalf("Save() was called with %v, want %v", gotPrevVersions, wantPrev)
+		}
+		gotPrevVersions = make([]a2a.TaskVersion, 0)
+	}
+
 }
 
 func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
@@ -1463,6 +1523,8 @@ type mockAgentExecutor struct {
 	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 	CancelFunc  func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
+
+var _ AgentExecutor = (*mockAgentExecutor)(nil)
 
 func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
 	m.executeCalled = true

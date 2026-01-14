@@ -84,14 +84,14 @@ func TestInMemoryQueue_WriteRead(t *testing.T) {
 	tid := a2a.NewTaskID()
 	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 
-	want := &eventVersionPair{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersionInt(1)}
+	want := &eventVersionPair{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersion(1)}
 	mustWrite(t, writeQueue, want)
 	got, gotVersion := mustRead(t, readQueue)
 	if !reflect.DeepEqual(got, want.event) {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
-	if gotVersion != a2a.TaskVersionInt(1) {
-		t.Errorf("Read() got version = %v, want %v", gotVersion, a2a.TaskVersionInt(1))
+	if gotVersion != a2a.TaskVersion(1) {
+		t.Errorf("Read() got version = %v, want %v", gotVersion, a2a.TaskVersion(1))
 	}
 }
 
@@ -102,8 +102,8 @@ func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 
 	writeQueue, readQueue := mustCreate(t, qm, tid), mustCreate(t, qm, tid)
 	want := []*eventVersionPair{
-		{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersionInt(1)},
-		{event: &a2a.Message{ID: "test-event2"}, version: a2a.TaskVersionInt(2)},
+		{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersion(1)},
+		{event: &a2a.Message{ID: "test-event2"}, version: a2a.TaskVersion(2)},
 	}
 
 	mustWrite(t, writeQueue, want...)

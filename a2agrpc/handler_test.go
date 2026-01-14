@@ -138,6 +138,8 @@ type mockRequestHandler struct {
 	OnResubscribeToTaskFunc func(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
 }
 
+var _ a2asrv.RequestHandler = (*mockRequestHandler)(nil)
+
 func (m *mockRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	m.capturedGetTaskQuery = query
 	if task, ok := m.tasks[query.ID]; ok {

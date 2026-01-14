@@ -36,13 +36,7 @@ var (
 	ErrCancelationInProgress = errors.New("task cancelation is in progress")
 )
 
-type Manager interface {
-	GetExecution(ctx context.Context, taskID a2a.TaskID) (Execution, bool)
-	Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error)
-	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
-}
-
-// LocalManager provides an API for executing and canceling tasks in a way that ensures
+// localManager provides an API for executing and canceling tasks in a way that ensures
 // concurrent calls don't interfere with one another in unexpected ways.
 // The following guarantees are provided:
 //   - If a Task is being canceled, a concurrent Execution can't be started.
@@ -51,7 +45,8 @@ type Manager interface {
 //   - If a Task is being executed, a concurrent execution will be rejected.
 //
 // Both cancelations and executions are started in detached context and run until completion.
-type LocalManager struct {
+// The type is suitable only for single-process execution management.
+type localManager struct {
 	queueManager eventqueue.Manager
 	factory      Factory
 
@@ -61,18 +56,32 @@ type LocalManager struct {
 	limiter      *concurrencyLimiter
 }
 
-var _ Manager = (*LocalManager)(nil)
+type cancelation struct {
+	params *a2a.TaskIDParams
+	result *promise
+}
 
-// Config contains Manager configuration parameters.
-type Config struct {
+type localExecution struct {
+	tid    a2a.TaskID
+	params *a2a.MessageSendParams
+	result *promise
+
+	pipe         *eventpipe.Local
+	queueManager eventqueue.Manager
+}
+
+var _ Manager = (*localManager)(nil)
+
+// LocalManagerConfig contains in-process execution Manager configuration parameters.
+type LocalManagerConfig struct {
 	QueueManager      eventqueue.Manager
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Factory           Factory
 }
 
-// NewLocalManager is a [LocalManager] constructor function.
-func NewLocalManager(cfg Config) Manager {
-	manager := &LocalManager{
+// NewLocalManager is a [localManager] constructor function.
+func NewLocalManager(cfg LocalManagerConfig) Manager {
+	manager := &localManager{
 		queueManager: cfg.QueueManager,
 		factory:      cfg.Factory,
 		limiter:      newConcurrencyLimiter(cfg.ConcurrencyConfig),
@@ -85,19 +94,38 @@ func NewLocalManager(cfg Config) Manager {
 	return manager
 }
 
-// GetExecution is used to get a reference to an active [Execution]. The method can be used
-// to resubscribe to execution events or wait for its completion.
-func (m *LocalManager) GetExecution(_ context.Context, taskID a2a.TaskID) (Execution, bool) {
+func newCancelation(params *a2a.TaskIDParams) *cancelation {
+	return &cancelation{params: params, result: newPromise()}
+}
+
+func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
+	return &localExecution{
+		tid:          tid,
+		params:       params,
+		queueManager: qm,
+		pipe:         eventpipe.NewLocal(),
+		result:       newPromise(),
+	}
+}
+
+func (m *localManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	execution, ok := m.executions[taskID]
-	return execution, ok
+	if !ok {
+		return nil, fmt.Errorf("no active execution")
+	}
+	queue, ok := m.queueManager.Get(ctx, taskID)
+	if !ok {
+		return nil, fmt.Errorf("no queue for active execution")
+	}
+	return newLocalSubscription(execution, queue), nil
 }
 
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Execution, Subscription, error) {
+func (m *localManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
 	var tid a2a.TaskID
 	if params.Message == nil || len(params.Message.TaskID) == 0 {
 		tid = a2a.NewTaskID()
@@ -107,29 +135,29 @@ func (m *LocalManager) Execute(ctx context.Context, params *a2a.MessageSendParam
 
 	execution, err := m.createExecution(ctx, tid, params)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	eventBroadcastQueue, err := m.queueManager.GetOrCreate(ctx, tid)
 	if err != nil {
 		m.cleanupExecution(ctx, execution)
-		return nil, nil, fmt.Errorf("failed to create a queue: %w", err)
+		return nil, fmt.Errorf("failed to create a queue: %w", err)
 	}
 
 	defaultSubReadQueue, ok := m.queueManager.Get(ctx, tid)
 	if !ok {
 		m.cleanupExecution(ctx, execution)
-		return nil, nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
+		return nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
 	}
 
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go m.handleExecution(detachedCtx, execution, eventBroadcastQueue)
 
-	return execution, newLocalSubscription(execution, defaultSubReadQueue), nil
+	return newLocalSubscription(execution, defaultSubReadQueue), nil
 }
 
-func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
+func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -155,10 +183,10 @@ func (m *LocalManager) createExecution(ctx context.Context, tid a2a.TaskID, para
 
 // Cancel uses [Canceler] to signal task cancelation and waits for it to take effect.
 // If there's a cancelation in progress we wait for its result instead of starting a new one.
-// If there's an active [Execution] Canceler will be writing to the same result queue. Consumers
+// If there's an active [execution] Canceler will be writing to the same result queue. Consumers
 // subscribed to the Execution will receive a task cancelation event and handle it accordingly.
 // If there's no active Execution Canceler will be processing task events.
-func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+func (m *localManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	m.mu.Lock()
 	tid := params.ID
 	execution := m.executions[tid]
@@ -183,7 +211,7 @@ func (m *LocalManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a
 	return convertToCancelationResult(ctx, result, err)
 }
 
-func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExecution) {
+func (m *localManager) cleanupExecution(ctx context.Context, execution *localExecution) {
 	m.destroyQueue(ctx, execution.tid)
 	execution.pipe.Close()
 
@@ -198,7 +226,7 @@ func (m *LocalManager) cleanupExecution(ctx context.Context, execution *localExe
 // Execution is started in one of them. Another is processing events until a result or error
 // is returned.
 // The returned value is set as Execution result.
-func (m *LocalManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
+func (m *localManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
 	defer m.cleanupExecution(ctx, execution)
 
 	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
@@ -232,7 +260,7 @@ func (m *LocalManager) handleExecution(ctx context.Context, execution *localExec
 // Cancelation is started in on of them. Another is processing events until a result or error
 // is returned.
 // The returned value is set as Cancelation result.
-func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
+func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.params.ID)
@@ -265,7 +293,7 @@ func (m *LocalManager) handleCancel(ctx context.Context, cancel *cancelation) {
 
 // Sends a cancelation request on the queue which is being used by an active execution.
 // Then waits for the execution to complete and resolves cancelation to the same result.
-func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
+func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
 		if r := recover(); r != nil {
 			cancel.result.setError(fmt.Errorf("task cancelation panic: %v", r))
@@ -296,7 +324,7 @@ func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 		return
 	}
 
-	result, err := run.Result(ctx)
+	result, err := run.result.wait(ctx)
 	if err != nil {
 		cancel.result.setError(err)
 		return
@@ -305,7 +333,7 @@ func (m *LocalManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	cancel.result.setValue(result)
 }
 
-func (m *LocalManager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
+func (m *localManager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
 	// TODO(yarolegovich): consider not destroying queues until a Task reaches terminal state
 	if err := m.queueManager.Destroy(ctx, tid); err != nil {
 		log.Error(ctx, "failed to destroy a queue", err)

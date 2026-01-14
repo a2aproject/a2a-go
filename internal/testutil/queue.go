@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
@@ -29,6 +30,8 @@ type TestEventQueue struct {
 	WriteFunc func(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error
 	CloseFunc func() error
 }
+
+var _ eventqueue.Queue = (*TestEventQueue)(nil)
 
 func (m *TestEventQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
 	if m.ReadFunc != nil {

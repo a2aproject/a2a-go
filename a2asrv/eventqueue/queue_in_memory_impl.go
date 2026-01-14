@@ -126,6 +126,8 @@ type inMemoryQueue struct {
 	closed     bool
 }
 
+var _ Queue = (*inMemoryQueue)(nil)
+
 func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
 	return q.WriteVersioned(ctx, event, a2a.TaskVersionMissing)
 }
@@ -160,10 +162,10 @@ func (q *inMemoryQueue) WriteVersioned(ctx context.Context, event a2a.Event, ver
 func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
 	select {
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return nil, a2a.TaskVersionMissing, ctx.Err()
 	case message, ok := <-q.eventsChan: // allow to drain
 		if !ok {
-			return nil, nil, ErrQueueClosed
+			return nil, a2a.TaskVersionMissing, ErrQueueClosed
 		}
 		return message.event, message.version, nil
 	}

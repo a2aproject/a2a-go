@@ -73,6 +73,8 @@ type pipeWriter struct {
 	closeChan chan struct{}
 }
 
+var _ eventqueue.Queue = (*pipeWriter)(nil)
+
 func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
 	if w.closed.Load() {
 		return eventqueue.ErrQueueClosed
@@ -93,7 +95,7 @@ func (w *pipeWriter) WriteVersioned(ctx context.Context, event a2a.Event, versio
 }
 
 func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
-	return nil, nil, fmt.Errorf("only queue write is allowed")
+	return nil, a2a.TaskVersionMissing, fmt.Errorf("only queue write is allowed")
 }
 
 func (w *pipeWriter) Close() error {

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -71,4 +72,54 @@ func TestSSE_Success(t *testing.T) {
 		t.Fatalf("ParseDataStream() emitted %d events, want %d", eventCount, wantEvents)
 	}
 
+}
+
+func TestSSE_LargePayload(t *testing.T) {
+	// Create a payload larger than the default 64KB bufio.Scanner buffer
+	// to verify that the increased buffer size works correctly.
+	const payloadSize = 100 * 1024 // 100KB
+	largePayload := strings.Repeat("x", payloadSize)
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		sse, err := NewWriter(rw)
+		if err != nil {
+			t.Fatalf("NewWriter() error = %v", err)
+		}
+		sse.WriteHeaders()
+		if err := sse.WriteData(ctx, []byte(largePayload)); err != nil {
+			t.Fatalf("WriteData() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Accept", ContentEventStream)
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	eventCount := 0
+	for data, err := range ParseDataStream(resp.Body) {
+		if err != nil {
+			t.Fatalf("ParseDataStream() error = %v", err)
+		}
+		if len(data) != payloadSize {
+			t.Fatalf("ParseDataStream() payload size = %d, want %d", len(data), payloadSize)
+		}
+		if string(data) != largePayload {
+			t.Fatalf("ParseDataStream() payload content mismatch")
+		}
+		eventCount++
+	}
+	if eventCount != 1 {
+		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
 }

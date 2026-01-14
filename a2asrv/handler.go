@@ -79,6 +79,8 @@ type defaultRequestHandler struct {
 	authenticatedCardProducer AgentCardProducer
 }
 
+var _ RequestHandler = (*defaultRequestHandler)(nil)
+
 // RequestHandlerOption can be used to customize the default [RequestHandler] implementation behavior.
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
@@ -142,7 +144,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		if h.taskStore == nil || h.queueManager == nil {
 			panic("TaskStore and QueueManager must be provided for cluster mode")
 		}
-		h.execManager = taskexec.NewClusterFrontend(&taskexec.ClusterConfig{
+		h.execManager = taskexec.NewDistributedManager(&taskexec.DistributedManagerConfig{
 			WorkQueue:         h.workQueue,
 			TaskStore:         h.taskStore,
 			QueueManager:      h.queueManager,
@@ -157,7 +159,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			h.taskStore = taskstore.NewMem()
 			execFactory.taskStore = h.taskStore
 		}
-		h.execManager = taskexec.NewLocalManager(taskexec.Config{
+		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
 			Factory:           execFactory,
@@ -204,11 +206,12 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	execution, subscription, err := h.handleSendMessage(ctx, params)
+	subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
+	var lastEvent a2a.Event
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
@@ -221,14 +224,23 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 			}
 			return task, nil
 		}
+		lastEvent = event
 	}
 
-	return execution.Result(ctx)
+	if res, ok := lastEvent.(a2a.SendMessageResult); ok {
+		return res, nil
+	}
+
+	task, _, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
+	}
+	return task, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		_, subscription, err := h.handleSendMessage(ctx, params)
+		subscription, err := h.handleSendMessage(ctx, params)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -249,13 +261,13 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			return
 		}
 
-		exec, ok := h.execManager.GetExecution(ctx, params.ID)
-		if !ok {
-			yield(nil, a2a.ErrTaskNotFound)
+		subscription, err := h.execManager.Resubscribe(ctx, params.ID)
+		if err != nil {
+			yield(nil, fmt.Errorf("%w: %w", a2a.ErrTaskNotFound, err))
 			return
 		}
 
-		for ev, err := range exec.Events(ctx) {
+		for ev, err := range subscription.Events(ctx) {
 			if !yield(ev, err) {
 				return
 			}
@@ -263,9 +275,9 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Execution, taskexec.Subscription, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 	return h.execManager.Execute(ctx, params)
 }
