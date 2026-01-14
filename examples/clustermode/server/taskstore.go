@@ -37,34 +37,29 @@ func newDBTaskStore(db *sql.DB, version a2a.ProtocolVersion) *dbTaskStore {
 
 var _ a2asrv.TaskStore = (*dbTaskStore)(nil)
 
-func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return a2a.TaskVersionMissing, err
 	}
 	defer rollbackTx(ctx, tx)
 
 	newVersion := time.Now().UnixNano()
 	taskJSON, err := json.Marshal(task)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal task: %w", err)
+		return a2a.TaskVersionMissing, fmt.Errorf("failed to marshal task: %w", err)
 	}
 
-	if prev == nil || prev == a2a.TaskVersionMissing {
+	if prevVersion == a2a.TaskVersionMissing {
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO task (id, state, last_updated, task_json, protocol_version)
 			VALUES (?, ?, ?, ?, ?)
 		`, task.ID, task.Status.State, newVersion, string(taskJSON), s.version)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to insert task: %w", err)
+			return a2a.TaskVersionMissing, fmt.Errorf("failed to insert task: %w", err)
 		}
 	} else {
-		prevVersion, ok := prev.(a2a.TaskVersionInt)
-		if !ok {
-			return nil, fmt.Errorf("invalid previous version type: %T", prev)
-		}
-
 		res, err := tx.ExecContext(ctx, `
 			UPDATE task SET
 				state = ?,
@@ -74,21 +69,21 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 		`, task.Status.State, newVersion, string(taskJSON), task.ID, int64(prevVersion))
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to update task: %w", err)
+			return a2a.TaskVersionMissing, fmt.Errorf("failed to update task: %w", err)
 		}
 
 		rows, err := res.RowsAffected()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get rows affected: %w", err)
+			return a2a.TaskVersionMissing, fmt.Errorf("failed to get rows affected: %w", err)
 		}
 		if rows == 0 {
-			return nil, fmt.Errorf("optimistic concurrency failure: task updated by another transaction")
+			return a2a.TaskVersionMissing, fmt.Errorf("optimistic concurrency failure: task updated by another transaction")
 		}
 	}
 
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal event: %w", err)
+		return a2a.TaskVersionMissing, fmt.Errorf("failed to marshal event: %w", err)
 	}
 
 	eventID, eventType := uuid.Must(uuid.NewV7()).String(), getEventType(event)
@@ -97,14 +92,14 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 		VALUES (?, ?, ?, ?, ?)
 	`, eventID, task.ID, eventType, newVersion, string(eventJSON))
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert event: %w", err)
+		return a2a.TaskVersionMissing, fmt.Errorf("failed to insert event: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return a2a.TaskVersionMissing, err
 	}
 
-	return a2a.TaskVersionInt(newVersion), nil
+	return a2a.TaskVersion(newVersion), nil
 }
 
 func (s *dbTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
@@ -112,18 +107,22 @@ func (s *dbTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2
 	var version int64
 	err := s.db.QueryRowContext(ctx, "SELECT task_json, last_updated FROM task WHERE id = ?", taskID).Scan(&taskJSON, &version)
 	if err == sql.ErrNoRows {
-		return nil, nil, a2a.ErrTaskNotFound
+		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, a2a.TaskVersionMissing, err
 	}
 
 	var task a2a.Task
 	if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal task: %w", err)
+		return nil, a2a.TaskVersionMissing, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
-	return &task, a2a.TaskVersionInt(version), nil
+	return &task, a2a.TaskVersion(version), nil
+}
+
+func (s *dbTaskStore) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func getEventType(e a2a.Event) string {

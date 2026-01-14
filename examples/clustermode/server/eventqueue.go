@@ -138,7 +138,7 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 					select {
 					case queue.eventsCh <- &versionedEvent{
 						event:   event,
-						version: a2a.TaskVersionInt(version),
+						version: a2a.TaskVersion(version),
 					}:
 					case <-queue.closeSignal:
 						closeSQLRows(ctx, rows)
@@ -156,16 +156,16 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 func (q *dbEventQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
 	select {
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return nil, a2a.TaskVersionMissing, ctx.Err()
 
 	case res, ok := <-q.eventsCh:
 		if !ok {
-			return nil, nil, eventqueue.ErrQueueClosed
+			return nil, a2a.TaskVersionMissing, eventqueue.ErrQueueClosed
 		}
 		return res.event, res.version, nil
 
 	case <-q.closed:
-		return nil, nil, eventqueue.ErrQueueClosed
+		return nil, a2a.TaskVersionMissing, eventqueue.ErrQueueClosed
 	}
 }
 

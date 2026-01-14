@@ -55,14 +55,6 @@ type Factory interface {
 	CreateCanceler(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error)
 }
 
-// ProcessorResult is returned by processor after an event was handled successfuly.
-type ProcessorResult struct {
-	// ExecutionResult becomes the result of the execution if a non-nil value is returned.
-	ExecutionResult a2a.SendMessageResult
-	// TaskVersion is the version of the task after the event was processed.
-	TaskVersion a2a.TaskVersion
-}
-
 // Processor implementation handles events produced during AgentExecution.
 type Processor interface {
 	// Process is called for each event produced by the started Execution. Called in a separate goroutine.
