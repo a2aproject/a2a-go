@@ -21,10 +21,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-var (
-	// ErrQueueClosed indicates that the event queue has been closed.
-	ErrQueueClosed = errors.New("queue is closed")
-)
+// ErrQueueClosed indicates that the event queue has been closed.
+var ErrQueueClosed = errors.New("queue is closed")
 
 // Reader defines the interface for reading events from a queue.
 // A2A server stack reads events written by [a2asrv.AgentExecutor].

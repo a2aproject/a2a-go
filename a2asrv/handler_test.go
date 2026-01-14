@@ -231,7 +231,6 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 				wantErr: a2a.ErrInvalidParams,
 			},
 			{
-
 				name:    "fails on non-existent task reference",
 				input:   &a2a.MessageSendParams{Message: &a2a.Message{TaskID: "non-existent", ID: "test-message"}},
 				wantErr: a2a.ErrTaskNotFound,
@@ -1524,6 +1523,8 @@ type mockAgentExecutor struct {
 	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 	CancelFunc  func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
+
+var _ AgentExecutor = (*mockAgentExecutor)(nil)
 
 func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
 	m.executeCalled = true

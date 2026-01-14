@@ -58,6 +58,8 @@ type AuthInterceptor struct {
 	Service CredentialsService
 }
 
+var _ CallInterceptor = (*AuthInterceptor)(nil)
+
 func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
 	if req.Card == nil || req.Card.Security == nil || req.Card.SecuritySchemes == nil {
 		return ctx, nil

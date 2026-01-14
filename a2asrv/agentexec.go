@@ -245,6 +245,8 @@ type executor struct {
 	interceptors []RequestContextInterceptor
 }
 
+var _ taskexec.Executor = (*executor)(nil)
+
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	var err error
 	for _, interceptor := range e.interceptors {
@@ -262,6 +264,8 @@ type canceler struct {
 	reqCtx       *RequestContext
 	interceptors []RequestContextInterceptor
 }
+
+var _ taskexec.Canceler = (*canceler)(nil)
 
 func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 	if c.task.Status.State == a2a.TaskStateCanceled {
@@ -290,6 +294,8 @@ type processor struct {
 
 	processedCount int
 }
+
+var _ taskexec.Processor = (*processor)(nil)
 
 func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *RequestContext) *processor {
 	return &processor{

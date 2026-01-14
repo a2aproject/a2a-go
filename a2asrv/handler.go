@@ -79,6 +79,8 @@ type defaultRequestHandler struct {
 	authenticatedCardProducer AgentCardProducer
 }
 
+var _ RequestHandler = (*defaultRequestHandler)(nil)
+
 // RequestHandlerOption can be used to customize the default [RequestHandler] implementation behavior.
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
