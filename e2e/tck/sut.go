@@ -39,20 +39,15 @@ func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, r
 	if callCtx.Method() == "OnSendMessage" {
 		sendParams := req.Payload.(*a2a.MessageSendParams)
 		if sendParams.Config == nil {
-			blocking := false
-			sendParams.Config = &a2a.MessageSendConfig{
-				Blocking: &blocking,
-			}
-			return ctx, nil
-		} else if sendParams.Config.Blocking == nil {
+			sendParams.Config = &a2a.MessageSendConfig{}
+		}
+		if sendParams.Config.Blocking == nil {
 			blocking := false
 			sendParams.Config.Blocking = &blocking
-			return ctx, nil
 		}
 	}
 	return ctx, nil
 }
-
 
 func main() {
 	mode := flag.String("mode", "http", "mode to run in: http(JSON-RPC/REST) or grpc")
