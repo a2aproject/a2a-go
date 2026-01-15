@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -29,6 +30,29 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
+
+type intercepter struct {
+	a2asrv.PassthroughCallInterceptor
+}
+
+func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+	if callCtx.Method() == "OnSendMessage" {
+		sendParams := req.Payload.(*a2a.MessageSendParams)
+		if sendParams.Config == nil {
+			blocking := false
+			sendParams.Config = &a2a.MessageSendConfig{
+				Blocking: &blocking,
+			}
+			return ctx, nil
+		} else if sendParams.Config.Blocking == nil {
+			blocking := false
+			sendParams.Config.Blocking = &blocking
+			return ctx, nil
+		}
+	}
+	return ctx, nil
+}
+
 
 func main() {
 	mode := flag.String("mode", "http", "mode to run in: http(JSON-RPC/REST) or grpc")
@@ -71,7 +95,7 @@ func main() {
 		},
 	}
 
-	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithExtendedAgentCard(agentCard))
+	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithExtendedAgentCard(agentCard), a2asrv.WithCallInterceptor(&intercepter{}))
 
 	var group errgroup.Group
 	group.Go(func() error {
