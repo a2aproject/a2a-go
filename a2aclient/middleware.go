@@ -40,7 +40,9 @@ type Request struct {
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
-	// Payload is the request payload. It is nil if the method does not take any parameters. Otherwise, it is one of a2a package core types otherwise.
+	// Payload is the request payload. It is nil if the method does not take any parameters.
+	// Otherwise, it is one of a2a package core types otherwise.
+	// Interceptors can modify fields of the payload or replace it entirely with a new object of the same type.
 	Payload any
 }
 
@@ -57,7 +59,9 @@ type Response struct {
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
-	// Payload is the response. It is nil if method doesn't return anything or Err was returned. Otherwise, it is one of a2a package core types otherwise.
+	// Payload is the response. It is nil if method doesn't return anything or Err was returned.
+	// Otherwise, it is one of a2a package core types otherwise.
+	// Interceptors can modify fields of the payload or replace it entirely with a new object of the same type.
 	Payload any
 }
 
@@ -67,10 +71,12 @@ type Response struct {
 //   - After will be executed in the reverse order sequentially.
 type CallInterceptor interface {
 	// Before allows to observe, modify or reject a Request.
+	// Changes to req.Payload will be used for the subsequent interceptors and the transport call.
 	// A new context.Context can be returned to pass information to After.
 	Before(ctx context.Context, req *Request) (context.Context, error)
 
 	// After allows to observe, modify or reject a Response.
+	// Changes to resp.Payload will be used for the subsequent interceptors and the method result.
 	After(ctx context.Context, resp *Response) error
 }
 
