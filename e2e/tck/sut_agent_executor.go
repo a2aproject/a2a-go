@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -34,12 +35,13 @@ func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestCo
 			return fmt.Errorf("failed to write state submitted: %w", err)
 		}
 	}
-
+	// Short delay to allow tests to see current state
+	time.Sleep(1 * time.Second)
 	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateWorking, nil)
 	if err := q.Write(ctx, event); err != nil {
 		return fmt.Errorf("failed to write state working: %w", err)
 	}
-
+	time.Sleep(1 * time.Second)
 	event = a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
 	event.Final = true
 	if err := q.Write(ctx, event); err != nil {
