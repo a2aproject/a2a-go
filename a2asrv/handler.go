@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
+	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
@@ -64,7 +65,7 @@ type RequestHandler interface {
 // Implements a2asrv.RequestHandler.
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
-	execManager   *taskexec.LocalManager
+	execManager   taskexec.Manager
 
 	pushSender        PushSender
 	queueManager      eventqueue.Manager
@@ -72,6 +73,7 @@ type defaultRequestHandler struct {
 
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
+	workQueue              workqueue.Queue
 	reqContextInterceptors []RequestContextInterceptor
 
 	authenticatedCardProducer AgentCardProducer
@@ -106,31 +108,63 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 	}
 }
 
+// ClusterConfig groups the necessary dependencies for A2A cluster mode operation.
+type ClusterConfig struct {
+	QueueManager eventqueue.Manager
+	WorkQueue    workqueue.Queue
+	TaskStore    TaskStore
+}
+
+// WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
+func WithClusterMode(config ClusterConfig) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.workQueue = config.WorkQueue
+		h.taskStore = config.TaskStore
+		h.queueManager = config.QueueManager
+	}
+}
+
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
-	h := &defaultRequestHandler{
-		agentExecutor: executor,
-		queueManager:  eventqueue.NewInMemoryManager(),
-		taskStore:     taskstore.NewMem(),
-		// push notifications are not supported by default
-	}
+	h := &defaultRequestHandler{agentExecutor: executor}
 	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
 	}
 
-	h.execManager = taskexec.NewLocalManager(taskexec.Config{
-		QueueManager:      h.queueManager,
-		ConcurrencyConfig: h.concurrencyConfig,
-		Factory: &factory{
-			agent:           h.agentExecutor,
-			taskStore:       h.taskStore,
-			pushSender:      h.pushSender,
-			pushConfigStore: h.pushConfigStore,
-			interceptors:    h.reqContextInterceptors,
-		},
-	})
+	execFactory := &factory{
+		agent:           h.agentExecutor,
+		taskStore:       h.taskStore,
+		pushSender:      h.pushSender,
+		pushConfigStore: h.pushConfigStore,
+		interceptors:    h.reqContextInterceptors,
+	}
+	if h.workQueue != nil {
+		if h.taskStore == nil || h.queueManager == nil {
+			panic("TaskStore and QueueManager must be provided for cluster mode")
+		}
+		h.execManager = taskexec.NewDistributedManager(&taskexec.DistributedManagerConfig{
+			WorkQueue:         h.workQueue,
+			TaskStore:         h.taskStore,
+			QueueManager:      h.queueManager,
+			ConcurrencyConfig: h.concurrencyConfig,
+			Factory:           execFactory,
+		})
+	} else {
+		if h.queueManager == nil {
+			h.queueManager = eventqueue.NewInMemoryManager()
+		}
+		if h.taskStore == nil {
+			h.taskStore = taskstore.NewMem()
+			execFactory.taskStore = h.taskStore
+		}
+		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
+			QueueManager:      h.queueManager,
+			ConcurrencyConfig: h.concurrencyConfig,
+			Factory:           execFactory,
+		})
+	}
 
 	return ih
 }
@@ -172,11 +206,12 @@ func (h *defaultRequestHandler) OnCancelTask(ctx context.Context, params *a2a.Ta
 }
 
 func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	execution, subscription, err := h.handleSendMessage(ctx, params)
+	subscription, err := h.handleSendMessage(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
+	var lastEvent a2a.Event
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			return nil, err
@@ -189,14 +224,23 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 			}
 			return task, nil
 		}
+		lastEvent = event
 	}
 
-	return execution.Result(ctx)
+	if res, ok := lastEvent.(a2a.SendMessageResult); ok {
+		return res, nil
+	}
+
+	task, _, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
+	}
+	return task, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		_, subscription, err := h.handleSendMessage(ctx, params)
+		subscription, err := h.handleSendMessage(ctx, params)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -217,13 +261,13 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 			return
 		}
 
-		exec, ok := h.execManager.GetExecution(params.ID)
-		if !ok {
-			yield(nil, a2a.ErrTaskNotFound)
+		subscription, err := h.execManager.Resubscribe(ctx, params.ID)
+		if err != nil {
+			yield(nil, fmt.Errorf("%w: %w", a2a.ErrTaskNotFound, err))
 			return
 		}
 
-		for ev, err := range exec.Events(ctx) {
+		for ev, err := range subscription.Events(ctx) {
 			if !yield(ev, err) {
 				return
 			}
@@ -231,19 +275,11 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 	}
 }
 
-func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Execution, taskexec.Subscription, error) {
+func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Subscription, error) {
 	if params == nil || params.Message == nil {
-		return nil, nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
-
-	var taskID a2a.TaskID
-	if len(params.Message.TaskID) == 0 {
-		taskID = a2a.NewTaskID()
-	} else {
-		taskID = params.Message.TaskID
-	}
-
-	return h.execManager.Execute(ctx, taskID, params)
+	return h.execManager.Execute(ctx, params)
 }
 
 func (h *defaultRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
