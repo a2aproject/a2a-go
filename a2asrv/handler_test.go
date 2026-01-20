@@ -335,9 +335,7 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 				}
 			} else {
 				if gotErr == nil {
-					t.Log(result)
 					t.Errorf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
-
 					return
 				}
 				if gotErr.Error() != tt.wantErr.Error() && !errors.Is(gotErr, tt.wantErr) {
