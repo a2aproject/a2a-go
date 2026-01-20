@@ -87,7 +87,7 @@ func TestAuth_GRPC(t *testing.T) {
 	credStore.Set(sessionID, schemeName, AuthCredential(token))
 
 	ctx = WithSessionID(ctx, sessionID)
-	_, err = client.SendMessage(ctx, &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+	_, err = client.SendMessage(ctx, &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"})})
 	if err != nil {
 		t.Fatalf("client.SendMessage() error = %v", err)
 	}
