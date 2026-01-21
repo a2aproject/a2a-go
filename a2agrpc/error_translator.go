@@ -45,7 +45,8 @@ func toGRPCError(err error) error {
 		errors.Is(err, a2a.ErrUnsupportedOperation):
 		code = codes.Unimplemented
 	case errors.Is(err, a2a.ErrUnsupportedContentType),
-		errors.Is(err, a2a.ErrInvalidRequest):
+		errors.Is(err, a2a.ErrInvalidRequest),
+		errors.Is(err, a2a.ErrInvalidParams):
 		code = codes.InvalidArgument
 	case errors.Is(err, a2a.ErrInvalidAgentResponse):
 		code = codes.Internal

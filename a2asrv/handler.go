@@ -276,8 +276,17 @@ func (h *defaultRequestHandler) OnResubscribeToTask(ctx context.Context, params 
 }
 
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, params *a2a.MessageSendParams) (taskexec.Subscription, error) {
-	if params == nil || params.Message == nil {
+	switch {
+	case params == nil:
+		return nil, fmt.Errorf("message send params is required: %w", a2a.ErrInvalidParams)
+	case params.Message == nil:
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
+	case params.Message.ID == "":
+		return nil, fmt.Errorf("message ID is required: %w", a2a.ErrInvalidParams)
+	case len(params.Message.Parts) == 0:
+		return nil, fmt.Errorf("message parts is required: %w", a2a.ErrInvalidParams)
+	case params.Message.Role == "":
+		return nil, fmt.Errorf("message role is required: %w", a2a.ErrInvalidParams)
 	}
 	return h.execManager.Execute(ctx, params)
 }
