@@ -163,6 +163,12 @@ func TestJSONRPC_Validations(t *testing.T) {
 			want:    want,
 		},
 		{
+			name:    "invalid ID",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: false}),
+			wantErr: a2a.ErrInvalidRequest,
+		},
+		{
 			name:    "http get",
 			method:  "GET",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
@@ -197,6 +203,12 @@ func TestJSONRPC_Validations(t *testing.T) {
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: "calculate", Params: query}),
 			wantErr: a2a.ErrMethodNotFound,
+		},
+		{
+			name:    "no method in jsonrpcRequest",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Params: query}),
+			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "params parse error",

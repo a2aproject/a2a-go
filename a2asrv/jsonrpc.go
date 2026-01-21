@@ -73,8 +73,13 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if payload.JSONRPC != jsonrpc.Version {
+	if !isValidID(payload.ID) {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
+		return
+	}
+
+	if payload.JSONRPC != jsonrpc.Version {
+		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, payload.ID)
 		return
 	}
 
@@ -82,6 +87,18 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		h.handleStreamingRequest(ctx, rw, &payload)
 	} else {
 		h.handleRequest(ctx, rw, &payload)
+	}
+}
+
+func isValidID(id any) bool {
+	if id == nil {
+		return true
+	}
+	switch id.(type) {
+	case string, float64:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -105,6 +122,8 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodGetExtendedAgentCard:
 		result, err = h.onGetAgentCard(ctx)
+	case "":
+		err = a2a.ErrInvalidRequest
 	default:
 		err = a2a.ErrMethodNotFound
 	}
@@ -223,7 +242,7 @@ func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) 
 func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage) (a2a.SendMessageResult, error) {
 	var message a2a.MessageSendParams
 	if err := json.Unmarshal(raw, &message); err != nil {
-		return nil, newParseError(err)
+		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
 	}
 	return h.handler.OnSendMessage(ctx, &message)
 }
