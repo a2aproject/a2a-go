@@ -69,7 +69,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	}
 
 	var received []a2a.Event
-	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser)}
+	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
 	for event, err := range client.SendStreamingMessage(ctx, msg) {
 		if err != nil {
 			t.Fatalf("client.SendStreamingMessage() error = %v", err)
