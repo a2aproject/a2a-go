@@ -502,7 +502,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "artifact update update",
-				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"}), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
 				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
 					return []a2a.Event{
 						newArtifactEvent(reqCtx, a2a.NewArtifactID()),
@@ -1225,7 +1225,7 @@ func TestRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 	go func() {
 		for range handler.OnSendMessageStream(ctx, &a2a.MessageSendParams{
 			Message: newUserMessage(taskSeed, "Work"),
-				}) {
+		}) {
 			// Events have to be consumed to prevent a deadlock.
 		}
 	}()
