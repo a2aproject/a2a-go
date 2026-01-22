@@ -33,7 +33,7 @@ type CallMeta map[string][]string
 
 // Get performs case-insensitive lookup or the provided key. Returns nil if value is not present.
 func (m CallMeta) Get(key string) []string {
-	val, _ := m[strings.ToLower(key)]
+	val := m[strings.ToLower(key)]
 	return val
 }
 
