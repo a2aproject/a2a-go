@@ -26,6 +26,14 @@ type GetTaskPushConfigParams struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+func (p *GetTaskPushConfigParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *GetTaskPushConfigParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
+}
+
 // ListTaskPushConfigParams defines parameters for listing all push notification configurations associated with a task.
 type ListTaskPushConfigParams struct {
 	// TaskID is the unique identifier of the task.
@@ -33,6 +41,14 @@ type ListTaskPushConfigParams struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (p *ListTaskPushConfigParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *ListTaskPushConfigParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 // DeleteTaskPushConfigParams defines parameters for deleting a specific push notification configuration for a task.
@@ -45,6 +61,14 @@ type DeleteTaskPushConfigParams struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (p *DeleteTaskPushConfigParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *DeleteTaskPushConfigParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 // TaskPushConfig is a container associating a push notification configuration with a specific task.
