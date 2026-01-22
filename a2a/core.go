@@ -39,6 +39,10 @@ type TaskInfo struct {
 	ContextID string
 }
 
+func (ti TaskInfo) TaskInfo() TaskInfo {
+	return ti
+}
+
 // SendMessageResult represents a response for non-streaming message send.
 type SendMessageResult interface {
 	Event
