@@ -39,6 +39,12 @@ type TaskInfo struct {
 	ContextID string
 }
 
+// TaskInfo implements TaskInfoProvider so that the struct can be passed to core type constructor functions.
+// For example: a2a.NewMessageForTask(role, a2a.TaskInfo{...}).
+func (ti TaskInfo) TaskInfo() TaskInfo {
+	return ti
+}
+
 // SendMessageResult represents a response for non-streaming message send.
 type SendMessageResult interface {
 	Event
