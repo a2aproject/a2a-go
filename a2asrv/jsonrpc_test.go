@@ -187,6 +187,11 @@ func TestJSONRPC_Validations(t *testing.T) {
 			name:    "tasks/list with invalid page size",
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 125}`), ID: "123"}),
+		},
+		{
+			name:    "invalid ID",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: false}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
@@ -226,10 +231,16 @@ func TestJSONRPC_Validations(t *testing.T) {
 			wantErr: a2a.ErrMethodNotFound,
 		},
 		{
-			name:    "params parse error",
+			name:    "no method in jsonrpcRequest",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Params: query}),
+			wantErr: a2a.ErrInvalidRequest,
+		},
+		{
+			name:    "invalid params error",
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: json.RawMessage("[]")}),
-			wantErr: a2a.ErrParseError,
+			wantErr: a2a.ErrInvalidParams,
 		},
 	}
 
