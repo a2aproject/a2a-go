@@ -56,7 +56,11 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 		}
 
 		if h.handledEventQueue != nil {
-			if err := h.handledEventQueue.WriteVersioned(ctx, event, processResult.TaskVersion); err != nil {
+			toSend := event
+			if processResult.ExecutionResult != nil {
+				toSend = processResult.ExecutionResult
+			}
+			if err := h.handledEventQueue.WriteVersioned(ctx, toSend, processResult.TaskVersion); err != nil {
 				log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
 				return h.handleErrorFn(ctx, context.Cause(ctx))
 			}
