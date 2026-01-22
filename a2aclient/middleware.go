@@ -16,6 +16,8 @@ package a2aclient
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
@@ -28,6 +30,25 @@ type callMetaKey struct{}
 // Custom protocol implementations can use [CallMetaFrom] to access this data and
 // perform the operations necessary for attaching it to the request.
 type CallMeta map[string][]string
+
+// Get performs case-insensitive lookup or the provided key. Returns nil if value is not present.
+func (m CallMeta) Get(key string) []string {
+	val, _ := m[strings.ToLower(key)]
+	return val
+}
+
+// Append appends the provided values to the list of values associated with the key.
+// Duplicates values will not be added. Key matching is case-insensitive.
+func (m CallMeta) Append(key string, vals []string) {
+	result := m.Get(key)
+	for _, v := range vals {
+		if slices.Contains(result, v) {
+			return
+		}
+		result = append(result, v)
+	}
+	m[strings.ToLower(key)] = result
+}
 
 // Request represents a transport-agnostic request to be sent to A2A server.
 type Request struct {
@@ -82,6 +103,23 @@ func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
 
 func withCallMeta(ctx context.Context, meta CallMeta) context.Context {
 	return context.WithValue(ctx, callMetaKey{}, meta)
+}
+
+// NewCallMetaInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
+func NewStaticCallMetaInjector(meta CallMeta) CallInterceptor {
+	return &callMetaInjector{inject: meta}
+}
+
+type callMetaInjector struct {
+	PassthroughInterceptor
+	inject CallMeta
+}
+
+func (mi *callMetaInjector) Before(ctx context.Context, req *Request) (context.Context, error) {
+	for k, values := range mi.inject {
+		req.Meta.Append(k, values)
+	}
+	return ctx, nil
 }
 
 // PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
