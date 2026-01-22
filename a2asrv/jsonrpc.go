@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -69,12 +70,17 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	var payload jsonrpcRequest
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-		h.writeJSONRPCError(ctx, rw, newParseError(err), nil)
+		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
+		return
+	}
+
+	if !isValidID(payload.ID) {
+		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
 
 	if payload.JSONRPC != jsonrpc.Version {
-		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
+		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, payload.ID)
 		return
 	}
 
@@ -82,6 +88,18 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		h.handleStreamingRequest(ctx, rw, &payload)
 	} else {
 		h.handleRequest(ctx, rw, &payload)
+	}
+}
+
+func isValidID(id any) bool {
+	if id == nil {
+		return true
+	}
+	switch id.(type) {
+	case string, float64:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -105,6 +123,8 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodGetExtendedAgentCard:
 		result, err = h.onGetAgentCard(ctx)
+	case "":
+		err = a2a.ErrInvalidRequest
 	default:
 		err = a2a.ErrMethodNotFound
 	}
@@ -207,7 +227,7 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan c
 func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a2a.Task, error) {
 	var query a2a.TaskQueryParams
 	if err := json.Unmarshal(raw, &query); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnGetTask(ctx, &query)
 }
@@ -215,7 +235,7 @@ func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a
 func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) (*a2a.Task, error) {
 	var id a2a.TaskIDParams
 	if err := json.Unmarshal(raw, &id); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnCancelTask(ctx, &id)
 }
@@ -223,7 +243,7 @@ func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) 
 func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage) (a2a.SendMessageResult, error) {
 	var message a2a.MessageSendParams
 	if err := json.Unmarshal(raw, &message); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnSendMessage(ctx, &message)
 }
@@ -232,7 +252,7 @@ func (h *jsonrpcHandler) onResubscribeToTask(ctx context.Context, raw json.RawMe
 	return func(yield func(a2a.Event, error) bool) {
 		var id a2a.TaskIDParams
 		if err := json.Unmarshal(raw, &id); err != nil {
-			yield(nil, newParseError(err))
+			yield(nil, handleUnmarshalError(err))
 			return
 		}
 		for event, err := range h.handler.OnResubscribeToTask(ctx, &id) {
@@ -247,7 +267,7 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 	return func(yield func(a2a.Event, error) bool) {
 		var message a2a.MessageSendParams
 		if err := json.Unmarshal(raw, &message); err != nil {
-			yield(nil, newParseError(err))
+			yield(nil, handleUnmarshalError(err))
 			return
 		}
 		for event, err := range h.handler.OnSendMessageStream(ctx, &message) {
@@ -262,7 +282,7 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
 	var params a2a.GetTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnGetTaskPushConfig(ctx, &params)
 }
@@ -270,7 +290,7 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 func (h *jsonrpcHandler) onListTaskPushConfig(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
 	var params a2a.ListTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnListTaskPushConfig(ctx, &params)
 }
@@ -278,7 +298,7 @@ func (h *jsonrpcHandler) onListTaskPushConfig(ctx context.Context, raw json.RawM
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
 	var params a2a.TaskPushConfig
 	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnSetTaskPushConfig(ctx, &params)
 }
@@ -286,7 +306,7 @@ func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMe
 func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.RawMessage) error {
 	var params a2a.DeleteTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
-		return newParseError(err)
+		return handleUnmarshalError(err)
 	}
 	return h.handler.OnDeleteTaskPushConfig(ctx, &params)
 }
@@ -295,8 +315,12 @@ func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, er
 	return h.handler.OnGetExtendedAgentCard(ctx)
 }
 
-func newParseError(cause error) error {
-	return fmt.Errorf("%w: %w", a2a.ErrParseError, cause)
+func handleUnmarshalError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
+	}
+	return fmt.Errorf("%w: %w", a2a.ErrParseError, err)
 }
 
 func (h *jsonrpcHandler) writeJSONRPCError(ctx context.Context, rw http.ResponseWriter, err error, reqID any) {
