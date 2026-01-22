@@ -55,6 +55,7 @@ func NewJSONRPCHandler(handler RequestHandler) http.Handler {
 
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	ctx, _ = WithCallContext(ctx, NewRequestMeta(req.Header))
 
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
