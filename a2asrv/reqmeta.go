@@ -53,6 +53,9 @@ func (rm *RequestMeta) Get(key string) ([]string, bool) {
 // List allows to inspect all request meta values.
 func (rm *RequestMeta) List() iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
+		if rm == nil {
+			return
+		}
 		for k, v := range rm.kv {
 			if !yield(k, slices.Clone(v)) {
 				return

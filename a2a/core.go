@@ -29,6 +29,14 @@ type TaskInfoProvider interface {
 	TaskInfo() TaskInfo
 }
 
+// MetadataCarrier provides access to extensions metadata container.
+type MetadataCarrier interface {
+	// Meta returns the metadata container.
+	Meta() map[string]any
+	// SetMeta sets the metadata container.
+	SetMeta(m map[string]any)
+}
+
 // TaskInfo represents information about the Task and the group of interactions it belongs to.
 // Values might be empty which means the TaskInfoProvider is not associated with any tasks.
 // An example would be the first user message.
@@ -58,11 +66,9 @@ func (*Message) isSendMessageResult() {}
 // Event interface is used to represent types that can be sent over a streaming connection.
 type Event interface {
 	TaskInfoProvider
+	MetadataCarrier
 
 	isEvent()
-
-	// Meta returns root Metadata of the struct which implements Event.
-	Meta() map[string]any
 }
 
 func (*Message) isEvent()                 {}
@@ -193,6 +199,10 @@ func (m *Message) Meta() map[string]any {
 	return m.Metadata
 }
 
+func (m *Message) SetMeta(meta map[string]any) {
+	m.Metadata = meta
+}
+
 func (m *Message) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
 }
@@ -314,6 +324,10 @@ func (m *Task) Meta() map[string]any {
 	return m.Metadata
 }
 
+func (m *Task) SetMeta(meta map[string]any) {
+	m.Metadata = meta
+}
+
 func (m *Task) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.ID, ContextID: m.ContextID}
 }
@@ -345,6 +359,14 @@ type Artifact struct {
 
 	// Parts is an array of content parts that make up the artifact.
 	Parts ContentParts `json:"parts" yaml:"parts" mapstructure:"parts"`
+}
+
+func (a *Artifact) Meta() map[string]any {
+	return a.Metadata
+}
+
+func (a *Artifact) SetMeta(meta map[string]any) {
+	a.Metadata = meta
 }
 
 var _ Event = (*TaskArtifactUpdateEvent)(nil)
@@ -383,6 +405,10 @@ func (e TaskArtifactUpdateEvent) MarshalJSON() ([]byte, error) {
 
 func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
 	return a.Metadata
+}
+
+func (a *TaskArtifactUpdateEvent) SetMeta(meta map[string]any) {
+	a.Metadata = meta
 }
 
 func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
@@ -463,6 +489,10 @@ func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *M
 
 func (a *TaskStatusUpdateEvent) Meta() map[string]any {
 	return a.Metadata
+}
+
+func (a *TaskStatusUpdateEvent) SetMeta(meta map[string]any) {
+	a.Metadata = meta
 }
 
 func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
@@ -554,6 +584,10 @@ func (p TextPart) Meta() map[string]any {
 	return p.Metadata
 }
 
+func (p *TextPart) SetMeta(meta map[string]any) {
+	p.Metadata = meta
+}
+
 func (p TextPart) MarshalJSON() ([]byte, error) {
 	type wrapped TextPart
 	type withKind struct {
@@ -574,6 +608,10 @@ type DataPart struct {
 
 func (p DataPart) Meta() map[string]any {
 	return p.Metadata
+}
+
+func (p *DataPart) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 func (p DataPart) MarshalJSON() ([]byte, error) {
@@ -597,6 +635,10 @@ type FilePart struct {
 
 func (p FilePart) Meta() map[string]any {
 	return p.Metadata
+}
+
+func (p *FilePart) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 func (p FilePart) MarshalJSON() ([]byte, error) {
@@ -686,6 +728,14 @@ type TaskIDParams struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+func (p *TaskIDParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *TaskIDParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
+}
+
 // TaskQueryParams defines parameters for querying a task, with an option to limit history length.
 type TaskQueryParams struct {
 	// HistoryLength is the number of most recent messages from the task's history to retrieve.
@@ -696,6 +746,14 @@ type TaskQueryParams struct {
 
 	// Metadata is an optional metadata associated with the request.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (p *TaskQueryParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *TaskQueryParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 // MessageSendConfig defines configuration options for a `message/send` or `message/stream` request.
@@ -725,6 +783,14 @@ type MessageSendParams struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (p *MessageSendParams) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *MessageSendParams) SetMeta(meta map[string]any) {
+	p.Metadata = meta
 }
 
 // Time-based UUID generally improves index update performance if ID field is indexed in a persistent store.
