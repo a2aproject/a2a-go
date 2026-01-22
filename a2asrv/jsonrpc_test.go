@@ -211,10 +211,10 @@ func TestJSONRPC_Validations(t *testing.T) {
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
-			name:    "params parse error",
+			name:    "invalid params error",
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: json.RawMessage("[]")}),
-			wantErr: a2a.ErrParseError,
+			wantErr: a2a.ErrInvalidParams,
 		},
 	}
 
