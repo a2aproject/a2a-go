@@ -72,6 +72,8 @@ type ProcessorResult struct {
 	ExecutionResult a2a.SendMessageResult
 	// TaskVersion is the version of the task after the event was processed.
 	TaskVersion a2a.TaskVersion
+	// EventOverride can be sent by processor so that another event gets published instead of the original one.
+	EventOverride a2a.Event
 }
 
 // Executor implementation starts an agent execution.
