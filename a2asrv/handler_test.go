@@ -711,25 +711,61 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 }
 
 func TestRequestHandler_TaskExecutionFailOnInvalidEvent(t *testing.T) {
-	ctx := t.Context()
-
-	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
-
-	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	executor := newEventReplayAgent([]a2a.Event{&a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID()}}, nil)
-	handler := NewHandler(executor, WithTaskStore(store))
-
-	result, err := handler.OnSendMessage(ctx, input)
-	if err != nil {
-		t.Fatalf("OnSendMessage() error = %v", err)
+	testCases := []struct {
+		name  string
+		event *a2a.Task
+	}{
+		{
+			name:  "non-final event",
+			event: &a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID()},
+		},
+		{
+			name:  "final event",
+			event: &a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+		},
 	}
-	task, ok := result.(*a2a.Task)
-	if !ok {
-		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
-	}
-	if task.Status.State != a2a.TaskStateFailed {
-		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+
+	for _, tc := range testCases {
+		for _, streaming := range []bool{false, true} {
+			name := tc.name
+			if streaming {
+				name = name + " (streaming)"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				ctx := t.Context()
+				taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+				input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
+
+				store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+				executor := newEventReplayAgent([]a2a.Event{tc.event}, nil)
+				handler := NewHandler(executor, WithTaskStore(store))
+
+				var result a2a.Event
+				if streaming {
+					for event, err := range handler.OnSendMessageStream(ctx, input) {
+						if err != nil {
+							t.Fatalf("OnSendMessageStream() error = %v", err)
+						}
+						result = event
+					}
+				} else {
+					localResult, err := handler.OnSendMessage(ctx, input)
+					if err != nil {
+						t.Fatalf("OnSendMessage() error = %v", err)
+					}
+					result = localResult
+				}
+
+				task, ok := result.(*a2a.Task)
+				if !ok {
+					t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+				}
+				if task.Status.State != a2a.TaskStateFailed {
+					t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+				}
+			})
+		}
 	}
 }
 
