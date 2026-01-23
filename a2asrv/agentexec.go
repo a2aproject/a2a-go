@@ -358,6 +358,7 @@ func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, err erro
 	}
 	return &taskexec.ProcessorResult{
 		ExecutionResult: versioned.Task,
+		EventOverride:   versioned.Task,
 		TaskVersion:     versioned.Version,
 	}, nil
 }
