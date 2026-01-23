@@ -46,46 +46,34 @@ func TestToJSONRPCError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		err      error
-		wantCode int
-		wantMsg  string
-		wantData map[string]any
+		name string
+		err  error
+		want *Error
 	}{
 		{
-			name:     "JSONRPCError passthrough",
-			err:      &Error{Code: -32001, Message: "Custom error", Data: map[string]any{"extra": "data"}},
-			wantCode: -32001,
-			wantMsg:  "Custom error",
-			wantData: map[string]any{"extra": "data"},
+			name: "JSONRPCError passthrough",
+			err:  &Error{Code: -32001, Message: "Custom error", Data: map[string]any{"extra": "data"}},
+			want: &Error{Code: -32001, Message: "Custom error", Data: map[string]any{"extra": "data"}},
 		},
 		{
-			name:     "Known a2a error",
-			err:      a2a.ErrTaskNotFound,
-			wantCode: -32001,
-			wantMsg:  a2a.ErrTaskNotFound.Error(),
-			wantData: map[string]any{"error": a2a.ErrTaskNotFound.Error()},
+			name: "Known a2a error",
+			err:  a2a.ErrTaskNotFound,
+			want: &Error{Code: -32001, Message: a2a.ErrTaskNotFound.Error(), Data: map[string]any{"error": a2a.ErrTaskNotFound.Error()}},
 		},
 		{
-			name:     "Known a2a error wrapped",
-			err:      errors.Join(errors.New("context info"), a2a.ErrInvalidParams),
-			wantCode: -32602,
-			wantMsg:  a2a.ErrInvalidParams.Error(),
-			wantData: map[string]any{"error": "context info\ninvalid params"},
+			name: "Known a2a error wrapped",
+			err:  errors.Join(errors.New("context info"), a2a.ErrInvalidParams),
+			want: &Error{Code: -32602, Message: a2a.ErrInvalidParams.Error(), Data: map[string]any{"error": "context info\ninvalid params"}},
 		},
 		{
-			name:     "Unknown error - internal error with details preserved",
-			err:      errors.New("database connection failed"),
-			wantCode: -32603,
-			wantMsg:  a2a.ErrInternalError.Error(),
-			wantData: map[string]any{"error": "database connection failed"},
+			name: "Unknown error - internal error with details preserved",
+			err:  errors.New("database connection failed"),
+			want: &Error{Code: -32603, Message: a2a.ErrInternalError.Error(), Data: map[string]any{"error": "database connection failed"}},
 		},
 		{
-			name:     "Unknown error wrapped - internal error with details preserved",
-			err:      errors.New("identity service error: user not authenticated"),
-			wantCode: -32603,
-			wantMsg:  a2a.ErrInternalError.Error(),
-			wantData: map[string]any{"error": "identity service error: user not authenticated"},
+			name: "Unknown error wrapped - internal error with details preserved",
+			err:  errors.New("identity service error: user not authenticated"),
+			want: &Error{Code: -32603, Message: a2a.ErrInternalError.Error(), Data: map[string]any{"error": "identity service error: user not authenticated"}},
 		},
 	}
 
@@ -93,11 +81,11 @@ func TestToJSONRPCError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-            got := ToJSONRPCError(tt.err)
-            want := &Error{Code: tt.wantCode, Message: tt.wantMsg, Data: tt.wantData}
-            if diff := cmp.Diff(want, got); diff != "" {
-                t.Errorf("ToJSONRPCError() mismatch (-want +got):\n%s", diff)
-            }
+			got := ToJSONRPCError(tt.err)
+
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("ToJSONRPCError() mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
