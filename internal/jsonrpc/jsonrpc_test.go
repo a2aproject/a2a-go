@@ -93,17 +93,11 @@ func TestToJSONRPCError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := ToJSONRPCError(tt.err)
-
-			if got.Code != tt.wantCode {
-				t.Errorf("Code = %d, want %d", got.Code, tt.wantCode)
-			}
-			if got.Message != tt.wantMsg {
-				t.Errorf("Message = %q, want %q", got.Message, tt.wantMsg)
-			}
-			if diff := cmp.Diff(tt.wantData, got.Data); diff != "" {
-				t.Errorf("Data mismatch (-want +got):\n%s", diff)
-			}
+            got := ToJSONRPCError(tt.err)
+            want := &Error{Code: tt.wantCode, Message: tt.wantMsg, Data: tt.wantData}
+            if diff := cmp.Diff(want, got); diff != "" {
+                t.Errorf("ToJSONRPCError() mismatch (-want +got):\n%s", diff)
+            }
 		})
 	}
 }
