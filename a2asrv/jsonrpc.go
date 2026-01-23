@@ -47,9 +47,8 @@ type jsonrpcResponse struct {
 }
 
 type jsonrpcHandler struct {
-	handler              RequestHandler
-	keepAliveInterval    time.Duration
-	keepAliveEnabled     bool
+	handler           RequestHandler
+	keepAliveInterval time.Duration
 }
 
 // JSONRPCHandlerOption is a functional option for configuring the JSONRPC handler.
@@ -57,15 +56,10 @@ type JSONRPCHandlerOption func(*jsonrpcHandler)
 
 // WithKeepAlive enables SSE keep-alive messages at the specified interval.
 // Keep-alive messages prevent API gateways from dropping idle connections.
-// If interval is 0, a default of 5 seconds is used.
+// If interval is 0 or negative, keep-alive is disabled (default behavior).
 func WithKeepAlive(interval time.Duration) JSONRPCHandlerOption {
 	return func(h *jsonrpcHandler) {
-		h.keepAliveEnabled = true
-		if interval <= 0 {
-			h.keepAliveInterval = 5 * time.Second
-		} else {
-			h.keepAliveInterval = interval
-		}
+		h.keepAliveInterval = interval
 	}
 }
 
@@ -191,10 +185,10 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		eventSeqToSSEDataStream(requestCtx, req, sseChan, events)
 	}()
 
-	// Set up keep-alive ticker if enabled
+	// Set up keep-alive ticker if enabled (interval > 0)
 	var keepAliveTicker *time.Ticker
 	var keepAliveChan <-chan time.Time
-	if h.keepAliveEnabled {
+	if h.keepAliveInterval > 0 {
 		keepAliveTicker = time.NewTicker(h.keepAliveInterval)
 		defer keepAliveTicker.Stop()
 		keepAliveChan = keepAliveTicker.C

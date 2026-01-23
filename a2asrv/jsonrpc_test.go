@@ -316,6 +316,99 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_StreamingWithoutKeepAlive(t *testing.T) {
+	// This test verifies that streaming works without keep-alive (default behavior)
+	t.Parallel()
+	ctx := t.Context()
+
+	// Create a mock agent executor that sends a message quickly
+	mockExecutor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			// Send a message immediately
+			if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
+	reqHandler := NewHandler(mockExecutor)
+	// Don't pass WithKeepAlive option - keep-alive should be disabled by default
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
+	defer server.Close()
+
+	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
+		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
+	})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+	}
+
+	// Use SendStreamingMessage - it should complete successfully
+	messageCount := 0
+	for event, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
+	}) {
+		if err != nil {
+			t.Fatalf("SendStreamingMessage() error = %v", err)
+		}
+		
+		if _, ok := event.(*a2a.Message); ok {
+			messageCount++
+		}
+	}
+
+	// Verify that we received the message
+	if messageCount != 1 {
+		t.Errorf("Expected 1 message, got %d", messageCount)
+	}
+}
+
+func TestJSONRPC_StreamingWithKeepAliveZero(t *testing.T) {
+	// This test verifies that WithKeepAlive(0) disables keep-alive
+	t.Parallel()
+	ctx := t.Context()
+
+	// Create a mock agent executor
+	mockExecutor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
+	reqHandler := NewHandler(mockExecutor)
+	// Explicitly disable keep-alive with WithKeepAlive(0)
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler, WithKeepAlive(0)))
+	defer server.Close()
+
+	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
+		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
+	})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+	}
+
+	messageCount := 0
+	for event, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
+	}) {
+		if err != nil {
+			t.Fatalf("SendStreamingMessage() error = %v", err)
+		}
+		
+		if _, ok := event.(*a2a.Message); ok {
+			messageCount++
+		}
+	}
+
+	if messageCount != 1 {
+		t.Errorf("Expected 1 message, got %d", messageCount)
+	}
+}
+
 func mustMarshal(t *testing.T, data any) []byte {
 	t.Helper()
 	body, err := json.Marshal(data)
