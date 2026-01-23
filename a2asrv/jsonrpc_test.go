@@ -285,7 +285,8 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 	}
 
 	reqHandler := NewHandler(mockExecutor)
-	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
+	// Enable keep-alive with default 5s interval
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler, WithKeepAlive(5*time.Second)))
 	defer server.Close()
 
 	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{

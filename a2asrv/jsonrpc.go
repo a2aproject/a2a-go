@@ -47,12 +47,35 @@ type jsonrpcResponse struct {
 }
 
 type jsonrpcHandler struct {
-	handler RequestHandler
+	handler              RequestHandler
+	keepAliveInterval    time.Duration
+	keepAliveEnabled     bool
+}
+
+// JSONRPCHandlerOption is a functional option for configuring the JSONRPC handler.
+type JSONRPCHandlerOption func(*jsonrpcHandler)
+
+// WithKeepAlive enables SSE keep-alive messages at the specified interval.
+// Keep-alive messages prevent API gateways from dropping idle connections.
+// If interval is 0, a default of 5 seconds is used.
+func WithKeepAlive(interval time.Duration) JSONRPCHandlerOption {
+	return func(h *jsonrpcHandler) {
+		h.keepAliveEnabled = true
+		if interval <= 0 {
+			h.keepAliveInterval = 5 * time.Second
+		} else {
+			h.keepAliveInterval = interval
+		}
+	}
 }
 
 // NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC.
-func NewJSONRPCHandler(handler RequestHandler) http.Handler {
-	return &jsonrpcHandler{handler: handler}
+func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) http.Handler {
+	h := &jsonrpcHandler{handler: handler}
+	for _, option := range options {
+		option(h)
+	}
+	return h
 }
 
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -168,14 +191,20 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		eventSeqToSSEDataStream(requestCtx, req, sseChan, events)
 	}()
 
-	keepAliveTicker := time.NewTicker(5 * time.Second)
-	defer keepAliveTicker.Stop()
+	// Set up keep-alive ticker if enabled
+	var keepAliveTicker *time.Ticker
+	var keepAliveChan <-chan time.Time
+	if h.keepAliveEnabled {
+		keepAliveTicker = time.NewTicker(h.keepAliveInterval)
+		defer keepAliveTicker.Stop()
+		keepAliveChan = keepAliveTicker.C
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-keepAliveTicker.C:
+		case <-keepAliveChan:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
 				return
