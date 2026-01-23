@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
@@ -167,11 +168,18 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		eventSeqToSSEDataStream(requestCtx, req, sseChan, events)
 	}()
 
+	keepAliveTicker := time.NewTicker(5 * time.Second)
+	defer keepAliveTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		// TODO: start sending keep-alive when other SDK-s support it: https://github.com/a2aproject/a2a-python/issues/540
+		case <-keepAliveTicker.C:
+			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
+				log.Error(ctx, "failed to write keep-alive", err)
+				return
+			}
 		case data, ok := <-sseChan:
 			if !ok {
 				return

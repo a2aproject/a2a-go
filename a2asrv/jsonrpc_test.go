@@ -23,9 +23,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -257,6 +259,59 @@ func TestJSONRPC_Validations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
+	// This test verifies that streaming requests work correctly with the keep-alive ticker.
+	// The keep-alive messages are sent every 5 seconds to prevent API gateways from 
+	// dropping idle connections.
+	t.Parallel()
+	ctx := t.Context()
+
+	// Create a mock agent executor that waits before sending a message
+	mockExecutor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+			// Wait 6 seconds - this is longer than the 5s keep-alive ticker interval
+			// Without keep-alive messages, a 10s gateway timeout would fail
+			time.Sleep(6 * time.Second)
+			
+			// Send a message to complete the stream
+			if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
+	reqHandler := NewHandler(mockExecutor)
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
+	defer server.Close()
+
+	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
+		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
+	})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+	}
+
+	// Use SendStreamingMessage - it should complete successfully even with the 6s delay
+	messageCount := 0
+	for event, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
+	}) {
+		if err != nil {
+			t.Fatalf("SendStreamingMessage() error = %v", err)
+		}
+		
+		if _, ok := event.(*a2a.Message); ok {
+			messageCount++
+		}
+	}
+
+	// Verify that we received the message
+	if messageCount != 1 {
+		t.Errorf("Expected 1 message, got %d", messageCount)
 	}
 }
 
