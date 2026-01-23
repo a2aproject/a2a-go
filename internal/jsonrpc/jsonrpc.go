@@ -105,5 +105,5 @@ func ToJSONRPCError(err error) *Error {
 			}
 		}
 	}
-	return &Error{Code: -32603, Message: a2a.ErrInternalError.Error()}
+	return &Error{Code: -32603, Message: a2a.ErrInternalError.Error(), Data: map[string]any{"error": err.Error()}}
 }
