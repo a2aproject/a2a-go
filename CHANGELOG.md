@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.5](https://github.com/a2aproject/a2a-go/compare/v0.3.4...v0.3.5) (2026-01-23)
+
+
+### Bug Fixes
+
+* added MessageSendParams validations in handleSendMessage ([#160](https://github.com/a2aproject/a2a-go/issues/160)) ([1c66cb3](https://github.com/a2aproject/a2a-go/commit/1c66cb395c71ba02f8cb60ed2abdce6b8246e0f4))
+* Address default blocking for JSONRpc server ([#156](https://github.com/a2aproject/a2a-go/issues/156)) ([5a5b403](https://github.com/a2aproject/a2a-go/commit/5a5b40338a7d35f52d06482014a4436cfee3d036))
+* final event overriding task failure event ([#172](https://github.com/a2aproject/a2a-go/issues/172)) ([8a97b84](https://github.com/a2aproject/a2a-go/commit/8a97b849e4e631c3f61bb18976d6cba4b4a0ce60))
+* return correct jsonrpc errors ([#161](https://github.com/a2aproject/a2a-go/issues/161)) ([950ce82](https://github.com/a2aproject/a2a-go/commit/950ce82b9635c923b2d2735d7b4a8f2d45ac5388))
+* return the root cause of the error. Fixes [#167](https://github.com/a2aproject/a2a-go/issues/167) ([#169](https://github.com/a2aproject/a2a-go/issues/169)) ([b699c67](https://github.com/a2aproject/a2a-go/commit/b699c67172ca578452285a03f9a12870be0f93d4))
+* wrong field set as meta ([#164](https://github.com/a2aproject/a2a-go/issues/164)) ([2173f5e](https://github.com/a2aproject/a2a-go/commit/2173f5e324eed39e80e2cd133209b2036969cf70)), closes [#163](https://github.com/a2aproject/a2a-go/issues/163)
+
 ## [0.3.4](https://github.com/a2aproject/a2a-go/compare/v0.3.3...v0.3.4) (2026-01-14)
 
 

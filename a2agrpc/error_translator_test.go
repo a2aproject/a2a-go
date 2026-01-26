@@ -77,6 +77,11 @@ func TestToGRPCError(t *testing.T) {
 			want: status.Error(codes.InvalidArgument, a2a.ErrInvalidRequest.Error()),
 		},
 		{
+			name: "ErrInvalidParams",
+			err:  a2a.ErrInvalidParams,
+			want: status.Error(codes.InvalidArgument, a2a.ErrInvalidParams.Error()),
+		},
+		{
 			name: "ErrAuthenticatedExtendedCardNotConfigured",
 			err:  a2a.ErrAuthenticatedExtendedCardNotConfigured,
 			want: status.Error(codes.NotFound, a2a.ErrAuthenticatedExtendedCardNotConfigured.Error()),
