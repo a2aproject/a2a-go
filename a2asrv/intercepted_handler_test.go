@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"iter"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -271,7 +272,9 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 
 	wantRespKey, wantRespVal := "respKey", 43
 	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-		payload := resp.Payload.(*a2a.Message)
+		responsePtr := resp.Payload.(*a2a.SendMessageResult)
+		sendMessageResult := *responsePtr
+		payload := sendMessageResult.(*a2a.Message)
 		payload.Metadata = map[string]any{wantRespKey: wantRespVal}
 		return nil
 	}
@@ -290,6 +293,149 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	responsMsg := response.(*a2a.Message)
 	if responsMsg.Metadata[wantRespKey] != wantRespVal {
 		t.Fatalf("OnSendMessage() Response.Metadata[%q] = %v, want %d", wantRespKey, responsMsg.Metadata[wantRespKey], wantRespVal)
+	}
+}
+
+func TestInterceptedHandler_RequestModification(t *testing.T) {
+	ctx := t.Context()
+	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
+	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
+	originalParams := &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"}),
+	}
+	var receivedParams *a2a.MessageSendParams
+
+	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+		receivedParams = params
+		message := params.Message.Parts[0].(a2a.TextPart).Text
+		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: message}), nil
+	}
+
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+		if _, ok := req.Payload.(*a2a.MessageSendParams); ok {
+			req.Payload = &a2a.MessageSendParams{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"}),
+			}
+		}
+		return ctx, nil
+	}
+
+	resp, err := handler.OnSendMessage(ctx, originalParams)
+	if err != nil {
+		t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
+	}
+	if mockHandler.lastCallContext.method != "OnSendMessage" {
+		t.Fatalf("handler.OnSendMessage() CallContext = %v, want method=OnSendMessage", mockHandler.lastCallContext)
+	}
+	if receivedParams == originalParams {
+		t.Fatalf("handler.OnSendMessage() receivedParams = %v, want %v", receivedParams, originalParams)
+	}
+	reqMsg := resp.(*a2a.Message)
+	if reqMsg.Parts[0].(a2a.TextPart).Text != "Modified!" {
+		t.Fatalf("handler.OnSendMessage() Request.Text = %q, want %q", reqMsg.Parts[0].(a2a.TextPart).Text, "Modified!")
+	}
+}
+
+func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
+	injectedErr := fmt.Errorf("injected error")
+	handlerErr := fmt.Errorf("handler error")
+
+	tests := []struct {
+		name          string
+		handlerResp   a2a.SendMessageResult
+		handlerErr    error
+		interceptorFn func(ctx context.Context, callCtx *CallContext, resp *Response) error
+		wantErr       error
+		wantRespText  string
+	}{
+		{
+			name:        "replace response object",
+			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original!"}),
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+				if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
+					*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"})
+				}
+				return nil
+			},
+			wantRespText: "Modified!",
+		},
+		{
+			name:        "injected error: handler success, interceptor error",
+			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Success!"}),
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+				resp.Err = injectedErr
+				return nil
+			},
+			wantErr: injectedErr,
+		},
+		{
+			name:       "injected error: handler error, interceptor success",
+			handlerErr: handlerErr,
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+				if resp.Err != nil {
+					resp.Err = nil
+
+					if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
+						*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error!"})
+					}
+				}
+				return nil
+			},
+			wantErr:      nil,
+			wantRespText: "Recovered from error!",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
+			handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
+
+			mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+				return tt.handlerResp, tt.handlerErr
+			}
+
+			mockInterceptor.afterFn = tt.interceptorFn
+
+			resp, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"}),
+			})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("handler.OnSendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr == nil {
+				if resp == nil {
+					t.Errorf("handler.OnSendMessage() resp = nil, want %v", tt.wantRespText)
+				}
+				msg := resp.(*a2a.Message)
+				if msg.Parts[0].(a2a.TextPart).Text != tt.wantRespText {
+					t.Errorf("handler.OnSendMessage() resp.Text = %q, want %q", msg.Parts[0].(a2a.TextPart).Text, tt.wantRespText)
+				}
+			}
+		})
+	}
+}
+
+func TestInterceptedHandler_TypeSafety(t *testing.T) {
+	ctx := t.Context()
+	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
+	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
+
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+		req.Payload = &a2a.Task{}
+		return ctx, nil
+	}
+
+	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
+
+	if err == nil {
+		t.Fatal("got nil error, want error due to payload type mismatch")
+	}
+	expectedErrorFragment := "payload type changed"
+	if !strings.Contains(err.Error(), expectedErrorFragment) {
+		t.Errorf("Error = %q, want it to contain %q", err.Error(), expectedErrorFragment)
 	}
 }
 
@@ -346,7 +492,9 @@ func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 	countKey := "count"
 	afterCount := 0
 	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-		ev := resp.Payload.(*a2a.TaskStatusUpdateEvent)
+		responsePtr := resp.Payload.(*a2a.Event)
+		event := *responsePtr
+		ev := event.(*a2a.TaskStatusUpdateEvent)
 		ev.Metadata[countKey] = afterCount
 		afterCount++
 		return nil

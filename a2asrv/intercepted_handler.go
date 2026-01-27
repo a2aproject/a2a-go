@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 
@@ -44,15 +45,16 @@ func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 	if query != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(query.ID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, query)
+	ctx, interceptedQuery, err := interceptBefore(ctx, h, callCtx, query)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnGetTask(ctx, query)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnGetTask(ctx, interceptedQuery)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -60,15 +62,16 @@ func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskI
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnCancelTask(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnCancelTask(ctx, interceptedParams)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -84,15 +87,16 @@ func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.Mess
 	} else {
 		ctx = h.withLoggerContext(ctx)
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnSendMessage(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnSendMessage(ctx, interceptedParams)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, &response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return *interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
@@ -109,17 +113,18 @@ func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, err := h.interceptBefore(ctx, callCtx, params)
+		ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
-		for event, err := range h.Handler.OnSendMessageStream(ctx, params) {
-			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+		for event, err := range h.Handler.OnSendMessageStream(ctx, interceptedParams) {
+			interceptedEvent, errOverride := interceptAfter(ctx, h, callCtx, &event, err)
+			if errOverride != nil {
 				yield(nil, errOverride)
 				return
 			}
-			if !yield(event, err) {
+			if !yield(*interceptedEvent, err) {
 				return
 			}
 		}
@@ -132,17 +137,18 @@ func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2
 		if params != nil {
 			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
 		}
-		ctx, err := h.interceptBefore(ctx, callCtx, params)
+		ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
-		for event, err := range h.Handler.OnResubscribeToTask(ctx, params) {
-			if errOverride := h.interceptAfter(ctx, callCtx, event, err); errOverride != nil {
+		for event, err := range h.Handler.OnResubscribeToTask(ctx, interceptedParams) {
+			interceptedEvent, errOverride := interceptAfter(ctx, h, callCtx, &event, err)
+			if errOverride != nil {
 				yield(nil, errOverride)
 				return
 			}
-			if !yield(event, err) {
+			if !yield(*interceptedEvent, err) {
 				return
 			}
 		}
@@ -154,15 +160,16 @@ func (h *InterceptedHandler) OnGetTaskPushConfig(ctx context.Context, params *a2
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnGetTaskPushConfig(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnGetTaskPushConfig(ctx, interceptedParams)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
@@ -170,15 +177,16 @@ func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnListTaskPushConfig(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnListTaskPushConfig(ctx, interceptedParams)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, &response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return *interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
@@ -186,15 +194,16 @@ func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return nil, err
 	}
-	response, err := h.Handler.OnSetTaskPushConfig(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	response, err := h.Handler.OnSetTaskPushConfig(ctx, interceptedParams)
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return interceptedResponse, nil
 }
 
 func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
@@ -202,56 +211,69 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, err := h.interceptBefore(ctx, callCtx, params)
+	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
 	if err != nil {
 		return err
 	}
-	err = h.Handler.OnDeleteTaskPushConfig(ctx, params)
-	if errOverride := h.interceptAfter(ctx, callCtx, nil, err); errOverride != nil {
+	err = h.Handler.OnDeleteTaskPushConfig(ctx, interceptedParams)
+	if _, errOverride := interceptAfter(ctx, h, callCtx, interceptedParams, err); errOverride != nil {
 		return errOverride
 	}
-	return err
+	return nil
 }
 
 func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetExtendedAgentCard")
 	ctx = h.withLoggerContext(ctx)
-	ctx, err := h.interceptBefore(ctx, callCtx, nil)
+
+	var req *struct{} = nil
+	ctx, _, err := interceptBefore(ctx, h, callCtx, req)
 	if err != nil {
 		return nil, err
 	}
 	response, err := h.Handler.OnGetExtendedAgentCard(ctx)
-	if errOverride := h.interceptAfter(ctx, callCtx, response, err); errOverride != nil {
+	interceptedResponse, errOverride := interceptAfter(ctx, h, callCtx, response, err)
+	if errOverride != nil {
 		return nil, errOverride
 	}
-	return response, err
+	return interceptedResponse, nil
 }
 
-func (h *InterceptedHandler) interceptBefore(ctx context.Context, callCtx *CallContext, payload any) (context.Context, error) {
+func interceptBefore[T any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload *T) (context.Context, *T, error) {
 	request := &Request{Payload: payload}
 
 	for _, interceptor := range h.Interceptors {
 		localCtx, err := interceptor.Before(ctx, callCtx, request)
 		if err != nil {
-			return ctx, err
+			return ctx, nil, err
 		}
 		ctx = localCtx
 	}
 
-	return ctx, nil
+	typed, ok := request.Payload.(*T)
+	if !ok {
+		return ctx, nil, fmt.Errorf("payload type changed from %T to %T", payload, request.Payload)
+	}
+
+	return ctx, typed, nil
 }
 
-func (h *InterceptedHandler) interceptAfter(ctx context.Context, callCtx *CallContext, payload any, responseErr error) error {
+func interceptAfter[T any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload *T, responseErr error) (*T, error) {
 	response := &Response{Payload: payload, Err: responseErr}
 
 	for i := range len(h.Interceptors) {
 		interceptor := h.Interceptors[len(h.Interceptors)-i-1]
 		if err := interceptor.After(ctx, callCtx, response); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	typed, ok := response.Payload.(*T)
+	if !ok {
+		return nil, fmt.Errorf("payload type changed from %T to %T", payload, response.Payload)
+	}
+
+	return typed, response.Err
 }
 
 // withLoggerContext is a private utility function which attaches an slog.Logger with a2a-specific attributes
