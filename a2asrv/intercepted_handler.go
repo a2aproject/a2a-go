@@ -124,7 +124,7 @@ func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2
 				yield(nil, errOverride)
 				return
 			}
-			if !yield(*interceptedEvent, err) {
+			if !yield(*interceptedEvent, nil) {
 				return
 			}
 		}
@@ -148,7 +148,7 @@ func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2
 				yield(nil, errOverride)
 				return
 			}
-			if !yield(*interceptedEvent, err) {
+			if !yield(*interceptedEvent, nil) {
 				return
 			}
 		}
@@ -216,7 +216,9 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 		return err
 	}
 	err = h.Handler.OnDeleteTaskPushConfig(ctx, interceptedParams)
-	if _, errOverride := interceptAfter(ctx, h, callCtx, interceptedParams, err); errOverride != nil {
+	emptyResponse := &struct{}{}
+	_, errOverride := interceptAfter(ctx, h, callCtx, emptyResponse, err)
+	if errOverride != nil {
 		return errOverride
 	}
 	return nil
