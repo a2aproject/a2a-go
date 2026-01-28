@@ -545,7 +545,6 @@ func TestClient_InterceptCancelTask(t *testing.T) {
 func TestClient_InterceptSendMessage(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
-	var wantPayload a2a.SendMessageResult = task
 	transport := &testTransport{
 		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 			return task, nil
@@ -567,7 +566,7 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
 		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
 	}
-	if diff := cmp.Diff(&wantPayload, interceptor.lastResp.Payload); diff != "" {
+	if diff := cmp.Diff(task, interceptor.lastResp.Payload); diff != "" {
 		t.Fatalf("wrong interceptor.lastResp.Payload (+got,-want) diff = %s", diff)
 	}
 }
@@ -592,12 +591,8 @@ func TestClient_InterceptResubscribeToTask(t *testing.T) {
 		if err != nil || resp != events[eventI] {
 			t.Fatalf("client.ResubscribeToTask()[%d] = (%v, %v), want %v", eventI, resp, err, events[eventI])
 		}
-		payloadPtr, ok := interceptor.lastResp.Payload.(*a2a.Event)
-		if !ok {
-			t.Fatalf("interceptor.After %d-th payload is not *a2a.Event, got %T", eventI, interceptor.lastResp.Payload)
-		}
-		if *payloadPtr != events[eventI] {
-			t.Fatalf("interceptor.After %d-th payload = %v, want %v", eventI, *payloadPtr, events[eventI])
+		if interceptor.lastResp.Payload != events[eventI] {
+			t.Fatalf("interceptor.After %d-th payload = %v, want %v", eventI, interceptor.lastResp.Payload, events[eventI])
 		}
 		eventI += 1
 	}
@@ -632,12 +627,8 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		if err != nil || resp != events[eventI] {
 			t.Fatalf("client.SendStreamingMessage()[%d] = (%v, %v), want %v", eventI, resp, err, events[eventI])
 		}
-		payloadPtr, ok := interceptor.lastResp.Payload.(*a2a.Event)
-		if !ok {
-			t.Fatalf("interceptor.After %d-th payload is not *a2a.Event, got %T", eventI, interceptor.lastResp.Payload)
-		}
-		if *payloadPtr != events[eventI] {
-			t.Fatalf("interceptor.After %d-th payload = %v, want %v", eventI, *payloadPtr, events[eventI])
+		if interceptor.lastResp.Payload != events[eventI] {
+			t.Fatalf("interceptor.After %d-th payload = %v, want %v", eventI, interceptor.lastResp.Payload, events[eventI])
 		}
 		eventI += 1
 	}
@@ -708,9 +699,8 @@ func TestClient_InterceptListTaskPushConfig(t *testing.T) {
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
 	}
-	payloadPtr := interceptor.lastResp.Payload.(*[]*a2a.TaskPushConfig)
-	if (*payloadPtr)[0] != config {
-		t.Fatalf("interceptor.After payload = %v, want %v", (*payloadPtr)[0], config)
+	if interceptor.lastResp.Payload.([]*a2a.TaskPushConfig)[0] != config {
+		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, config)
 	}
 }
 
@@ -766,8 +756,8 @@ func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
 	}
-	if _, ok := interceptor.lastResp.Payload.(*struct{}); !ok {
-		t.Fatalf("interceptor.After payload = %v, want *struct{}", interceptor.lastResp.Payload)
+	if _, ok := interceptor.lastResp.Payload.(struct{}); !ok {
+		t.Fatalf("interceptor.After payload = %v, want struct{}", interceptor.lastResp.Payload)
 	}
 }
 
@@ -863,9 +853,7 @@ func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
 			name:          "response modification",
 			transportResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original"}),
 			interceptorFn: func(ctx context.Context, resp *Response) error {
-				if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
-					*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified"})
-				}
+				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified"})
 				return nil
 			},
 			wantRespText: "Modified",
@@ -885,9 +873,7 @@ func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
 			interceptorFn: func(ctx context.Context, resp *Response) error {
 				if resp.Err != nil {
 					resp.Err = nil
-					if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
-						*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error"})
-					}
+					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error"})
 				}
 				return nil
 			},
