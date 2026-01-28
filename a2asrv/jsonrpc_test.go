@@ -15,6 +15,7 @@
 package a2asrv
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -23,10 +24,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
@@ -255,6 +259,95 @@ func TestJSONRPC_Validations(t *testing.T) {
 				if diff := cmp.Diff(tc.want, payload.Result); diff != "" {
 					t.Errorf("payload.Result = %v, want %v", payload.Result, want)
 				}
+			}
+		})
+	}
+}
+
+func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
+	agentTimeout := 20 * time.Millisecond
+	testCases := []struct {
+		name        string
+		option      JSONRPCHandlerOption
+		wantEnabled bool
+	}{
+		{
+			name:   "default disabled", // TODO: change default for 1.0
+			option: nil,
+		},
+		{
+			name:   "zero for disabled",
+			option: WithKeepAlive(0),
+		},
+		{
+			name:   "negative for disabled",
+			option: WithKeepAlive(-1),
+		},
+		{
+			name:        "positive for enabled",
+			option:      WithKeepAlive(5 * time.Millisecond),
+			wantEnabled: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			mockExecutor := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+					time.Sleep(agentTimeout)
+					if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
+						return err
+					}
+					return nil
+				},
+			}
+
+			opts := []JSONRPCHandlerOption{}
+			if tc.option != nil {
+				opts = append(opts, tc.option)
+			}
+			reqHandler := NewHandler(mockExecutor)
+			server := httptest.NewServer(NewJSONRPCHandler(reqHandler, opts...))
+			defer server.Close()
+
+			request := jsonrpcRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodMessageStream,
+				Params: mustMarshal(t, &a2a.MessageSendParams{
+					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "hello"}),
+				}),
+				ID: 1,
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("Accept", sse.ContentEventStream)
+			client := http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("client.Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			scanner := bufio.NewScanner(resp.Body)
+			var keepAlives int16
+			for scanner.Scan() {
+				line := scanner.Bytes()
+				if string(line) == ": keep-alive" {
+					keepAlives++
+					break
+				}
+			}
+			if tc.wantEnabled && keepAlives == 0 {
+				t.Error("keep-alive enabled but none received")
+			}
+			if !tc.wantEnabled && keepAlives > 0 {
+				t.Errorf("keep-alive disabled but received %d", keepAlives)
 			}
 		})
 	}
