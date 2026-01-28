@@ -67,7 +67,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ctx := withRequestContext(req)
 		if req.Method == "OPTIONS" {
-			writePublicCardHTTPOptions(rw)
+			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
 			return
 		}
@@ -75,7 +75,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeAgentCardBytes(ctx, rw, bytes)
+		writeAgentCardBytes(ctx, rw, req, bytes)
 	})
 }
 
@@ -84,7 +84,7 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ctx := withRequestContext(req)
 		if req.Method == "OPTIONS" {
-			writePublicCardHTTPOptions(rw)
+			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
 			return
 		}
@@ -104,7 +104,7 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 			rw.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		writeAgentCardBytes(ctx, rw, cardBytes)
+		writeAgentCardBytes(ctx, rw, req, cardBytes)
 	})
 }
 
@@ -118,17 +118,27 @@ func withRequestContext(req *http.Request) context.Context {
 	return log.WithLogger(req.Context(), withAttrs)
 }
 
-func writePublicCardHTTPOptions(rw http.ResponseWriter) {
-	rw.Header().Set("Access-Control-Allow-Origin", "*")
+func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {
+	writeCORSHeaders(rw, req)
 	rw.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	rw.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-func writeAgentCardBytes(ctx context.Context, rw http.ResponseWriter, bytes []byte) {
-	rw.Header().Set("Access-Control-Allow-Origin", "*")
+func writeAgentCardBytes(ctx context.Context, rw http.ResponseWriter, req *http.Request, bytes []byte) {
+	writeCORSHeaders(rw, req)
 	rw.Header().Set("Content-Type", "application/json")
 	if _, err := rw.Write(bytes); err != nil {
 		log.Error(ctx, "failed to write agent card response", err)
+	}
+}
+
+func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
+	origin := req.Header.Get("Origin")
+	if origin != "" {
+		rw.Header().Set("Access-Control-Allow-Origin", origin)
+		rw.Header().Set("Access-Control-Allow-Credentials", "true")
+	} else {
+		rw.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 }
