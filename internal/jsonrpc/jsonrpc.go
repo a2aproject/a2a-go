@@ -89,7 +89,7 @@ func (e *Error) ToA2AError() error {
 
 	result := a2a.NewError(err, msg)
 	if len(e.Data) > 0 {
-		result.WithDetails(e.Data)
+		result = result.WithDetails(e.Data)
 	}
 	return result
 }
