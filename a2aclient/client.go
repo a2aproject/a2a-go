@@ -234,7 +234,7 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	}
 
 	method := "GetAgentCard"
-	var req *struct{}
+	var req struct{}
 	ctx, _, err := interceptBefore(ctx, c, method, req)
 	if err != nil {
 		return nil, err
