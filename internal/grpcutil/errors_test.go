@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2agrpc
+package grpcutil
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -126,42 +127,145 @@ func TestToGRPCError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toGRPCError(tt.err)
+			got := ToGRPCError(tt.err)
 			if tt.wantNil {
 				if got != nil {
-					t.Fatalf("toGRPCError() = %v, want nil", got)
+					t.Fatalf("ToGRPCError() = %v, want nil", got)
 				}
 				return
 			}
 
 			if got.Error() != tt.want.Error() {
-				t.Fatalf("toGRPCError() = %v, want %v", got, tt.want)
+				t.Fatalf("ToGRPCError() = %v, want %v", got, tt.want)
 			}
 			gotSt, _ := status.FromError(got)
 			wantSt, _ := status.FromError(tt.want)
 
 			if gotSt.Code() != wantSt.Code() {
-				t.Fatalf("toGRPCError() code = %v, want %v", gotSt.Code(), wantSt.Code())
+				t.Fatalf("ToGRPCError() code = %v, want %v", gotSt.Code(), wantSt.Code())
 			}
 			if len(wantSt.Details()) == 0 {
 				return
 			}
 			if len(gotSt.Details()) != len(wantSt.Details()) {
-				t.Fatalf("toGRPCError() details len = %d, want %d", len(gotSt.Details()), len(wantSt.Details()))
+				t.Fatalf("ToGRPCError() details len = %d, want %d", len(gotSt.Details()), len(wantSt.Details()))
 			}
 			for i := range gotSt.Details() {
 				gotDetail, ok1 := gotSt.Details()[i].(*structpb.Struct)
 				wantDetail, ok2 := wantSt.Details()[i].(*structpb.Struct)
 				if !ok1 || !ok2 {
-					t.Fatalf("toGRPCError() details expected structpb.Struct")
+					t.Fatalf("ToGRPCError() details expected structpb.Struct")
 				}
 				if len(gotDetail.Fields) != len(wantDetail.Fields) {
-					t.Errorf("toGRPCError() details fields len = %d, want %d", len(gotDetail.Fields), len(wantDetail.Fields))
+					t.Errorf("ToGRPCError() details fields len = %d, want %d", len(gotDetail.Fields), len(wantDetail.Fields))
 				}
 				if v, ok := wantDetail.Fields["reason"]; ok {
 					if gotV, ok := gotDetail.Fields["reason"]; !ok || gotV.GetStringValue() != v.GetStringValue() {
-						t.Errorf("toGRPCError() details field 'reason' mismatch")
+						t.Errorf("ToGRPCError() details field 'reason' mismatch")
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestFromGRPCError(t *testing.T) {
+	testDetails := map[string]any{"reason": "test"}
+	stDetails, err := structpb.NewStruct(testDetails)
+	if err != nil {
+		t.Fatalf("Failed to create structpb: %v", err)
+	}
+	stWithDetails, err := status.New(codes.NotFound, "not found").WithDetails(stDetails)
+	if err != nil {
+		t.Fatalf("Failed to attach details: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		err         error
+		want        error
+		wantDetails map[string]any
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: nil,
+		},
+		{
+			name: "non-grpc error",
+			err:  errors.New("simple error"),
+			want: errors.New("simple error"), // Should return as is
+		},
+		{
+			name: "NotFound -> ErrTaskNotFound",
+			err:  status.Error(codes.NotFound, "foo"),
+			want: a2a.ErrTaskNotFound,
+		},
+		{
+			name: "Unknown code -> ErrInternalError",
+			err:  status.Error(codes.Unknown, "unknown"),
+			want: a2a.ErrInternalError,
+		},
+		{
+			name: "Unauthenticated -> ErrUnauthenticated",
+			err:  status.Error(codes.Unauthenticated, "auth failed"),
+			want: a2a.ErrUnauthenticated,
+		},
+		{
+			name: "PermissionDenied -> ErrUnauthorized",
+			err:  status.Error(codes.PermissionDenied, "forbidden"),
+			want: a2a.ErrUnauthorized,
+		},
+		{
+			name:        "with details",
+			err:         stWithDetails.Err(),
+			want:        a2a.NewError(a2a.ErrTaskNotFound, "not found"),
+			wantDetails: testDetails,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FromGRPCError(tc.err)
+			if tc.want == nil {
+				if got != nil {
+					t.Errorf("FromGRPCError() = %v, want nil", got)
+				}
+				return
+			}
+			// For non-grpc error check identity or equality
+			if _, ok := status.FromError(tc.err); !ok {
+				if got.Error() != tc.want.Error() {
+					t.Errorf("FromGRPCError() = %v, want %v", got, tc.want)
+				}
+				return
+			}
+
+			// Check primary error mapping
+			var wantErr error
+			if a2aErr, ok := tc.want.(*a2a.Error); ok {
+				wantErr = a2aErr.Err
+			} else {
+				wantErr = tc.want
+			}
+
+			// Extract inner error if got is a2a.Error
+			var gotBaseErr error = got
+			if a2aErr, ok := got.(*a2a.Error); ok {
+				gotBaseErr = a2aErr.Err
+			}
+
+			if !errors.Is(gotBaseErr, wantErr) {
+				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
+			}
+
+			if tc.wantDetails != nil {
+				var a2aErr *a2a.Error
+				if !errors.As(got, &a2aErr) {
+					t.Fatalf("got error type %T, want *a2a.Error", got)
+				}
+				if diff := cmp.Diff(tc.wantDetails, a2aErr.Details); diff != "" {
+					t.Fatalf("got wrong details (+got,-want) diff = %s", diff)
 				}
 			}
 		})

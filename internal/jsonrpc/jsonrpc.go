@@ -81,15 +81,10 @@ func (e *Error) ToA2AError() error {
 	if !ok {
 		err = a2a.ErrInternalError
 	}
-	if e.Data == nil {
-		return err
+	if len(e.Data) > 0 {
+		return a2a.NewError(err, e.Message).WithDetails(e.Data)
 	}
-	extra, ok := e.Data["error"].(string)
-	if !ok {
-		return err
-	}
-	return fmt.Errorf("%s: %w", extra, err)
-
+	return err
 }
 
 func ToJSONRPCError(err error) *Error {
