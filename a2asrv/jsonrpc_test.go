@@ -15,6 +15,7 @@
 package a2asrv
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -29,6 +30,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
@@ -263,76 +265,28 @@ func TestJSONRPC_Validations(t *testing.T) {
 }
 
 func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
-	// This test verifies that streaming requests work correctly with the keep-alive ticker.
-	// The keep-alive messages are sent every 5 seconds to prevent API gateways from 
-	// dropping idle connections.
-	t.Parallel()
-	ctx := t.Context()
-
-	// Create a mock agent executor that waits before sending a message
-	mockExecutor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
-			// Wait 6 seconds - this is longer than the 5s keep-alive ticker interval
-			// Without keep-alive messages, a 10s gateway timeout would fail
-			time.Sleep(6 * time.Second)
-			
-			// Send a message to complete the stream
-			if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
-				return err
-			}
-			return nil
-		},
-	}
-
-	reqHandler := NewHandler(mockExecutor)
-	// Enable keep-alive with default 5s interval
-	server := httptest.NewServer(NewJSONRPCHandler(reqHandler, WithKeepAlive(5*time.Second)))
-	defer server.Close()
-
-	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
-	})
-	if err != nil {
-		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
-	}
-
-	// Use SendStreamingMessage - it should complete successfully even with the 6s delay
-	messageCount := 0
-	for event, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
-	}) {
-		if err != nil {
-			t.Fatalf("SendStreamingMessage() error = %v", err)
-		}
-		
-		if _, ok := event.(*a2a.Message); ok {
-			messageCount++
-		}
-	}
-
-	// Verify that we received the message
-	if messageCount != 1 {
-		t.Errorf("Expected 1 message, got %d", messageCount)
-	}
-}
-
-func TestJSONRPC_StreamingKeepAliveDisabled(t *testing.T) {
-	// This test verifies that streaming works when keep-alive is disabled
+	agentTimeout := 20 * time.Millisecond
 	testCases := []struct {
-		name    string
-		options []JSONRPCHandlerOption
+		name        string
+		option      JSONRPCHandlerOption
+		wantEnabled bool
 	}{
 		{
-			name:    "default (no option)",
-			options: nil,
+			name:   "default disabled", // TODO: change default for 1.0
+			option: nil,
 		},
 		{
-			name:    "WithKeepAlive(0)",
-			options: []JSONRPCHandlerOption{WithKeepAlive(0)},
+			name:   "zero for disabled",
+			option: WithKeepAlive(0),
 		},
 		{
-			name:    "WithKeepAlive(-1)",
-			options: []JSONRPCHandlerOption{WithKeepAlive(-1 * time.Second)},
+			name:   "negative for disabled",
+			option: WithKeepAlive(-1),
+		},
+		{
+			name:        "positive for enabled",
+			option:      WithKeepAlive(5 * time.Millisecond),
+			wantEnabled: true,
 		},
 	}
 
@@ -341,9 +295,9 @@ func TestJSONRPC_StreamingKeepAliveDisabled(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 
-			// Create a mock agent executor that sends a message quickly
 			mockExecutor := &mockAgentExecutor{
 				ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+					time.Sleep(agentTimeout)
 					if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
 						return err
 					}
@@ -351,34 +305,49 @@ func TestJSONRPC_StreamingKeepAliveDisabled(t *testing.T) {
 				},
 			}
 
+			opts := []JSONRPCHandlerOption{}
+			if tc.option != nil {
+				opts = append(opts, tc.option)
+			}
 			reqHandler := NewHandler(mockExecutor)
-			server := httptest.NewServer(NewJSONRPCHandler(reqHandler, tc.options...))
+			server := httptest.NewServer(NewJSONRPCHandler(reqHandler, opts...))
 			defer server.Close()
 
-			client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-				{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
-			})
+			request := jsonrpcRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodMessageStream,
+				Params: mustMarshal(t, &a2a.MessageSendParams{
+					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "hello"}),
+				}),
+				ID: 1,
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
 			if err != nil {
-				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
+			req.Header.Set("Accept", sse.ContentEventStream)
+			client := http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("client.Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
 
-			// Use SendStreamingMessage - it should complete successfully
-			messageCount := 0
-			for event, err := range client.SendStreamingMessage(ctx, &a2a.MessageSendParams{
-				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "test"}),
-			}) {
-				if err != nil {
-					t.Fatalf("SendStreamingMessage() error = %v", err)
-				}
-
-				if _, ok := event.(*a2a.Message); ok {
-					messageCount++
+			scanner := bufio.NewScanner(resp.Body)
+			var keepAlives int16
+			for scanner.Scan() {
+				line := scanner.Bytes()
+				if string(line) == ": keep-alive" {
+					keepAlives++
+					break
 				}
 			}
-
-			// Verify that we received the message
-			if messageCount != 1 {
-				t.Errorf("Expected 1 message, got %d", messageCount)
+			if tc.wantEnabled && keepAlives == 0 {
+				t.Error("keep-alive enabled but none received")
+			}
+			if !tc.wantEnabled && keepAlives > 0 {
+				t.Errorf("keep-alive disabled but received %d", keepAlives)
 			}
 		})
 	}
