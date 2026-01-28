@@ -21,7 +21,7 @@ func NewMySQLDBAdapter(db *sql.DB) *MySQLDBAdapter {
 }
 
 // Create persists a new task and event.
-func (a *MySQLDBAdapter) Create(ctx context.Context, task *a2a.Task, event a2a.Event, newVersion int64, protocolVersion a2a.ProtocolVersion) error {
+func (a *MySQLDBAdapter) Create(ctx context.Context, task *a2a.Task, event a2a.Event, newVersion a2a.TaskVersion, protocolVersion a2a.ProtocolVersion) error {
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func (a *MySQLDBAdapter) Create(ctx context.Context, task *a2a.Task, event a2a.E
 }
 
 // Update persists an updated task and event.
-func (a *MySQLDBAdapter) Update(ctx context.Context, task *a2a.Task, event a2a.Event, newVersion int64, prevVersion int64, protocolVersion a2a.ProtocolVersion) (bool, error) {
+func (a *MySQLDBAdapter) Update(ctx context.Context, task *a2a.Task, event a2a.Event, newVersion a2a.TaskVersion, prevVersion a2a.TaskVersion, protocolVersion a2a.ProtocolVersion) (bool, error) {
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -98,7 +98,7 @@ func (a *MySQLDBAdapter) Update(ctx context.Context, task *a2a.Task, event a2a.E
 	return true, nil
 }
 
-func (a *MySQLDBAdapter) insertEvent(ctx context.Context, tx *sql.Tx, taskID a2a.TaskID, event a2a.Event, taskVersion int64) error {
+func (a *MySQLDBAdapter) insertEvent(ctx context.Context, tx *sql.Tx, taskID a2a.TaskID, event a2a.Event, taskVersion a2a.TaskVersion) error {
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
@@ -118,7 +118,7 @@ func (a *MySQLDBAdapter) insertEvent(ctx context.Context, tx *sql.Tx, taskID a2a
 }
 
 // Get retrieves a task from the database.
-func (a *MySQLDBAdapter) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, int64, error) {
+func (a *MySQLDBAdapter) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
 	var taskJSON string
 	var version int64
 	err := a.db.QueryRowContext(ctx, "SELECT task_json, last_updated FROM task WHERE id = ?", taskID).Scan(&taskJSON, &version)
@@ -134,7 +134,7 @@ func (a *MySQLDBAdapter) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task,
 		return nil, 0, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
-	return &task, version, nil
+	return &task, a2a.TaskVersion(version), nil
 }
 
 func getEventType(e a2a.Event) string {
