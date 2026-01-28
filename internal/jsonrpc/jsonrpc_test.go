@@ -104,3 +104,58 @@ func TestToJSONRPCError(t *testing.T) {
 		})
 	}
 }
+
+func TestToA2AError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		err     *Error
+		wantErr *a2a.Error
+	}{
+		{
+			name:    "known error code",
+			err:     &Error{Code: -32001, Message: "task not found"},
+			wantErr: a2a.NewError(a2a.ErrTaskNotFound, "task not found"),
+		},
+		{
+			name:    "unknown error code",
+			err:     &Error{Code: -99999, Message: "some unknown error"},
+			wantErr: a2a.NewError(a2a.ErrInternalError, "some unknown error"),
+		},
+		{
+			name: "custom",
+			err: &Error{
+				Code:    -32602,
+				Message: "custom",
+				Data:    map[string]any{"field": "foo", "reason": "missing"},
+			},
+			wantErr: a2a.NewError(a2a.ErrInvalidParams, "custom").WithDetails(map[string]any{"field": "foo", "reason": "missing"}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tt.err.ToA2AError()
+
+			if !errors.Is(got, tt.wantErr.Unwrap()) {
+				t.Errorf("ToA2AError() error = %v, wantErr %v", got, tt.wantErr)
+			}
+
+			if got.Error() != tt.wantErr.Error() {
+				t.Errorf("ToA2AError() message = %q, want %q", got.Error(), tt.wantErr.Error())
+			}
+
+			if len(tt.err.Data) > 1 {
+				var a2aErr *a2a.Error
+				if errors.As(got, &a2aErr) {
+					if diff := cmp.Diff(tt.err.Data, a2aErr.Details); diff != "" {
+						t.Errorf("ToA2AError() details mismatch (-want +got):\n%s", diff)
+					}
+				}
+			}
+		})
+	}
+}

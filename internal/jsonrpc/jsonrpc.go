@@ -81,10 +81,17 @@ func (e *Error) ToA2AError() error {
 	if !ok {
 		err = a2a.ErrInternalError
 	}
-	if len(e.Data) > 0 {
-		return a2a.NewError(err, e.Message).WithDetails(e.Data)
+
+	msg := e.Message
+	if len(msg) == 0 {
+		msg = err.Error()
 	}
-	return err
+
+	result := a2a.NewError(err, msg)
+	if len(e.Data) > 0 {
+		result.WithDetails(e.Data)
+	}
+	return result
 }
 
 func ToJSONRPCError(err error) *Error {
@@ -118,5 +125,9 @@ func ToJSONRPCError(err error) *Error {
 			}
 		}
 	}
-	return &Error{Code: -32603, Message: a2a.ErrInternalError.Error(), Data: map[string]any{"error": err.Error()}}
+	return &Error{
+		Code:    -32603,
+		Message: a2a.ErrInternalError.Error(),
+		Data:    map[string]any{"error": err.Error()},
+	}
 }

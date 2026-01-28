@@ -113,9 +113,9 @@ func FromGRPCError(err error) error {
 		}
 	}
 
+	errOut := a2a.NewError(baseErr, s.Message())
 	if len(details) > 0 {
-		return a2a.NewError(baseErr, s.Message()).WithDetails(details)
+		errOut.WithDetails(details)
 	}
-
-	return baseErr
+	return errOut
 }

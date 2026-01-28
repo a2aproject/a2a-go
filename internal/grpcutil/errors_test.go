@@ -181,10 +181,9 @@ func TestFromGRPCError(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		err         error
-		want        error
-		wantDetails map[string]any
+		name string
+		err  error
+		want error
 	}{
 		{
 			name: "nil error",
@@ -199,28 +198,27 @@ func TestFromGRPCError(t *testing.T) {
 		{
 			name: "NotFound -> ErrTaskNotFound",
 			err:  status.Error(codes.NotFound, "foo"),
-			want: a2a.ErrTaskNotFound,
+			want: a2a.NewError(a2a.ErrTaskNotFound, "foo"),
 		},
 		{
 			name: "Unknown code -> ErrInternalError",
 			err:  status.Error(codes.Unknown, "unknown"),
-			want: a2a.ErrInternalError,
+			want: a2a.NewError(a2a.ErrInternalError, "unknown"),
 		},
 		{
 			name: "Unauthenticated -> ErrUnauthenticated",
 			err:  status.Error(codes.Unauthenticated, "auth failed"),
-			want: a2a.ErrUnauthenticated,
+			want: a2a.NewError(a2a.ErrUnauthenticated, "auth failed"),
 		},
 		{
 			name: "PermissionDenied -> ErrUnauthorized",
 			err:  status.Error(codes.PermissionDenied, "forbidden"),
-			want: a2a.ErrUnauthorized,
+			want: a2a.NewError(a2a.ErrUnauthorized, "forbidden"),
 		},
 		{
-			name:        "with details",
-			err:         stWithDetails.Err(),
-			want:        a2a.NewError(a2a.ErrTaskNotFound, "not found"),
-			wantDetails: testDetails,
+			name: "with details",
+			err:  stWithDetails.Err(),
+			want: a2a.NewError(a2a.ErrTaskNotFound, "not found").WithDetails(testDetails),
 		},
 	}
 
@@ -259,12 +257,18 @@ func TestFromGRPCError(t *testing.T) {
 				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
 			}
 
-			if tc.wantDetails != nil {
+			var wantDetails map[string]any
+			var wantA2AErr *a2a.Error
+			if errors.As(tc.want, &wantA2AErr) {
+				wantDetails = wantA2AErr.Details
+			}
+
+			if wantDetails != nil {
 				var a2aErr *a2a.Error
 				if !errors.As(got, &a2aErr) {
 					t.Fatalf("got error type %T, want *a2a.Error", got)
 				}
-				if diff := cmp.Diff(tc.wantDetails, a2aErr.Details); diff != "" {
+				if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
 					t.Fatalf("got wrong details (+got,-want) diff = %s", diff)
 				}
 			}
