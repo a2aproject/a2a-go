@@ -75,6 +75,21 @@ func TestToJSONRPCError(t *testing.T) {
 			err:  errors.New("identity service error: user not authenticated"),
 			want: &Error{Code: -32603, Message: a2a.ErrInternalError.Error(), Data: map[string]any{"error": "identity service error: user not authenticated"}},
 		},
+		{
+			name: "ErrUnauthenticated mapping",
+			err:  a2a.ErrUnauthenticated,
+			want: &Error{Code: -31401, Message: a2a.ErrUnauthenticated.Error(), Data: map[string]any{"error": a2a.ErrUnauthenticated.Error()}},
+		},
+		{
+			name: "a2a.Error with known error",
+			err:  a2a.NewError(a2a.ErrUnauthorized, "You shall not pass").WithDetails(map[string]any{"reason": "expired token"}),
+			want: &Error{Code: -31403, Message: "You shall not pass", Data: map[string]any{"reason": "expired token"}},
+		},
+		{
+			name: "a2a.Error with unknown error",
+			err:  a2a.NewError(errors.New("random thing"), "Something went wrong"),
+			want: &Error{Code: -32603, Message: "Something went wrong", Data: nil},
+		},
 	}
 
 	for _, tt := range tests {

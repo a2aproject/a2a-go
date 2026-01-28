@@ -72,6 +72,8 @@ var codeToError = map[int]error{
 	-32005: a2a.ErrUnsupportedContentType,
 	-32006: a2a.ErrInvalidAgentResponse,
 	-32007: a2a.ErrAuthenticatedExtendedCardNotConfigured,
+	-31401: a2a.ErrUnauthenticated,
+	-31403: a2a.ErrUnauthorized,
 }
 
 func (e *Error) ToA2AError() error {
@@ -94,6 +96,22 @@ func ToJSONRPCError(err error) *Error {
 	jsonrpcErr := &Error{}
 	if errors.As(err, &jsonrpcErr) {
 		return jsonrpcErr
+	}
+
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) {
+		code := -32603
+		for c, target := range codeToError {
+			if errors.Is(a2aErr.Err, target) {
+				code = c
+				break
+			}
+		}
+		return &Error{
+			Code:    code,
+			Message: a2aErr.Error(),
+			Data:    a2aErr.Details,
+		}
 	}
 
 	for code, a2aErr := range codeToError {

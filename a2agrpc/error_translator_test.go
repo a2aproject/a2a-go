@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestToGRPCError(t *testing.T) {
@@ -107,6 +108,16 @@ func TestToGRPCError(t *testing.T) {
 			want: status.Error(codes.Internal, unknownError.Error()),
 		},
 		{
+			name: "a2a error unwrapped",
+			err:  a2a.NewError(a2a.ErrInvalidParams, "custom message"),
+			want: status.Error(codes.InvalidArgument, "custom message"),
+		},
+		{
+			name: "structpb conversion failure",
+			err:  a2a.NewError(errors.New("bad details"), "oops").WithDetails(map[string]any{"func": func() {}}),
+			want: status.Error(codes.Internal, "oops"),
+		},
+		{
 			name: "already a grpc error",
 			err:  grpcError,
 			want: grpcError,
@@ -118,17 +129,40 @@ func TestToGRPCError(t *testing.T) {
 			got := toGRPCError(tt.err)
 			if tt.wantNil {
 				if got != nil {
-					t.Errorf("toGRPCError() = %v, want nil", got)
+					t.Fatalf("toGRPCError() = %v, want nil", got)
 				}
 				return
 			}
+
 			if got.Error() != tt.want.Error() {
-				t.Errorf("toGRPCError() = %v, want %v", got, tt.want)
+				t.Fatalf("toGRPCError() = %v, want %v", got, tt.want)
 			}
 			gotSt, _ := status.FromError(got)
 			wantSt, _ := status.FromError(tt.want)
+
 			if gotSt.Code() != wantSt.Code() {
-				t.Errorf("toGRPCError() code = %v, want %v", gotSt.Code(), wantSt.Code())
+				t.Fatalf("toGRPCError() code = %v, want %v", gotSt.Code(), wantSt.Code())
+			}
+			if len(wantSt.Details()) == 0 {
+				return
+			}
+			if len(gotSt.Details()) != len(wantSt.Details()) {
+				t.Fatalf("toGRPCError() details len = %d, want %d", len(gotSt.Details()), len(wantSt.Details()))
+			}
+			for i := range gotSt.Details() {
+				gotDetail, ok1 := gotSt.Details()[i].(*structpb.Struct)
+				wantDetail, ok2 := wantSt.Details()[i].(*structpb.Struct)
+				if !ok1 || !ok2 {
+					t.Fatalf("toGRPCError() details expected structpb.Struct")
+				}
+				if len(gotDetail.Fields) != len(wantDetail.Fields) {
+					t.Errorf("toGRPCError() details fields len = %d, want %d", len(gotDetail.Fields), len(wantDetail.Fields))
+				}
+				if v, ok := wantDetail.Fields["reason"]; ok {
+					if gotV, ok := gotDetail.Fields["reason"]; !ok || gotV.GetStringValue() != v.GetStringValue() {
+						t.Errorf("toGRPCError() details field 'reason' mismatch")
+					}
+				}
 			}
 		})
 	}

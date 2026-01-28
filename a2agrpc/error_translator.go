@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // toGRPCError translates a2a errors into gRPC status errors.
@@ -42,7 +43,8 @@ func toGRPCError(err error) error {
 	case errors.Is(err, a2a.ErrTaskNotCancelable):
 		code = codes.FailedPrecondition
 	case errors.Is(err, a2a.ErrPushNotificationNotSupported),
-		errors.Is(err, a2a.ErrUnsupportedOperation):
+		errors.Is(err, a2a.ErrUnsupportedOperation),
+		errors.Is(err, a2a.ErrMethodNotFound):
 		code = codes.Unimplemented
 	case errors.Is(err, a2a.ErrUnsupportedContentType),
 		errors.Is(err, a2a.ErrInvalidRequest),
@@ -50,6 +52,10 @@ func toGRPCError(err error) error {
 		code = codes.InvalidArgument
 	case errors.Is(err, a2a.ErrInvalidAgentResponse):
 		code = codes.Internal
+	case errors.Is(err, a2a.ErrUnauthenticated):
+		code = codes.Unauthenticated
+	case errors.Is(err, a2a.ErrUnauthorized):
+		code = codes.PermissionDenied
 	case errors.Is(err, context.Canceled):
 		code = codes.Canceled
 	case errors.Is(err, context.DeadlineExceeded):
@@ -57,5 +63,21 @@ func toGRPCError(err error) error {
 	default:
 		code = codes.Internal
 	}
-	return status.New(code, err.Error()).Err()
+
+	st := status.New(code, err.Error())
+
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) && len(a2aErr.Details) > 0 {
+		s, err := structpb.NewStruct(a2aErr.Details)
+		if err != nil {
+			return st.Err()
+		}
+		withDetails, err := st.WithDetails(s)
+		if err != nil {
+			return st.Err()
+		}
+		st = withDetails
+	}
+
+	return st.Err()
 }

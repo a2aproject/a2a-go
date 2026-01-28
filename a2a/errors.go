@@ -60,6 +60,38 @@ var (
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
 
-	// ErrAuthFailed indicates that the authentication failed.
-	ErrAuthFailed = errors.New("authentication failed")
+	// ErrUnauthenticated indicates that the request does not have valid authentication credentials.
+	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrUnauthorized indicates that the caller does not have permission to execute the specified operation.
+	ErrUnauthorized = errors.New("permission denied")
 )
+
+type Error struct {
+	Err     error
+	Message string
+	Details map[string]any
+}
+
+func (e *Error) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "internal error"
+}
+
+func (e *Error) Unwrap() error {
+	return e.Err
+}
+
+func NewError(err error, message string) *Error {
+	return &Error{Err: err, Message: message}
+}
+
+func (e *Error) WithDetails(details map[string]any) *Error {
+	e.Details = details
+	return e
+}
