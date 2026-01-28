@@ -146,8 +146,8 @@ func newIncreasingTimeProvider(startTime time.Time) func() time.Time {
 func TestInMemoryTaskStore_List_NoAuth(t *testing.T) {
 	store := NewMem()
 	_, err := store.List(t.Context(), &a2a.ListTasksRequest{})
-	if !errors.Is(err, a2a.ErrAuthFailed) {
-		t.Fatalf("Unexpected error: got = %v, want ErrAuthFailed", err)
+	if !errors.Is(err, a2a.ErrUnauthenticated) {
+		t.Fatalf("Unexpected error: got = %v, want ErrUnauthenticated", err)
 	}
 }
 

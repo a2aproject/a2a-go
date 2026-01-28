@@ -601,3 +601,42 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 }
+
+func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
+	wantMsg, wantDetails := "Access Denied", map[string]any{"reason": "expired_token", "scope": "read"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := mustDecodeJSONRPC(t, r, "tasks/get")
+
+		resp := jsonrpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error: &jsonrpc.Error{
+				Code:    -31403,
+				Message: wantMsg,
+				Data:    wantDetails,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+
+	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+		ID: "task-123",
+	})
+
+	var a2aErr *a2a.Error
+	if !errors.As(err, &a2aErr) {
+		t.Fatalf("got error type %T, want *a2a.Error", err)
+	}
+	if !errors.Is(a2aErr.Err, a2a.ErrUnauthorized) {
+		t.Errorf("got inner error %v, want ErrUnauthorized", a2aErr.Err)
+	}
+	if a2aErr.Message != wantMsg {
+		t.Errorf("got message %q, want %q", a2aErr.Message, wantMsg)
+	}
+	if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
+		t.Errorf("got wrong details (+got,-want) diff = %s", diff)
+	}
+}

@@ -143,7 +143,7 @@ func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVe
 func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	userName, ok := s.authenticator(ctx)
 	if !ok {
-		return nil, a2a.ErrAuthFailed
+		return nil, a2a.ErrUnauthenticated
 	}
 	pageSize := req.PageSize
 	if pageSize == 0 {

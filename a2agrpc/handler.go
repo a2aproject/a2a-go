@@ -20,6 +20,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/internal/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -58,7 +59,7 @@ func (h *Handler) SendMessage(ctx context.Context, req *a2apb.SendMessageRequest
 	ctx, callCtx := withCallContext(ctx)
 	resp, err := h.handler.OnSendMessage(ctx, params)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -84,7 +85,7 @@ func (h *Handler) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grp
 	ctx, callCtx := withCallContext(stream.Context())
 	for event, err := range h.handler.OnSendMessageStream(ctx, params) {
 		if err != nil {
-			return toGRPCError(err)
+			return grpcutil.ToGRPCError(err)
 		}
 		resp, err := pbconv.ToProtoStreamResponse(event)
 		if err != nil {
@@ -109,7 +110,7 @@ func (h *Handler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2ap
 	ctx, callCtx := withCallContext(ctx)
 	task, err := h.handler.OnGetTask(ctx, params)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -153,7 +154,7 @@ func (h *Handler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) 
 	ctx, callCtx := withCallContext(ctx)
 	task, err := h.handler.OnCancelTask(ctx, &a2a.TaskIDParams{ID: taskID})
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -175,7 +176,7 @@ func (h *Handler) TaskSubscription(req *a2apb.TaskSubscriptionRequest, stream gr
 	ctx, callCtx := withCallContext(stream.Context())
 	for event, err := range h.handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{ID: taskID}) {
 		if err != nil {
-			return toGRPCError(err)
+			return grpcutil.ToGRPCError(err)
 		}
 		resp, err := pbconv.ToProtoStreamResponse(event)
 		if err != nil {
@@ -200,7 +201,7 @@ func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, req *a2a
 	ctx, callCtx := withCallContext(ctx)
 	config, err := h.handler.OnSetTaskPushConfig(ctx, params)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -222,7 +223,7 @@ func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, req *a2apb.
 	ctx, callCtx := withCallContext(ctx)
 	config, err := h.handler.OnGetTaskPushConfig(ctx, params)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -245,7 +246,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb
 	// todo: handling pagination
 	configs, err := h.handler.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{TaskID: taskID})
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
@@ -261,7 +262,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, req *a2apb
 func (h *Handler) GetAgentCard(ctx context.Context, req *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
 	card, err := h.handler.OnGetExtendedAgentCard(ctx)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	result, err := pbconv.ToProtoAgentCard(card)
 	if err != nil {
@@ -278,7 +279,7 @@ func (h *Handler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2a
 
 	ctx, callCtx := withCallContext(ctx)
 	if err := h.handler.OnDeleteTaskPushConfig(ctx, params); err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
