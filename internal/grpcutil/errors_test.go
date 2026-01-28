@@ -250,7 +250,7 @@ func TestFromGRPCError(t *testing.T) {
 			}
 
 			// Extract inner error if got is a2a.Error
-			var gotBaseErr error = got
+			gotBaseErr := got
 			if a2aErr, ok := got.(*a2a.Error); ok {
 				gotBaseErr = a2aErr.Err
 			}

@@ -67,12 +67,17 @@ var (
 	ErrUnauthorized = errors.New("permission denied")
 )
 
+// Error provides control over the message and details returned to clients.
 type Error struct {
-	Err     error
+	// Err is the underlying error. It will be used for transport-specific code selection.
+	Err error
+	// Message is a human-readable description of the error returned to clients.
 	Message string
+	// Details can contain additional structured information about the error.
 	Details map[string]any
 }
 
+// Error returns the error message.
 func (e *Error) Error() string {
 	if e.Message != "" {
 		return e.Message
@@ -83,14 +88,17 @@ func (e *Error) Error() string {
 	return "internal error"
 }
 
+// Unwrap provides access to the error cause.
 func (e *Error) Unwrap() error {
 	return e.Err
 }
 
+// NewError creates a new A2A Error wrapping the provided error with a custom message.
 func NewError(err error, message string) *Error {
 	return &Error{Err: err, Message: message}
 }
 
+// WithDetails attaches structured data to the error.
 func (e *Error) WithDetails(details map[string]any) *Error {
 	e.Details = details
 	return e
