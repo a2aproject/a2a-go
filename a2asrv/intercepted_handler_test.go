@@ -272,9 +272,7 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 
 	wantRespKey, wantRespVal := "respKey", 43
 	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-		responsePtr := resp.Payload.(*a2a.SendMessageResult)
-		sendMessageResult := *responsePtr
-		payload := sendMessageResult.(*a2a.Message)
+		payload := resp.Payload.(*a2a.Message)
 		payload.Metadata = map[string]any{wantRespKey: wantRespVal}
 		return nil
 	}
@@ -352,9 +350,7 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 			name:        "replace response object",
 			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original!"}),
 			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-				if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
-					*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"})
-				}
+				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"})
 				return nil
 			},
 			wantRespText: "Modified!",
@@ -375,9 +371,7 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 				if resp.Err != nil {
 					resp.Err = nil
 
-					if resp, ok := resp.Payload.(*a2a.SendMessageResult); ok {
-						*resp = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error!"})
-					}
+					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error!"})
 				}
 				return nil
 			},
@@ -492,9 +486,7 @@ func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 	countKey := "count"
 	afterCount := 0
 	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-		responsePtr := resp.Payload.(*a2a.Event)
-		event := *responsePtr
-		ev := event.(*a2a.TaskStatusUpdateEvent)
+		ev := resp.Payload.(*a2a.TaskStatusUpdateEvent)
 		ev.Metadata[countKey] = afterCount
 		afterCount++
 		return nil
