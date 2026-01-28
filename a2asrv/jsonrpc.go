@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
@@ -46,12 +47,29 @@ type jsonrpcResponse struct {
 }
 
 type jsonrpcHandler struct {
-	handler RequestHandler
+	handler           RequestHandler
+	keepAliveInterval time.Duration
+}
+
+// JSONRPCHandlerOption is a functional option for configuring the JSONRPC handler.
+type JSONRPCHandlerOption func(*jsonrpcHandler)
+
+// WithKeepAlive enables SSE keep-alive messages at the specified interval.
+// Keep-alive messages prevent API gateways from dropping idle connections.
+// If interval is 0 or negative, keep-alive is disabled (default behavior).
+func WithKeepAlive(interval time.Duration) JSONRPCHandlerOption {
+	return func(h *jsonrpcHandler) {
+		h.keepAliveInterval = interval
+	}
 }
 
 // NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC.
-func NewJSONRPCHandler(handler RequestHandler) http.Handler {
-	return &jsonrpcHandler{handler: handler}
+func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) http.Handler {
+	h := &jsonrpcHandler{handler: handler}
+	for _, option := range options {
+		option(h)
+	}
+	return h
 }
 
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -169,11 +187,24 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		eventSeqToSSEDataStream(requestCtx, req, sseChan, events)
 	}()
 
+	// Set up keep-alive ticker if enabled (interval > 0)
+	var keepAliveTicker *time.Ticker
+	var keepAliveChan <-chan time.Time
+	if h.keepAliveInterval > 0 {
+		keepAliveTicker = time.NewTicker(h.keepAliveInterval)
+		defer keepAliveTicker.Stop()
+		keepAliveChan = keepAliveTicker.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		// TODO: start sending keep-alive when other SDK-s support it: https://github.com/a2aproject/a2a-python/issues/540
+		case <-keepAliveChan:
+			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
+				log.Error(ctx, "failed to write keep-alive", err)
+				return
+			}
 		case data, ok := <-sseChan:
 			if !ok {
 				return
