@@ -82,10 +82,10 @@ type Response struct {
 type CallInterceptor interface {
 	// Before allows to observe, modify or reject a Request.
 	// A new context.Context can be returned to pass information to one of the extension points.
-	Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error)
+	Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 
 	// After allows to observe, modify or reject a Response.
-	After(ctx context.Context, callCtx *CallContext, resp *Response) error
+	After(ctx context.Context, callCtx *CallContext, resp *Response) (any, error)
 }
 
 // WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
@@ -99,10 +99,10 @@ func WithCallInterceptor(interceptor CallInterceptor) RequestHandlerOption {
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughCallInterceptor struct{}
 
-func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
-	return ctx, nil
+func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+	return ctx, nil, nil
 }
 
-func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
-	return nil
+func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+	return nil, nil
 }
