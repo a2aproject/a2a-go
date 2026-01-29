@@ -678,12 +678,12 @@ func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 		Interceptors: []CallInterceptor{interceptor1, interceptor2, interceptor3},
 	}
 
-	respone, err := handler.OnGetTask(ctx, originalQuery)
+	response, err := handler.OnGetTask(ctx, originalQuery)
 	if err != nil {
 		t.Errorf("OnGetTask() error = %v, want nil", err)
 	}
-	if respone != earlyResult {
-		t.Errorf("OnGetTask() response = %v, want %v", respone, earlyResult)
+	if response != earlyResult {
+		t.Errorf("OnGetTask() response = %v, want %v", response, earlyResult)
 	}
 	if handlerCalled {
 		t.Error("Handler.OnGetTask() was called, want it to be skipped")
