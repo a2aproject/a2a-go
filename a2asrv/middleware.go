@@ -85,7 +85,7 @@ type CallInterceptor interface {
 	Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 
 	// After allows to observe, modify or reject a Response.
-	After(ctx context.Context, callCtx *CallContext, resp *Response) (any, error)
+	After(ctx context.Context, callCtx *CallContext, resp *Response) error
 }
 
 // WithCallInterceptor adds a CallInterceptor which will be applied to all requests and responses.
@@ -103,6 +103,6 @@ func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallConte
 	return ctx, nil, nil
 }
 
-func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
-	return nil, nil
+func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
+	return nil
 }

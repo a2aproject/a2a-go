@@ -130,7 +130,7 @@ func (h *mockHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCar
 
 type mockInterceptor struct {
 	beforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
-	afterFn  func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error)
+	afterFn  func(ctx context.Context, callCtx *CallContext, resp *Response) error
 }
 
 func (mi *mockInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
@@ -140,11 +140,11 @@ func (mi *mockInterceptor) Before(ctx context.Context, callCtx *CallContext, req
 	return ctx, nil, nil
 }
 
-func (mi *mockInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+func (mi *mockInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
 	if mi.afterFn != nil {
 		return mi.afterFn(ctx, callCtx, resp)
 	}
-	return nil, nil
+	return nil
 }
 
 func handleSingleItemSeq(seq iter.Seq2[a2a.Event, error]) (a2a.Event, error) {
@@ -275,10 +275,10 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	}
 
 	wantRespKey, wantRespVal := "respKey", 43
-	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 		payload := resp.Payload.(*a2a.Message)
 		payload.Metadata = map[string]any{wantRespKey: wantRespVal}
-		return nil, nil
+		return nil
 	}
 
 	request := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"})}
@@ -346,38 +346,38 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 		name          string
 		handlerResp   a2a.SendMessageResult
 		handlerErr    error
-		interceptorFn func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error)
+		interceptorFn func(ctx context.Context, callCtx *CallContext, resp *Response) error
 		wantErr       error
 		wantRespText  string
 	}{
 		{
 			name:        "replace response object",
 			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original!"}),
-			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"})
-				return nil, nil
+				return nil
 			},
 			wantRespText: "Modified!",
 		},
 		{
 			name:        "injected error: handler success, interceptor error",
 			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Success!"}),
-			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				resp.Err = injectedErr
-				return nil, nil
+				return nil
 			},
 			wantErr: injectedErr,
 		},
 		{
 			name:       "injected error: handler error, interceptor success",
 			handlerErr: handlerErr,
-			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				if resp.Err != nil {
 					resp.Err = nil
 
 					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error!"})
 				}
-				return nil, nil
+				return nil
 			},
 			wantErr:      nil,
 			wantRespText: "Recovered from error!",
@@ -449,9 +449,9 @@ func TestInterceptedHandler_InterceptorOrdering(t *testing.T) {
 				beforeCalls = append(beforeCalls, pos)
 				return ctx, nil, nil
 			},
-			afterFn: func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			afterFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				afterCalls = append(afterCalls, pos)
-				return nil, nil
+				return nil
 			},
 		}
 	}
@@ -489,11 +489,11 @@ func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 
 	countKey := "count"
 	afterCount := 0
-	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+	mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 		ev := resp.Payload.(*a2a.TaskStatusUpdateEvent)
 		ev.Metadata[countKey] = afterCount
 		afterCount++
-		return nil, nil
+		return nil
 	}
 
 	count := 0
@@ -529,9 +529,9 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 				return ctx, nil, nil
 			}
 			var afterCallCtx *CallContext
-			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				afterCallCtx = callCtx
-				return nil, nil
+				return nil
 			}
 
 			key := ExtensionsMetaKey
@@ -570,9 +570,9 @@ func TestInterceptedHandler_ContextDataPassing(t *testing.T) {
 				return context.WithValue(ctx, contextKey{}, wantVal), nil, nil
 			}
 			var gotVal any
-			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				gotVal = ctx.Value(contextKey{})
-				return nil, nil
+				return nil
 			}
 			_, _ = tc.call(ctx, handler)
 
@@ -618,9 +618,9 @@ func TestInterceptedHandler_RejectResponse(t *testing.T) {
 
 			wantErr := errors.New("rejected")
 			var interceptedErr error
-			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				interceptedErr = resp.Err
-				return nil, wantErr
+				return wantErr
 			}
 
 			_, gotErr := tc.call(ctx, handler)
@@ -655,18 +655,18 @@ func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 		callOrder = append(callOrder, "1-Before")
 		return ctx, nil, nil
 	}
-	interceptor1.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+	interceptor1.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 		callOrder = append(callOrder, "1-After")
-		return nil, nil
+		return nil
 	}
 	// Interceptor 2 returns early result
 	interceptor2.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		callOrder = append(callOrder, "2-Before")
 		return ctx, earlyResult, nil
 	}
-	interceptor2.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) (any, error) {
+	interceptor2.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 		callOrder = append(callOrder, "2-After")
-		return nil, nil
+		return nil
 	}
 	interceptor3.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		callOrder = append(callOrder, "3-Before")
