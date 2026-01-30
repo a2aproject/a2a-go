@@ -192,7 +192,7 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 			if !c.HeaderPredicate(ctx, req.Card, headerName, headerValue) {
 				continue
 			}
-			values, _ := req.Meta[headerName]
+			values := req.Meta[headerName]
 			if !slices.Contains(values, headerValue) {
 				values = append(values, headerValue)
 			}
