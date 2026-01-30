@@ -138,12 +138,10 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 			if h.panicHandler == nil {
 				panic(r)
 			}
-			if h.panicHandler != nil {
-				err := h.panicHandler(r)
-				if err != nil {
-					h.writeJSONRPCError(ctx, rw, err, req.ID)
-					return
-				}
+			err := h.panicHandler(r)
+			if err != nil {
+				h.writeJSONRPCError(ctx, rw, err, req.ID)
+				return
 			}
 		}
 	}()
@@ -236,16 +234,14 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			if h.panicHandler == nil {
 				panic(err)
 			}
-			if h.panicHandler != nil {
-				data, ok := marshalJSONRPCError(req, h.panicHandler(err))
-				if !ok {
-					log.Error(ctx, "failed to marshal error response", err)
-					return
-				}
-				if err := sseWriter.WriteData(ctx, data); err != nil {
-					log.Error(ctx, "failed to write an event", err)
-					return
-				}
+			data, ok := marshalJSONRPCError(req, h.panicHandler(err))
+			if !ok {
+				log.Error(ctx, "failed to marshal error response", err)
+				return
+			}
+			if err := sseWriter.WriteData(ctx, data); err != nil {
+				log.Error(ctx, "failed to write an event", err)
+				return
 			}
 		case <-keepAliveChan:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
