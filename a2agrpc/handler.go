@@ -132,7 +132,7 @@ func (h *Handler) ListTasks(ctx context.Context, req *a2apb.ListTasksRequest) (*
 	ctx, callCtx := withCallContext(ctx)
 	response, err := h.handler.OnListTasks(ctx, request)
 	if err != nil {
-		return nil, toGRPCError(err)
+		return nil, grpcutil.ToGRPCError(err)
 	}
 	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)

@@ -1209,7 +1209,7 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 			name:       "unauthorized",
 			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			request:    &a2a.ListTasksRequest{},
-			wantErr:    fmt.Errorf("failed to list tasks: %w", a2a.ErrAuthFailed),
+			wantErr:    fmt.Errorf("failed to list tasks: %w", a2a.ErrUnauthenticated),
 		},
 	}
 

@@ -268,7 +268,7 @@ func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a
 func (h *jsonrpcHandler) onListTasks(ctx context.Context, raw json.RawMessage) (*a2a.ListTasksResponse, error) {
 	var request a2a.ListTasksRequest
 	if err := json.Unmarshal(raw, &request); err != nil {
-		return nil, newParseError(err)
+		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnListTasks(ctx, &request)
 }

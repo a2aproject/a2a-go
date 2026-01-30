@@ -190,6 +190,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 			name:    "tasks/list with invalid page size",
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 125}`), ID: "123"}),
+			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "invalid ID",
