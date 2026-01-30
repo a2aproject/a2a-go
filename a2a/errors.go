@@ -60,6 +60,46 @@ var (
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
 
-	// ErrAuthFailed indicates that the authentication failed.
-	ErrAuthFailed = errors.New("authentication failed")
+	// ErrUnauthenticated indicates that the request does not have valid authentication credentials.
+	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrUnauthorized indicates that the caller does not have permission to execute the specified operation.
+	ErrUnauthorized = errors.New("permission denied")
 )
+
+// Error provides control over the message and details returned to clients.
+type Error struct {
+	// Err is the underlying error. It will be used for transport-specific code selection.
+	Err error
+	// Message is a human-readable description of the error returned to clients.
+	Message string
+	// Details can contain additional structured information about the error.
+	Details map[string]any
+}
+
+// Error returns the error message.
+func (e *Error) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "internal error"
+}
+
+// Unwrap provides access to the error cause.
+func (e *Error) Unwrap() error {
+	return e.Err
+}
+
+// NewError creates a new A2A Error wrapping the provided error with a custom message.
+func NewError(err error, message string) *Error {
+	return &Error{Err: err, Message: message}
+}
+
+// WithDetails attaches structured data to the error.
+func (e *Error) WithDetails(details map[string]any) *Error {
+	e.Details = details
+	return e
+}

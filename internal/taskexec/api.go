@@ -72,7 +72,8 @@ type ProcessorResult struct {
 	ExecutionResult a2a.SendMessageResult
 	// TaskVersion is the version of the task after the event was processed.
 	TaskVersion a2a.TaskVersion
-	// EventOverride can be sent by processor so that another event gets published instead of the original one.
+	// EventOverride can be returned by the processor to change which event gets emitted to subscribers.
+	// This is useful when we failed to process a malformed event and moved the task to failed state.
 	EventOverride a2a.Event
 }
 
