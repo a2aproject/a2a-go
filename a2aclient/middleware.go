@@ -39,11 +39,11 @@ func (m CallMeta) Get(key string) []string {
 
 // Append appends the provided values to the list of values associated with the key.
 // Duplicates values will not be added. Key matching is case-insensitive.
-func (m CallMeta) Append(key string, vals []string) {
+func (m CallMeta) Append(key string, vals ...string) {
 	result := m.Get(key)
 	for _, v := range vals {
 		if slices.Contains(result, v) {
-			return
+			continue
 		}
 		result = append(result, v)
 	}
@@ -117,7 +117,7 @@ type callMetaInjector struct {
 
 func (mi *callMetaInjector) Before(ctx context.Context, req *Request) (context.Context, error) {
 	for k, values := range mi.inject {
-		req.Meta.Append(k, values)
+		req.Meta.Append(k, values...)
 	}
 	return ctx, nil
 }
