@@ -37,14 +37,18 @@ type ClientPropagatorConfig struct {
 	// MetadataPredicate determines which payload metadata keys are propagated.
 	// If not provided, metadata payload fields matching server-supported
 	// extensions will be propagated.
+	// If a Client was created from an AgentInterface, the logic will assume
+	// that the server supports all extensions.
 	MetadataPredicate func(ctx context.Context, card *a2a.AgentCard, key string) bool
 	// HeaderPredicate determines which request headers will be propagated.
 	// If not provided, A2A-Extensions header values matching server-supported
 	// extensions will be propagated.
+	// If a Client was created from an AgentInterface, the logic will assume
+	// that the server supports all extensions.
 	HeaderPredicate func(ctx context.Context, card *a2a.AgentCard, key string, val string) bool
 }
 
-// PropagatorConfig configures the behavior of the metadata propagator.
+// ServerPropagatorConfig configures the behavior of the metadata propagator.
 type ServerPropagatorConfig struct {
 	// MetadataPredicate determines which payload metadata keys are propagated.
 	// If not provided, metadata payload fields matching client-requested extensions
@@ -192,13 +196,7 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 			if !c.HeaderPredicate(ctx, req.Card, headerName, headerValue) {
 				continue
 			}
-			values := req.Meta[headerName]
-			if !slices.Contains(values, headerValue) {
-				values = append(values, headerValue)
-			}
-			if values != nil {
-				req.Meta[headerName] = values
-			}
+			req.Meta.Append(headerName, headerValue)
 		}
 	}
 
