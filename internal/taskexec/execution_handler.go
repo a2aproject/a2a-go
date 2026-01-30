@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -105,7 +106,7 @@ func runProducerConsumer(
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("event producer panic: %v", r)
+				err = fmt.Errorf("event producer panic: %v\n%s", r, debug.Stack())
 			}
 		}()
 		err = producer(ctx)
@@ -119,7 +120,7 @@ func runProducerConsumer(
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("event consumer panic: %v", r)
+				err = fmt.Errorf("event consumer panic: %v\n%s", r, debug.Stack())
 			}
 		}()
 

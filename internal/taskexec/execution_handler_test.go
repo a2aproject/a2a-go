@@ -17,6 +17,7 @@ package taskexec
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -109,7 +110,7 @@ func TestRunProducerConsumer(t *testing.T) {
 			if tc.wantErr == nil && err != nil {
 				t.Fatalf("expected result, got %v, %v", result, err)
 			}
-			if tc.wantErr != nil && tc.wantErr.Error() != err.Error() {
+			if tc.wantErr != nil && !strings.Contains(err.Error(), tc.wantErr.Error()) {
 				t.Fatalf("expected error = %s, got %s", tc.wantErr.Error(), err.Error())
 			}
 			if result == nil && err == nil {
