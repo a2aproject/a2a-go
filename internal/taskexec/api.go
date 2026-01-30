@@ -89,3 +89,6 @@ type Canceler interface {
 	// Expected to produce a Task update event with canceled state.
 	Cancel(context.Context, eventqueue.Queue) error
 }
+
+// PanicHandlerFn is a function that handles panics occurred during execution.
+type PanicHandlerFn func(r any) error

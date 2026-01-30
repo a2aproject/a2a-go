@@ -77,6 +77,31 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_ExecutionScopeStreamingPanic(t *testing.T) {
+	ctx := t.Context()
+
+	reqHandler := a2asrv.NewHandler(
+		testexecutor.FromEventGenerator(func(reqCtx *a2asrv.RequestContext) []a2a.Event {
+			panic("oh no")
+		}),
+		a2asrv.WithExecutionPanicHandler(func(r any) error {
+			return a2a.ErrInvalidRequest
+		}),
+	)
+
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
+	client := mustCreateClient(t, newAgentCard(server.URL))
+
+	var gotErr error
+	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	for _, err := range client.SendStreamingMessage(ctx, msg) {
+		gotErr = err
+	}
+	if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+		t.Fatalf("client.SendStreamingMessage() error = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+	}
+}
+
 func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 	ctx := t.Context()
 
