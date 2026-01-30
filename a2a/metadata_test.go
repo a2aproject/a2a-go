@@ -15,7 +15,6 @@
 package a2a
 
 import (
-	"reflect"
 	"testing"
 )
 
@@ -42,12 +41,11 @@ func TestMetadataCarrierImplementation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			meta := map[string]any{"key": "value"}
-			tc.carrier.SetMeta(meta)
+			tc.carrier.SetMeta("key", "value")
 
 			got := tc.carrier.Meta()
-			if !reflect.DeepEqual(got, meta) {
-				t.Errorf("Meta() = %v, want %v", got, meta)
+			if val, ok := got["key"]; !ok || val != "value" {
+				t.Errorf("Meta() = %v, want map containing key=value", got)
 			}
 		})
 	}

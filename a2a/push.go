@@ -30,8 +30,8 @@ func (p *GetTaskPushConfigParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *GetTaskPushConfigParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *GetTaskPushConfigParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 // ListTaskPushConfigParams defines parameters for listing all push notification configurations associated with a task.
@@ -47,8 +47,8 @@ func (p *ListTaskPushConfigParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *ListTaskPushConfigParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *ListTaskPushConfigParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 // DeleteTaskPushConfigParams defines parameters for deleting a specific push notification configuration for a task.
@@ -67,8 +67,8 @@ func (p *DeleteTaskPushConfigParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *DeleteTaskPushConfigParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *DeleteTaskPushConfigParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 // TaskPushConfig is a container associating a push notification configuration with a specific task.

@@ -59,14 +59,9 @@ func (s *durationTracker) After(ctx context.Context, callCtx *a2asrv.CallContext
 	if !ok {
 		return nil
 	}
-	meta := mc.Meta()
-	if meta == nil {
-		meta = map[string]any{}
-		mc.SetMeta(meta)
-	}
-	meta[durationsExtension.URI] = map[string]any{
+	mc.SetMeta(durationsExtension.URI, map[string]any{
 		"duration_ms": time.Since(callStart).Milliseconds(),
-	}
+	})
 	return nil
 }
 

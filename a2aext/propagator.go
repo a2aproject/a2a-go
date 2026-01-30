@@ -16,7 +16,6 @@ package a2aext
 
 import (
 	"context"
-	"maps"
 	"slices"
 	"strings"
 
@@ -33,23 +32,88 @@ type propagatorContext struct {
 	metadata       map[string]any
 }
 
-// PropagatorPredicate returns true if the given metadata key should be propagated.
-type PropagatorPredicate func(ctx context.Context, key string) bool
-
-// PropagatorConfig configures the behavior of the metadata propagator.
-type PropagatorConfig struct {
+// ClientPropagatorConfig configures the behavior of the client metadata propagator.
+type ClientPropagatorConfig struct {
 	// MetadataPredicate determines which payload metadata keys are propagated.
-	// If not provided requested A2A-Extensions vlaues fields will be propagated.
-	MetadataPredicate PropagatorPredicate
+	// If not provided, metadata payload fields matching server-supported
+	// extensions will be propagated.
+	MetadataPredicate func(ctx context.Context, card *a2a.AgentCard, key string) bool
 	// HeaderPredicate determines which request headers will be propagated.
-	// If not provided requested A2A-Extensions will be propagated.
-	HeaderPredicate PropagatorPredicate
+	// If not provided, A2A-Extensions header values matching server-supported
+	// extensions will be propagated.
+	HeaderPredicate func(ctx context.Context, card *a2a.AgentCard, key string, val string) bool
 }
 
-// NewPropagator returns a client and server interceptor pair configured to propagate payload metada header values.
-// The server interceptor needs to be set on request handler using [a2asrv.WithCallInterceptor] option.
+// PropagatorConfig configures the behavior of the metadata propagator.
+type ServerPropagatorConfig struct {
+	// MetadataPredicate determines which payload metadata keys are propagated.
+	// If not provided, metadata payload fields matching client-requested extensions
+	// will be propagated.
+	MetadataPredicate func(ctx context.Context, key string) bool
+	// HeaderPredicate determines which request headers will be propagated.
+	// If not provided, A2A-Extensions header value will be propagated.
+	HeaderPredicate func(ctx context.Context, key string) bool
+}
+
+// GetRequestHeaders returns the request headers attached as per [ServerPropagatorConfig].
+// Returns nil context was not found.
+func GetRequestHeaders(ctx context.Context) map[string][]string {
+	val, ok := ctx.Value(propagatorCtxKeyType{}).(*propagatorContext)
+	if !ok {
+		return nil
+	}
+	return val.requestHeaders
+}
+
+// GetMetadata returns the metadata attached as per [ServerPropagatorConfig].
+// Returns nil context was not found.
+func GetMetadata(ctx context.Context) map[string]any {
+	val, ok := ctx.Value(propagatorCtxKeyType{}).(*propagatorContext)
+	if !ok {
+		return nil
+	}
+	return val.metadata
+}
+
+// NewClientPropagator returns a client interceptor that propagates payload metada header values.
 // The client interceptor needs to be set on a2aclient or client factory using [a2aclient.WithInterceptors] option.
-func NewPropagator(cfg PropagatorConfig) (a2aclient.CallInterceptor, a2asrv.CallInterceptor) {
+func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallInterceptor {
+	var cfg ClientPropagatorConfig
+	if config != nil {
+		cfg = *config
+	}
+	if cfg.MetadataPredicate == nil {
+		// Propagate all extensions supported by the server.
+		cfg.MetadataPredicate = func(ctx context.Context, card *a2a.AgentCard, key string) bool {
+			extensions, ok := a2asrv.ExtensionsFrom(ctx)
+			if !ok {
+				return false
+			}
+			if !slices.Contains(extensions.RequestedURIs(), key) {
+				return false
+			}
+			return isExtensionSupported(card, key)
+		}
+	}
+	if cfg.HeaderPredicate == nil {
+		// Propagate requested extensions.
+		cfg.HeaderPredicate = func(ctx context.Context, card *a2a.AgentCard, key string, val string) bool {
+			if !strings.EqualFold(key, CallMetaKey) {
+				return false
+			}
+			return isExtensionSupported(card, val)
+		}
+	}
+	return &clientPropagator{ClientPropagatorConfig: cfg}
+}
+
+// NewServerPropagator returns a server interceptor that propagates payload metada header values.
+// The server interceptor needs to be set on request handler using [a2asrv.WithCallInterceptor] option.
+func NewServerPropagator(config *ServerPropagatorConfig) a2asrv.CallInterceptor {
+	var cfg ServerPropagatorConfig
+	if config != nil {
+		cfg = *config
+	}
 	if cfg.MetadataPredicate == nil {
 		// Propagate all extension-added metadata keys.
 		cfg.MetadataPredicate = func(ctx context.Context, key string) bool {
@@ -65,13 +129,13 @@ func NewPropagator(cfg PropagatorConfig) (a2aclient.CallInterceptor, a2asrv.Call
 			return strings.EqualFold(key, CallMetaKey)
 		}
 	}
-	return &clientPropagator{PropagatorConfig: cfg}, &serverPropagator{PropagatorConfig: cfg}
+	return &serverPropagator{ServerPropagatorConfig: cfg}
 }
 
 // serverPropagator implements [a2asrv.CallInterceptor].
 type serverPropagator struct {
 	a2asrv.PassthroughCallInterceptor
-	PropagatorConfig
+	ServerPropagatorConfig
 }
 
 // Before extracts valid keys from the incoming request and attaches them to the context
@@ -103,7 +167,7 @@ func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallConte
 // clientPropagator implements [a2aclient.CallInterceptor].
 type clientPropagator struct {
 	a2aclient.PassthroughInterceptor
-	PropagatorConfig
+	ClientPropagatorConfig
 }
 
 // Before checks the context for propagated values and injects them into the outgoing request.
@@ -115,25 +179,26 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 
 	if len(toPropagate.metadata) > 0 {
 		if mc, ok := req.Payload.(a2a.MetadataCarrier); ok {
-			meta := mc.Meta()
-			if meta == nil {
-				meta = make(map[string]any)
-				mc.SetMeta(meta)
+			for k, v := range toPropagate.metadata {
+				if c.MetadataPredicate(ctx, req.Card, k) {
+					mc.SetMeta(k, v)
+				}
 			}
-			maps.Copy(meta, toPropagate.metadata)
 		}
 	}
 
 	for headerName, headerValues := range toPropagate.requestHeaders {
 		for _, headerValue := range headerValues {
-			if req.Meta == nil {
-				req.Meta = make(map[string][]string)
+			if !c.HeaderPredicate(ctx, req.Card, headerName, headerValue) {
+				continue
 			}
-			values := req.Meta[headerName]
+			values, _ := req.Meta[headerName]
 			if !slices.Contains(values, headerValue) {
 				values = append(values, headerValue)
 			}
-			req.Meta[headerName] = values
+			if values != nil {
+				req.Meta[headerName] = values
+			}
 		}
 	}
 

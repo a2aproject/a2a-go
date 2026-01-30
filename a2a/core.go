@@ -39,8 +39,8 @@ type TaskInfoProvider interface {
 type MetadataCarrier interface {
 	// Meta returns the metadata container.
 	Meta() map[string]any
-	// SetMeta sets the metadata container.
-	SetMeta(m map[string]any)
+	// SetMeta sets the metadata value for the provided key.
+	SetMeta(k string, v any)
 }
 
 // TaskInfo represents information about the Task and the group of interactions it belongs to.
@@ -205,8 +205,8 @@ func (m *Message) Meta() map[string]any {
 	return m.Metadata
 }
 
-func (m *Message) SetMeta(meta map[string]any) {
-	m.Metadata = meta
+func (m *Message) SetMeta(k string, v any) {
+	setMeta(&m.Metadata, k, v)
 }
 
 func (m *Message) TaskInfo() TaskInfo {
@@ -330,8 +330,8 @@ func (m *Task) Meta() map[string]any {
 	return m.Metadata
 }
 
-func (m *Task) SetMeta(meta map[string]any) {
-	m.Metadata = meta
+func (m *Task) SetMeta(k string, v any) {
+	setMeta(&m.Metadata, k, v)
 }
 
 func (m *Task) TaskInfo() TaskInfo {
@@ -371,8 +371,8 @@ func (a *Artifact) Meta() map[string]any {
 	return a.Metadata
 }
 
-func (a *Artifact) SetMeta(meta map[string]any) {
-	a.Metadata = meta
+func (a *Artifact) SetMeta(k string, v any) {
+	setMeta(&a.Metadata, k, v)
 }
 
 var _ Event = (*TaskArtifactUpdateEvent)(nil)
@@ -413,8 +413,8 @@ func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
 
-func (a *TaskArtifactUpdateEvent) SetMeta(meta map[string]any) {
-	a.Metadata = meta
+func (a *TaskArtifactUpdateEvent) SetMeta(k string, v any) {
+	setMeta(&a.Metadata, k, v)
 }
 
 func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
@@ -497,8 +497,8 @@ func (a *TaskStatusUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
 
-func (a *TaskStatusUpdateEvent) SetMeta(meta map[string]any) {
-	a.Metadata = meta
+func (a *TaskStatusUpdateEvent) SetMeta(k string, v any) {
+	setMeta(&a.Metadata, k, v)
 }
 
 func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
@@ -590,8 +590,8 @@ func (p TextPart) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *TextPart) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *TextPart) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 func (p TextPart) MarshalJSON() ([]byte, error) {
@@ -616,8 +616,8 @@ func (p DataPart) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *DataPart) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *DataPart) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 func (p DataPart) MarshalJSON() ([]byte, error) {
@@ -643,8 +643,8 @@ func (p FilePart) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *FilePart) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *FilePart) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 func (p FilePart) MarshalJSON() ([]byte, error) {
@@ -738,8 +738,8 @@ func (p *TaskIDParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *TaskIDParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *TaskIDParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 // TaskQueryParams defines parameters for querying a task, with an option to limit history length.
@@ -758,8 +758,8 @@ func (p *TaskQueryParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *TaskQueryParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *TaskQueryParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
 }
 
 // MessageSendConfig defines configuration options for a `message/send` or `message/stream` request.
@@ -795,8 +795,15 @@ func (p *MessageSendParams) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *MessageSendParams) SetMeta(meta map[string]any) {
-	p.Metadata = meta
+func (p *MessageSendParams) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
+}
+
+func setMeta(m *map[string]any, k string, v any) {
+	if *m == nil {
+		*m = make(map[string]any)
+	}
+	(*m)[k] = v
 }
 
 // Time-based UUID generally improves index update performance if ID field is indexed in a persistent store.

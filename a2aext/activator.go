@@ -16,9 +16,7 @@ package a2aext
 
 import (
 	"context"
-	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 )
 
@@ -40,13 +38,9 @@ func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context
 
 	var toAppend []string
 	for _, ext := range c.extensionURI {
-		serverSupported := slices.ContainsFunc(req.Card.Capabilities.Extensions, func(e a2a.AgentExtension) bool {
-			return e.URI == ext
-		})
-		if !serverSupported {
-			continue
+		if isExtensionSupported(req.Card, ext) {
+			toAppend = append(toAppend, ext)
 		}
-		toAppend = append(toAppend, ext)
 	}
 	if len(toAppend) > 0 {
 		req.Meta.Append(CallMetaKey, toAppend)
