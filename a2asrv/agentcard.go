@@ -56,8 +56,9 @@ func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandle
 	}
 }
 
-// NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard]
+// NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard]
 // which is not expected to change while the program is running.
+// The information contained in this card can be queried from any origin.
 // The method panics if the argument json marhsaling fails.
 func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 	bytes, err := json.Marshal(card)
@@ -79,7 +80,8 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 	})
 }
 
-// NewAgentCardHandler creates an [http.Handler] implementation for serving a public [a2a.AgentCard].
+// NewAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard].
+// The information contained in this card can be queried from any origin.
 func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ctx := withRequestContext(req)
@@ -138,6 +140,7 @@ func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
 	if origin != "" {
 		rw.Header().Set("Access-Control-Allow-Origin", origin)
 		rw.Header().Set("Access-Control-Allow-Credentials", "true")
+		rw.Header().Set("Vary", "Origin")
 	} else {
 		rw.Header().Set("Access-Control-Allow-Origin", "*")
 	}
