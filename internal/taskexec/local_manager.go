@@ -49,6 +49,7 @@ var (
 type localManager struct {
 	queueManager eventqueue.Manager
 	factory      Factory
+	panicHandler PanicHandlerFn
 
 	mu           sync.Mutex
 	executions   map[a2a.TaskID]*localExecution
@@ -77,6 +78,7 @@ type LocalManagerConfig struct {
 	QueueManager      eventqueue.Manager
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Factory           Factory
+	PanicHandler      PanicHandlerFn
 }
 
 // NewLocalManager is a [localManager] constructor function.
@@ -84,6 +86,7 @@ func NewLocalManager(cfg LocalManagerConfig) Manager {
 	manager := &localManager{
 		queueManager: cfg.QueueManager,
 		factory:      cfg.Factory,
+		panicHandler: cfg.PanicHandler,
 		limiter:      newConcurrencyLimiter(cfg.ConcurrencyConfig),
 		executions:   make(map[a2a.TaskID]*localExecution),
 		cancelations: make(map[a2a.TaskID]*cancelation),
@@ -247,6 +250,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		func(ctx context.Context) error { return executor.Execute(ctx, execution.pipe.Writer) },
 		handler.processEvents,
 		nil,
+		m.panicHandler,
 	)
 
 	if err != nil {
@@ -283,6 +287,7 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },
 		handler.processEvents,
 		nil,
+		m.panicHandler,
 	)
 	if err != nil {
 		cancel.result.setError(err)

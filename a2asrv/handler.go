@@ -66,6 +66,7 @@ type RequestHandler interface {
 type defaultRequestHandler struct {
 	agentExecutor AgentExecutor
 	execManager   taskexec.Manager
+	panicHandler  taskexec.PanicHandlerFn
 
 	pushSender        PushSender
 	queueManager      eventqueue.Manager
@@ -98,6 +99,13 @@ func WithLogger(logger *slog.Logger) RequestHandlerOption {
 func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.queueManager = manager
+	}
+}
+
+// WithExecutionPanicHandler allows to set a custom handler for panics occurred during execution.
+func WithExecutionPanicHandler(handler func(r any) error) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.panicHandler = handler
 	}
 }
 
@@ -150,6 +158,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
 			Factory:           execFactory,
+			PanicHandler:      h.panicHandler,
 		})
 	} else {
 		if h.queueManager == nil {
@@ -163,6 +172,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
 			Factory:           execFactory,
+			PanicHandler:      h.panicHandler,
 		})
 	}
 

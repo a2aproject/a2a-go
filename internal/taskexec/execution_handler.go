@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -83,6 +84,7 @@ func runProducerConsumer(
 	producer eventProducerFn,
 	consumer eventConsumerFn,
 	heartbeater workqueue.Heartbeater,
+	panicHandler PanicHandlerFn,
 ) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -105,7 +107,11 @@ func runProducerConsumer(
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("event producer panic: %v", r)
+				if panicHandler != nil {
+					err = panicHandler(r)
+				} else {
+					err = fmt.Errorf("event producer panic: %v\n%s", r, debug.Stack())
+				}
 			}
 		}()
 		err = producer(ctx)
@@ -119,7 +125,11 @@ func runProducerConsumer(
 	group.Go(func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("event consumer panic: %v", r)
+				if panicHandler != nil {
+					err = panicHandler(r)
+				} else {
+					err = fmt.Errorf("event consumer panic: %v\n%s", r, debug.Stack())
+				}
 			}
 		}()
 

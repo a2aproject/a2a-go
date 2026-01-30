@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -49,6 +50,7 @@ type jsonrpcResponse struct {
 type jsonrpcHandler struct {
 	handler           RequestHandler
 	keepAliveInterval time.Duration
+	panicHandler      func(r any) error
 }
 
 // JSONRPCHandlerOption is a functional option for configuring the JSONRPC handler.
@@ -60,6 +62,14 @@ type JSONRPCHandlerOption func(*jsonrpcHandler)
 func WithKeepAlive(interval time.Duration) JSONRPCHandlerOption {
 	return func(h *jsonrpcHandler) {
 		h.keepAliveInterval = interval
+	}
+}
+
+// WithPanicHandler sets a custom panic handler for the JSONRPC handler.
+// This gives the ability to recovery from panic by returning an error to the client.
+func WithPanicHandler(handler func(r any) error) JSONRPCHandlerOption {
+	return func(h *jsonrpcHandler) {
+		h.panicHandler = handler
 	}
 }
 
@@ -123,6 +133,19 @@ func isValidID(id any) bool {
 }
 
 func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpcRequest) {
+	defer func() {
+		if r := recover(); r != nil {
+			if h.panicHandler == nil {
+				panic(r)
+			}
+			err := h.panicHandler(r)
+			if err != nil {
+				h.writeJSONRPCError(ctx, rw, err, req.ID)
+				return
+			}
+		}
+	}()
+
 	var result any
 	var err error
 	switch req.Method {
@@ -170,10 +193,18 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 
 	sseWriter.WriteHeaders()
 
-	sseChan := make(chan []byte)
+	sseChan, panicChan := make(chan []byte), make(chan error)
 	requestCtx, cancelReqCtx := context.WithCancel(ctx)
 	defer cancelReqCtx()
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
+			} else {
+				close(sseChan)
+			}
+		}()
+
 		var events iter.Seq2[a2a.Event, error]
 		switch req.Method {
 		case jsonrpc.MethodTasksResubscribe:
@@ -199,6 +230,19 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		select {
 		case <-ctx.Done():
 			return
+		case err := <-panicChan:
+			if h.panicHandler == nil {
+				panic(err)
+			}
+			data, ok := marshalJSONRPCError(req, h.panicHandler(err))
+			if !ok {
+				log.Error(ctx, "failed to marshal error response", err)
+				return
+			}
+			if err := sseWriter.WriteData(ctx, data); err != nil {
+				log.Error(ctx, "failed to write an event", err)
+				return
+			}
 		case <-keepAliveChan:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
@@ -214,17 +258,12 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			}
 		}
 	}
-
 }
 
 func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan chan []byte, events iter.Seq2[a2a.Event, error]) {
-	defer close(sseChan)
-
 	handleError := func(err error) {
-		jsonrpcErr := jsonrpc.ToJSONRPCError(err)
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Error: jsonrpcErr}
-		bytes, err := json.Marshal(resp)
-		if err != nil {
+		bytes, ok := marshalJSONRPCError(req, err)
+		if !ok {
 			log.Error(ctx, "failed to marshal error response", err)
 			return
 		}
@@ -345,6 +384,16 @@ func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 
 func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	return h.handler.OnGetExtendedAgentCard(ctx)
+}
+
+func marshalJSONRPCError(req *jsonrpcRequest, err error) ([]byte, bool) {
+	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
+	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Error: jsonrpcErr}
+	bytes, err := json.Marshal(resp)
+	if err != nil {
+		return nil, false
+	}
+	return bytes, true
 }
 
 func handleUnmarshalError(err error) error {

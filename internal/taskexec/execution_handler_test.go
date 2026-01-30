@@ -17,6 +17,7 @@ package taskexec
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -27,10 +28,11 @@ func TestRunProducerConsumer(t *testing.T) {
 	msg := a2a.NewMessage(a2a.MessageRoleUser)
 
 	testCases := []struct {
-		name     string
-		producer eventProducerFn
-		consumer eventConsumerFn
-		wantErr  error
+		name         string
+		producer     eventProducerFn
+		consumer     eventConsumerFn
+		panicHandler PanicHandlerFn
+		wantErr      error
 	}{
 		{
 			name:     "success",
@@ -98,18 +100,35 @@ func TestRunProducerConsumer(t *testing.T) {
 			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, fmt.Errorf("error") },
 			wantErr:  fmt.Errorf("error"),
 		},
+		{
+			name:         "consumer panic custom handler",
+			producer:     func(ctx context.Context) error { return nil },
+			consumer:     func(ctx context.Context) (a2a.SendMessageResult, error) { return nil, panicFn("panic!") },
+			panicHandler: func(err any) error { return fmt.Errorf("custom error") },
+			wantErr:      fmt.Errorf("custom error"),
+		},
+		{
+			name:     "producer panic custom handler",
+			producer: func(ctx context.Context) error { return panicFn("panic!") },
+			consumer: func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-ctx.Done()
+				return nil, nil
+			},
+			panicHandler: func(err any) error { return fmt.Errorf("custom error") },
+			wantErr:      fmt.Errorf("custom error"),
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil)
+			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil, tc.panicHandler)
 			if tc.wantErr != nil && err == nil {
 				t.Fatalf("expected error, got %v", result)
 			}
 			if tc.wantErr == nil && err != nil {
 				t.Fatalf("expected result, got %v, %v", result, err)
 			}
-			if tc.wantErr != nil && tc.wantErr.Error() != err.Error() {
+			if tc.wantErr != nil && !strings.Contains(err.Error(), tc.wantErr.Error()) {
 				t.Fatalf("expected error = %s, got %s", tc.wantErr.Error(), err.Error())
 			}
 			if result == nil && err == nil {
