@@ -1167,6 +1167,90 @@ func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_OnListTasks(t *testing.T) {
+	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	startTime := time.Date(2025, time.December, 11, 14, 54, 0, 0, time.UTC)
+	cutOffTime := startTime.Add(2 * time.Second)
+
+	tests := []struct {
+		name          string
+		givenTasks    []*a2a.Task
+		request       *a2a.ListTasksRequest
+		wantResponse  *a2a.ListTasksResponse
+		wantErr       error
+		authenticator taskstore.Authenticator
+	}{
+		{
+			name:          "success",
+			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:       &a2a.ListTasksRequest{},
+			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
+			authenticator: testAuthenticator(),
+		},
+		{
+			name: "success with filters",
+			givenTasks: []*a2a.Task{
+				{ID: id1, Artifacts: []*a2a.Artifact{{Name: "artifact1"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-1"}, {ID: "test-message-2"}, {ID: "test-message-3"}}, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+			},
+			request:       &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, LastUpdatedAfter: &cutOffTime, IncludeArtifacts: true},
+			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
+			authenticator: testAuthenticator(),
+		},
+		{
+			name:          "invalid pageToken",
+			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:       &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
+			wantErr:       fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
+			authenticator: testAuthenticator(),
+		},
+		{
+			name:       "unauthorized",
+			givenTasks: []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:    &a2a.ListTasksRequest{},
+			wantErr:    fmt.Errorf("failed to list tasks: %w", a2a.ErrUnauthenticated),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			var opts []taskstore.Option
+			if tt.authenticator != nil {
+				opts = append(opts, taskstore.WithAuthenticator(tt.authenticator))
+			}
+			ts := testutil.NewTestTaskStore(opts...).WithTasks(t, tt.givenTasks...)
+			handler := newTestHandler(WithTaskStore(ts))
+			result, err := handler.OnListTasks(ctx, tt.request)
+
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("OnListTasks() error = %v, wantErr nil", err)
+					return
+				}
+				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
+					t.Errorf("OnListTasks() mismatch (+got -want): %s", diff)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("OnListTasks() error = nil, wantErr %q", tt.wantErr)
+					return
+				}
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf("OnListTasks() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func testAuthenticator() taskstore.Authenticator {
+	return func(ctx context.Context) (taskstore.UserName, bool) {
+		return "test", true
+	}
+}
+
 func TestRequestHandler_OnCancelTask(t *testing.T) {
 	taskToCancel := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
 	completedTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}

@@ -31,6 +31,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/internal/sse"
+	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
@@ -44,6 +45,12 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 			method: "OnGetTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
 				return client.GetTask(ctx, &a2a.TaskQueryParams{})
+			},
+		},
+		{
+			method: "OnListTasks",
+			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
+				return client.ListTasks(ctx, &a2a.ListTasksRequest{})
 			},
 		},
 		{
@@ -127,9 +134,13 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			_, _ = tc.call(ctx, client)
-			calledMethod := <-lastCalledMethod
-			if calledMethod != tc.method {
-				t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
+			select {
+			case calledMethod := <-lastCalledMethod:
+				if calledMethod != tc.method {
+					t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("method %q not called", tc.method)
 			}
 		})
 	}
@@ -140,6 +151,9 @@ func TestJSONRPC_Validations(t *testing.T) {
 	query := json.RawMessage(fmt.Sprintf(`{"id": %q}`, taskID))
 	task := &a2a.Task{ID: taskID}
 	want := mustUnmarshal(t, mustMarshal(t, task))
+	listResponse := &a2a.ListTasksResponse{Tasks: []*a2a.Task{task}, TotalSize: 1, PageSize: 3}
+	listTasksWant := mustUnmarshal(t, mustMarshal(t, listResponse))
+	auth := func(ctx context.Context) (taskstore.UserName, bool) { return "TestUser", true }
 
 	testCases := []struct {
 		name    string
@@ -165,6 +179,18 @@ func TestJSONRPC_Validations(t *testing.T) {
 			method:  "POST",
 			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: nil}),
 			want:    want,
+		},
+		{
+			name:    "success tasks/list",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 3}`), ID: "123"}),
+			want:    listTasksWant,
+		},
+		{
+			name:    "tasks/list with invalid page size",
+			method:  "POST",
+			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 125}`), ID: "123"}),
+			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "invalid ID",
@@ -222,7 +248,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 		},
 	}
 
-	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	store := testutil.NewTestTaskStore(taskstore.WithAuthenticator(auth)).WithTasks(t, task)
 	reqHandler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store))
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
 
@@ -257,7 +283,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 					t.Errorf("payload.Error = %v, want nil", payload.Error.ToA2AError())
 				}
 				if diff := cmp.Diff(tc.want, payload.Result); diff != "" {
-					t.Errorf("payload.Result = %v, want %v", payload.Result, want)
+					t.Errorf("payload.Result = %v, want %v", payload.Result, tc.want)
 				}
 			}
 		})

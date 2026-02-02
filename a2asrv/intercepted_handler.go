@@ -62,6 +62,22 @@ func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
+func (h *InterceptedHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnListTasks")
+	if req != nil {
+		ctx = h.withLoggerContext(ctx)
+	}
+	ctx, res := interceptBefore[*a2a.ListTasksRequest, *a2a.ListTasksResponse](ctx, h, callCtx, req)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
+	}
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnListTasks(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+}
+
 func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnCancelTask")
 	if params != nil {

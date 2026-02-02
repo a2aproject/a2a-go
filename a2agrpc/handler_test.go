@@ -122,6 +122,7 @@ type mockRequestHandler struct {
 
 	// Fields to capture call parameters
 	capturedGetTaskQuery               *a2a.TaskQueryParams
+	capturedListTasksRequest           *a2a.ListTasksRequest
 	capturedCancelTaskIDParams         *a2a.TaskIDParams
 	capturedSendMessageParams          *a2a.MessageSendParams
 	capturedSendMessageStreamParams    *a2a.MessageSendParams
@@ -152,6 +153,28 @@ func (m *mockRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 	}
 
 	return nil, fmt.Errorf("task not found, taskID: %s", query.ID)
+}
+
+func (m *mockRequestHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	m.capturedListTasksRequest = req
+
+	var tasks []*a2a.Task
+	for _, task := range m.tasks {
+		taskCopy := *task
+		if req.ContextID != "" && req.ContextID != taskCopy.ContextID {
+			continue
+		}
+		tasks = append(tasks, &taskCopy)
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].ID < tasks[j].ID
+	})
+
+	return &a2a.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     len(tasks),
+		NextPageToken: "",
+	}, nil
 }
 
 func (m *mockRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -357,6 +380,91 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 				}
 				if tt.wantQuery != nil && !reflect.DeepEqual(mockHandler.capturedGetTaskQuery, tt.wantQuery) {
 					t.Errorf("OnGetTask() query got = %v, want %v", mockHandler.capturedGetTaskQuery, tt.wantQuery)
+				}
+			}
+		})
+	}
+}
+
+func TestGrpcHandler_ListTasks(t *testing.T) {
+	ctx := t.Context()
+	taskID1, taskID2, taskID3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
+	mockHandler := &mockRequestHandler{
+		tasks: map[a2a.TaskID]*a2a.Task{
+			taskID1: {ID: taskID1, ContextID: "test-context1", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+			taskID2: {ID: taskID2, ContextID: "test-context2", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+			taskID3: {ID: taskID3, ContextID: "test-context1", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+		},
+	}
+	client := startTestServer(t, mockHandler)
+
+	tests := []struct {
+		name       string
+		req        *a2apb.ListTasksRequest
+		want       *a2apb.ListTasksResponse
+		wantParams *a2a.ListTasksRequest
+		wantErr    codes.Code
+	}{
+		{
+			name: "success",
+			req:  &a2apb.ListTasksRequest{},
+			want: &a2apb.ListTasksResponse{
+				Tasks: []*a2apb.Task{
+					{Id: string(taskID1), ContextId: "test-context1", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_SUBMITTED}},
+					{Id: string(taskID2), ContextId: "test-context2", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_COMPLETED}},
+					{Id: string(taskID3), ContextId: "test-context1", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_WORKING}},
+				},
+				TotalSize:     3,
+				NextPageToken: "",
+			},
+			wantParams: &a2a.ListTasksRequest{
+				Status: a2a.TaskStateUnspecified,
+			},
+		},
+		{
+			name: "success with context filter",
+			req: &a2apb.ListTasksRequest{
+				ContextId: "test-context1",
+			},
+			want: &a2apb.ListTasksResponse{
+				Tasks: []*a2apb.Task{
+					{Id: string(taskID1), ContextId: "test-context1", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_SUBMITTED}},
+					{Id: string(taskID3), ContextId: "test-context1", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_WORKING}},
+				},
+				TotalSize:     2,
+				NextPageToken: "",
+			},
+			wantParams: &a2a.ListTasksRequest{
+				ContextID: "test-context1",
+				Status:    a2a.TaskStateUnspecified,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHandler.capturedListTasksRequest = nil
+			resp, err := client.ListTasks(ctx, tt.req)
+			if tt.wantErr != codes.OK {
+				if err == nil {
+					t.Fatal("ListTasks() expected error, got nil")
+				}
+				st, ok := status.FromError(err)
+				if !ok {
+					t.Fatalf("ListTasks() error is not a gRPC status error: %v", err)
+				}
+				if st.Code() != tt.wantErr {
+					t.Errorf("ListTasks() got error code %v, want %v", st.Code(), tt.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("ListTasks() got unexpected error: %v", err)
+				}
+				if !proto.Equal(resp, tt.want) {
+					t.Fatalf("ListTasks() got = %v, want %v", resp, tt.want)
+				}
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedListTasksRequest, tt.wantParams) {
+					t.Errorf("OnListTasks() query got = %v, want %v", mockHandler.capturedListTasksRequest, tt.wantParams)
 				}
 			}
 		})

@@ -32,6 +32,7 @@ const (
 	MethodMessageSend          = "message/send"
 	MethodMessageStream        = "message/stream"
 	MethodTasksGet             = "tasks/get"
+	MethodTasksList            = "tasks/list"
 	MethodTasksCancel          = "tasks/cancel"
 	MethodTasksResubscribe     = "tasks/resubscribe"
 	MethodPushConfigGet        = "tasks/pushNotificationConfig/get"

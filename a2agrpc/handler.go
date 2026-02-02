@@ -123,6 +123,28 @@ func (h *Handler) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2ap
 	return result, nil
 }
 
+func (h *Handler) ListTasks(ctx context.Context, req *a2apb.ListTasksRequest) (*a2apb.ListTasksResponse, error) {
+	request, err := pbconv.FromProtoListTasksRequest(req)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
+	}
+
+	ctx, callCtx := withCallContext(ctx)
+	response, err := h.handler.OnListTasks(ctx, request)
+	if err != nil {
+		return nil, grpcutil.ToGRPCError(err)
+	}
+	if err := grpc.SetTrailer(ctx, toTrailer(callCtx)); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to send active extensions: %v", err)
+	}
+
+	result, err := pbconv.ToProtoListTasksResponse(response)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert response: %v", err)
+	}
+	return result, nil
+}
+
 func (h *Handler) CancelTask(ctx context.Context, req *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
 	taskID, err := pbconv.ExtractTaskID(req.GetName())
 	if err != nil {

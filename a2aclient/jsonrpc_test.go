@@ -182,6 +182,62 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 	}
 }
 
+func TestJSONRPCTransport_ListTasks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := mustDecodeJSONRPC(t, r, "tasks/list")
+
+		resp := newResponse(
+			req,
+			json.RawMessage(
+				`{
+						"tasks":[
+							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
+							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
+						],
+						"totalSize": 2,
+						"pageSize": 10,
+						"nextPageToken": "test-page-token"
+				}`,
+			),
+		)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+
+	wantResult := &a2a.ListTasksResponse{
+		Tasks: []*a2a.Task{
+			{
+				ID:        "task-1",
+				ContextID: "ctx-1",
+				Status: a2a.TaskStatus{
+					State: a2a.TaskStateCompleted,
+				},
+			},
+			{
+				ID:        "task-2",
+				ContextID: "ctx-2",
+				Status: a2a.TaskStatus{
+					State: a2a.TaskStateWorking,
+				},
+			},
+		},
+		TotalSize:     2,
+		PageSize:      10,
+		NextPageToken: "test-page-token",
+	}
+
+	tasks, err := transport.ListTasks(t.Context(), &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+
+	if diff := cmp.Diff(wantResult, tasks); diff != "" {
+		t.Fatalf("ListTasks wrong result (-got +want): %s", diff)
+	}
+}
+
 func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "tasks/get")
