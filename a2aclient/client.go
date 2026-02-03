@@ -72,65 +72,20 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 // A2A protocol methods
 
 func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	method := "GetTask"
-
-	ctx, res := interceptBefore[*a2a.TaskQueryParams, *a2a.Task](ctx, c, method, query)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.GetTask(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "GetTask", query, c.transport.GetTask)
 }
 
 func (c *Client) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	method := "ListTasks"
-
-	ctx, res := interceptBefore[*a2a.ListTasksRequest, *a2a.ListTasksResponse](ctx, c, method, request)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.ListTasks(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "ListTasks", request, c.transport.ListTasks)
 }
 
 func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	method := "CancelTask"
-
-	ctx, res := interceptBefore[*a2a.TaskIDParams, *a2a.Task](ctx, c, method, id)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.CancelTask(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "CancelTask", id, c.transport.CancelTask)
 }
 
 func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	method := "SendMessage"
-
 	message = c.withDefaultSendConfig(message, blocking(!c.config.Polling))
-
-	ctx, res := interceptBefore[*a2a.MessageSendParams, a2a.SendMessageResult](ctx, c, method, message)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.SendMessage(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "SendMessage", message, c.transport.SendMessage)
 }
 
 func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
@@ -215,51 +170,15 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 }
 
 func (c *Client) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	method := "GetTaskPushConfig"
-
-	ctx, res := interceptBefore[*a2a.GetTaskPushConfigParams, *a2a.TaskPushConfig](ctx, c, method, params)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.GetTaskPushConfig(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "GetTaskPushConfig", params, c.transport.GetTaskPushConfig)
 }
 
 func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	method := "ListTaskPushConfig"
-
-	ctx, res := interceptBefore[*a2a.ListTaskPushConfigParams, []*a2a.TaskPushConfig](ctx, c, method, params)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.ListTaskPushConfig(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "ListTaskPushConfig", params, c.transport.ListTaskPushConfig)
 }
 
 func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	method := "SetTaskPushConfig"
-
-	ctx, res := interceptBefore[*a2a.TaskPushConfig, *a2a.TaskPushConfig](ctx, c, method, params)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.SetTaskPushConfig(ctx, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, resp, err)
+	return doCall(ctx, c, "SetTaskPushConfig", params, c.transport.SetTaskPushConfig)
 }
 
 func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
@@ -276,11 +195,7 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTas
 	err := c.transport.DeleteTaskPushConfig(ctx, res.reqOverride)
 	var emptyResp struct{}
 	_, errOverride := interceptAfter(ctx, c, c.interceptors, method, emptyResp, err)
-	if errOverride != nil {
-		return errOverride
-	}
-
-	return err
+	return errOverride
 }
 
 func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
@@ -404,9 +319,8 @@ func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallIn
 	}
 
 	var zero T
-	for i := range len(interceptors) {
-		interceptor := interceptors[len(interceptors)-i-1]
-		if err := interceptor.After(ctx, &resp); err != nil {
+	for i := len(interceptors) - 1; i >= 0; i-- {
+		if err := interceptors[i].After(ctx, &resp); err != nil {
 			return zero, err
 		}
 	}
@@ -421,4 +335,20 @@ func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallIn
 	}
 
 	return typed, resp.Err
+}
+
+func doCall[Req any, Resp any](
+	ctx context.Context, c *Client, method string, req Req,
+	transportCall func(context.Context, Req) (Resp, error),
+) (Resp, error) {
+	ctx, res := interceptBefore[Req, Resp](ctx, c, method, req)
+	if res.earlyErr != nil {
+		var zero Resp
+		return zero, res.earlyErr
+	}
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := transportCall(ctx, res.reqOverride)
+	return interceptAfter(ctx, c, c.interceptors, method, response, err)
 }
