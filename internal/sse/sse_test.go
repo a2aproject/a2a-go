@@ -129,27 +129,25 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	// Some frameworks (e.g. Spring) emit "data:foo" instead of "data: foo".
 	// We need to support this for compatibility.
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-
-		sse, err := NewWriter(rw)
-		if err != nil {
-			t.Fatalf("NewWriter() error = %v", err)
+		// To test compatibility with non-standard SSE streams that omit the space
+		// after "data:", we write the response manually instead of using SSEWriter.
+		flusher, ok := rw.(http.Flusher)
+		if !ok {
+			t.Fatalf("streaming not supported")
 		}
-		sse.WriteHeaders()
-		
-		// Manually write data without space
-		// sse.WriteData always adds a space, so we write directly to the writer
-		// Note: we can't easily access the underlying writer safely if we wrapped it, 
-		// but here we are in the handler so we can just write to rw if we avoided NewWriter,
-		// OR we just assume we can write raw bytes to the body if NewWriter doesn't buffer indefinitely.
-		// However, NewWriter uses a flusher.
-		
-		// Let's just bypass SSEWriter for this specific test to generate "bad" data
+
 		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.Header().Set("Cache-Control", "no-cache")
+		rw.Header().Set("Connection", "keep-alive")
 		rw.WriteHeader(http.StatusOK)
-		
-		fmt.Fprintf(rw, "id: %s\n", "1")
-		fmt.Fprintf(rw, "data:%s\n\n", "payload-without-space")
-		rw.(http.Flusher).Flush()
+
+		if _, err := fmt.Fprintf(rw, "id: %s\n", "1"); err != nil {
+			t.Fatalf("fmt.Fprintf(id) error = %v", err)
+		}
+		if _, err := fmt.Fprintf(rw, "data:%s\n\n", "payload-without-space"); err != nil {
+			t.Fatalf("fmt.Fprintf(data) error = %v", err)
+		}
+		flusher.Flush()
 	}))
 	defer server.Close()
 
