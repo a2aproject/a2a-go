@@ -823,8 +823,8 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
-	if interceptor.lastReq.Payload != struct{}{} {
-		t.Fatalf("interceptor.Before payload = %v, want struct{}", interceptor.lastReq.Payload)
+	if payload, ok := interceptor.lastReq.Payload.(*struct{}); !ok || payload != nil {
+		t.Fatalf("interceptor.Before payload = %v, want *struct{}", interceptor.lastReq.Payload)
 	}
 	if interceptor.lastResp.Payload != resp {
 		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, resp)
