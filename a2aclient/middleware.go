@@ -89,7 +89,9 @@ type Response struct {
 type CallInterceptor interface {
 	// Before allows to observe, modify or reject a Request.
 	// A new context.Context can be returned to pass information to After.
-	Before(ctx context.Context, req *Request) (context.Context, error)
+	// If either the result (2nd return value) or the error (3rd return value) is non nil,
+	// the network request will not be made and the value will be returned to the caller.
+	Before(ctx context.Context, req *Request) (context.Context, any, error)
 
 	// After allows to observe, modify or reject a Response.
 	After(ctx context.Context, resp *Response) error
@@ -115,11 +117,11 @@ type callMetaInjector struct {
 	inject CallMeta
 }
 
-func (mi *callMetaInjector) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (mi *callMetaInjector) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	for k, values := range mi.inject {
 		req.Meta.Append(k, values...)
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 // PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
@@ -128,8 +130,8 @@ type PassthroughInterceptor struct{}
 
 var _ CallInterceptor = (*PassthroughInterceptor)(nil)
 
-func (PassthroughInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
-	return ctx, nil
+func (PassthroughInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
+	return ctx, nil, nil
 }
 
 func (PassthroughInterceptor) After(ctx context.Context, resp *Response) error {

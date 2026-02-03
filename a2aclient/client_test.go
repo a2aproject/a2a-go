@@ -103,18 +103,18 @@ func makeEventSeq2(events []a2a.Event) iter.Seq2[a2a.Event, error] {
 type testInterceptor struct {
 	lastReq  *Request
 	lastResp *Response
-	BeforeFn func(context.Context, *Request) (context.Context, error)
+	BeforeFn func(context.Context, *Request) (context.Context, any, error)
 	AfterFn  func(context.Context, *Response) error
 }
 
 var _ CallInterceptor = (*testInterceptor)(nil)
 
-func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	ti.lastReq = req
 	if ti.BeforeFn != nil {
 		return ti.BeforeFn(ctx, req)
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 func (ti *testInterceptor) After(ctx context.Context, resp *Response) error {
@@ -157,10 +157,10 @@ func TestClient_InterceptorModifiesRequest(t *testing.T) {
 	}
 	metaKey, metaVal := "answer", 42
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
 			typed := r.Payload.(*a2a.TaskQueryParams)
 			typed.Metadata = map[string]any{metaKey: metaVal}
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 
@@ -258,15 +258,15 @@ func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
 
 	k1, v1, k2, v2 := "Authorization", "Basic ABCD", "X-Custom", "test"
 	interceptor1 := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
 			r.Meta[k1] = []string{v1}
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 	interceptor2 := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
 			r.Meta[k2] = []string{v2}
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 
@@ -318,8 +318,8 @@ func TestClient_InterceptorRejectsRequest(t *testing.T) {
 	}
 	wantErr := errors.New("failed")
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			return ctx, wantErr
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			return ctx, nil, wantErr
 		},
 	}
 
@@ -368,8 +368,8 @@ func TestClient_InterceptorMethodsDataSharing(t *testing.T) {
 	val := 42
 	var receivedVal int
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			return context.WithValue(ctx, ctxKey{}, val), nil
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			return context.WithValue(ctx, ctxKey{}, val), nil, nil
 		},
 		AfterFn: func(ctx context.Context, r *Response) error {
 			receivedVal = ctx.Value(ctxKey{}).(int)
@@ -823,8 +823,8 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
-	if interceptor.lastReq.Payload != struct{}{} {
-		t.Fatalf("interceptor.Before payload = %v, want struct{}", interceptor.lastReq.Payload)
+	if payload, ok := interceptor.lastReq.Payload.(*struct{}); !ok || payload != nil {
+		t.Fatalf("interceptor.Before payload = %v, want *struct{}", interceptor.lastReq.Payload)
 	}
 	if interceptor.lastResp.Payload != resp {
 		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, resp)
@@ -849,9 +849,9 @@ func TestClient_Intercept_RequestModification(t *testing.T) {
 	}
 
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, req *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) {
 			req.Payload = modifiedParams
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 
@@ -952,5 +952,64 @@ func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClient_intercept_EarlyReturn(t *testing.T) {
+	ctx := t.Context()
+	originalQuery := &a2a.TaskQueryParams{ID: "original"}
+	earlyResult := &a2a.Task{ID: "early-cached-result"}
+
+	transport := &testTransport{}
+	interceptor1, interceptor2, interceptor3 := &testInterceptor{}, &testInterceptor{}, &testInterceptor{}
+
+	transportMethodCalled := false
+	transport.GetTaskFn = func(ctx context.Context, params *a2a.TaskQueryParams) (*a2a.Task, error) {
+		transportMethodCalled = true
+		return nil, errors.New("transport method should not be called")
+	}
+
+	var callOrder []string
+	interceptor1.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "1-Before")
+		return ctx, nil, nil
+	}
+	interceptor1.AfterFn = func(ctx context.Context, resp *Response) error {
+		callOrder = append(callOrder, "1-After")
+		return nil
+	}
+	//interceptor2 returns early result
+	interceptor2.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "2-Before")
+		return ctx, earlyResult, nil
+	}
+	interceptor2.AfterFn = func(ctx context.Context, resp *Response) error {
+		callOrder = append(callOrder, "2-After")
+		return nil
+	}
+	//interceptor3 should not be called
+	interceptor3.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "3-Before")
+		return ctx, nil, nil
+	}
+
+	client := &Client{
+		interceptors: []CallInterceptor{interceptor1, interceptor2, interceptor3},
+		transport:    transport,
+	}
+
+	task, err := client.GetTask(ctx, originalQuery)
+	if err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if task != earlyResult {
+		t.Fatalf("client.GetTask() task = %v, want %v", task, earlyResult)
+	}
+	if transportMethodCalled {
+		t.Fatalf("transport method should not be called")
+	}
+	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
+	if !reflect.DeepEqual(callOrder, wantCallOrder) {
+		t.Fatalf("callOrder = %v, want %v", callOrder, wantCallOrder)
 	}
 }
