@@ -175,10 +175,10 @@ type clientPropagator struct {
 }
 
 // Before checks the context for propagated values and injects them into the outgoing request.
-func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, error) {
+func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
 	toPropagate, ok := ctx.Value(propagatorCtxKeyType{}).(*propagatorContext)
 	if !ok {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	if len(toPropagate.metadata) > 0 {
@@ -200,5 +200,5 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 		}
 	}
 
-	return ctx, nil
+	return ctx, nil, nil
 }

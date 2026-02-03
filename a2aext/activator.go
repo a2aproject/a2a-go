@@ -31,9 +31,9 @@ type activator struct {
 	extensionURI []string
 }
 
-func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, error) {
+func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
 	if req.Card == nil || len(req.Card.Capabilities.Extensions) == 0 {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	var toAppend []string
@@ -46,5 +46,5 @@ func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context
 		req.Meta.Append(CallMetaKey, toAppend...)
 	}
 
-	return ctx, nil
+	return ctx, nil, nil
 }

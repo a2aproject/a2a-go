@@ -288,7 +288,7 @@ func TestAuthInterceptor(t *testing.T) {
 			}
 
 			interceptor := &AuthInterceptor{Service: credStore}
-			_, err := interceptor.Before(ctx, &Request{Meta: callMeta, Card: tc.card})
+			_, _, err := interceptor.Before(ctx, &Request{Meta: callMeta, Card: tc.card})
 			if err != nil {
 				t.Errorf("interceptor.Before() error = %v", err)
 			}
