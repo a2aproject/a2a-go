@@ -97,11 +97,6 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if !isValidID(payload.ID) {
-		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
-		return
-	}
-
 	if payload.JSONRPC != jsonrpc.Version {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, payload.ID)
 		return
