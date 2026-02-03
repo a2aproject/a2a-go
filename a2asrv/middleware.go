@@ -82,6 +82,8 @@ type Response struct {
 type CallInterceptor interface {
 	// Before allows to observe, modify or reject a Request.
 	// A new context.Context can be returned to pass information to one of the extension points.
+	// If either the result (2nd return value) or the error (3rd return value) is non nil,
+	// the actual handler will not be called and the value will be returned to the client.
 	Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 
 	// After allows to observe, modify or reject a Response.
