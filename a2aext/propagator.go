@@ -144,7 +144,7 @@ type serverPropagator struct {
 
 // Before extracts valid keys from the incoming request and attaches them to the context
 // so the client interceptor can find them later.
-func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	propagatorCtx := &propagatorContext{
 		metadata:       make(map[string]any),
 		requestHeaders: make(map[string][]string),
@@ -165,7 +165,7 @@ func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallConte
 		}
 	}
 
-	return context.WithValue(ctx, propagatorCtxKeyType{}, propagatorCtx), nil
+	return context.WithValue(ctx, propagatorCtxKeyType{}, propagatorCtx), nil, nil
 }
 
 // clientPropagator implements [a2aclient.CallInterceptor].

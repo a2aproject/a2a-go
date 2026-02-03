@@ -38,6 +38,12 @@ type InterceptedHandler struct {
 	Logger *slog.Logger
 }
 
+type interceptBeforeResult[Req any, Resp any] struct {
+	reqOverride   Req
+	earlyResponse *Resp
+	earlyErr      error
+}
+
 var _ RequestHandler = (*InterceptedHandler)(nil)
 
 func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
@@ -45,22 +51,31 @@ func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 	if query != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(query.ID)))
 	}
-	ctx, interceptedQuery, err := interceptBefore(ctx, h, callCtx, query)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.TaskQueryParams, *a2a.Task](ctx, h, callCtx, query)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnGetTask(ctx, interceptedQuery)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnGetTask(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnListTasks")
-	ctx, req, err := interceptBefore(ctx, h, callCtx, req)
-	if err != nil {
-		return nil, err
+	if req != nil {
+		ctx = h.withLoggerContext(ctx)
 	}
-	response, err := h.Handler.OnListTasks(ctx, req)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	ctx, res := interceptBefore[*a2a.ListTasksRequest, *a2a.ListTasksResponse](ctx, h, callCtx, req)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
+	}
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnListTasks(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
@@ -68,12 +83,15 @@ func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskI
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.TaskIDParams, *a2a.Task](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnCancelTask(ctx, interceptedParams)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnCancelTask(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
@@ -89,12 +107,15 @@ func (h *InterceptedHandler) OnSendMessage(ctx context.Context, params *a2a.Mess
 	} else {
 		ctx = h.withLoggerContext(ctx)
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.MessageSendParams, a2a.SendMessageResult](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnSendMessage(ctx, interceptedParams)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnSendMessage(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
@@ -111,13 +132,17 @@ func (h *InterceptedHandler) OnSendMessageStream(ctx context.Context, params *a2
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-		if err != nil {
-			yield(nil, err)
+		ctx, res := interceptBefore[*a2a.MessageSendParams, a2a.SendMessageResult](ctx, h, callCtx, params)
+		if res.earlyErr != nil {
+			yield(nil, res.earlyErr)
 			return
 		}
-		for event, err := range h.Handler.OnSendMessageStream(ctx, interceptedParams) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h, callCtx, event, err)
+		if res.earlyResponse != nil {
+			yield(*res.earlyResponse, nil)
+			return
+		}
+		for event, err := range h.Handler.OnSendMessageStream(ctx, res.reqOverride) {
+			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
 				return
@@ -135,13 +160,17 @@ func (h *InterceptedHandler) OnResubscribeToTask(ctx context.Context, params *a2
 		if params != nil {
 			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.ID)))
 		}
-		ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-		if err != nil {
-			yield(nil, err)
+		ctx, res := interceptBefore[*a2a.TaskIDParams, a2a.SendMessageResult](ctx, h, callCtx, params)
+		if res.earlyErr != nil {
+			yield(nil, res.earlyErr)
 			return
 		}
-		for event, err := range h.Handler.OnResubscribeToTask(ctx, interceptedParams) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h, callCtx, event, err)
+		if res.earlyResponse != nil {
+			yield(*res.earlyResponse, nil)
+			return
+		}
+		for event, err := range h.Handler.OnResubscribeToTask(ctx, res.reqOverride) {
+			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
 				return
@@ -158,12 +187,15 @@ func (h *InterceptedHandler) OnGetTaskPushConfig(ctx context.Context, params *a2
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.GetTaskPushConfigParams, *a2a.TaskPushConfig](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnGetTaskPushConfig(ctx, interceptedParams)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnGetTaskPushConfig(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
@@ -171,12 +203,15 @@ func (h *InterceptedHandler) OnListTaskPushConfig(ctx context.Context, params *a
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.ListTaskPushConfigParams, []*a2a.TaskPushConfig](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnListTaskPushConfig(ctx, interceptedParams)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnListTaskPushConfig(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
@@ -184,12 +219,15 @@ func (h *InterceptedHandler) OnSetTaskPushConfig(ctx context.Context, params *a2
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return nil, err
+	ctx, res := interceptBefore[*a2a.TaskPushConfig, *a2a.TaskPushConfig](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
 	}
-	response, err := h.Handler.OnSetTaskPushConfig(ctx, interceptedParams)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
+	}
+	response, err := h.Handler.OnSetTaskPushConfig(ctx, res.reqOverride)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
@@ -197,13 +235,16 @@ func (h *InterceptedHandler) OnDeleteTaskPushConfig(ctx context.Context, params 
 	if params != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(params.TaskID)))
 	}
-	ctx, interceptedParams, err := interceptBefore(ctx, h, callCtx, params)
-	if err != nil {
-		return err
+	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigParams, struct{}](ctx, h, callCtx, params)
+	if res.earlyErr != nil {
+		return res.earlyErr
 	}
-	err = h.Handler.OnDeleteTaskPushConfig(ctx, interceptedParams)
+	if res.earlyResponse != nil {
+		return nil
+	}
+	err := h.Handler.OnDeleteTaskPushConfig(ctx, res.reqOverride)
 	var emptyResponse struct{}
-	_, errOverride := interceptAfter(ctx, h, callCtx, emptyResponse, err)
+	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
 	if errOverride != nil {
 		return errOverride
 	}
@@ -214,45 +255,69 @@ func (h *InterceptedHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.A
 	ctx, callCtx := withMethodCallContext(ctx, "OnGetExtendedAgentCard")
 	ctx = h.withLoggerContext(ctx)
 
-	var req struct{}
-	ctx, _, err := interceptBefore(ctx, h, callCtx, req)
-	if err != nil {
-		return nil, err
+	var req *struct{}
+	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, h, callCtx, req)
+	if res.earlyErr != nil {
+		return nil, res.earlyErr
+	}
+	if res.earlyResponse != nil {
+		return *res.earlyResponse, nil
 	}
 	response, err := h.Handler.OnGetExtendedAgentCard(ctx)
-	return interceptAfter(ctx, h, callCtx, response, err)
+	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
-func interceptBefore[T any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload T) (context.Context, T, error) {
+func interceptBefore[Req any, Resp any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
 	request := &Request{Payload: payload}
 
-	var zero T
-	for _, interceptor := range h.Interceptors {
-		localCtx, err := interceptor.Before(ctx, callCtx, request)
-		if err != nil {
-			return ctx, zero, err
+	var zeroReq Req
+	outcome := interceptBeforeResult[Req, Resp]{
+		reqOverride:   zeroReq,
+		earlyResponse: nil,
+		earlyErr:      nil,
+	}
+
+	for i, interceptor := range h.Interceptors {
+		localCtx, result, err := interceptor.Before(ctx, callCtx, request)
+		if err != nil || result != nil {
+			var typedResult Resp
+			if result != nil {
+				r, ok := result.(Resp)
+				if !ok {
+					outcome.earlyErr = fmt.Errorf("result type changed from %T to %T", result, typedResult)
+					return ctx, outcome
+				}
+				typedResult = r
+			}
+			interceptors := h.Interceptors[:i+1]
+			resp, err := interceptAfter(ctx, interceptors, callCtx, typedResult, err)
+			outcome.earlyResponse = &resp
+			outcome.earlyErr = err
+			return ctx, outcome
 		}
 		ctx = localCtx
 	}
 
 	if request.Payload == nil {
-		return ctx, zero, nil
+		return ctx, outcome
 	}
 
-	typed, ok := request.Payload.(T)
+	typed, ok := request.Payload.(Req)
 	if !ok {
-		return ctx, zero, fmt.Errorf("payload type changed from %T to %T", payload, request.Payload)
+		outcome.earlyErr = fmt.Errorf("payload type changed from %T to %T", payload, request.Payload)
+		return ctx, outcome
 	}
 
-	return ctx, typed, nil
+	outcome.reqOverride = typed
+	return ctx, outcome
 }
 
-func interceptAfter[T any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload T, responseErr error) (T, error) {
+func interceptAfter[T any](ctx context.Context, interceptors []CallInterceptor, callCtx *CallContext, payload T, responseErr error) (T, error) {
 	response := &Response{Payload: payload, Err: responseErr}
 
 	var zero T
-	for i := range len(h.Interceptors) {
-		interceptor := h.Interceptors[len(h.Interceptors)-i-1]
+	for i := range len(interceptors) {
+		interceptor := interceptors[len(interceptors)-i-1]
 		if err := interceptor.After(ctx, callCtx, response); err != nil {
 			return zero, err
 		}

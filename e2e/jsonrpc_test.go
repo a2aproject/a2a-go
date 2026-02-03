@@ -108,7 +108,7 @@ func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 	reqHandler := a2asrv.NewHandler(
 		&testexecutor.TestAgentExecutor{},
 		a2asrv.WithCallInterceptor(&fnInterceptor{
-			beforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+			beforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 				panic("oh no")
 			},
 		}),
@@ -149,12 +149,12 @@ func newAgentCard(url string) *a2a.AgentCard {
 // TODO: replace with public utility
 type fnInterceptor struct {
 	a2asrv.PassthroughCallInterceptor
-	beforeFn func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error)
+	beforeFn func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error)
 }
 
-func (ci *fnInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+func (ci *fnInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	if ci.beforeFn != nil {
 		return ci.beforeFn(ctx, callCtx, req)
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }

@@ -112,9 +112,9 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 	ctx := t.Context()
 	lastCalledMethod := make(chan string, 1)
 	interceptor := &mockInterceptor{
-		beforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+		beforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 			lastCalledMethod <- callCtx.Method()
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 	reqHandler := NewHandler(

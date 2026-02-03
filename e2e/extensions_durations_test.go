@@ -38,16 +38,16 @@ type durationKeyType struct{}
 // durationTracker implements the extension by providing an [a2asrv.CallInterceptor].
 type durationTracker struct{}
 
-func (s *durationTracker) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+func (s *durationTracker) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	extensions, ok := a2asrv.ExtensionsFrom(ctx)
 	if !ok {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 	if !extensions.Requested(&durationsExtension) {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 	extensions.Activate(&durationsExtension)
-	return context.WithValue(ctx, durationKeyType{}, time.Now()), nil
+	return context.WithValue(ctx, durationKeyType{}, time.Now()), nil, nil
 }
 
 func (s *durationTracker) After(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error {

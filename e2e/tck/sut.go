@@ -35,7 +35,7 @@ type intercepter struct {
 	a2asrv.PassthroughCallInterceptor
 }
 
-func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, error) {
+func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	if callCtx.Method() == "OnSendMessage" {
 		sendParams := req.Payload.(*a2a.MessageSendParams)
 		if sendParams.Config == nil {
@@ -46,7 +46,7 @@ func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, r
 			sendParams.Config.Blocking = &blocking
 		}
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 func main() {

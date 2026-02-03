@@ -29,6 +29,7 @@ import (
 type mockHandler struct {
 	lastCallContext       *CallContext
 	resultErr             error
+	OnGetTaskFn           func(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error)
 	OnSendMessageFn       func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error)
 	OnSendMessageStreamFn func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
 }
@@ -37,6 +38,9 @@ var _ RequestHandler = (*mockHandler)(nil)
 
 func (h *mockHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
+	if h.OnGetTaskFn != nil {
+		return h.OnGetTaskFn(ctx, query)
+	}
 	if h.resultErr != nil {
 		return nil, h.resultErr
 	}
@@ -133,15 +137,15 @@ func (h *mockHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCar
 }
 
 type mockInterceptor struct {
-	beforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error)
+	beforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 	afterFn  func(ctx context.Context, callCtx *CallContext, resp *Response) error
 }
 
-func (mi *mockInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+func (mi *mockInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 	if mi.beforeFn != nil {
 		return mi.beforeFn(ctx, callCtx, req)
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 func (mi *mockInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
@@ -251,9 +255,9 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 
 	type testUser struct{ *AuthenticatedUser }
 
-	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		callCtx.User = &testUser{}
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
@@ -278,10 +282,10 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	}
 
 	wantReqKey, wantReqVal := "reqKey", 42
-	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		payload := req.Payload.(*a2a.MessageSendParams)
 		payload.Metadata = map[string]any{wantReqKey: wantReqVal}
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	wantRespKey, wantRespVal := "respKey", 43
@@ -323,13 +327,13 @@ func TestInterceptedHandler_RequestModification(t *testing.T) {
 		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: message}), nil
 	}
 
-	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		if _, ok := req.Payload.(*a2a.MessageSendParams); ok {
 			req.Payload = &a2a.MessageSendParams{
 				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"}),
 			}
 		}
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	resp, err := handler.OnSendMessage(ctx, originalParams)
@@ -431,9 +435,9 @@ func TestInterceptedHandler_TypeSafety(t *testing.T) {
 	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
-	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 		req.Payload = &a2a.Task{}
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
@@ -455,9 +459,9 @@ func TestInterceptedHandler_InterceptorOrdering(t *testing.T) {
 	afterCalls := []int{}
 	createInterceptor := func(pos int) *mockInterceptor {
 		return &mockInterceptor{
-			beforeFn: func(ctx context.Context, callCtx *CallContext, resp *Request) (context.Context, error) {
+			beforeFn: func(ctx context.Context, callCtx *CallContext, resp *Request) (context.Context, any, error) {
 				beforeCalls = append(beforeCalls, pos)
-				return ctx, nil
+				return ctx, nil, nil
 			},
 			afterFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				afterCalls = append(afterCalls, pos)
@@ -533,10 +537,10 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			wantActiveExtension := &a2a.AgentExtension{URI: "https://test.com"}
 
 			var beforeCallCtx *CallContext
-			mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
+			mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 				callCtx.Extensions().Activate(wantActiveExtension)
 				beforeCallCtx = callCtx
-				return ctx, nil
+				return ctx, nil, nil
 			}
 			var afterCallCtx *CallContext
 			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
@@ -576,8 +580,8 @@ func TestInterceptedHandler_ContextDataPassing(t *testing.T) {
 
 			type contextKey struct{}
 			wantVal := 42
-			mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, error) {
-				return context.WithValue(ctx, contextKey{}, wantVal), nil
+			mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+				return context.WithValue(ctx, contextKey{}, wantVal), nil, nil
 			}
 			var gotVal any
 			mockInterceptor.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
@@ -601,8 +605,8 @@ func TestInterceptedHandler_RejectRequest(t *testing.T) {
 			handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
 			wantErr := errors.New("rejected")
-			mockInterceptor.beforeFn = func(context.Context, *CallContext, *Request) (context.Context, error) {
-				return nil, wantErr
+			mockInterceptor.beforeFn = func(context.Context, *CallContext, *Request) (context.Context, any, error) {
+				return nil, nil, wantErr
 			}
 			_, gotErr := tc.call(ctx, handler)
 
@@ -644,5 +648,62 @@ func TestInterceptedHandler_RejectResponse(t *testing.T) {
 				t.Errorf("%s() error = %v, want %v", tc.method, gotErr, wantErr)
 			}
 		})
+	}
+}
+
+func TestInterceptedHandler_EarlyReturn(t *testing.T) {
+	ctx := t.Context()
+	originalQuery := &a2a.TaskQueryParams{ID: "original"}
+	earlyResult := &a2a.Task{ID: "early-cached-result"}
+
+	mockHandler, interceptor1, interceptor2, interceptor3 := &mockHandler{}, &mockInterceptor{}, &mockInterceptor{}, &mockInterceptor{}
+
+	handlerCalled := false
+	mockHandler.OnGetTaskFn = func(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+		handlerCalled = true
+		return nil, fmt.Errorf("handler should not be called")
+	}
+
+	var callOrder []string
+	interceptor1.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "1-Before")
+		return ctx, nil, nil
+	}
+	interceptor1.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+		callOrder = append(callOrder, "1-After")
+		return nil
+	}
+	// Interceptor 2 returns early result
+	interceptor2.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "2-Before")
+		return ctx, earlyResult, nil
+	}
+	interceptor2.afterFn = func(ctx context.Context, callCtx *CallContext, resp *Response) error {
+		callOrder = append(callOrder, "2-After")
+		return nil
+	}
+	interceptor3.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "3-Before")
+		return ctx, nil, nil
+	}
+
+	handler := &InterceptedHandler{
+		Handler:      mockHandler,
+		Interceptors: []CallInterceptor{interceptor1, interceptor2, interceptor3},
+	}
+
+	response, err := handler.OnGetTask(ctx, originalQuery)
+	if err != nil {
+		t.Errorf("OnGetTask() error = %v, want nil", err)
+	}
+	if response != earlyResult {
+		t.Errorf("OnGetTask() response = %v, want %v", response, earlyResult)
+	}
+	if handlerCalled {
+		t.Error("Handler.OnGetTask() was called, want it to be skipped")
+	}
+	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
+	if !reflect.DeepEqual(callOrder, wantCallOrder) {
+		t.Errorf("Call order = %v, want %v", callOrder, wantCallOrder)
 	}
 }
