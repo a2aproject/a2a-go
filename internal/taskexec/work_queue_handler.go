@@ -29,6 +29,7 @@ type workQueueHandler struct {
 	queueManager eventqueue.Manager
 	taskStore    TaskStore
 	factory      Factory
+	panicHandler PanicHandlerFn
 }
 
 func newWorkQueueHandler(cfg *DistributedManagerConfig) *workQueueHandler {
@@ -36,6 +37,7 @@ func newWorkQueueHandler(cfg *DistributedManagerConfig) *workQueueHandler {
 		queueManager: cfg.QueueManager,
 		taskStore:    cfg.TaskStore,
 		factory:      cfg.Factory,
+		panicHandler: cfg.PanicHandler,
 	}
 	cfg.WorkQueue.RegisterHandler(cfg.ConcurrencyConfig, backend.handle)
 	return backend
@@ -99,5 +101,5 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater)
+	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
 }
