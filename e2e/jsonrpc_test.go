@@ -15,6 +15,8 @@
 package e2e
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -49,11 +51,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 
-	card := &a2a.AgentCard{
-		URL:                fmt.Sprintf("%s/invoke", server.URL),
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
-	}
+	card := newAgentCard(fmt.Sprintf("%s/invoke", server.URL))
 
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(reqHandler))
@@ -63,10 +61,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 		t.Fatalf("resolver.Resolve() error = %v", err)
 	}
 
-	client, err := a2aclient.NewFromCard(ctx, card)
-	if err != nil {
-		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
-	}
+	client := mustCreateClient(t, card)
 
 	var received []a2a.Event
 	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
@@ -80,4 +75,86 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	if diff := cmp.Diff(executor.Emitted, received); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() wrong events (+got,-want) diff = %s", diff)
 	}
+}
+
+func TestJSONRPC_ExecutionScopeStreamingPanic(t *testing.T) {
+	ctx := t.Context()
+
+	reqHandler := a2asrv.NewHandler(
+		testexecutor.FromEventGenerator(func(reqCtx *a2asrv.RequestContext) []a2a.Event {
+			panic("oh no")
+		}),
+		a2asrv.WithExecutionPanicHandler(func(r any) error {
+			return a2a.ErrInvalidRequest
+		}),
+	)
+
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
+	client := mustCreateClient(t, newAgentCard(server.URL))
+
+	var gotErr error
+	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	for _, err := range client.SendStreamingMessage(ctx, msg) {
+		gotErr = err
+	}
+	if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+		t.Fatalf("client.SendStreamingMessage() error = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+	}
+}
+
+func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
+	ctx := t.Context()
+
+	reqHandler := a2asrv.NewHandler(
+		&testexecutor.TestAgentExecutor{},
+		a2asrv.WithCallInterceptor(&fnInterceptor{
+			beforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
+				panic("oh no")
+			},
+		}),
+	)
+
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler, a2asrv.WithPanicHandler(func(r any) error {
+		return a2a.ErrInternalError
+	})))
+	client := mustCreateClient(t, newAgentCard(server.URL))
+
+	var gotErr error
+	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	for _, err := range client.SendStreamingMessage(ctx, msg) {
+		gotErr = err
+	}
+	if !errors.Is(gotErr, a2a.ErrInternalError) {
+		t.Fatalf("client.SendStreamingMessage() error = %v, want %v", gotErr, a2a.ErrInternalError)
+	}
+}
+
+func mustCreateClient(t *testing.T, card *a2a.AgentCard) *a2aclient.Client {
+	t.Helper()
+	client, err := a2aclient.NewFromCard(t.Context(), card)
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+	return client
+}
+
+func newAgentCard(url string) *a2a.AgentCard {
+	return &a2a.AgentCard{
+		URL:                url,
+		PreferredTransport: a2a.TransportProtocolJSONRPC,
+		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+	}
+}
+
+// TODO: replace with public utility
+type fnInterceptor struct {
+	a2asrv.PassthroughCallInterceptor
+	beforeFn func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error)
+}
+
+func (ci *fnInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
+	if ci.beforeFn != nil {
+		return ci.beforeFn(ctx, callCtx, req)
+	}
+	return ctx, nil, nil
 }

@@ -18,12 +18,12 @@ import (
 	"context"
 )
 
-type callContextKey struct{}
+type callContextKeyType struct{}
 
 // CallContextFrom allows to get a CallContext struct which holds additional information
 // about the current execution scope.
 func CallContextFrom(ctx context.Context) (*CallContext, bool) {
-	callCtx, ok := ctx.Value(callContextKey{}).(*CallContext)
+	callCtx, ok := ctx.Value(callContextKeyType{}).(*CallContext)
 	return callCtx, ok
 }
 
@@ -32,7 +32,7 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 // If context already had a [CallContext] attached, the old context will be shadowed.
 func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *CallContext) {
 	callCtx := &CallContext{User: unauthenticatedUser{}, requestMeta: meta}
-	return context.WithValue(ctx, callContextKey{}, callCtx), callCtx
+	return context.WithValue(ctx, callContextKeyType{}, callCtx), callCtx
 }
 
 // CallContext holds information about the current server call scope.

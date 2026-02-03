@@ -33,7 +33,9 @@ func TestAgentCardHandler(t *testing.T) {
 	slog.SetDefault(slog.New(slog.DiscardHandler))
 
 	testCases := []struct {
+		name        string
 		method      string
+		reqHeaders  map[string]string
 		wantCard    bool
 		wantHeaders map[string]string
 		wantStatus  int
@@ -48,6 +50,19 @@ func TestAgentCardHandler(t *testing.T) {
 			},
 		},
 		{
+			method: "GET",
+			reqHeaders: map[string]string{
+				"Origin": "https://example.com",
+			},
+			wantCard:   true,
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Access-Control-Allow-Origin":      "https://example.com",
+				"Access-Control-Allow-Credentials": "true",
+				"Content-Type":                     "application/json",
+			},
+		},
+		{
 			method:     "OPTIONS",
 			wantStatus: http.StatusOK,
 			wantHeaders: map[string]string{
@@ -55,6 +70,20 @@ func TestAgentCardHandler(t *testing.T) {
 				"Access-Control-Allow-Methods": "GET, OPTIONS",
 				"Access-Control-Allow-Headers": "Content-Type",
 				"Access-Control-Max-Age":       "86400",
+			},
+		},
+		{
+			method: "OPTIONS",
+			reqHeaders: map[string]string{
+				"Origin": "https://example.com",
+			},
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Access-Control-Allow-Origin":      "https://example.com",
+				"Access-Control-Allow-Credentials": "true",
+				"Access-Control-Allow-Methods":     "GET, OPTIONS",
+				"Access-Control-Allow-Headers":     "Content-Type",
+				"Access-Control-Max-Age":           "86400",
 			},
 		},
 		{
@@ -82,12 +111,19 @@ func TestAgentCardHandler(t *testing.T) {
 	})))
 	for _, tc := range testCases {
 		for srvType, url := range map[string]string{"dynamic": server.URL, "static": staticServer.URL} {
-			t.Run(tc.method+" "+srvType, func(t *testing.T) {
+			name := tc.method
+			if len(tc.reqHeaders) > 0 {
+				name = tc.method + " with origin"
+			}
+			t.Run(name+" "+srvType, func(t *testing.T) {
 				t.Parallel()
 				req, err := http.NewRequestWithContext(t.Context(), tc.method, url, nil)
 				if err != nil {
 					t.Errorf("http.NewRequestWithContext() error = %v", err)
 					return
+				}
+				for k, v := range tc.reqHeaders {
+					req.Header.Set(k, v)
 				}
 				client := &http.Client{}
 				resp, err := client.Do(req)

@@ -1,5 +1,26 @@
 # Changelog
 
+<<<<<<< HEAD
+=======
+## [0.3.6](https://github.com/a2aproject/a2a-go/compare/v0.3.5...v0.3.6) (2026-01-30)
+
+
+### Features
+
+* callinterceptor supports payload override ([#177](https://github.com/a2aproject/a2a-go/issues/177)) ([baf66d8](https://github.com/a2aproject/a2a-go/commit/baf66d81f7d27e42dd2b4e28bd80b9f9a5f441e6))
+* callinterceptor supports payload override-client ([#181](https://github.com/a2aproject/a2a-go/issues/181)) ([1d74565](https://github.com/a2aproject/a2a-go/commit/1d74565274004ebc0cffa5cc4cf829d44e836abb))
+* custom errors ([#180](https://github.com/a2aproject/a2a-go/issues/180)) ([2152258](https://github.com/a2aproject/a2a-go/commit/215225853305214f2dc868d8b69cf734e2b271ca))
+* custom panic handler ([#185](https://github.com/a2aproject/a2a-go/issues/185)) ([d3af3bf](https://github.com/a2aproject/a2a-go/commit/d3af3bf4b7651116369518c80c099dc51a2f0e65))
+* db-backend cluster setup ([#133](https://github.com/a2aproject/a2a-go/issues/133)) ([4f7471c](https://github.com/a2aproject/a2a-go/commit/4f7471c3dad2ede7c6fabe1f2d33b6afed55cc54)), closes [#115](https://github.com/a2aproject/a2a-go/issues/115)
+* extension utilities ([#165](https://github.com/a2aproject/a2a-go/issues/165)) ([6c78425](https://github.com/a2aproject/a2a-go/commit/6c7842516e84ac2a1985ef828910357e00d4cff9))
+
+
+### Bug Fixes
+
+* add opt-in keep-alive. Fixes [#168](https://github.com/a2aproject/a2a-go/issues/168) ([#171](https://github.com/a2aproject/a2a-go/issues/171)) ([64880fc](https://github.com/a2aproject/a2a-go/commit/64880fcf19e58c8237905206b191ff08b6aaa365))
+* reflect origin if provided when serving public agentcard ([#183](https://github.com/a2aproject/a2a-go/issues/183)) ([535bb1f](https://github.com/a2aproject/a2a-go/commit/535bb1f014c243eb69d5b0ab370fa883ca0fc8cf)), closes [#174](https://github.com/a2aproject/a2a-go/issues/174)
+
+>>>>>>> main
 ## [0.3.5](https://github.com/a2aproject/a2a-go/compare/v0.3.4...v0.3.5) (2026-01-23)
 
 
