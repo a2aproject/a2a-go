@@ -84,12 +84,16 @@ func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 		scanner := bufio.NewScanner(body)
 		buf := make([]byte, 0, bufio.MaxScanTokenSize)
 		scanner.Buffer(buf, MaxSSETokenSize)
-		prefixBytes := []byte(sseDataPrefix)
+		// Check for "data:" prefix (without space) to support both "data: foo" and "data:foo"
+		prefixBytes := []byte("data:")
 
 		for scanner.Scan() {
 			lineBytes := scanner.Bytes()
 			if bytes.HasPrefix(lineBytes, prefixBytes) {
 				data := lineBytes[len(prefixBytes):]
+				if len(data) > 0 && data[0] == ' ' {
+					data = data[1:]
+				}
 				if !yield(data, nil) {
 					return
 				}

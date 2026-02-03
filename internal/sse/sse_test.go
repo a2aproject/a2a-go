@@ -15,6 +15,7 @@
 package sse
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -116,6 +117,62 @@ func TestSSE_LargePayload(t *testing.T) {
 		}
 		if string(data) != largePayload {
 			t.Fatalf("ParseDataStream() payload content mismatch")
+		}
+		eventCount++
+	}
+	if eventCount != 1 {
+		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
+}
+
+func TestSSE_NoSpaceCompatibility(t *testing.T) {
+	// Some frameworks (e.g. Spring) emit "data:foo" instead of "data: foo".
+	// We need to support this for compatibility.
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+
+		sse, err := NewWriter(rw)
+		if err != nil {
+			t.Fatalf("NewWriter() error = %v", err)
+		}
+		sse.WriteHeaders()
+		
+		// Manually write data without space
+		// sse.WriteData always adds a space, so we write directly to the writer
+		// Note: we can't easily access the underlying writer safely if we wrapped it, 
+		// but here we are in the handler so we can just write to rw if we avoided NewWriter,
+		// OR we just assume we can write raw bytes to the body if NewWriter doesn't buffer indefinitely.
+		// However, NewWriter uses a flusher.
+		
+		// Let's just bypass SSEWriter for this specific test to generate "bad" data
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.WriteHeader(http.StatusOK)
+		
+		fmt.Fprintf(rw, "id: %s\n", "1")
+		fmt.Fprintf(rw, "data:%s\n\n", "payload-without-space")
+		rw.(http.Flusher).Flush()
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Accept", ContentEventStream)
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	eventCount := 0
+	for data, err := range ParseDataStream(resp.Body) {
+		if err != nil {
+			t.Fatalf("ParseDataStream() error = %v", err)
+		}
+		if string(data) != "payload-without-space" {
+			t.Fatalf("ParseDataStream() = %q, want %q", string(data), "payload-without-space")
 		}
 		eventCount++
 	}
