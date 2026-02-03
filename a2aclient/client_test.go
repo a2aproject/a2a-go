@@ -791,8 +791,8 @@ func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
 	}
-	if interceptor.lastResp.Payload != nil {
-		t.Fatalf("interceptor.After payload = %v, want nil", interceptor.lastResp.Payload)
+	if _, ok := interceptor.lastResp.Payload.(struct{}); !ok {
+		t.Fatalf("interceptor.After payload = %v, want struct{}", interceptor.lastResp.Payload)
 	}
 }
 
@@ -823,10 +823,134 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
-	if interceptor.lastReq.Payload != nil {
-		t.Fatalf("interceptor.Before payload = %v, want nil", interceptor.lastReq.Payload)
+	if interceptor.lastReq.Payload != struct{}{} {
+		t.Fatalf("interceptor.Before payload = %v, want struct{}", interceptor.lastReq.Payload)
 	}
 	if interceptor.lastResp.Payload != resp {
-		t.Fatalf("interceptor.After payload = %v, want nil", interceptor.lastResp.Payload)
+		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, resp)
+	}
+}
+
+func TestClient_Intercept_RequestModification(t *testing.T) {
+	ctx := t.Context()
+	originalParams := &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"}),
+	}
+	modifiedParams := &a2a.MessageSendParams{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified"}),
+	}
+	var receivedParams *a2a.MessageSendParams
+	transport := &testTransport{
+		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			receivedParams = params
+			message := params.Message.Parts[0].(a2a.TextPart).Text
+			return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: message}), nil
+		},
+	}
+
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, req *Request) (context.Context, error) {
+			req.Payload = modifiedParams
+			return ctx, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	resp, err := client.SendMessage(ctx, originalParams)
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v, want nil", err)
+	}
+	if receivedParams == originalParams {
+		t.Fatalf("receivedParams = %v, want %v", receivedParams, modifiedParams)
+	}
+	reqMsg := resp.(*a2a.Message).Parts[0].(a2a.TextPart).Text
+	if reqMsg != "Modified" {
+		t.Fatalf("reqMsg = %q, want %q", reqMsg, "Modified")
+	}
+
+}
+
+func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
+	injectedErr := errors.New("injected error")
+	transportErr := errors.New("transport error")
+
+	tests := []struct {
+		name          string
+		transportResp a2a.SendMessageResult
+		transportErr  error
+		interceptorFn func(ctx context.Context, resp *Response) error
+		wantErr       error
+		wantRespText  string
+	}{
+		{
+			name:          "response modification",
+			transportResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original"}),
+			interceptorFn: func(ctx context.Context, resp *Response) error {
+				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified"})
+				return nil
+			},
+			wantRespText: "Modified",
+		},
+		{
+			name:          "injected error: transport success, interceptor error",
+			transportResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Success"}),
+			interceptorFn: func(ctx context.Context, resp *Response) error {
+				resp.Err = injectedErr
+				return nil
+			},
+			wantErr: injectedErr,
+		},
+		{
+			name:         "injected error: transport error, interceptor success",
+			transportErr: transportErr,
+			interceptorFn: func(ctx context.Context, resp *Response) error {
+				if resp.Err != nil {
+					resp.Err = nil
+					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error"})
+				}
+				return nil
+			},
+			wantRespText: "Recovered from error",
+		},
+		{
+			name:         "injected error: transport error, interceptor error",
+			transportErr: transportErr,
+			interceptorFn: func(ctx context.Context, resp *Response) error {
+				if resp.Err != nil {
+					resp.Err = injectedErr
+				}
+				return nil
+			},
+			wantErr: injectedErr,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			transport := &testTransport{
+				SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+					return tt.transportResp, tt.transportErr
+				},
+			}
+			interceptor := &testInterceptor{
+				AfterFn: tt.interceptorFn,
+			}
+			client := newTestClient(transport, interceptor)
+			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("client.SendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil {
+				if resp == nil {
+					t.Fatalf("client.SendMessage() resp = %v, want %v", resp, tt.wantRespText)
+				}
+				if msg, ok := resp.(*a2a.Message); ok {
+					if msg.Parts[0].(a2a.TextPart).Text != tt.wantRespText {
+						t.Fatalf("client.SendMessage() resp = %v, want %v", resp, tt.wantRespText)
+					}
+				}
+			}
+		})
 	}
 }

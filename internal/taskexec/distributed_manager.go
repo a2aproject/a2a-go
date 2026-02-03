@@ -36,6 +36,7 @@ type DistributedManagerConfig struct {
 	TaskStore         TaskStore
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Logger            *slog.Logger
+	PanicHandler      PanicHandlerFn
 }
 
 type distributedManager struct {
