@@ -15,6 +15,7 @@
 package sse
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -116,6 +117,60 @@ func TestSSE_LargePayload(t *testing.T) {
 		}
 		if string(data) != largePayload {
 			t.Fatalf("ParseDataStream() payload content mismatch")
+		}
+		eventCount++
+	}
+	if eventCount != 1 {
+		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
+}
+
+func TestSSE_NoSpaceCompatibility(t *testing.T) {
+	// Some frameworks (e.g. Spring) emit "data:foo" instead of "data: foo".
+	// We need to support this for compatibility.
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// To test compatibility with non-standard SSE streams that omit the space
+		// after "data:", we write the response manually instead of using SSEWriter.
+		flusher, ok := rw.(http.Flusher)
+		if !ok {
+			t.Fatalf("streaming not supported")
+		}
+
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.Header().Set("Cache-Control", "no-cache")
+		rw.Header().Set("Connection", "keep-alive")
+		rw.WriteHeader(http.StatusOK)
+
+		if _, err := fmt.Fprintf(rw, "id: %s\n", "1"); err != nil {
+			t.Fatalf("fmt.Fprintf(id) error = %v", err)
+		}
+		if _, err := fmt.Fprintf(rw, "data:%s\n\n", "payload-without-space"); err != nil {
+			t.Fatalf("fmt.Fprintf(data) error = %v", err)
+		}
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Accept", ContentEventStream)
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	eventCount := 0
+	for data, err := range ParseDataStream(resp.Body) {
+		if err != nil {
+			t.Fatalf("ParseDataStream() error = %v", err)
+		}
+		if string(data) != "payload-without-space" {
+			t.Fatalf("ParseDataStream() = %q, want %q", string(data), "payload-without-space")
 		}
 		eventCount++
 	}
