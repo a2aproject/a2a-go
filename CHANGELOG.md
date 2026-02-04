@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.7](https://github.com/a2aproject/a2a-go/compare/v0.3.6...v0.3.7) (2026-02-04)
+
+
+### Bug Fixes
+
+* handle internal error: tck failure ([#186](https://github.com/a2aproject/a2a-go/issues/186)) ([b55fbfd](https://github.com/a2aproject/a2a-go/commit/b55fbfd6417fb48a89dd838611f35a6899d17e12))
+* **sse:** support data: prefix without space ([#188](https://github.com/a2aproject/a2a-go/issues/188)) ([6657a6d](https://github.com/a2aproject/a2a-go/commit/6657a6dc3b6872d425f03d6f340b7c1a82c55810)), closes [#162](https://github.com/a2aproject/a2a-go/issues/162)
+
 ## [0.3.6](https://github.com/a2aproject/a2a-go/compare/v0.3.5...v0.3.6) (2026-01-30)
 
 
