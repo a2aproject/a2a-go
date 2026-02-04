@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb"
-	"github.com/a2aproject/a2a-go/a2apb/pbconv"
+	"github.com/a2aproject/a2a-go/a2apb/v0"
+	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
 	"github.com/a2aproject/a2a-go/internal/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
