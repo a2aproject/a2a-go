@@ -456,9 +456,6 @@ type TaskStatusUpdateEvent struct {
 	// ContextID is the context ID associated with the task. Required to be non-empty.
 	ContextID string `json:"contextId" yaml:"contextId" mapstructure:"contextId"`
 
-	// Final indicates if this is the final event in the stream for this interaction.
-	Final bool `json:"final" yaml:"final" mapstructure:"final"`
-
 	// Status is the new status of the task.
 	Status TaskStatus `json:"status" yaml:"status" mapstructure:"status"`
 
@@ -509,221 +506,60 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 type ContentParts []Part
 
 func (j ContentParts) MarshalJSON() ([]byte, error) {
-	if j == nil {
-		return []byte("[]"), nil
-	}
+	/*
+		TODO: implement such that:
+		Part{Content: Text("Hello"), MediaType: "text/plain"} -> {"text": "Hello", "mediatype": "text/plain"}
+		Part{Content: Data(map[string]string{"foo": "bar"})} -> {"data": {"foo": "bar"}}
+		Part{Content: URL(https://cats.com/1.png)} -> {"url": "https://cats.com/1.png"}
+		Part{Content: Raw([]byte{0xFF, 0xFE})} -> {"raw": "//9m"} (base64 encoded)
+	*/
 	return json.Marshal([]Part(j))
 }
 
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
-	type typedPart struct {
-		Kind string `json:"kind"`
-	}
-
-	var arr []json.RawMessage
-	if err := json.Unmarshal(b, &arr); err != nil {
-		return err
-	}
-
-	result := make([]Part, len(arr))
-	for i, rawMsg := range arr {
-		var tp typedPart
-		if err := json.Unmarshal(rawMsg, &tp); err != nil {
-			return err
-		}
-		switch tp.Kind {
-		case "text":
-			var part TextPart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		case "data":
-			var part DataPart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		case "file":
-			var part FilePart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		default:
-			return fmt.Errorf("unknown part kind %s", tp.Kind)
-		}
-	}
-
-	*j = result
+	/*
+		TODO: implement such that:
+		{"text": "Hello", "mediatype": "text/plain"} -> Part{Content: Text("Hello"), MediaType: "text/plain"}
+		{"data": {"foo": "bar"}} -> Part{Content: Data(map[string]string{"foo": "bar"})}
+		{"url": "https://cats.com/1.png"} -> Part{Content: URL(https://cats.com/1.png)}
+		{"raw": "//9m"} (base64 encoded) -> Part{Content: Raw([]byte{0xFF, 0xFE})}
+	*/
 	return nil
 }
 
 // Part is a discriminated union representing a part of a message or artifact, which can
 // be text, a file, or structured data.
-type Part interface {
-	isPart()
-
-	Meta() map[string]any
+type Part struct {
+	Content   PartContent
+	Filename  string
+	MediaType string
+	Metadata  map[string]any
 }
 
-func (TextPart) isPart() {}
-func (FilePart) isPart() {}
-func (DataPart) isPart() {}
+type PartContent interface {
+	isPartContent()
+}
+
+func (Text) isPartContent() {}
+func (Raw) isPartContent()  {}
+func (Data) isPartContent() {}
+func (URL) isPartContent()  {}
 
 func init() {
-	gob.Register(TextPart{})
-	gob.Register(FilePart{})
-	gob.Register(DataPart{})
+	gob.Register(Text(""))
+	gob.Register(Raw{})
+	gob.Register(Data{})
+	gob.Register(URL(""))
 }
 
-// TextPart represents a text segment within a message or artifact.
-type TextPart struct {
-	// Text is the string content of the text part.
-	Text string `json:"text" yaml:"text" mapstructure:"text"`
+type Text string
 
-	// Metadata is an optional metadata associated with the part.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
+// Make sure serializes to base64 in JSON
+type Raw []byte
 
-func (p TextPart) Meta() map[string]any {
-	return p.Metadata
-}
+type URL string
 
-func (p *TextPart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-func (p TextPart) MarshalJSON() ([]byte, error) {
-	type wrapped TextPart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "text", wrapped: wrapped(p)})
-}
-
-// DataPart represents a structured data segment (e.g., JSON) within a message or artifact.
-type DataPart struct {
-	// Data is the structured data content.
-	Data map[string]any `json:"data" yaml:"data" mapstructure:"data"`
-
-	// Metadata is an optional metadata associated with the part.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p DataPart) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *DataPart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-func (p DataPart) MarshalJSON() ([]byte, error) {
-	type wrapped DataPart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "data", wrapped: wrapped(p)})
-}
-
-// FilePart represents a file segment within a message or artifact. The file content can be
-// provided either directly as bytes or as a URI.
-type FilePart struct {
-	// File the file content, represented as either a URI or as base64-encoded bytes.
-	File FilePartContent `json:"file" yaml:"file" mapstructure:"file"`
-
-	// Metadata is an optional metadata associated with the part.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p FilePart) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *FilePart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-func (p FilePart) MarshalJSON() ([]byte, error) {
-	type wrapped FilePart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "file", wrapped: wrapped(p)})
-}
-
-func (p *FilePart) UnmarshalJSON(b []byte) error {
-	type filePartContentUnion struct {
-		FileMeta
-		URI   string `json:"uri"`
-		Bytes string `json:"bytes"`
-	}
-	type partJSON struct {
-		File     filePartContentUnion `json:"file"`
-		Metadata map[string]any       `json:"metadata"`
-	}
-	var decoded partJSON
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		return err
-	}
-
-	if len(decoded.File.Bytes) == 0 && len(decoded.File.URI) == 0 {
-		return fmt.Errorf("invalid file part: either Bytes or URI must be set")
-	}
-	if len(decoded.File.Bytes) > 0 && len(decoded.File.URI) > 0 {
-		return fmt.Errorf("invalid file part: Bytes and URI cannot be set at the same time")
-	}
-
-	res := FilePart{Metadata: decoded.Metadata}
-	if len(decoded.File.Bytes) > 0 {
-		res.File = FileBytes{Bytes: decoded.File.Bytes, FileMeta: decoded.File.FileMeta}
-	} else {
-		res.File = FileURI{URI: decoded.File.URI, FileMeta: decoded.File.FileMeta}
-	}
-
-	*p = res
-	return nil
-}
-
-// FilePartContent is a discriminated union of possible file part payloads.
-type FilePartContent interface{ isFilePartContent() }
-
-func (FileBytes) isFilePartContent() {}
-func (FileURI) isFilePartContent()   {}
-
-func init() {
-	gob.Register(FileBytes{})
-	gob.Register(FileURI{})
-}
-
-// FileMeta represents file metadata of a file part.
-type FileMeta struct {
-	// MimeType is an optinal MIME type of the file (e.g., "application/pdf").
-	MimeType string `json:"mimeType,omitempty" yaml:"mimeType,omitempty" mapstructure:"mimeType,omitempty"`
-
-	// Name is an optional name for the file (e.g., "document.pdf").
-	Name string `json:"name,omitempty" yaml:"name,omitempty" mapstructure:"name,omitempty"`
-}
-
-// FileBytes represents a file with its content provided directly as a base64-encoded string.
-type FileBytes struct {
-	FileMeta
-	// Bytes is the base64-encoded content of the file.
-	Bytes string `json:"bytes" yaml:"bytes" mapstructure:"bytes"`
-}
-
-// FileURI represents a file with its content located at a specific URI.
-type FileURI struct {
-	FileMeta
-	// URI is a URI pointing to the file's content.
-	URI string `json:"uri" yaml:"uri" mapstructure:"uri"`
-}
-
-// Requests
+type Data map[string]any
 
 // TaskIDParams defines parameters containing a task ID, used for simple task operations.
 type TaskIDParams struct {

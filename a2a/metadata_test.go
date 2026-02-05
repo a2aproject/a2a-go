@@ -34,9 +34,6 @@ func TestMetadataCarrierImplementation(t *testing.T) {
 		{"TaskIDParams", &TaskIDParams{}},
 		{"TaskQueryParams", &TaskQueryParams{}},
 		{"MessageSendParams", &MessageSendParams{}},
-		{"GetTaskPushConfigParams", &GetTaskPushConfigParams{}},
-		{"ListTaskPushConfigParams", &ListTaskPushConfigParams{}},
-		{"DeleteTaskPushConfigParams", &DeleteTaskPushConfigParams{}},
 	}
 
 	for _, tc := range tests {

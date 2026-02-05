@@ -41,7 +41,7 @@ func TestEventMarshalJSON(t *testing.T) {
 				},
 			},
 			wantKind:       "message",
-			wantSubstrings: []string{`"kind":"message"`, `"messageId":"msg-123"`},
+			wantSubstrings: []string{`"message":{"messageId": "msg-123"`, `"messageId":"msg-123"`},
 		},
 		{
 			name: "Task",
@@ -68,7 +68,7 @@ func TestEventMarshalJSON(t *testing.T) {
 				},
 			},
 			wantKind:       "status-update",
-			wantSubstrings: []string{`"kind":"status-update"`, `"taskId":"task-123"`},
+			wantSubstrings: []string{`"status-update":{" "taskId":"task-123"}`},
 		},
 		{
 			name: "TaskArtifactUpdateEvent",

@@ -89,9 +89,6 @@ type AgentCard struct {
 	// Clients should prefer this transport and URL combination when both are supported.
 	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
 
-	// ProtocolVersion is the version of the A2A protocol this agent supports.
-	ProtocolVersion string `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
-
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
@@ -121,10 +118,6 @@ type AgentCard struct {
 	// SupportsAuthenticatedExtendedCard indicates if the agent can provide an extended agent card with additional details
 	// to authenticated users. Defaults to false.
 	SupportsAuthenticatedExtendedCard bool `json:"supportsAuthenticatedExtendedCard,omitempty" yaml:"supportsAuthenticatedExtendedCard,omitempty" mapstructure:"supportsAuthenticatedExtendedCard,omitempty"`
-
-	// URL is the preferred endpoint URL for interacting with the agent.
-	// This URL MUST support the transport specified by 'preferredTransport'.
-	URL string `json:"url" yaml:"url" mapstructure:"url"`
 
 	// Version is the agent's own version number. The format is defined by the provider.
 	Version string `json:"version" yaml:"version" mapstructure:"version"`

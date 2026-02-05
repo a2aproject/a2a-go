@@ -21,34 +21,12 @@ type GetTaskPushConfigParams struct {
 
 	// ConfigID is an optional ID of the push notification configuration to retrieve.
 	ConfigID string `json:"pushNotificationConfigId,omitempty" yaml:"pushNotificationConfigId,omitempty" mapstructure:"pushNotificationConfigId,omitempty"`
-
-	// Metadata is an optional metadata for extensions.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *GetTaskPushConfigParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *GetTaskPushConfigParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
 }
 
 // ListTaskPushConfigParams defines parameters for listing all push notification configurations associated with a task.
 type ListTaskPushConfigParams struct {
 	// TaskID is the unique identifier of the task.
 	TaskID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Metadata is an optional metadata for extensions.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *ListTaskPushConfigParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *ListTaskPushConfigParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
 }
 
 // DeleteTaskPushConfigParams defines parameters for deleting a specific push notification configuration for a task.
@@ -58,17 +36,6 @@ type DeleteTaskPushConfigParams struct {
 
 	// ConfigID is the ID of the push notification configuration to delete.
 	ConfigID string `json:"pushNotificationConfigId" yaml:"pushNotificationConfigId" mapstructure:"pushNotificationConfigId"`
-
-	// Metadata is an optional metadata for extensions.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *DeleteTaskPushConfigParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *DeleteTaskPushConfigParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
 }
 
 // TaskPushConfig is a container associating a push notification configuration with a specific task.
@@ -102,6 +69,6 @@ type PushAuthInfo struct {
 	// Credentials is an optional credentials required by the push notification endpoint.
 	Credentials string `json:"credentials,omitempty" yaml:"credentials,omitempty" mapstructure:"credentials,omitempty"`
 
-	// Schemes is a list of supported authentication schemes (e.g., 'Basic', 'Bearer').
-	Schemes []string `json:"schemes" yaml:"schemes" mapstructure:"schemes"`
+	// Scheme is a supported authentication scheme (e.g., 'Basic', 'Bearer').
+	Scheme string `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
 }
