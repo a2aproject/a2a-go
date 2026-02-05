@@ -49,20 +49,12 @@ func main() {
 	// 1. Send initial message
 	fmt.Println("Sending initial message...")
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Start task"})
-	resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+	task, err := sendMsg(ctx, client, msg)
 	if err != nil {
-		log.Fatalf("Failed to send message: %v", err)
+		log.Fatalf("Failed to send initial message: %v", err)
 	}
-
-	task, ok := resp.(*a2a.Task)
-	if !ok {
-		log.Fatalf("Expected *a2a.Task, got %T", resp)
-	}
-
-	log.Printf("Response state: %s", task.Status.State)
 
 	if task.Status.State != a2a.TaskStateInputRequired {
-		log.Printf("Task Output: %+v", task)
 		log.Fatalf("Expected state %s, got %s", a2a.TaskStateInputRequired, task.Status.State)
 	}
 
@@ -70,21 +62,33 @@ func main() {
 	fmt.Println("Providing input...")
 	// We need to use the info from the returned task to reply
 	inputMsg := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.TextPart{Text: "Here is the details"})
-	resp2, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: inputMsg})
+	task2, err := sendMsg(ctx, client, inputMsg)
 	if err != nil {
 		log.Fatalf("Failed to send input: %v", err)
 	}
 
-	task2, ok := resp2.(*a2a.Task)
-	if !ok {
-		log.Fatalf("Expected *a2a.Task, got %T", resp2)
-	}
-	log.Printf("Final Response state: %s", task2.Status.State)
-
 	if task2.Status.State != a2a.TaskStateCompleted {
-		log.Printf("Task Output: %+v", task2)
 		log.Fatalf("Expected state %s, got %s", a2a.TaskStateCompleted, task2.Status.State)
 	}
 
 	fmt.Println("Task completed successfully!")
+}
+
+func sendMsg(ctx context.Context, client *a2aclient.Client, msg *a2a.Message) (*a2a.Task, error) {
+	resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: msg})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+
+	task, ok := resp.(*a2a.Task)
+	if !ok {
+		return nil, fmt.Errorf("expected *a2a.Task, got %T", resp)
+	}
+
+	log.Printf("Response state: %s", task.Status.State)
+	if task.Status.State != a2a.TaskStateInputRequired && task.Status.State != a2a.TaskStateCompleted {
+		log.Printf("Task Output: %+v", task)
+	}
+
+	return task, nil
 }

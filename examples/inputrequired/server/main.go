@@ -37,27 +37,24 @@ func (*agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext
 	if reqCtx.StoredTask == nil {
 		// New task, ask for input
 		log.Println("New task. Asking for input.")
-		initialResp := a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Please provide more details."})
-
-		// Set state to input-required and attach the message.
-		// Note: We MUST wrap the message in StatusUpdateEvent, otherwise sending a raw Message
-		// event will be interpreted as a stateless execution result and the task won't be persisted.
-		// We set Final=true to indicate this turn is over, so the server stops processing
-		// and the client receives the response.
-		statusUpdate := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateInputRequired, initialResp)
-		statusUpdate.Final = true
-
-		return q.Write(ctx, statusUpdate)
+		msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Please provide more details."})
+		return reply(ctx, q, reqCtx, a2a.TaskStateInputRequired, msg)
 	}
 
 	// Task exists, this must be the input we asked for
 	log.Println("Task exists. Completing task.")
-	response := a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Thank you for the input! Task completed."})
+	msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Thank you for the input! Task completed."})
+	return reply(ctx, q, reqCtx, a2a.TaskStateCompleted, msg)
+}
 
-	// Complete the task
-	statusUpdate := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, response)
+func reply(ctx context.Context, q eventqueue.Queue, reqCtx *a2asrv.RequestContext, state a2a.TaskState, msg *a2a.Message) error {
+	// Set state and attach the message.
+	// Note: We MUST wrap the message in StatusUpdateEvent, otherwise sending a raw Message
+	// event will be interpreted as a stateless execution result and the task won't be persisted.
+	// We set Final=true to indicate this turn is over, so the server stops processing
+	// and the client receives the response.
+	statusUpdate := a2a.NewStatusUpdateEvent(reqCtx, state, msg)
 	statusUpdate.Final = true
-
 	return q.Write(ctx, statusUpdate)
 }
 
