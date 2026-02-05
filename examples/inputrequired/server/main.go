@@ -87,6 +87,7 @@ func main() {
 	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(requestHandler))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(agentCard))
 
-	err = http.Serve(listener, mux)
-	log.Printf("Server stopped: %v", err)
+	if err := http.Serve(listener, mux); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Server failed: %v", err)
+	}
 }
