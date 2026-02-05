@@ -67,10 +67,10 @@ func (*streamingAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.Reque
 		chunk := string(runes[i:end])
 
 		// Simulate processing delay (variable to feel more natural)
-		time.Sleep(50 * time.Millisecond)
-
-		// Check if context is cancelled (client disconnected)
-		if ctx.Err() != nil {
+		select {
+		case <-time.After(50 * time.Millisecond):
+			// continue
+		case <-ctx.Done():
 			log.Printf("Task %s cancelled by client", reqCtx.TaskID)
 			return ctx.Err()
 		}
