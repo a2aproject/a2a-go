@@ -87,7 +87,7 @@ func main() {
 					if tp, ok := p.(a2a.TextPart); ok {
 						fmt.Print(tp.Text)
 						newLineNeeded = true
-						os.Stdout.Sync() // Ensure it's printed immediately
+						_ = os.Stdout.Sync() // Ensure it's printed immediately
 					}
 				}
 			}
