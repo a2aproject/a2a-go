@@ -60,14 +60,14 @@ type AuthInterceptor struct {
 
 var _ CallInterceptor = (*AuthInterceptor)(nil)
 
-func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	if req.Card == nil || req.Card.Security == nil || req.Card.SecuritySchemes == nil {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	sessionID, ok := SessionIDFrom(ctx)
 	if !ok {
-		return ctx, nil
+		return ctx, nil, nil
 	}
 
 	for _, requirement := range req.Card.Security {
@@ -87,15 +87,15 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 			switch v := scheme.(type) {
 			case a2a.HTTPAuthSecurityScheme, a2a.OAuth2SecurityScheme:
 				req.Meta["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
-				return ctx, nil
+				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
 				req.Meta[v.Name] = []string{string(credential)}
-				return ctx, nil
+				return ctx, nil, nil
 			}
 		}
 	}
 
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 // CredentialsService is used by [AuthInterceptor] for resolving credentials.
