@@ -90,7 +90,7 @@ func main() {
 		},
 	}
 
-	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithExtendedAgentCard(agentCard), a2asrv.WithCallInterceptor(&intercepter{}))
+	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithExtendedAgentCard(agentCard), a2asrv.WithCallInterceptors(&intercepter{}))
 
 	var group errgroup.Group
 	group.Go(func() error {

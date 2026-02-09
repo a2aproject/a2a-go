@@ -107,7 +107,7 @@ func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 
 	reqHandler := a2asrv.NewHandler(
 		&testexecutor.TestAgentExecutor{},
-		a2asrv.WithCallInterceptor(&fnInterceptor{
+		a2asrv.WithCallInterceptors(&fnInterceptor{
 			beforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 				panic("oh no")
 			},

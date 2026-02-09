@@ -119,7 +119,7 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 	}
 	reqHandler := NewHandler(
 		&mockAgentExecutor{},
-		WithCallInterceptor(interceptor),
+		WithCallInterceptors(interceptor),
 		WithExtendedAgentCard(&a2a.AgentCard{}),
 	)
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))

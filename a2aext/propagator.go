@@ -112,7 +112,7 @@ func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallIntercept
 }
 
 // NewServerPropagator returns a server interceptor that propagates payload metada header values.
-// The server interceptor needs to be set on request handler using [a2asrv.WithCallInterceptor] option.
+// The server interceptor needs to be set on request handler using [a2asrv.WithCallInterceptors] option.
 func NewServerPropagator(config *ServerPropagatorConfig) a2asrv.CallInterceptor {
 	var cfg ServerPropagatorConfig
 	if config != nil {

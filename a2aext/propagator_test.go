@@ -258,7 +258,7 @@ func TestDefaultPropagation(t *testing.T) {
 }
 
 func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2asrv.AgentExecutor) a2a.AgentInterface {
-	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptor(interceptor))
+	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
 	t.Cleanup(server.Close)
 	return a2a.AgentInterface{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC}
