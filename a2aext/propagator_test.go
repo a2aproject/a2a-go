@@ -123,7 +123,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			client, err := a2aclient.NewFromEndpoints(
 				ctx,
 				[]a2a.AgentInterface{forwardProxy},
-				a2aclient.WithInterceptors(reqHeaderInjector),
+				a2aclient.WithCallInterceptors(reqHeaderInjector),
 			)
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -228,7 +228,7 @@ func TestDefaultPropagation(t *testing.T) {
 			client, err := a2aclient.NewFromCard(
 				ctx,
 				newAgentCard(serverA, tc.serverASupports),
-				a2aclient.WithInterceptors(NewActivator(tc.serverASupports...)),
+				a2aclient.WithCallInterceptors(NewActivator(tc.serverASupports...)),
 			)
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -285,10 +285,10 @@ type proxyTarget struct {
 
 func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallInterceptor) (*a2aclient.Client, error) {
 	if pt.ac != nil {
-		return a2aclient.NewFromCard(ctx, pt.ac, a2aclient.WithInterceptors(interceptor))
+		return a2aclient.NewFromCard(ctx, pt.ac, a2aclient.WithCallInterceptors(interceptor))
 	}
 	if pt.ai.URL != "" {
-		return a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{pt.ai}, a2aclient.WithInterceptors(interceptor))
+		return a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{pt.ai}, a2aclient.WithCallInterceptors(interceptor))
 	}
 	return nil, fmt.Errorf("neither card nor agent interface provided")
 }

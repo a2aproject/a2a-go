@@ -80,7 +80,7 @@ func GetMetadata(ctx context.Context) map[string]any {
 }
 
 // NewClientPropagator returns a client interceptor that propagates payload metada header values.
-// The client interceptor needs to be set on a2aclient or client factory using [a2aclient.WithInterceptors] option.
+// The client interceptor needs to be set on a2aclient or client factory using [a2aclient.WithCallInterceptors] option.
 func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallInterceptor {
 	var cfg ClientPropagatorConfig
 	if config != nil {

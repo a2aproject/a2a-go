@@ -76,7 +76,7 @@ func TestAuth_GRPC(t *testing.T) {
 		ctx,
 		card,
 		withTestGRPCTransport(listener),
-		WithInterceptors(&AuthInterceptor{Service: credStore}),
+		WithCallInterceptors(&AuthInterceptor{Service: credStore}),
 	)
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
