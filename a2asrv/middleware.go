@@ -31,7 +31,7 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 // or to have access to the list of activated extensions after the call ends.
 // If context already had a [CallContext] attached, the old context will be shadowed.
 func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *CallContext) {
-	callCtx := &CallContext{User: unauthenticatedUser{}, requestMeta: meta}
+	callCtx := &CallContext{User: &User{Authenticated: false}, requestMeta: meta}
 	return context.WithValue(ctx, callContextKeyType{}, callCtx), callCtx
 }
 
@@ -43,7 +43,7 @@ type CallContext struct {
 
 	// User can be set by authentication middleware to provide information about
 	// the user who initiated the request.
-	User User
+	User *User
 }
 
 // Method returns the name of the RequestHandler method which is being executed.

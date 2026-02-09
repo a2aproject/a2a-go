@@ -253,20 +253,18 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}), nil
 	}
 
-	type testUser struct{ *AuthenticatedUser }
-
 	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-		callCtx.User = &testUser{}
+		callCtx.User = NewAuthenticatedUser("test", nil)
 		return ctx, nil, nil
 	}
 
 	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
 
-	if !capturedCallCtx.User.Authenticated() {
+	if !capturedCallCtx.User.Authenticated {
 		t.Fatal("CallContext.User.Authenticated() = false, want true")
 	}
-	if _, ok := capturedCallCtx.User.(*testUser); !ok {
-		t.Fatalf("CallContext.User.(type) = %T, want *testUser", capturedCallCtx.User)
+	if capturedCallCtx.User.Name != "test" {
+		t.Fatalf("CallContext.User.Name = %s, want test", capturedCallCtx.User.Name)
 	}
 }
 

@@ -15,36 +15,20 @@
 package a2asrv
 
 // User can be attached to [CallContext] by authentication middleware.
-type User interface {
+type User struct {
 	// Name returns a username.
-	Name() string
+	Name string
 	// Authenticated returns true if the request was authenticated.
-	Authenticated() bool
+	Authenticated bool
+	// Attributes is a map of attributes associated with the user.
+	Attributes map[string]any
 }
 
-// AuthenticatedUser is a simple implementation of [User] interface configurable with a username.
-type AuthenticatedUser struct {
-	UserName string
-}
-
-var _ User = (*AuthenticatedUser)(nil)
-
-func (u *AuthenticatedUser) Name() string {
-	return u.UserName
-}
-
-func (u *AuthenticatedUser) Authenticated() bool {
-	return true
-}
-
-type unauthenticatedUser struct{}
-
-var _ User = (*unauthenticatedUser)(nil)
-
-func (unauthenticatedUser) Name() string {
-	return ""
-}
-
-func (unauthenticatedUser) Authenticated() bool {
-	return false
+// NewAuthenticatedUser returns a new [User] instance with the specified username and attributes.
+func NewAuthenticatedUser(username string, attrs map[string]any) *User {
+	return &User{
+		Name:          username,
+		Attributes:    attrs,
+		Authenticated: true,
+	}
 }
