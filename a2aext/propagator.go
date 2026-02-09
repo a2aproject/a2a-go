@@ -159,7 +159,7 @@ func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallConte
 		}
 	}
 
-	for headerName, headerValues := range callCtx.RequestMeta().List() {
+	for headerName, headerValues := range callCtx.ServiceParams().List() {
 		if s.HeaderPredicate(ctx, headerName) {
 			propagatorCtx.requestHeaders[headerName] = headerValues
 		}

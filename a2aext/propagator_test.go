@@ -40,14 +40,14 @@ func TestTripleHopPropagation(t *testing.T) {
 		name                  string
 		clientCfg             ClientPropagatorConfig
 		serverCfg             ServerPropagatorConfig
-		clientReqMeta         map[string]any
+		clientSvcParams       map[string]any
 		clientReqHeaders      map[string][]string
 		wantPropagatedMeta    map[string]any
 		wantPropagatedHeaders map[string][]string
 	}{
 		{
 			name: "default propagation affects extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 				"not-extension":  "qux",
@@ -82,7 +82,7 @@ func TestTripleHopPropagation(t *testing.T) {
 					return key == "keep-header" && val != "dropval"
 				},
 			},
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"keep-meta": "value",
 				"drop-meta": "value",
 			},
@@ -107,7 +107,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.RequestMeta().List())
+						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
 					gotReqCtx = rc
 
@@ -131,7 +131,7 @@ func TestTripleHopPropagation(t *testing.T) {
 
 			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
-				Metadata: tc.clientReqMeta,
+				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
 				t.Fatalf("client.SendMessage() error = %v", err)
@@ -155,7 +155,7 @@ func TestTripleHopPropagation(t *testing.T) {
 func TestDefaultPropagation(t *testing.T) {
 	tests := []struct {
 		name                 string
-		clientReqMeta        map[string]any
+		clientSvcParams      map[string]any
 		clientReqHeaders     map[string][]string
 		serverASupports      []string
 		serverBSupports      []string
@@ -164,7 +164,7 @@ func TestDefaultPropagation(t *testing.T) {
 	}{
 		{
 			name: "serverB supports all extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
@@ -183,7 +183,7 @@ func TestDefaultPropagation(t *testing.T) {
 		},
 		{
 			name: "serverB supports some extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
@@ -213,7 +213,7 @@ func TestDefaultPropagation(t *testing.T) {
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.RequestMeta().List())
+						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
 					gotReqCtx = rc
 
@@ -236,7 +236,7 @@ func TestDefaultPropagation(t *testing.T) {
 
 			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
-				Metadata: tc.clientReqMeta,
+				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
 				t.Fatalf("client.SendMessage() error = %v", err)

@@ -549,7 +549,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			key := ExtensionsMetaKey
 			wantVal := "test"
 			meta := map[string][]string{key: {wantVal}}
-			ctx, callCtx := WithCallContext(ctx, NewRequestMeta(meta))
+			ctx, callCtx := WithCallContext(ctx, NewServiceParams(meta))
 			_, _ = tc.call(ctx, handler)
 
 			if beforeCallCtx != afterCallCtx {
@@ -558,9 +558,9 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			if beforeCallCtx != callCtx {
 				t.Error("want CallContext to be the same as provided by the caller")
 			}
-			gotVal, ok := beforeCallCtx.RequestMeta().Get(key)
+			gotVal, ok := beforeCallCtx.ServiceParams().Get(key)
 			if !ok || len(gotVal) != 1 || gotVal[0] != wantVal {
-				t.Errorf("%s() RequestMeta().Get(%s) = (%v, %v), want ([%q] true)", tc.method, key, gotVal, ok, wantVal)
+				t.Errorf("%s() ServiceParams().Get(%s) = (%v, %v), want ([%q] true)", tc.method, key, gotVal, ok, wantVal)
 			}
 			if !callCtx.Extensions().Active(wantActiveExtension) {
 				t.Errorf("%s() Extensions().Active(%q) = false, want true", tc.method, wantActiveExtension.URI)

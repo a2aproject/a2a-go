@@ -92,9 +92,9 @@ func TestAuth_GRPC(t *testing.T) {
 		t.Fatalf("client.SendMessage() error = %v", err)
 	}
 
-	auth, _ := capturedCallContext.RequestMeta().Get("authorization")
+	auth, _ := capturedCallContext.ServiceParams().Get("authorization")
 	if diff := cmp.Diff([]string{"Bearer " + token}, auth); diff != "" {
-		t.Fatalf("RequestMeta[authorization] wrong value = %v, want = %v", auth, []string{"Bearer " + token})
+		t.Fatalf("ServiceParams[authorization] wrong value = %v, want = %v", auth, []string{"Bearer " + token})
 	}
 }
 

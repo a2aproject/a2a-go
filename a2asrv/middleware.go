@@ -30,15 +30,15 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 // WithCallContext can be called by a transport implementation to provide request metadata to [RequestHandler]
 // or to have access to the list of activated extensions after the call ends.
 // If context already had a [CallContext] attached, the old context will be shadowed.
-func WithCallContext(ctx context.Context, meta *RequestMeta) (context.Context, *CallContext) {
-	callCtx := &CallContext{User: &User{Authenticated: false}, requestMeta: meta}
+func WithCallContext(ctx context.Context, params *ServiceParams) (context.Context, *CallContext) {
+	callCtx := &CallContext{User: &User{Authenticated: false}, svcParams: params}
 	return context.WithValue(ctx, callContextKeyType{}, callCtx), callCtx
 }
 
 // CallContext holds information about the current server call scope.
 type CallContext struct {
 	method              string
-	requestMeta         *RequestMeta
+	svcParams           *ServiceParams
 	activatedExtensions []string
 
 	// User can be set by authentication middleware to provide information about
@@ -51,9 +51,9 @@ func (cc *CallContext) Method() string {
 	return cc.method
 }
 
-// RequestMeta returns metadata of the request which created the call context.
-func (cc *CallContext) RequestMeta() *RequestMeta {
-	return cc.requestMeta
+// ServiceParams returns metadata of the request which created the call context.
+func (cc *CallContext) ServiceParams() *ServiceParams {
+	return cc.svcParams
 }
 
 // Extensions returns a struct which provides an API for working with extensions in the current call context.
