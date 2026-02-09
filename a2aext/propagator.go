@@ -196,7 +196,7 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 			if !c.HeaderPredicate(ctx, req.Card, headerName, headerValue) {
 				continue
 			}
-			req.Meta.Append(headerName, headerValue)
+			req.ServiceParams.Append(headerName, headerValue)
 		}
 	}
 

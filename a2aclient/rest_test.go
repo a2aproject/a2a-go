@@ -38,7 +38,7 @@ func TestRESTTransport_GetTask(t *testing.T) {
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 	historyLength := 2
-	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
 		ID:            "task-123",
 		HistoryLength: &historyLength,
 	})
@@ -105,7 +105,7 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 		PageSize:      50,
 		NextPageToken: "test-page-token",
 	}
-	listTasksResult, err := transport.ListTasks(t.Context(), &a2a.ListTasksRequest{})
+	listTasksResult, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
 	if err != nil {
 		t.Fatalf("ListTasks failed: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
+	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
 		ID: "task-123",
 	})
 
@@ -159,7 +159,7 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
+	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
 
@@ -208,7 +208,7 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 	transport := NewRESTTransport(server.URL, server.Client())
 
 	events := []a2a.Event{}
-	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
+	for event, err := range transport.ResubscribeToTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
 		ID: "task-123",
 	}) {
 		if err != nil {
@@ -262,7 +262,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 	transport := NewRESTTransport(server.URL, server.Client())
 
 	events := []a2a.Event{}
-	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
+	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	}) {
 		if err != nil {
@@ -302,7 +302,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
+	config, err := transport.GetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.GetTaskPushConfigParams{
 		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
 	})
@@ -341,7 +341,7 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{
+	configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigParams{
 		TaskID: a2a.TaskID("task-123"),
 	})
 	if err != nil {
@@ -375,7 +375,7 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
+	config, err := transport.SetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.TaskPushConfig{
 		TaskID: "task-123",
 		Config: a2a.PushConfig{
 			ID:  "config-123",
@@ -410,7 +410,7 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
+	err := transport.DeleteTaskPushConfig(t.Context(), ServiceParams{}, &a2a.DeleteTaskPushConfigParams{
 		TaskID:   a2a.TaskID("task-123"),
 		ConfigID: "config-123",
 	})
@@ -436,7 +436,7 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	card, err := transport.GetAgentCard(t.Context())
+	card, err := transport.GetAgentCard(t.Context(), ServiceParams{})
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
 	}
