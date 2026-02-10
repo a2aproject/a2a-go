@@ -45,7 +45,7 @@ func mustCreate(t *testing.T, qm Manager, tid a2a.TaskID) Queue {
 func mustWrite(t *testing.T, q Queue, messages ...*eventVersionPair) {
 	t.Helper()
 	for i, msg := range messages {
-		if err := q.WriteVersioned(t.Context(), msg.event, msg.version); err != nil {
+		if err := q.Write(t.Context(), &Message{Event: msg.event, TaskVersion: msg.version}); err != nil {
 			t.Fatalf("q.Write() error = %v at %d", err, i)
 		}
 	}
@@ -53,11 +53,11 @@ func mustWrite(t *testing.T, q Queue, messages ...*eventVersionPair) {
 
 func mustRead(t *testing.T, q Queue) (a2a.Event, a2a.TaskVersion) {
 	t.Helper()
-	result, version, err := q.Read(t.Context())
+	result, err := q.Read(t.Context())
 	if err != nil {
 		t.Fatalf("q.Read() error = %v", err)
 	}
-	return result, version
+	return result.Event, result.TaskVersion
 }
 
 func newTestManager(t *testing.T, opts ...MemManagerOption) Manager {
@@ -114,14 +114,14 @@ func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 
 	var got []*eventVersionPair
 	for {
-		event, versions, err := readQueue.Read(ctx)
+		msg, err := readQueue.Read(ctx)
 		if errors.Is(err, ErrQueueClosed) {
 			break
 		}
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
-		got = append(got, &eventVersionPair{event: event, version: versions})
+		got = append(got, &eventVersionPair{event: msg.Event, version: msg.TaskVersion})
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Read() got = %v, want %v", got, want)
@@ -203,13 +203,13 @@ func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
 		t.Fatalf("failed to close event queue: %v", err)
 	}
 
-	if err := writeQueue.Write(ctx, &a2a.Message{ID: "test"}); err != nil {
+	if err := writeQueue.Write(ctx, &Message{Event: &a2a.Message{ID: "test"}}); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	event, version, err := readQueue.Read(ctx)
+	msg, err := readQueue.Read(ctx)
 	if !errors.Is(err, ErrQueueClosed) {
-		t.Fatalf("readQueue() = (%v, %v, %v), want %v", event, version, err, ErrQueueClosed)
+		t.Fatalf("readQueue() = (%v, %v), want %v", msg, err, ErrQueueClosed)
 	}
 }
 
@@ -226,7 +226,7 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "1"}))
 	cancel()
 
-	err := writeQueue.Write(ctx, &a2a.Message{ID: "2"})
+	err := writeQueue.Write(ctx, &Message{Event: &a2a.Message{ID: "2"}})
 	if err == nil {
 		t.Error("Write() with canceled context should have returned an error, but got nil")
 	}
@@ -251,7 +251,7 @@ func TestInMemoryQueue_BlockedWriteOnFullQueueThenDestroy(t *testing.T) {
 	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "1"}))
 
 	go func() {
-		err := writeQueue.Write(t.Context(), event)
+		err := writeQueue.Write(t.Context(), &Message{Event: event})
 		if !errors.Is(err, ErrQueueClosed) {
 			t.Errorf("Write() error = %v, want %v", err, ErrQueueClosed)
 			return

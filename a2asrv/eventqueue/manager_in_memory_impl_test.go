@@ -87,15 +87,15 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 			t.Errorf("GetOrCreate() failed after concurrent creation: %v", err)
 		}
 		want := &a2a.Message{ID: a2a.NewMessageID()}
-		if err := writeQueue.Write(ctx, want); err != nil {
+		if err := writeQueue.Write(ctx, &Message{Event: want}); err != nil {
 			t.Fatalf("writeQueue.Write() error = %v", err)
 		}
 		for _, readQueue := range queues {
-			got, _, err := readQueue.Read(ctx)
+			got, err := readQueue.Read(ctx)
 			if err != nil {
 				t.Fatalf("readQueue.Read() error = %v", err)
 			}
-			if diff := cmp.Diff(want, got); diff != "" {
+			if diff := cmp.Diff(want, got.Event); diff != "" {
 				t.Fatalf("readQueue.Read() wrong result (+got,-want) diff = %s", diff)
 			}
 		}
