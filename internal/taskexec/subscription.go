@@ -28,13 +28,13 @@ import (
 
 type localSubscription struct {
 	execution *localExecution
-	queue     eventqueue.Queue
+	queue     eventqueue.Reader
 	consumed  bool
 }
 
 var _ Subscription = (*localSubscription)(nil)
 
-func newLocalSubscription(e *localExecution, q eventqueue.Queue) *localSubscription {
+func newLocalSubscription(e *localExecution, q eventqueue.Reader) *localSubscription {
 	return &localSubscription{execution: e, queue: q}
 }
 
@@ -84,13 +84,13 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 type remoteSubscription struct {
 	tid      a2a.TaskID
 	store    TaskStore
-	queue    eventqueue.Queue
+	queue    eventqueue.Reader
 	consumed bool
 }
 
 var _ Subscription = (*remoteSubscription)(nil)
 
-func newRemoteSubscription(queue eventqueue.Queue, store TaskStore, tid a2a.TaskID) *remoteSubscription {
+func newRemoteSubscription(queue eventqueue.Reader, store TaskStore, tid a2a.TaskID) *remoteSubscription {
 	return &remoteSubscription{tid: tid, queue: queue, store: store}
 }
 

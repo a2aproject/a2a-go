@@ -957,7 +957,7 @@ func TestRequestHandler_OnGetAgentCard(t *testing.T) {
 func TestRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
-	qm := testutil.NewTestQueueManager().SetGetOrCreateOverride(nil, wantErr)
+	qm := testutil.NewTestQueueManager().SetError(wantErr)
 	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
@@ -973,7 +973,7 @@ func TestRequestHandler_OnSendMessage_QueueReadFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("Read() failed")
 	queue := testutil.NewTestEventQueue().SetReadOverride(nil, wantErr)
-	qm := testutil.NewTestQueueManager().SetGetOrCreateOverride(queue, nil).SetGetOverride(queue, true)
+	qm := testutil.NewTestQueueManager().SetQueue(queue)
 	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
@@ -1016,7 +1016,7 @@ func TestRequestHandler_OnSendMessage_AgentExecutionFails(t *testing.T) {
 	executor := newEventReplayAgent([]a2a.Event{}, wantErr)
 	handler := NewHandler(executor)
 
-	result, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
+	result, err  := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"}),
 	})
 	if result != nil || !errors.Is(err, wantErr) {

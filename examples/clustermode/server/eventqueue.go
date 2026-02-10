@@ -30,19 +30,19 @@ type dbEventQueueManager struct {
 	db *sql.DB
 
 	mu     sync.Mutex
-	queues map[a2a.TaskID][]*dbEventQueue
+	queues map[a2a.TaskID][]*dbEventQueueReader
 }
 
 func newDBEventQueueManager(db *sql.DB) *dbEventQueueManager {
 	return &dbEventQueueManager{
 		db:     db,
-		queues: make(map[a2a.TaskID][]*dbEventQueue),
+		queues: make(map[a2a.TaskID][]*dbEventQueueReader),
 	}
 }
 
 var _ eventqueue.Manager = (*dbEventQueueManager)(nil)
 
-func (m *dbEventQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
+func (m *dbEventQueueManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
 	var pollFromID sql.NullString
 	err := m.db.QueryRowContext(ctx, `SELECT MAX(id) FROM task_event WHERE task_id = ?`, taskID).Scan(&pollFromID)
 
@@ -59,9 +59,8 @@ func (m *dbEventQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID
 	return q, nil
 }
 
-func (m *dbEventQueueManager) Get(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
-	q, err := m.GetOrCreate(ctx, taskID)
-	return q, err == nil
+func (m *dbEventQueueManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
+	return dbEventQueueWriter{}, nil
 }
 
 func (m *dbEventQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
@@ -81,16 +80,16 @@ type versionedEvent struct {
 	version a2a.TaskVersion
 }
 
-type dbEventQueue struct {
+type dbEventQueueReader struct {
 	closeSignal chan struct{}
 	closed      chan struct{}
 	eventsCh    chan *versionedEvent
 }
 
-var _ eventqueue.Queue = (*dbEventQueue)(nil)
+var _ eventqueue.Reader = (*dbEventQueueReader)(nil)
 
-func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQueue {
-	queue := &dbEventQueue{
+func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQueueReader {
+	queue := &dbEventQueueReader{
 		closeSignal: make(chan struct{}),
 		closed:      make(chan struct{}),
 		eventsCh:    make(chan *versionedEvent),
@@ -153,7 +152,7 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 	return queue
 }
 
-func (q *dbEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) {
+func (q *dbEventQueueReader) Read(ctx context.Context) (*eventqueue.Message, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -169,7 +168,7 @@ func (q *dbEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) {
 	}
 }
 
-func (q *dbEventQueue) Close() error {
+func (q *dbEventQueueReader) Close() error {
 	select {
 	case <-q.closed:
 		return nil
@@ -179,6 +178,14 @@ func (q *dbEventQueue) Close() error {
 	return nil
 }
 
-func (q *dbEventQueue) Write(ctx context.Context, msg *eventqueue.Message) error {
+type dbEventQueueWriter struct{}
+
+var _ eventqueue.Writer = (*dbEventQueueWriter)(nil)
+
+func (dbEventQueueWriter) Write(ctx context.Context, msg *eventqueue.Message) error {
 	return nil // events are written through TaskStore
+}
+
+func (dbEventQueueWriter) Close() error {
+	return nil
 }

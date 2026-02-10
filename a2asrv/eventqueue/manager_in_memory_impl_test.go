@@ -15,6 +15,7 @@
 package eventqueue
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -27,26 +28,38 @@ func TestInMemoryManager(t *testing.T) {
 	ctx, tid := t.Context(), a2a.NewTaskID()
 
 	manager := NewInMemoryManager()
-	if _, ok := manager.Get(ctx, tid); ok {
-		t.Fatal("manager.Get() ok = true before a queue was created, want false")
+	reader, err := manager.CreateReader(ctx, tid)
+	if err != nil {
+		t.Fatalf("manager.CreateReader() error = %v", err)
 	}
-	if _, err := manager.GetOrCreate(ctx, tid); err != nil {
-		t.Fatalf("anager.GetOrCreate() error = %v", err)
+	writer, err := manager.CreateWriter(ctx, tid)
+	if err != nil {
+		t.Fatalf("manager.CreateWriter() error = %v", err)
 	}
-	if _, ok := manager.Get(ctx, tid); !ok {
-		t.Fatal("manager.Get() ok = false after a queue was created, want true")
+	wantEvent := a2a.NewMessage(a2a.MessageRoleUser)
+	go func() {
+		if err := writer.Write(ctx, &Message{Event: wantEvent}); err != nil {
+			t.Errorf("writer.Write() error = %v", err)
+		}
+	}()
+	got, err := reader.Read(ctx)
+	if err != nil {
+		t.Fatalf("reader.Read() error = %v", err)
+	}
+	if diff := cmp.Diff(wantEvent, got.Event); diff != "" {
+		t.Fatalf("reader.Read() wrong result (+got,-want) diff = %s", diff)
 	}
 	if err := manager.Destroy(ctx, tid); err != nil {
 		t.Fatalf("manager.Destroy() error = %v", err)
 	}
-	if _, ok := manager.Get(ctx, tid); ok {
-		t.Fatal("manager.Get() ok = true after a queue was destroyed, want false")
+	if err := writer.Write(ctx, &Message{Event: wantEvent}); !errors.Is(err, ErrQueueClosed) {
+		t.Errorf("writer.Write() error = %v, want %v", err, ErrQueueClosed)
 	}
 }
 
 func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	type taskQueue struct {
-		queue  Queue
+		reader Reader
 		taskID a2a.TaskID
 	}
 
@@ -62,12 +75,12 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			taskID := a2a.TaskID(fmt.Sprintf("task-%d", i%numTaskIDs))
-			q, err := m.GetOrCreate(ctx, taskID)
+			q, err := m.CreateReader(ctx, taskID)
 			if err != nil {
 				t.Errorf("Concurrent GetOrCreate() failed: %v", err)
 				return
 			}
-			created <- taskQueue{queue: q, taskID: taskID}
+			created <- taskQueue{reader: q, taskID: taskID}
 		}(i)
 	}
 
@@ -75,16 +88,16 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	close(created)
 
 	// group all queues created concurrently by task ID
-	createdMap := map[a2a.TaskID][]Queue{}
+	createdMap := map[a2a.TaskID][]Reader{}
 	for got := range created {
-		createdMap[got.taskID] = append(createdMap[got.taskID], got.queue)
+		createdMap[got.taskID] = append(createdMap[got.taskID], got.reader)
 	}
 
 	// for every task ID check that if we write a message using a queue, all the created queues will receive it
 	for tid, queues := range createdMap {
-		writeQueue, err := m.GetOrCreate(ctx, tid)
+		writeQueue, err := m.CreateWriter(ctx, tid)
 		if err != nil {
-			t.Errorf("GetOrCreate() failed after concurrent creation: %v", err)
+			t.Errorf("CreateWriter() failed after concurrent creation: %v", err)
 		}
 		want := &a2a.Message{ID: a2a.NewMessageID()}
 		if err := writeQueue.Write(ctx, &Message{Event: want}); err != nil {

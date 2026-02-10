@@ -31,7 +31,8 @@ type TestEventQueue struct {
 	CloseFunc func() error
 }
 
-var _ eventqueue.Queue = (*TestEventQueue)(nil)
+var _ eventqueue.Reader = (*TestEventQueue)(nil)
+var _ eventqueue.Writer = (*TestEventQueue)(nil)
 
 func (m *TestEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) {
 	if m.ReadFunc != nil {

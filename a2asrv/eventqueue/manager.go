@@ -21,14 +21,12 @@ import (
 )
 
 // Manager manages event queues on a per-task basis.
-// It provides lifecycle management for task-specific event queues,
-// enabling multiple clients to attach to the same task's event stream.
 type Manager interface {
-	// GetOrCreate returns an existing queue if one exists, or creates a new one.
-	GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error)
+	// CreateReader creates a new reader for the specified task.
+	CreateReader(ctx context.Context, taskID a2a.TaskID) (Reader, error)
 
-	// Get returns an existing queue if one exists.
-	Get(ctx context.Context, taskId a2a.TaskID) (Queue, bool)
+	// CreateWriter creates a new writer for the specified task.
+	CreateWriter(ctx context.Context, taskID a2a.TaskID) (Writer, error)
 
 	// Destroy closes the queue for the specified task and frees all associates resources.
 	Destroy(ctx context.Context, taskID a2a.TaskID) error

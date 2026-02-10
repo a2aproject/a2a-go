@@ -119,7 +119,8 @@ type inMemoryQueue struct {
 	closed     bool
 }
 
-var _ Queue = (*inMemoryQueue)(nil)
+var _ Reader = (*inMemoryQueue)(nil)
+var _ Writer = (*inMemoryQueue)(nil)
 
 func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
 	if q.closed {

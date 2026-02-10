@@ -40,6 +40,9 @@ type Reader interface {
 	// Read dequeues an event or blocks if the queue is empty.
 	// TaskVersion is expected to be the same as was provided to [Writer.WriteVersioned].
 	Read(ctx context.Context) (*Message, error)
+
+	// Close shuts down a connection to the queue.
+	Close() error
 }
 
 // Writer defines the interface for writing events to a queue.
@@ -50,13 +53,6 @@ type Writer interface {
 	// Kept to maintain AgentExecutor API until a breaking SDK release.
 	// The code other than AgentExecutor must use WriteVersioned.
 	Write(ctx context.Context, msg *Message) error
-}
-
-// Queue defines the interface for publishing and consuming
-// events generated during agent execution.
-type Queue interface {
-	Reader
-	Writer
 
 	// Close shuts down a connection to the queue.
 	Close() error
