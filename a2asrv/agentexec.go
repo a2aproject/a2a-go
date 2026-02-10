@@ -27,7 +27,7 @@ import (
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
-// The provided [RequestContext] should be used as a [a2a.TaskInfoProvider] argument for [a2a.Event]-s constructor functions.
+// The provided [ExecutorContext] should be used as a [a2a.TaskInfoProvider] argument for [a2a.Event]-s constructor functions.
 // For streaming responses [a2a.TaskArtifactUpdatEvent]-s should be used.
 // A2A server stops processing events after one of these events:
 //   - An [a2a.Message] with any payload.
@@ -89,7 +89,7 @@ type AgentExecutor interface {
 	//
 	// Failures should generally be reported by writing events carrying the cancelation information
 	// and task state. An error should be returned in special cases like a failure to write an event.
-	Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+	Execute(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error
 
 	// Cancel is called when a client requests the agent to stop working on a task.
 	// The simplest implementation can write a cancelation event to the queue and let
@@ -97,7 +97,7 @@ type AgentExecutor interface {
 	// Context gets canceled.
 	//
 	// An an error should be returned if the cancelation request cannot be processed or a queue write failed.
-	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+	Cancel(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error
 }
 
 type factory struct {
@@ -105,7 +105,7 @@ type factory struct {
 	pushSender      PushSender
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
-	interceptors    []RequestContextInterceptor
+	interceptors    []ExecutorContextInterceptor
 }
 
 var _ taskexec.Factory = (*factory)(nil)
@@ -136,7 +136,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 }
 
 type executionContext struct {
-	reqCtx *RequestContext
+	reqCtx *ExecutorContext
 	task   *taskupdate.VersionedTask
 }
 
@@ -185,7 +185,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			Task:    storedTask,
 			Version: lastVersion,
 		},
-		reqCtx: &RequestContext{
+		reqCtx: &ExecutorContext{
 			Message:    msg,
 			StoredTask: storedTask,
 			TaskID:     storedTask.ID,
@@ -201,7 +201,7 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageS
 	if contextID == "" {
 		contextID = a2a.NewContextID()
 	}
-	reqCtx := &RequestContext{
+	reqCtx := &ExecutorContext{
 		Message:   msg,
 		TaskID:    tid,
 		ContextID: contextID,
@@ -226,7 +226,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 		return nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
-	reqCtx := &RequestContext{
+	reqCtx := &ExecutorContext{
 		TaskID:     task.ID,
 		StoredTask: task,
 		ContextID:  task.ContextID,
@@ -241,8 +241,8 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 
 type executor struct {
 	agent        AgentExecutor
-	reqCtx       *RequestContext
-	interceptors []RequestContextInterceptor
+	reqCtx       *ExecutorContext
+	interceptors []ExecutorContextInterceptor
 }
 
 var _ taskexec.Executor = (*executor)(nil)
@@ -261,8 +261,8 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 type canceler struct {
 	agent        AgentExecutor
 	task         *a2a.Task
-	reqCtx       *RequestContext
-	interceptors []RequestContextInterceptor
+	reqCtx       *ExecutorContext
+	interceptors []ExecutorContextInterceptor
 }
 
 var _ taskexec.Canceler = (*canceler)(nil)
@@ -290,14 +290,14 @@ type processor struct {
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
-	reqCtx          *RequestContext
+	reqCtx          *ExecutorContext
 
 	processedCount int
 }
 
 var _ taskexec.Processor = (*processor)(nil)
 
-func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *RequestContext) *processor {
+func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *ExecutorContext) *processor {
 	return &processor{
 		updateManager:   updateManager,
 		pushConfigStore: store,

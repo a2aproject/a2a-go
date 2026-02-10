@@ -21,22 +21,22 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// RequestContextInterceptor defines an extension point for modifying request contexts
+// ExecutorContextInterceptor defines an extension point for modifying request contexts
 // that contain the information needed by [AgentExecutor] implementations to process incoming requests.
-type RequestContextInterceptor interface {
+type ExecutorContextInterceptor interface {
 	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.
-	Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error)
+	Intercept(ctx context.Context, reqCtx *ExecutorContext) (context.Context, error)
 }
 
-// WithRequestContextInterceptor overrides the default RequestContextInterceptor with a custom implementation.
-func WithRequestContextInterceptor(interceptor RequestContextInterceptor) RequestHandlerOption {
+// WithExecutorContextInterceptor overrides the default ExecutorContextInterceptor with a custom implementation.
+func WithExecutorContextInterceptor(interceptor ExecutorContextInterceptor) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.reqContextInterceptors = append(h.reqContextInterceptors, interceptor)
 	}
 }
 
-// RequestContext provides information about an incoming A2A request to [AgentExecutor].
-type RequestContext struct {
+// ExecutorContext provides information about an incoming A2A request to [AgentExecutor].
+type ExecutorContext struct {
 	// A message which triggered the execution. nil for cancelation request.
 	Message *a2a.Message
 	// TaskID is an ID of the task or a newly generated UUIDv4 in case Message did not reference any Task.
@@ -49,11 +49,15 @@ type RequestContext struct {
 	ContextID string
 	// Metadata of the request which triggered the call.
 	Metadata map[string]any
+	// User who made the request which triggered the execution.
+	User *User
+	// ServiceParams of the request which triggered the execution.
+	ServiceParams *ServiceParams
 }
 
-var _ a2a.TaskInfoProvider = (*RequestContext)(nil)
+var _ a2a.TaskInfoProvider = (*ExecutorContext)(nil)
 
-func (rc *RequestContext) TaskInfo() a2a.TaskInfo {
+func (rc *ExecutorContext) TaskInfo() a2a.TaskInfo {
 	return a2a.TaskInfo{TaskID: rc.TaskID, ContextID: rc.ContextID}
 }
 
@@ -63,9 +67,9 @@ type ReferencedTasksLoader struct {
 	Store TaskStore
 }
 
-var _ RequestContextInterceptor = (*ReferencedTasksLoader)(nil)
+var _ ExecutorContextInterceptor = (*ReferencedTasksLoader)(nil)
 
-func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *ExecutorContext) (context.Context, error) {
 	msg := reqCtx.Message
 	if msg == nil {
 		return ctx, nil

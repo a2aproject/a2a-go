@@ -26,7 +26,7 @@ import (
 
 type SUTAgentExecutor struct{}
 
-func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	task := reqCtx.StoredTask
 
 	if task == nil {
@@ -51,7 +51,7 @@ func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestCo
 	return nil
 }
 
-func (c *SUTAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (c *SUTAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	task := reqCtx.StoredTask
 	if task == nil {
 		return a2a.ErrTaskNotFound

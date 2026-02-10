@@ -102,10 +102,10 @@ func TestTripleHopPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(&tc.serverCfg)
 			clientInterceptor := NewClientPropagator(&tc.clientCfg)
 
-			var gotReqCtx *a2asrv.RequestContext
+			var gotReqCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
+				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
 						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
@@ -208,10 +208,10 @@ func TestDefaultPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(nil)
 			clientInterceptor := NewClientPropagator(nil)
 
-			var gotReqCtx *a2asrv.RequestContext
+			var gotReqCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
+				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
 						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
@@ -294,7 +294,7 @@ func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallI
 }
 
 func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget) a2asrv.AgentExecutor {
-	return testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	return testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 		client, err := target.newClient(ctx, interceptor)
 		if err != nil {
 			return err

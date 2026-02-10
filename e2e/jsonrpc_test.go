@@ -33,7 +33,7 @@ import (
 func TestJSONRPC_Streaming(t *testing.T) {
 	ctx := t.Context()
 
-	executor := testexecutor.FromEventGenerator(func(reqCtx *a2asrv.RequestContext) []a2a.Event {
+	executor := testexecutor.FromEventGenerator(func(reqCtx *a2asrv.ExecutorContext) []a2a.Event {
 		task := &a2a.Task{ID: reqCtx.TaskID, ContextID: reqCtx.ContextID}
 		artifact := a2a.NewArtifactEvent(task, a2a.TextPart{Text: "Hello"})
 		finalUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}))
@@ -81,7 +81,7 @@ func TestJSONRPC_ExecutionScopeStreamingPanic(t *testing.T) {
 	ctx := t.Context()
 
 	reqHandler := a2asrv.NewHandler(
-		testexecutor.FromEventGenerator(func(reqCtx *a2asrv.RequestContext) []a2a.Event {
+		testexecutor.FromEventGenerator(func(reqCtx *a2asrv.ExecutorContext) []a2a.Event {
 			panic("oh no")
 		}),
 		a2asrv.WithExecutionPanicHandler(func(r any) error {

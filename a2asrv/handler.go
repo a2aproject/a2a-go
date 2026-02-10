@@ -78,7 +78,7 @@ type defaultRequestHandler struct {
 	pushConfigStore        PushConfigStore
 	taskStore              TaskStore
 	workQueue              workqueue.Queue
-	reqContextInterceptors []RequestContextInterceptor
+	reqContextInterceptors []ExecutorContextInterceptor
 
 	authenticatedCardProducer AgentCardProducer
 }

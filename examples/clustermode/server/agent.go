@@ -43,7 +43,7 @@ func newAgentExecutor(workerID string) *agentExecutor {
 	}
 }
 
-func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	log.Info(ctx, "agent received task", "task_id", reqCtx.TaskID)
 
 	text := reqCtx.Message.Parts[0].(a2a.TextPart).Text
@@ -129,7 +129,7 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	return q.Write(ctx, taskCompleted)
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	return q.Write(
 		ctx,
 		a2a.NewStatusUpdateEvent(
