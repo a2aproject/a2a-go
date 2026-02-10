@@ -57,8 +57,8 @@ type ExecutorContext struct {
 
 var _ a2a.TaskInfoProvider = (*ExecutorContext)(nil)
 
-func (rc *ExecutorContext) TaskInfo() a2a.TaskInfo {
-	return a2a.TaskInfo{TaskID: rc.TaskID, ContextID: rc.ContextID}
+func (ec *ExecutorContext) TaskInfo() a2a.TaskInfo {
+	return a2a.TaskInfo{TaskID: ec.TaskID, ContextID: ec.ContextID}
 }
 
 // ReferencedTasksLoader implements RequestContextInterceptor. It populates RelatedTasks field of RequestContext

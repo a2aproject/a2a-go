@@ -996,9 +996,9 @@ func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 		t.Fatalf("handler.OnSendMessage() failed: %v", err)
 	}
 
-	capturedReqContext := executor.capturedReqContext
-	if len(capturedReqContext.RelatedTasks) != 1 || capturedReqContext.RelatedTasks[0].ID != existingTask.ID {
-		t.Fatalf("RequestContext.RelatedTasks = %v, want [%v]", capturedReqContext.RelatedTasks, existingTask)
+	capturedExecContext := executor.capturedExecContext
+	if len(capturedExecContext.RelatedTasks) != 1 || capturedExecContext.RelatedTasks[0].ID != existingTask.ID {
+		t.Fatalf("RequestContext.RelatedTasks = %v, want [%v]", capturedExecContext.RelatedTasks, existingTask)
 	}
 }
 
@@ -1401,12 +1401,12 @@ func TestRequestHandler_MultipleRequestContextInterceptors(t *testing.T) {
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"})}, nil)
 	type key1Type struct{}
 	key1, val1 := key1Type{}, 2
-	interceptor1 := interceptexecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+	interceptor1 := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return context.WithValue(ctx, key1, val1), nil
 	})
 	type key2Type struct{}
 	key2, val2 := key2Type{}, 43
-	interceptor2 := interceptexecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+	interceptor2 := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return context.WithValue(ctx, key2, val2), nil
 	})
 	handler := NewHandler(
@@ -1432,7 +1432,7 @@ func TestRequestHandler_RequestContextInterceptorRejectsRequest(t *testing.T) {
 	ctx := t.Context()
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"})}, nil)
 	wantErr := errors.New("rejected")
-	interceptor := interceptexecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+	interceptor := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return ctx, wantErr
 	})
 	handler := NewHandler(executor, WithExecutorContextInterceptor(interceptor))
@@ -1459,7 +1459,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 	testCases := []struct {
 		name            string
 		newRequest      func() *a2a.MessageSendParams
-		wantexecCtxMeta map[string]any
+		wantExecCtxMeta map[string]any
 		wantStoredTask  *a2a.Task
 		wantContextID   string
 	}{
@@ -1473,7 +1473,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 					Metadata: map[string]any{"foo2": "bar2"},
 				}
 			},
-			wantexecCtxMeta: map[string]any{"foo2": "bar2"},
+			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
 		},
 		{
 			name: "stored tasks",
@@ -1487,7 +1487,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			},
 			wantStoredTask:  taskSeed,
 			wantContextID:   taskSeed.ContextID,
-			wantexecCtxMeta: map[string]any{"foo2": "bar2"},
+			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
 		},
 		{
 			name: "preserve message context",
@@ -1505,12 +1505,12 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"})}, nil)
-			var gotexecCtx *ExecutorContext
+			var gotExecCtx *ExecutorContext
 			handler := NewHandler(
 				executor,
 				WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)),
-				WithExecutorContextInterceptor(interceptexecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
-					gotexecCtx = execCtx
+				WithExecutorContextInterceptor(interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+					gotExecCtx = execCtx
 					return ctx, nil
 				})),
 			)
@@ -1520,15 +1520,15 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 				t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
 			}
 			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.Task{}, "History")}
-			if diff := cmp.Diff(tc.wantStoredTask, gotexecCtx.StoredTask, opts...); diff != "" {
+			if diff := cmp.Diff(tc.wantStoredTask, gotExecCtx.StoredTask, opts...); diff != "" {
 				t.Fatalf("wrong request context stored task (+got,-want): diff = %s", diff)
 			}
-			if diff := cmp.Diff(tc.wantexecCtxMeta, gotexecCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantExecCtxMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong request context meta (+got,-want): diff = %s", diff)
 			}
 			if tc.wantContextID != "" {
-				if tc.wantContextID != gotexecCtx.ContextID {
-					t.Fatalf("execCtx.contextID = %s, want = %s", gotexecCtx.ContextID, tc.wantContextID)
+				if tc.wantContextID != gotExecCtx.ContextID {
+					t.Fatalf("execCtx.contextID = %s, want = %s", gotExecCtx.ContextID, tc.wantContextID)
 				}
 			}
 		})
@@ -1767,17 +1767,17 @@ func TestRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 	}
 }
 
-type interceptexecCtxFn func(context.Context, *ExecutorContext) (context.Context, error)
+type interceptExecCtxFn func(context.Context, *ExecutorContext) (context.Context, error)
 
-func (fn interceptexecCtxFn) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+func (fn interceptExecCtxFn) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 	return fn(ctx, execCtx)
 }
 
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
-	executeCalled      bool
-	capturedContext    context.Context
-	capturedReqContext *ExecutorContext
+	executeCalled       bool
+	capturedContext     context.Context
+	capturedExecContext *ExecutorContext
 
 	ExecuteFunc func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
 	CancelFunc  func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
@@ -1788,7 +1788,7 @@ var _ AgentExecutor = (*mockAgentExecutor)(nil)
 func (m *mockAgentExecutor) Execute(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 	m.executeCalled = true
 	m.capturedContext = ctx
-	m.capturedReqContext = execCtx
+	m.capturedExecContext = execCtx
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, execCtx, queue)
 	}

@@ -41,22 +41,22 @@ func NewServiceParams(src map[string][]string) *ServiceParams {
 }
 
 // Get performs a case-insensitive lookup of values for the given key.
-func (rm *ServiceParams) Get(key string) ([]string, bool) {
-	if rm == nil {
+func (sp *ServiceParams) Get(key string) ([]string, bool) {
+	if sp == nil {
 		return nil, false
 	}
 
-	val, ok := rm.kv[strings.ToLower(key)]
+	val, ok := sp.kv[strings.ToLower(key)]
 	return val, ok
 }
 
 // List allows to inspect all request meta values.
-func (rm *ServiceParams) List() iter.Seq2[string, []string] {
+func (sp *ServiceParams) List() iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
-		if rm == nil {
+		if sp == nil {
 			return
 		}
-		for k, v := range rm.kv {
+		for k, v := range sp.kv {
 			if !yield(k, slices.Clone(v)) {
 				return
 			}
@@ -65,13 +65,13 @@ func (rm *ServiceParams) List() iter.Seq2[string, []string] {
 }
 
 // With allows to create a ServiceParams instance holding the extended set of values.
-func (rm *ServiceParams) With(additional map[string][]string) *ServiceParams {
+func (sp *ServiceParams) With(additional map[string][]string) *ServiceParams {
 	if len(additional) == 0 {
-		return rm
+		return sp
 	}
 
-	merged := make(map[string][]string, len(additional)+len(rm.kv))
-	maps.Copy(merged, rm.kv)
+	merged := make(map[string][]string, len(additional)+len(sp.kv))
+	maps.Copy(merged, sp.kv)
 	for k, v := range additional {
 		merged[strings.ToLower(k)] = slices.Clone(v)
 	}
