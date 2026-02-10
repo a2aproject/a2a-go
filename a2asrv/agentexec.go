@@ -250,7 +250,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 
 type executor struct {
 	agent        AgentExecutor
-	execCtx       *ExecutorContext
+	execCtx      *ExecutorContext
 	interceptors []ExecutorContextInterceptor
 }
 
@@ -270,7 +270,7 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 type canceler struct {
 	agent        AgentExecutor
 	task         *a2a.Task
-	execCtx       *ExecutorContext
+	execCtx      *ExecutorContext
 	interceptors []ExecutorContextInterceptor
 }
 
@@ -299,7 +299,7 @@ type processor struct {
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
-	execCtx          *ExecutorContext
+	execCtx         *ExecutorContext
 
 	processedCount int
 }
@@ -311,7 +311,7 @@ func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, send
 		updateManager:   updateManager,
 		pushConfigStore: store,
 		pushSender:      sender,
-		execCtx:          execCtx,
+		execCtx:         execCtx,
 	}
 }
 

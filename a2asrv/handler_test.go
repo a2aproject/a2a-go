@@ -1457,11 +1457,11 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 		Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired},
 	}
 	testCases := []struct {
-		name           string
-		newRequest     func() *a2a.MessageSendParams
+		name            string
+		newRequest      func() *a2a.MessageSendParams
 		wantexecCtxMeta map[string]any
-		wantStoredTask *a2a.Task
-		wantContextID  string
+		wantStoredTask  *a2a.Task
+		wantContextID   string
 	}{
 		{
 			name: "new task",
@@ -1485,8 +1485,8 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 					Metadata: map[string]any{"foo2": "bar2"},
 				}
 			},
-			wantStoredTask: taskSeed,
-			wantContextID:  taskSeed.ContextID,
+			wantStoredTask:  taskSeed,
+			wantContextID:   taskSeed.ContextID,
 			wantexecCtxMeta: map[string]any{"foo2": "bar2"},
 		},
 		{
