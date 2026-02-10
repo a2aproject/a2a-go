@@ -261,7 +261,7 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
 
 	if !capturedCallCtx.User.Authenticated {
-		t.Fatal("CallContext.User.Authenticated() = false, want true")
+		t.Fatal("CallContext.User.Authenticated = false, want true")
 	}
 	if capturedCallCtx.User.Name != "test" {
 		t.Fatalf("CallContext.User.Name = %s, want test", capturedCallCtx.User.Name)
