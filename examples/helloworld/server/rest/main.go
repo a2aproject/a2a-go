@@ -20,25 +20,27 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"iter"
 	"log"
 	"net"
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 // agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
 type agentExecutor struct{}
 
-func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-	response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello from REST server!"})
-	return q.Write(ctx, response)
+func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello from REST server!"})
+		yield(response, nil)
+	}
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-	return nil
+func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {}
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {

@@ -153,19 +153,19 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 	return queue
 }
 
-func (q *dbEventQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+func (q *dbEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, a2a.TaskVersionMissing, ctx.Err()
+		return nil, ctx.Err()
 
 	case res, ok := <-q.eventsCh:
 		if !ok {
-			return nil, a2a.TaskVersionMissing, eventqueue.ErrQueueClosed
+			return nil, eventqueue.ErrQueueClosed
 		}
-		return res.event, res.version, nil
+		return &eventqueue.Message{Event: res.event, TaskVersion: res.version}, nil
 
 	case <-q.closed:
-		return nil, a2a.TaskVersionMissing, eventqueue.ErrQueueClosed
+		return nil, eventqueue.ErrQueueClosed
 	}
 }
 
@@ -179,10 +179,6 @@ func (q *dbEventQueue) Close() error {
 	return nil
 }
 
-func (q *dbEventQueue) Write(ctx context.Context, event a2a.Event) error {
-	return nil // events are written through TaskStore
-}
-
-func (q *dbEventQueue) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
+func (q *dbEventQueue) Write(ctx context.Context, msg *eventqueue.Message) error {
 	return nil // events are written through TaskStore
 }

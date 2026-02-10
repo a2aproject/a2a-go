@@ -16,6 +16,7 @@ package a2aext
 
 import (
 	"context"
+	"iter"
 	"maps"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
@@ -79,13 +79,13 @@ func TestActivator(t *testing.T) {
 
 			gotHeaders := map[string][]string{}
 			captureExecutor := testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
+				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) {
+						maps.Insert(gotHeaders, rc.ServiceParams.List())
+						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
+						event.Final = true
+						yield(event, nil)
 					}
-					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
-					event.Final = true
-					return q.Write(ctx, event)
 				},
 			)
 
