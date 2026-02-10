@@ -196,8 +196,8 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	sseWriter.WriteHeaders()
 
 	sseChan, panicChan := make(chan []byte), make(chan error)
-	requestCtx, cancelReqCtx := context.WithCancel(ctx)
-	defer cancelReqCtx()
+	requestCtx, cancelexecCtx := context.WithCancel(ctx)
+	defer cancelexecCtx()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

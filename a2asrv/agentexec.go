@@ -36,9 +36,9 @@ import (
 //
 // The following code can be used as a streaming implementation template with generateOutputs and toParts missing:
 //
-//	func Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
-//		if reqCtx.StoredTask == nil {
-//			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateSubmitted, nil)
+//	func Execute(ctx context.Context, execCtx *RequestContext, queue eventqueue.Queue) error {
+//		if execCtx.StoredTask == nil {
+//			event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateSubmitted, nil)
 //			if err := queue.Write(ctx, event); err != nil {
 //				return fmt.Errorf("failed to write state submitted: %w", err)
 //			}
@@ -46,7 +46,7 @@ import (
 //
 //		// perform setup
 //
-//		event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateWorking, nil)
+//		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil)
 //		if err := queue.Write(ctx, event); err != nil {
 //			return fmt.Errorf("failed to write state working: %w", err)
 //		}
@@ -54,7 +54,7 @@ import (
 //		var artifactID a2a.ArtifactID
 //		for output, err := range generateOutputs() {
 //			if err != nil {
-//				event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateFailed, toErrorMessage(err))
+//				event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, toErrorMessage(err))
 //				if err := queue.Write(ctx, event); err != nil {
 //					return fmt.Errorf("failed to write state failed: %w", err)
 //				}
@@ -63,10 +63,10 @@ import (
 //			parts := toParts(output)
 //			var event *a2a.TaskArtifactUpdateEvent
 //			if artifactID == "" {
-//				event = a2a.NewArtifactEvent(reqCtx, parts...)
+//				event = a2a.NewArtifactEvent(execCtx, parts...)
 //				artifactID = event.Artifact.ID
 //			} else {
-//				event = a2a.NewArtifactUpdateEvent(reqCtx, artifactID, parts...)
+//				event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, parts...)
 //			}
 //
 //			if err := queue.Write(ctx, event); err != nil {
@@ -74,7 +74,7 @@ import (
 //			}
 //		}
 //
-//		event = a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+//		event = a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
 //		event.Final = true
 //		if err := queue.Write(ctx, event); err != nil {
 //			return fmt.Errorf("failed to write state working: %w", err)
@@ -89,7 +89,7 @@ type AgentExecutor interface {
 	//
 	// Failures should generally be reported by writing events carrying the cancelation information
 	// and task state. An error should be returned in special cases like a failure to write an event.
-	Execute(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error
+	Execute(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
 
 	// Cancel is called when a client requests the agent to stop working on a task.
 	// The simplest implementation can write a cancelation event to the queue and let
@@ -97,7 +97,7 @@ type AgentExecutor interface {
 	// Context gets canceled.
 	//
 	// An an error should be returned if the cancelation request cannot be processed or a queue write failed.
-	Cancel(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error
+	Cancel(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
 }
 
 type factory struct {
@@ -116,6 +116,11 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		return nil, nil, err
 	}
 
+	if callCtx, ok := CallContextFrom(ctx); ok {
+		execCtx.execCtx.User = callCtx.User
+		execCtx.execCtx.ServiceParams = callCtx.ServiceParams()
+	}
+
 	if params.Config != nil && params.Config.PushConfig != nil {
 		if f.pushConfigStore == nil || f.pushSender == nil {
 			return nil, nil, a2a.ErrPushNotificationNotSupported
@@ -125,19 +130,19 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		}
 	}
 
-	executor := &executor{agent: f.agent, reqCtx: execCtx.reqCtx, interceptors: f.interceptors}
+	executor := &executor{agent: f.agent, execCtx: execCtx.execCtx, interceptors: f.interceptors}
 	processor := newProcessor(
 		taskupdate.NewManager(f.taskStore, execCtx.task),
 		f.pushConfigStore,
 		f.pushSender,
-		execCtx.reqCtx,
+		execCtx.execCtx,
 	)
 	return executor, processor, nil
 }
 
 type executionContext struct {
-	reqCtx *ExecutorContext
-	task   *taskupdate.VersionedTask
+	execCtx *ExecutorContext
+	task    *taskupdate.VersionedTask
 }
 
 // loadExecutionContext returns the information necessary for creating agent executor and agent event processor.
@@ -185,7 +190,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			Task:    storedTask,
 			Version: lastVersion,
 		},
-		reqCtx: &ExecutorContext{
+		execCtx: &ExecutorContext{
 			Message:    msg,
 			StoredTask: storedTask,
 			TaskID:     storedTask.ID,
@@ -201,16 +206,16 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageS
 	if contextID == "" {
 		contextID = a2a.NewContextID()
 	}
-	reqCtx := &ExecutorContext{
+	execCtx := &ExecutorContext{
 		Message:   msg,
 		TaskID:    tid,
 		ContextID: contextID,
 		Metadata:  params.Metadata,
 	}
 	return &executionContext{
-		reqCtx: reqCtx,
+		execCtx: execCtx,
 		task: &taskupdate.VersionedTask{
-			Task:    a2a.NewSubmittedTask(reqCtx, msg),
+			Task:    a2a.NewSubmittedTask(execCtx, msg),
 			Version: a2a.TaskVersionMissing,
 		},
 	}, nil
@@ -226,22 +231,26 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 		return nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
-	reqCtx := &ExecutorContext{
+	execCtx := &ExecutorContext{
 		TaskID:     task.ID,
 		StoredTask: task,
 		ContextID:  task.ContextID,
 		Metadata:   params.Metadata,
 	}
+	if callCtx, ok := CallContextFrom(ctx); ok {
+		execCtx.User = callCtx.User
+		execCtx.ServiceParams = callCtx.ServiceParams()
+	}
 
-	canceler := &canceler{agent: f.agent, reqCtx: reqCtx, task: task, interceptors: f.interceptors}
+	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}
 	updateManager := taskupdate.NewManager(f.taskStore, &taskupdate.VersionedTask{Task: task, Version: version})
-	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, reqCtx)
+	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx)
 	return canceler, processor, nil
 }
 
 type executor struct {
 	agent        AgentExecutor
-	reqCtx       *ExecutorContext
+	execCtx       *ExecutorContext
 	interceptors []ExecutorContextInterceptor
 }
 
@@ -250,18 +259,18 @@ var _ taskexec.Executor = (*executor)(nil)
 func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	var err error
 	for _, interceptor := range e.interceptors {
-		ctx, err = interceptor.Intercept(ctx, e.reqCtx)
+		ctx, err = interceptor.Intercept(ctx, e.execCtx)
 		if err != nil {
 			return fmt.Errorf("interceptor failed: %w", err)
 		}
 	}
-	return e.agent.Execute(ctx, e.reqCtx, q)
+	return e.agent.Execute(ctx, e.execCtx, q)
 }
 
 type canceler struct {
 	agent        AgentExecutor
 	task         *a2a.Task
-	reqCtx       *ExecutorContext
+	execCtx       *ExecutorContext
 	interceptors []ExecutorContextInterceptor
 }
 
@@ -274,13 +283,13 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 
 	var err error
 	for _, interceptor := range c.interceptors {
-		ctx, err = interceptor.Intercept(ctx, c.reqCtx)
+		ctx, err = interceptor.Intercept(ctx, c.execCtx)
 		if err != nil {
 			return fmt.Errorf("interceptor failed: %w", err)
 		}
 	}
 
-	return c.agent.Cancel(ctx, c.reqCtx, q)
+	return c.agent.Cancel(ctx, c.execCtx, q)
 }
 
 type processor struct {
@@ -290,19 +299,19 @@ type processor struct {
 	updateManager   *taskupdate.Manager
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
-	reqCtx          *ExecutorContext
+	execCtx          *ExecutorContext
 
 	processedCount int
 }
 
 var _ taskexec.Processor = (*processor)(nil)
 
-func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *ExecutorContext) *processor {
+func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, execCtx *ExecutorContext) *processor {
 	return &processor{
 		updateManager:   updateManager,
 		pushConfigStore: store,
 		pushSender:      sender,
-		reqCtx:          reqCtx,
+		execCtx:          execCtx,
 	}
 }
 
@@ -339,7 +348,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
-	if p.reqCtx.StoredTask == nil && p.processedCount == 0 {
+	if p.execCtx.StoredTask == nil && p.processedCount == 0 {
 		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
 		return nil, cause
 	}

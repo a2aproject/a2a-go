@@ -25,7 +25,7 @@ import (
 // that contain the information needed by [AgentExecutor] implementations to process incoming requests.
 type ExecutorContextInterceptor interface {
 	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.
-	Intercept(ctx context.Context, reqCtx *ExecutorContext) (context.Context, error)
+	Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error)
 }
 
 // WithExecutorContextInterceptor overrides the default ExecutorContextInterceptor with a custom implementation.
@@ -69,8 +69,8 @@ type ReferencedTasksLoader struct {
 
 var _ ExecutorContextInterceptor = (*ReferencedTasksLoader)(nil)
 
-func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *ExecutorContext) (context.Context, error) {
-	msg := reqCtx.Message
+func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+	msg := execCtx.Message
 	if msg == nil {
 		return ctx, nil
 	}
@@ -90,7 +90,7 @@ func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, reqCtx *Executor
 	}
 
 	if len(tasks) > 0 {
-		reqCtx.RelatedTasks = tasks
+		execCtx.RelatedTasks = tasks
 	}
 
 	return ctx, nil

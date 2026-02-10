@@ -322,7 +322,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 			ctx := t.Context()
 
 			mockExecutor := &mockAgentExecutor{
-				ExecuteFunc: func(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error {
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 					time.Sleep(agentTimeout)
 					if err := queue.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"})); err != nil {
 						return err

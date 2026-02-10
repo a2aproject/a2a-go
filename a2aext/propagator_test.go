@@ -102,14 +102,14 @@ func TestTripleHopPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(&tc.serverCfg)
 			clientInterceptor := NewClientPropagator(&tc.clientCfg)
 
-			var gotReqCtx *a2asrv.ExecutorContext
+			var gotexecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
 						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
-					gotReqCtx = rc
+					gotexecCtx = rc
 
 					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
 					event.Final = true
@@ -139,7 +139,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantPropagatedMeta, gotReqCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantPropagatedMeta, gotexecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
@@ -208,14 +208,14 @@ func TestDefaultPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(nil)
 			clientInterceptor := NewClientPropagator(nil)
 
-			var gotReqCtx *a2asrv.ExecutorContext
+			var gotexecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
 						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
-					gotReqCtx = rc
+					gotexecCtx = rc
 
 					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
 					event.Final = true
@@ -244,7 +244,7 @@ func TestDefaultPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantBReceivedMeta, gotReqCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantBReceivedMeta, gotexecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
@@ -294,13 +294,13 @@ func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallI
 }
 
 func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget) a2asrv.AgentExecutor {
-	return testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+	return testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 		client, err := target.newClient(ctx, interceptor)
 		if err != nil {
 			return err
 		}
 		result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-			Message: a2a.NewMessage(a2a.MessageRoleUser, reqCtx.Message.Parts...),
+			Message: a2a.NewMessage(a2a.MessageRoleUser, execCtx.Message.Parts...),
 		})
 		if err != nil {
 			return err
@@ -309,8 +309,8 @@ func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget)
 		if !ok {
 			return fmt.Errorf("result was %T, want a2a.Task", task)
 		}
-		task.ID = reqCtx.TaskID
-		task.ContextID = reqCtx.ContextID
+		task.ID = execCtx.TaskID
+		task.ContextID = execCtx.ContextID
 		return q.Write(ctx, result)
 	})
 }

@@ -102,8 +102,8 @@ func TestDurationsExtension(t *testing.T) {
 				Capabilities:       a2a.AgentCapabilities{Extensions: tc.serverDeclares},
 			}
 
-			agentExecutor := testexecutor.FromEventGenerator(func(reqCtx *a2asrv.ExecutorContext) []a2a.Event {
-				return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, reqCtx.Message.Parts...)}
+			agentExecutor := testexecutor.FromEventGenerator(func(execCtx *a2asrv.ExecutorContext) []a2a.Event {
+				return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, execCtx.Message.Parts...)}
 			})
 			handler := a2asrv.NewHandler(agentExecutor, a2asrv.WithCallInterceptors(&durationTracker{}))
 

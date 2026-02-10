@@ -218,10 +218,10 @@ func TestREST_Validations(t *testing.T) {
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	mock := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 			return queue.Write(ctx, &a2a.Message{})
 		},
-		CancelFunc: func(ctx context.Context, reqCtx *ExecutorContext, queue eventqueue.Queue) error {
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 			canceledTask := &a2a.Task{
 				ID:     taskID,
 				Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},

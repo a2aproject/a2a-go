@@ -26,23 +26,23 @@ import (
 
 type SUTAgentExecutor struct{}
 
-func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-	task := reqCtx.StoredTask
+func (c *SUTAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+	task := execCtx.StoredTask
 
 	if task == nil {
-		event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateSubmitted, nil)
+		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateSubmitted, nil)
 		if err := q.Write(ctx, event); err != nil {
 			return fmt.Errorf("failed to write state submitted: %w", err)
 		}
 	}
 	// Short delay to allow tests to see current state
 	time.Sleep(1 * time.Second)
-	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateWorking, nil)
+	event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil)
 	if err := q.Write(ctx, event); err != nil {
 		return fmt.Errorf("failed to write state working: %w", err)
 	}
 	time.Sleep(1 * time.Second)
-	event = a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	event = a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
 	event.Final = true
 	if err := q.Write(ctx, event); err != nil {
 		return fmt.Errorf("failed to write state completed: %w", err)
@@ -51,13 +51,13 @@ func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.ExecutorC
 	return nil
 }
 
-func (c *SUTAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-	task := reqCtx.StoredTask
+func (c *SUTAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+	task := execCtx.StoredTask
 	if task == nil {
 		return a2a.ErrTaskNotFound
 	}
 
-	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil)
+	event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil)
 	event.Final = true
 	if err := q.Write(ctx, event); err != nil {
 		return fmt.Errorf("failed to write state canceled: %w", err)
