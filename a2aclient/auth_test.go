@@ -54,7 +54,7 @@ func TestAuth_GRPC(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 
 	var capturedCallContext *a2asrv.CallContext
-	executor := testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 		capturedCallContext, _ = a2asrv.CallContextFrom(ctx)
 		return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent))
 	})
@@ -92,9 +92,9 @@ func TestAuth_GRPC(t *testing.T) {
 		t.Fatalf("client.SendMessage() error = %v", err)
 	}
 
-	auth, _ := capturedCallContext.RequestMeta().Get("authorization")
+	auth, _ := capturedCallContext.ServiceParams().Get("authorization")
 	if diff := cmp.Diff([]string{"Bearer " + token}, auth); diff != "" {
-		t.Fatalf("RequestMeta[authorization] wrong value = %v, want = %v", auth, []string{"Bearer " + token})
+		t.Fatalf("ServiceParams[authorization] wrong value = %v, want = %v", auth, []string{"Bearer " + token})
 	}
 }
 

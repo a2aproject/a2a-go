@@ -84,7 +84,7 @@ func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) 
 
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, _ = WithCallContext(ctx, NewRequestMeta(req.Header))
+	ctx, _ = WithCallContext(ctx, NewServiceParams(req.Header))
 
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
@@ -196,8 +196,8 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	sseWriter.WriteHeaders()
 
 	sseChan, panicChan := make(chan []byte), make(chan error)
-	requestCtx, cancelReqCtx := context.WithCancel(ctx)
-	defer cancelReqCtx()
+	requestCtx, cancelExecCtx := context.WithCancel(ctx)
+	defer cancelExecCtx()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

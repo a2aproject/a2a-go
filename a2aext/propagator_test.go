@@ -40,14 +40,14 @@ func TestTripleHopPropagation(t *testing.T) {
 		name                  string
 		clientCfg             ClientPropagatorConfig
 		serverCfg             ServerPropagatorConfig
-		clientReqMeta         map[string]any
+		clientSvcParams       map[string]any
 		clientReqHeaders      map[string][]string
 		wantPropagatedMeta    map[string]any
 		wantPropagatedHeaders map[string][]string
 	}{
 		{
 			name: "default propagation affects extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 				"not-extension":  "qux",
@@ -82,7 +82,7 @@ func TestTripleHopPropagation(t *testing.T) {
 					return key == "keep-header" && val != "dropval"
 				},
 			},
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"keep-meta": "value",
 				"drop-meta": "value",
 			},
@@ -102,14 +102,14 @@ func TestTripleHopPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(&tc.serverCfg)
 			clientInterceptor := NewClientPropagator(&tc.clientCfg)
 
-			var gotReqCtx *a2asrv.RequestContext
+			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
+				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.RequestMeta().List())
+						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
-					gotReqCtx = rc
+					gotExecCtx = rc
 
 					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
 					event.Final = true
@@ -131,7 +131,7 @@ func TestTripleHopPropagation(t *testing.T) {
 
 			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
-				Metadata: tc.clientReqMeta,
+				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
 				t.Fatalf("client.SendMessage() error = %v", err)
@@ -139,7 +139,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantPropagatedMeta, gotReqCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantPropagatedMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
@@ -155,7 +155,7 @@ func TestTripleHopPropagation(t *testing.T) {
 func TestDefaultPropagation(t *testing.T) {
 	tests := []struct {
 		name                 string
-		clientReqMeta        map[string]any
+		clientSvcParams      map[string]any
 		clientReqHeaders     map[string][]string
 		serverASupports      []string
 		serverBSupports      []string
@@ -164,7 +164,7 @@ func TestDefaultPropagation(t *testing.T) {
 	}{
 		{
 			name: "serverB supports all extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
@@ -183,7 +183,7 @@ func TestDefaultPropagation(t *testing.T) {
 		},
 		{
 			name: "serverB supports some extensions",
-			clientReqMeta: map[string]any{
+			clientSvcParams: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
@@ -208,16 +208,16 @@ func TestDefaultPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(nil)
 			clientInterceptor := NewClientPropagator(nil)
 
-			var gotReqCtx *a2asrv.RequestContext
+			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
+				func(ctx context.Context, ec *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.RequestMeta().List())
+						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
-					gotReqCtx = rc
+					gotExecCtx = ec
 
-					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
+					event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
 					event.Final = true
 					return q.Write(ctx, event)
 				},
@@ -236,7 +236,7 @@ func TestDefaultPropagation(t *testing.T) {
 
 			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
-				Metadata: tc.clientReqMeta,
+				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
 				t.Fatalf("client.SendMessage() error = %v", err)
@@ -244,7 +244,7 @@ func TestDefaultPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantBReceivedMeta, gotReqCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantBReceivedMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
@@ -258,7 +258,7 @@ func TestDefaultPropagation(t *testing.T) {
 }
 
 func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2asrv.AgentExecutor) a2a.AgentInterface {
-	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptor(interceptor))
+	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
 	t.Cleanup(server.Close)
 	return a2a.AgentInterface{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC}
@@ -294,13 +294,13 @@ func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallI
 }
 
 func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget) a2asrv.AgentExecutor {
-	return testexecutor.FromFunction(func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	return testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 		client, err := target.newClient(ctx, interceptor)
 		if err != nil {
 			return err
 		}
 		result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-			Message: a2a.NewMessage(a2a.MessageRoleUser, reqCtx.Message.Parts...),
+			Message: a2a.NewMessage(a2a.MessageRoleUser, execCtx.Message.Parts...),
 		})
 		if err != nil {
 			return err
@@ -309,8 +309,8 @@ func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget)
 		if !ok {
 			return fmt.Errorf("result was %T, want a2a.Task", task)
 		}
-		task.ID = reqCtx.TaskID
-		task.ContextID = reqCtx.ContextID
+		task.ID = execCtx.TaskID
+		task.ContextID = execCtx.ContextID
 		return q.Write(ctx, result)
 	})
 }

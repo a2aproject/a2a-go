@@ -387,12 +387,12 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	ts := testutil.NewTestTaskStore()
 	authCredentialsChan := make(chan struct{})
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
 				return err
 			}
 			<-authCredentialsChan
-			result := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+			result := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
 			result.Final = true
 			return q.Write(ctx, result)
 		},
@@ -432,11 +432,11 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 
-	createExecutor := func(generateEvent func(reqCtx *RequestContext) []a2a.Event) (*mockAgentExecutor, chan struct{}) {
+	createExecutor := func(generateEvent func(execCtx *ExecutorContext) []a2a.Event) (*mockAgentExecutor, chan struct{}) {
 		waitingChan := make(chan struct{})
 		return &mockAgentExecutor{
-			ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-				for i, event := range generateEvent(reqCtx) {
+			ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
+				for i, event := range generateEvent(execCtx) {
 					if i > 0 {
 						select {
 						case <-waitingChan:
@@ -457,7 +457,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 		name        string
 		blocking    bool
 		input       *a2a.MessageSendParams
-		agentEvents func(reqCtx *RequestContext) []a2a.Event
+		agentEvents func(execCtx *ExecutorContext) []a2a.Event
 		wantState   a2a.TaskState
 		wantEvents  int
 	}
@@ -468,10 +468,10 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 				name:     "defaults to blocking",
 				blocking: true,
 				input:    &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
-						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
+						newTaskWithStatus(execCtx, a2a.TaskStateWorking, "Working..."),
+						newTaskWithStatus(execCtx, a2a.TaskStateCompleted, "Done"),
 					}
 				},
 				wantState:  a2a.TaskStateCompleted,
@@ -480,10 +480,10 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			{
 				name:  "non-terminal task state",
 				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						newTaskWithStatus(reqCtx, a2a.TaskStateWorking, "Working..."),
-						newTaskWithStatus(reqCtx, a2a.TaskStateCompleted, "Done"),
+						newTaskWithStatus(execCtx, a2a.TaskStateWorking, "Working..."),
+						newTaskWithStatus(execCtx, a2a.TaskStateCompleted, "Done"),
 					}
 				},
 				wantState:  a2a.TaskStateWorking,
@@ -492,10 +492,10 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			{
 				name:  "non-final status update",
 				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						newTaskStatusUpdate(reqCtx, a2a.TaskStateWorking, "Working..."),
-						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
+						newTaskStatusUpdate(execCtx, a2a.TaskStateWorking, "Working..."),
+						newFinalTaskStatusUpdate(execCtx, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
 				wantState:  a2a.TaskStateWorking,
@@ -504,10 +504,10 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			{
 				name:  "artifact update update",
 				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"}), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						newArtifactEvent(reqCtx, a2a.NewArtifactID()),
-						newFinalTaskStatusUpdate(reqCtx, a2a.TaskStateCompleted, "Done!"),
+						newArtifactEvent(execCtx, a2a.NewArtifactID()),
+						newFinalTaskStatusUpdate(execCtx, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
 				wantState:  a2a.TaskStateSubmitted,
@@ -516,7 +516,7 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			{
 				name:  "message for existing task",
 				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
 						newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
@@ -528,10 +528,10 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			{
 				name:  "message",
 				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
-				agentEvents: func(reqCtx *RequestContext) []a2a.Event {
+				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done"}),
-						a2a.NewMessageForTask(a2a.MessageRoleAgent, reqCtx, a2a.TextPart{Text: "Done-2"}),
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, a2a.TextPart{Text: "Done"}),
+						a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, a2a.TextPart{Text: "Done-2"}),
 					}
 				},
 				wantEvents: 1, // streaming processing stops imeddiately after the first message
@@ -603,12 +603,12 @@ func TestRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
 	ts := testutil.NewTestTaskStore()
 	authCredentialsChan := make(chan struct{})
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
+			if err := q.Write(ctx, a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil)); err != nil {
 				return err
 			}
 			<-authCredentialsChan
-			result := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+			result := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
 			result.Final = true
 			return q.Write(ctx, result)
 		},
@@ -807,10 +807,10 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 		{a2a.TaskStateWorking, a2a.TaskStateCompleted},       //second run
 	}
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 			events := statusUpdates[0]
 			for i, state := range events {
-				event := a2a.NewStatusUpdateEvent(reqCtx, state, nil)
+				event := a2a.NewStatusUpdateEvent(execCtx, state, nil)
 				event.Final = i == len(events)-1
 				if err := queue.Write(ctx, event); err != nil {
 					return err
@@ -861,7 +861,7 @@ func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) 
 	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 			panic("problem")
 		},
 	}
@@ -981,7 +981,7 @@ func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 	ctx := t.Context()
 	ts := testutil.NewTestTaskStore().WithTasks(t, existingTask)
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"})}, nil)
-	handler := NewHandler(executor, WithRequestContextInterceptor(&ReferencedTasksLoader{Store: ts}))
+	handler := NewHandler(executor, WithExecutorContextInterceptor(&ReferencedTasksLoader{Store: ts}))
 
 	request := &a2a.MessageSendParams{
 		Message: &a2a.Message{
@@ -996,9 +996,9 @@ func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 		t.Fatalf("handler.OnSendMessage() failed: %v", err)
 	}
 
-	capturedReqContext := executor.capturedReqContext
-	if len(capturedReqContext.RelatedTasks) != 1 || capturedReqContext.RelatedTasks[0].ID != existingTask.ID {
-		t.Fatalf("RequestContext.RelatedTasks = %v, want [%v]", capturedReqContext.RelatedTasks, existingTask)
+	capturedExecContext := executor.capturedExecContext
+	if len(capturedExecContext.RelatedTasks) != 1 || capturedExecContext.RelatedTasks[0].ID != existingTask.ID {
+		t.Fatalf("RequestContext.RelatedTasks = %v, want [%v]", capturedExecContext.RelatedTasks, existingTask)
 	}
 }
 
@@ -1055,8 +1055,8 @@ func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	ctx := t.Context()
 	ts := taskstore.NewMem()
 	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
-			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
+			event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
 			event.Final = true
 			return q.Write(ctx, event)
 		},
@@ -1294,7 +1294,7 @@ func TestRequestHandler_OnCancelTask(t *testing.T) {
 			ctx := t.Context()
 			store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel, completedTask, canceledTask)
 			executor := &mockAgentExecutor{
-				CancelFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+				CancelFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
 					event := newFinalTaskStatusUpdate(taskToCancel, a2a.TaskStateCanceled, "Cancelled")
 					return q.Write(ctx, event)
 				},
@@ -1337,10 +1337,10 @@ func TestRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 	handler := NewHandler(executor, WithTaskStore(ts))
 	executionStarted := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
-	executor.ExecuteFunc = func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 		close(executionStarted)
 		time.Sleep(10 * time.Millisecond)
-		return originalExecuteFunc(ctx, reqCtx, queue)
+		return originalExecuteFunc(ctx, execCtx, queue)
 	}
 
 	go func() {
@@ -1384,7 +1384,7 @@ func TestRequestHandler_OnCancelTask_AgentCancelFails(t *testing.T) {
 	wantErr := fmt.Errorf("failed to cancel: cancelation failed: agent cancel error")
 	store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel)
 	executor := &mockAgentExecutor{
-		CancelFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
 			return fmt.Errorf("agent cancel error")
 		},
 	}
@@ -1401,18 +1401,18 @@ func TestRequestHandler_MultipleRequestContextInterceptors(t *testing.T) {
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"})}, nil)
 	type key1Type struct{}
 	key1, val1 := key1Type{}, 2
-	interceptor1 := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+	interceptor1 := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return context.WithValue(ctx, key1, val1), nil
 	})
 	type key2Type struct{}
 	key2, val2 := key2Type{}, 43
-	interceptor2 := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+	interceptor2 := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return context.WithValue(ctx, key2, val2), nil
 	})
 	handler := NewHandler(
 		executor,
-		WithRequestContextInterceptor(interceptor1),
-		WithRequestContextInterceptor(interceptor2),
+		WithExecutorContextInterceptor(interceptor1),
+		WithExecutorContextInterceptor(interceptor2),
 	)
 
 	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
@@ -1432,10 +1432,10 @@ func TestRequestHandler_RequestContextInterceptorRejectsRequest(t *testing.T) {
 	ctx := t.Context()
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello!"})}, nil)
 	wantErr := errors.New("rejected")
-	interceptor := interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
+	interceptor := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return ctx, wantErr
 	})
-	handler := NewHandler(executor, WithRequestContextInterceptor(interceptor))
+	handler := NewHandler(executor, WithExecutorContextInterceptor(interceptor))
 
 	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"}),
@@ -1457,11 +1457,11 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 		Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired},
 	}
 	testCases := []struct {
-		name           string
-		newRequest     func() *a2a.MessageSendParams
-		wantReqCtxMeta map[string]any
-		wantStoredTask *a2a.Task
-		wantContextID  string
+		name            string
+		newRequest      func() *a2a.MessageSendParams
+		wantExecCtxMeta map[string]any
+		wantStoredTask  *a2a.Task
+		wantContextID   string
 	}{
 		{
 			name: "new task",
@@ -1473,7 +1473,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 					Metadata: map[string]any{"foo2": "bar2"},
 				}
 			},
-			wantReqCtxMeta: map[string]any{"foo2": "bar2"},
+			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
 		},
 		{
 			name: "stored tasks",
@@ -1485,9 +1485,9 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 					Metadata: map[string]any{"foo2": "bar2"},
 				}
 			},
-			wantStoredTask: taskSeed,
-			wantContextID:  taskSeed.ContextID,
-			wantReqCtxMeta: map[string]any{"foo2": "bar2"},
+			wantStoredTask:  taskSeed,
+			wantContextID:   taskSeed.ContextID,
+			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
 		},
 		{
 			name: "preserve message context",
@@ -1505,12 +1505,12 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"})}, nil)
-			var gotReqCtx *RequestContext
+			var gotExecCtx *ExecutorContext
 			handler := NewHandler(
 				executor,
 				WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)),
-				WithRequestContextInterceptor(interceptReqCtxFn(func(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
-					gotReqCtx = reqCtx
+				WithExecutorContextInterceptor(interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+					gotExecCtx = execCtx
 					return ctx, nil
 				})),
 			)
@@ -1520,15 +1520,15 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 				t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
 			}
 			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.Task{}, "History")}
-			if diff := cmp.Diff(tc.wantStoredTask, gotReqCtx.StoredTask, opts...); diff != "" {
+			if diff := cmp.Diff(tc.wantStoredTask, gotExecCtx.StoredTask, opts...); diff != "" {
 				t.Fatalf("wrong request context stored task (+got,-want): diff = %s", diff)
 			}
-			if diff := cmp.Diff(tc.wantReqCtxMeta, gotReqCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantExecCtxMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong request context meta (+got,-want): diff = %s", diff)
 			}
 			if tc.wantContextID != "" {
-				if tc.wantContextID != gotReqCtx.ContextID {
-					t.Fatalf("reqCtx.contextID = %s, want = %s", gotReqCtx.ContextID, tc.wantContextID)
+				if tc.wantContextID != gotExecCtx.ContextID {
+					t.Fatalf("execCtx.contextID = %s, want = %s", gotExecCtx.ContextID, tc.wantContextID)
 				}
 			}
 		})
@@ -1767,44 +1767,44 @@ func TestRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
 	}
 }
 
-type interceptReqCtxFn func(context.Context, *RequestContext) (context.Context, error)
+type interceptExecCtxFn func(context.Context, *ExecutorContext) (context.Context, error)
 
-func (fn interceptReqCtxFn) Intercept(ctx context.Context, reqCtx *RequestContext) (context.Context, error) {
-	return fn(ctx, reqCtx)
+func (fn interceptExecCtxFn) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
+	return fn(ctx, execCtx)
 }
 
 // mockAgentExecutor is a mock of AgentExecutor.
 type mockAgentExecutor struct {
-	executeCalled      bool
-	capturedContext    context.Context
-	capturedReqContext *RequestContext
+	executeCalled       bool
+	capturedContext     context.Context
+	capturedExecContext *ExecutorContext
 
-	ExecuteFunc func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
-	CancelFunc  func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
+	ExecuteFunc func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
+	CancelFunc  func(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
 }
 
 var _ AgentExecutor = (*mockAgentExecutor)(nil)
 
-func (m *mockAgentExecutor) Execute(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+func (m *mockAgentExecutor) Execute(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 	m.executeCalled = true
 	m.capturedContext = ctx
-	m.capturedReqContext = reqCtx
+	m.capturedExecContext = execCtx
 	if m.ExecuteFunc != nil {
-		return m.ExecuteFunc(ctx, reqCtx, queue)
+		return m.ExecuteFunc(ctx, execCtx, queue)
 	}
 	return nil
 }
 
-func (m *mockAgentExecutor) Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
+func (m *mockAgentExecutor) Cancel(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error {
 	if m.CancelFunc != nil {
-		return m.CancelFunc(ctx, reqCtx, queue)
+		return m.CancelFunc(ctx, execCtx, queue)
 	}
 	return errors.New("Cancel() not implemented")
 }
 
 func newEventReplayAgent(toSend []a2a.Event, err error) *mockAgentExecutor {
 	return &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext, q eventqueue.Queue) error {
 			for _, event := range toSend {
 				if err := q.Write(ctx, event); err != nil {
 					return err

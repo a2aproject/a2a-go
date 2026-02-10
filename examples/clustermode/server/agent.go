@@ -43,10 +43,10 @@ func newAgentExecutor(workerID string) *agentExecutor {
 	}
 }
 
-func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	log.Info(ctx, "agent received task", "task_id", reqCtx.TaskID)
+func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+	log.Info(ctx, "agent received task", "task_id", execCtx.TaskID)
 
-	text := reqCtx.Message.Parts[0].(a2a.TextPart).Text
+	text := execCtx.Message.Parts[0].(a2a.TextPart).Text
 
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	countTo := fs.Int("count-to", 0, "number to count to")
@@ -54,7 +54,7 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	interval := fs.Duration("interval", 1*time.Second, "interval in ms")
 
 	if err := fs.Parse(strings.Fields(text)); err != nil {
-		log.Info(ctx, "failed to interpret task", "task_id", reqCtx.TaskID)
+		log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
 
 		return q.Write(
 			ctx,
@@ -63,7 +63,7 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	}
 
 	if *countTo <= 0 {
-		log.Info(ctx, "failed to interpret task", "task_id", reqCtx.TaskID)
+		log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
 
 		return q.Write(
 			ctx,
@@ -74,14 +74,14 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	}
 
 	start := 1
-	if reqCtx.StoredTask == nil {
-		log.Info(ctx, "task submitted", "task_id", reqCtx.TaskID)
+	if execCtx.StoredTask == nil {
+		log.Info(ctx, "task submitted", "task_id", execCtx.TaskID)
 
-		if err := q.Write(ctx, a2a.NewSubmittedTask(reqCtx, reqCtx.Message)); err != nil {
+		if err := q.Write(ctx, a2a.NewSubmittedTask(execCtx, execCtx.Message)); err != nil {
 			return fmt.Errorf("queue write failed: %w", err)
 		}
-	} else if len(reqCtx.StoredTask.Artifacts) > 0 {
-		lastArtifact := reqCtx.StoredTask.Artifacts[len(reqCtx.StoredTask.Artifacts)-1]
+	} else if len(execCtx.StoredTask.Artifacts) > 0 {
+		lastArtifact := execCtx.StoredTask.Artifacts[len(execCtx.StoredTask.Artifacts)-1]
 		if len(lastArtifact.Parts) > 0 {
 			lastCount := lastArtifact.Parts[len(lastArtifact.Parts)-1].(a2a.TextPart).Text
 			countPart := strings.Split(lastCount, ": ")[1]
@@ -89,7 +89,7 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 				start = val + 1
 			}
 
-			log.Info(ctx, "resuming from artifact checkpoint", "task_id", reqCtx.TaskID)
+			log.Info(ctx, "resuming from artifact checkpoint", "task_id", execCtx.TaskID)
 		}
 	}
 
@@ -111,9 +111,9 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 		chunk := fmt.Sprintf("%s: %d", a.workerID, i+start)
 		var event *a2a.TaskArtifactUpdateEvent
 		if artifactID == "" {
-			event = a2a.NewArtifactEvent(reqCtx, a2a.TextPart{Text: chunk})
+			event = a2a.NewArtifactEvent(execCtx, a2a.TextPart{Text: chunk})
 		} else {
-			event = a2a.NewArtifactUpdateEvent(reqCtx, artifactID, a2a.TextPart{Text: chunk})
+			event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.TextPart{Text: chunk})
 		}
 		if err := q.Write(ctx, event); err != nil {
 			return err
@@ -121,7 +121,7 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	}
 
 	taskCompleted := a2a.NewStatusUpdateEvent(
-		reqCtx,
+		execCtx,
 		a2a.TaskStateCompleted,
 		a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}),
 	)
@@ -129,11 +129,11 @@ func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestConte
 	return q.Write(ctx, taskCompleted)
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	return q.Write(
 		ctx,
 		a2a.NewStatusUpdateEvent(
-			reqCtx,
+			execCtx,
 			a2a.TaskStateCanceled,
 			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Task cancelled"}),
 		),

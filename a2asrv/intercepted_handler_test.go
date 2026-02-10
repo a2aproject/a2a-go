@@ -253,20 +253,18 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}), nil
 	}
 
-	type testUser struct{ *AuthenticatedUser }
-
 	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-		callCtx.User = &testUser{}
+		callCtx.User = NewAuthenticatedUser("test", nil)
 		return ctx, nil, nil
 	}
 
 	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
 
-	if !capturedCallCtx.User.Authenticated() {
-		t.Fatal("CallContext.User.Authenticated() = false, want true")
+	if !capturedCallCtx.User.Authenticated {
+		t.Fatal("CallContext.User.Authenticated = false, want true")
 	}
-	if _, ok := capturedCallCtx.User.(*testUser); !ok {
-		t.Fatalf("CallContext.User.(type) = %T, want *testUser", capturedCallCtx.User)
+	if capturedCallCtx.User.Name != "test" {
+		t.Fatalf("CallContext.User.Name = %s, want test", capturedCallCtx.User.Name)
 	}
 }
 
@@ -551,7 +549,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			key := ExtensionsMetaKey
 			wantVal := "test"
 			meta := map[string][]string{key: {wantVal}}
-			ctx, callCtx := WithCallContext(ctx, NewRequestMeta(meta))
+			ctx, callCtx := WithCallContext(ctx, NewServiceParams(meta))
 			_, _ = tc.call(ctx, handler)
 
 			if beforeCallCtx != afterCallCtx {
@@ -560,9 +558,9 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			if beforeCallCtx != callCtx {
 				t.Error("want CallContext to be the same as provided by the caller")
 			}
-			gotVal, ok := beforeCallCtx.RequestMeta().Get(key)
+			gotVal, ok := beforeCallCtx.ServiceParams().Get(key)
 			if !ok || len(gotVal) != 1 || gotVal[0] != wantVal {
-				t.Errorf("%s() RequestMeta().Get(%s) = (%v, %v), want ([%q] true)", tc.method, key, gotVal, ok, wantVal)
+				t.Errorf("%s() ServiceParams().Get(%s) = (%v, %v), want ([%q] true)", tc.method, key, gotVal, ok, wantVal)
 			}
 			if !callCtx.Extensions().Active(wantActiveExtension) {
 				t.Errorf("%s() Extensions().Active(%q) = false, want true", tc.method, wantActiveExtension.URI)

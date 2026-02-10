@@ -79,11 +79,11 @@ func TestActivator(t *testing.T) {
 
 			gotHeaders := map[string][]string{}
 			captureExecutor := testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.RequestContext, q eventqueue.Queue) error {
+				func(ctx context.Context, ec *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.RequestMeta().List())
+						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
 					}
-					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
+					event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
 					event.Final = true
 					return q.Write(ctx, event)
 				},

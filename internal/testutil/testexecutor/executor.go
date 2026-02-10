@@ -24,22 +24,22 @@ import (
 
 type TestAgentExecutor struct {
 	Emitted   []a2a.Event
-	ExecuteFn func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error
-	CancelFn  func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error
+	ExecuteFn func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error
+	CancelFn  func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error
 }
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
-func FromFunction(fn func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error) *TestAgentExecutor {
+func FromFunction(fn func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
 
-func FromEventGenerator(generator func(reqCtx *a2asrv.RequestContext) []a2a.Event) *TestAgentExecutor {
+func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Event) *TestAgentExecutor {
 	var exec *TestAgentExecutor
 	exec = &TestAgentExecutor{
 		Emitted: []a2a.Event{},
-		ExecuteFn: func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-			for _, ev := range generator(reqCtx) {
+		ExecuteFn: func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+			for _, ev := range generator(execCtx) {
 				if err := q.Write(ctx, ev); err != nil {
 					return err
 				}
@@ -51,16 +51,16 @@ func FromEventGenerator(generator func(reqCtx *a2asrv.RequestContext) []a2a.Even
 	return exec
 }
 
-func (e *TestAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	if e.ExecuteFn != nil {
-		return e.ExecuteFn(ctx, reqCtx, q)
+		return e.ExecuteFn(ctx, execCtx, q)
 	}
 	return nil
 }
 
-func (e *TestAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	if e.CancelFn != nil {
-		return e.CancelFn(ctx, reqCtx, q)
+		return e.CancelFn(ctx, execCtx, q)
 	}
 	return nil
 }

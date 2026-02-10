@@ -32,12 +32,12 @@ import (
 // agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
 type agentExecutor struct{}
 
-func (*agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello from REST server!"})
 	return q.Write(ctx, response)
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
 	return nil
 }
 
