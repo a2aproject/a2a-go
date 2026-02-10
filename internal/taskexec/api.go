@@ -19,7 +19,7 @@ import (
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
 // Manager provides an API for executing and canceling tasks.
@@ -80,14 +80,14 @@ type ProcessorResult struct {
 // Executor implementation starts an agent execution.
 type Executor interface {
 	// Start starts publishing events to the queue. Called in a separate goroutine.
-	Execute(context.Context, eventqueue.Queue) error
+	Execute(context.Context, eventpipe.Writer) error
 }
 
 // Canceler implementation sends a Task cancelation signal.
 type Canceler interface {
 	// Cancel attempts to cancel a Task.
 	// Expected to produce a Task update event with canceled state.
-	Cancel(context.Context, eventqueue.Queue) error
+	Cancel(context.Context, eventpipe.Writer) error
 }
 
 // PanicHandlerFn is a function that handles panics occurred during execution.

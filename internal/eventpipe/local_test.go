@@ -112,15 +112,3 @@ func TestLocalPipe_WriteBlocksWhenQueueFull(t *testing.T) {
 	}
 	<-completed
 }
-
-func TestLocalPipeWriter_ReadAndCloseFail(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	pipe := NewLocal()
-	if err := pipe.Writer.Close(); err == nil {
-		t.Fatal("pipe.Writer.Close() error = nil, want to fail")
-	}
-	if _, _, err := pipe.Writer.Read(ctx); err == nil {
-		t.Fatal("pipe.Writer.Read() error = nil, want to fail")
-	}
-}
