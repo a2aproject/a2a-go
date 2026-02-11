@@ -31,6 +31,30 @@ type SecuritySchemeScopes []string
 // The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
 type NamedSecuritySchemes map[SecuritySchemeName]SecurityScheme
 
+func (s *NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
+	out := make(map[SecuritySchemeName]any)
+	for name, scheme := range *s {
+		var wrapped any
+		switch v := scheme.(type) {
+		case APIKeySecurityScheme:
+			wrapped = map[string]any{"apiKey": v}
+		case HTTPAuthSecurityScheme:
+			wrapped = map[string]any{"http": v}
+		case OpenIDConnectSecurityScheme:
+			wrapped = map[string]any{"openIdConnect": v}
+		case MutualTLSSecurityScheme:
+			wrapped = map[string]any{"mutualTLS": v}
+		case OAuth2SecurityScheme:
+			wrapped = map[string]any{"oauth2": v}
+		default:
+			return nil, fmt.Errorf("unknown security scheme type %T", v)
+		}
+		out[name] = wrapped
+	}
+	return json.Marshal(out)
+}
+
+
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
@@ -38,48 +62,48 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	}
 
 	result := make(map[SecuritySchemeName]SecurityScheme, len(schemes))
-	for k, v := range schemes {
-		type typedScheme struct {
-			Type string `json:"type"`
-		}
-		var ts typedScheme
-		if err := json.Unmarshal(v, &ts); err != nil {
+	for name, rawMessage := range schemes {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rawMessage, &raw); err != nil {
 			return err
 		}
 
-		switch ts.Type {
-		case "apiKey":
+		if v, ok := raw["apiKey"]; ok {
 			var scheme APIKeySecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "http":
+			result[name] = scheme
+		} else if v, ok := raw["http"]; ok {
 			var scheme HTTPAuthSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "mutualTLS":
+			result[name] = scheme
+		} else if v, ok := raw["mutualTLS"]; ok {
 			var scheme MutualTLSSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "oauth2":
+			result[name] = scheme
+		} else if v, ok := raw["oauth2"]; ok {
 			var scheme OAuth2SecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "openIdConnect":
+			result[name] = scheme
+		} else if v, ok := raw["openIdConnect"]; ok {
 			var scheme OpenIDConnectSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		default:
-			return fmt.Errorf("unknown security scheme type %s", ts.Type)
+			result[name] = scheme
+		} else {
+			keys := make([]string, 0, len(raw))
+			for k := range raw {
+				keys = append(keys, k)
+			}
+			return fmt.Errorf("unknown security scheme type for %q: found keys %v", name, keys)
 		}
 	}
 
@@ -116,15 +140,6 @@ type APIKeySecurityScheme struct {
 
 	// The name of the header, query, or cookie parameter to be used.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
-}
-
-func (s APIKeySecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped APIKeySecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "apiKey", wrapped: wrapped(s)})
 }
 
 // APIKeySecuritySchemeIn defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
@@ -182,15 +197,6 @@ type HTTPAuthSecurityScheme struct {
 	Scheme string `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
 }
 
-func (s HTTPAuthSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped HTTPAuthSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "http", wrapped: wrapped(s)})
-}
-
 // ImplicitOAuthFlow defines configuration details for the OAuth 2.0 Implicit flow.
 type ImplicitOAuthFlow struct {
 	// AuthorizationURL is the authorization URL to be used for this flow. This MUST be a URL.
@@ -210,15 +216,6 @@ type MutualTLSSecurityScheme struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 }
 
-func (s MutualTLSSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped MutualTLSSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "mutualTLS", wrapped: wrapped(s)})
-}
-
 // OAuth2SecurityScheme defines a security scheme using OAuth 2.0.
 type OAuth2SecurityScheme struct {
 	// Description is an optional description for the security scheme.
@@ -230,15 +227,6 @@ type OAuth2SecurityScheme struct {
 	// Oauth2MetadataURL is an optional URL to the oauth2 authorization server metadata
 	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
 	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
-}
-
-func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped OAuth2SecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "oauth2", wrapped: wrapped(s)})
 }
 
 // OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
@@ -265,15 +253,6 @@ type OpenIDConnectSecurityScheme struct {
 
 	// OpenIDConnectURL is the OpenID Connect Discovery URL for the OIDC provider's metadata.
 	OpenIDConnectURL string `json:"openIdConnectUrl" yaml:"openIdConnectUrl" mapstructure:"openIdConnectUrl"`
-}
-
-func (s OpenIDConnectSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped OpenIDConnectSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "openIdConnect", wrapped: wrapped(s)})
 }
 
 // PasswordOAuthFlow defines configuration details for the OAuth 2.0 Resource Owner Password flow.

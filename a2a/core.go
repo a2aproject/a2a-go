@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -82,45 +83,57 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
+func MarshalEventJSON(e Event) ([]byte, error) {
+	m := make(map[string]any)
+	switch v := e.(type) {
+	case *Message:
+		m["message"] = v
+	case *Task:
+		m["task"] = v
+	case *TaskStatusUpdateEvent:
+		m["statusUpdate"] = v
+	case *TaskArtifactUpdateEvent:
+		m["artifactUpdate"] = v
+	default:
+		return nil, fmt.Errorf("unknown event type: %T", e)
+	}
+	return json.Marshal(m)
+}
+
 // UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
 // The kind field is used as a discriminator to determine which concrete type to unmarshal into.
 func UnmarshalEventJSON(data []byte) (Event, error) {
-	type typedEvent struct {
-		Kind string `json:"kind"`
-	}
-
-	var te typedEvent
-	if err := json.Unmarshal(data, &te); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 	}
-
-	switch te.Kind {
-	case "message":
+	
+	if v, ok := raw["message"]; ok {
 		var msg Message
-		if err := json.Unmarshal(data, &msg); err != nil {
+		if err := json.Unmarshal(v, &msg); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
 		}
 		return &msg, nil
-	case "task":
+	} else if v, ok := raw["task"]; ok {
 		var task Task
-		if err := json.Unmarshal(data, &task); err != nil {
+		if err := json.Unmarshal(v, &task); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
 		}
 		return &task, nil
-	case "status-update":
+	} else if v, ok := raw["statusUpdate"]; ok {
 		var statusUpdate TaskStatusUpdateEvent
-		if err := json.Unmarshal(data, &statusUpdate); err != nil {
+		if err := json.Unmarshal(v, &statusUpdate); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
 		}
 		return &statusUpdate, nil
-	case "artifact-update":
+	} else if v, ok := raw["artifactUpdate"]; ok {
 		var artifactUpdate TaskArtifactUpdateEvent
-		if err := json.Unmarshal(data, &artifactUpdate); err != nil {
+		if err := json.Unmarshal(v, &artifactUpdate); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
 		}
 		return &artifactUpdate, nil
-	default:
-		return nil, fmt.Errorf("unknown event kind: %s", te.Kind)
+	} else {
+		return nil, fmt.Errorf("unknown event type: %v", raw)
 	}
 }
 
@@ -169,15 +182,6 @@ type Message struct {
 	// first message of a new task.
 	// An empty string means the message doesn't reference any Task.
 	TaskID TaskID `json:"taskId,omitempty" yaml:"taskId,omitempty" mapstructure:"taskId,omitempty"`
-}
-
-func (m Message) MarshalJSON() ([]byte, error) {
-	type wrapped Message
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "message", wrapped: wrapped(m)})
 }
 
 // NewMessage creates a new message with a random identifier.
@@ -233,23 +237,23 @@ const (
 	// TaskStateUnspecified represents a missing TaskState value.
 	TaskStateUnspecified TaskState = ""
 	// TaskStateAuthRequired means the task requires authentication to proceed.
-	TaskStateAuthRequired TaskState = "auth-required"
+	TaskStateAuthRequired TaskState = "AUTH_REQUIRED"
 	// TaskStateCanceled means the task has been canceled by the user.
-	TaskStateCanceled TaskState = "canceled"
+	TaskStateCanceled TaskState = "CANCELED"
 	// TaskStateCompleted means the task has been successfully completed.
-	TaskStateCompleted TaskState = "completed"
+	TaskStateCompleted TaskState = "COMPLETED"
 	// TaskStateFailed means the task failed due to an error during execution.
-	TaskStateFailed TaskState = "failed"
+	TaskStateFailed TaskState = "FAILED"
 	// TaskStateInputRequired means the task is paused and waiting for input from the user.
-	TaskStateInputRequired TaskState = "input-required"
+	TaskStateInputRequired TaskState = "INPUT_REQUIRED"
 	// TaskStateRejected means the task was rejected by the agent and was not started.
-	TaskStateRejected TaskState = "rejected"
+	TaskStateRejected TaskState = "REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
-	TaskStateSubmitted TaskState = "submitted"
+	TaskStateSubmitted TaskState = "SUBMITTED"
 	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "unknown"
+	TaskStateUnknown TaskState = "UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
-	TaskStateWorking TaskState = "working"
+	TaskStateWorking TaskState = "WORKING"
 )
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
@@ -303,15 +307,6 @@ func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *T
 		Status:    TaskStatus{State: TaskStateSubmitted},
 		History:   []*Message{initialMessage},
 	}
-}
-
-func (t Task) MarshalJSON() ([]byte, error) {
-	type wrapped Task
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "task", wrapped: wrapped(t)})
 }
 
 // TaskStatus represents the status of a task at a specific point in time.
@@ -400,15 +395,6 @@ type TaskArtifactUpdateEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (e TaskArtifactUpdateEvent) MarshalJSON() ([]byte, error) {
-	type wrapped TaskArtifactUpdateEvent
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "artifact-update", wrapped: wrapped(e)})
-}
-
 func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
@@ -466,15 +452,6 @@ type TaskStatusUpdateEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (e TaskStatusUpdateEvent) MarshalJSON() ([]byte, error) {
-	type wrapped TaskStatusUpdateEvent
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "status-update", wrapped: wrapped(e)})
-}
-
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
 func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *Message) *TaskStatusUpdateEvent {
 	now := time.Now()
@@ -506,24 +483,15 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 type ContentParts []Part
 
 func (j ContentParts) MarshalJSON() ([]byte, error) {
-	/*
-		TODO: implement such that:
-		Part{Content: Text("Hello"), MediaType: "text/plain"} -> {"text": "Hello", "mediatype": "text/plain"}
-		Part{Content: Data(map[string]string{"foo": "bar"})} -> {"data": {"foo": "bar"}}
-		Part{Content: URL(https://cats.com/1.png)} -> {"url": "https://cats.com/1.png"}
-		Part{Content: Raw([]byte{0xFF, 0xFE})} -> {"raw": "//9m"} (base64 encoded)
-	*/
 	return json.Marshal([]Part(j))
 }
 
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
-	/*
-		TODO: implement such that:
-		{"text": "Hello", "mediatype": "text/plain"} -> Part{Content: Text("Hello"), MediaType: "text/plain"}
-		{"data": {"foo": "bar"}} -> Part{Content: Data(map[string]string{"foo": "bar"})}
-		{"url": "https://cats.com/1.png"} -> Part{Content: URL(https://cats.com/1.png)}
-		{"raw": "//9m"} (base64 encoded) -> Part{Content: Raw([]byte{0xFF, 0xFE})}
-	*/
+	var parts []Part
+	if err := json.Unmarshal(b, &parts); err != nil {
+		return err
+	}
+	*j = ContentParts(parts)
 	return nil
 }
 
@@ -560,6 +528,86 @@ type Raw []byte
 type URL string
 
 type Data map[string]any
+
+func (p Part) MarshalJSON() ([]byte, error) {
+	m := make(map[string]any)
+
+	switch v := p.Content.(type) {
+	case Text:
+		m["text"] = string(v)
+	case Raw:
+		m["raw"] = []byte(v)
+	case Data:
+		m["data"] = map[string]any(v)
+	case URL:
+		m["url"] = string(v)
+	}
+
+	if p.Filename != "" {
+		m["filename"] = p.Filename
+	}
+	if p.MediaType != "" {
+		m["mediaType"] = p.MediaType
+	}
+
+	for k, v := range p.Metadata {
+		m[k] = v
+	}
+	return json.Marshal(m)
+}
+
+func (p *Part) UnmarshalJSON(b []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	if v, ok := raw["text"].(string); ok {
+		p.Content = Text(v)
+		delete(raw, "text")
+	} else if v, ok := raw["raw"].(string); ok {
+		b, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return err
+		}
+		p.Content = Raw(b)
+		delete(raw, "raw")
+	} else if v, ok := raw["data"]; ok {
+		data, ok := v.(map[string]any)
+		if !ok {
+			return fmt.Errorf("part 'data' field must be a JSON object, got %T", v)
+		}
+		p.Content = Data(data)
+		delete(raw, "data")
+	} else if v, ok := raw["url"].(string); ok {
+		p.Content = URL(v)
+		delete(raw, "url")
+	}
+
+	if filename, ok := raw["filename"].(string); ok {
+		p.Filename = filename
+		delete(raw, "filename")
+	}
+	if mediaType, ok := raw["mediaType"].(string); ok {
+		p.MediaType = mediaType
+		delete(raw, "mediaType")
+	}
+	if len(raw) > 0 {
+		p.Metadata = make(map[string]any)
+		for k, v := range raw {
+			p.Metadata[k] = v
+		}
+	}
+	return nil
+}
+
+func (p Part) Meta() map[string]any {
+	return p.Metadata
+}
+
+func (p *Part) SetMeta(k string, v any) {
+	setMeta(&p.Metadata, k, v)
+}
 
 // TaskIDParams defines parameters containing a task ID, used for simple task operations.
 type TaskIDParams struct {

@@ -15,33 +15,29 @@
 package a2a
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 )
 
-// TestEventMarshalJSON tests that Event types marshal with the correct 'kind' field.
+// TestEventMarshalJSON tests that Event types marshal into their "oneof" convention format
 func TestEventMarshalJSON(t *testing.T) {
 	now := time.Now()
 
 	testCases := []struct {
 		name           string
 		event          Event
-		wantKind       string
 		wantSubstrings []string
+		wantError      bool
 	}{
 		{
 			name: "Message",
 			event: &Message{
 				ID:   "msg-123",
 				Role: MessageRoleUser,
-				Parts: ContentParts{
-					TextPart{Text: "hello"},
-				},
+				Parts: ContentParts{{Content: Text("hello")}},
 			},
-			wantKind:       "message",
-			wantSubstrings: []string{`"message":{"messageId": "msg-123"`, `"messageId":"msg-123"`},
+			wantSubstrings: []string{`"message":`, `"messageId":"msg-123"`},
 		},
 		{
 			name: "Task",
@@ -53,22 +49,19 @@ func TestEventMarshalJSON(t *testing.T) {
 					Timestamp: &now,
 				},
 			},
-			wantKind:       "task",
-			wantSubstrings: []string{`"kind":"task"`, `"id":"task-123"`},
+			wantSubstrings: []string{`"task":`, `"id":"task-123"`},
 		},
 		{
 			name: "TaskStatusUpdateEvent",
 			event: &TaskStatusUpdateEvent{
 				TaskID:    "task-123",
 				ContextID: "ctx-123",
-				Final:     false,
 				Status: TaskStatus{
 					State:     TaskStateWorking,
 					Timestamp: &now,
 				},
 			},
-			wantKind:       "status-update",
-			wantSubstrings: []string{`"status-update":{" "taskId":"task-123"}`},
+			wantSubstrings: []string{`"statusUpdate":`, `"taskId":"task-123"`},
 		},
 		{
 			name: "TaskArtifactUpdateEvent",
@@ -77,35 +70,32 @@ func TestEventMarshalJSON(t *testing.T) {
 				ContextID: "ctx-123",
 				Artifact: &Artifact{
 					ID:    "art-123",
-					Parts: ContentParts{TextPart{Text: "result"}},
+					Parts: ContentParts{{Content: Text("result")}},
 				},
 			},
-			wantKind:       "artifact-update",
-			wantSubstrings: []string{`"kind":"artifact-update"`, `"taskId":"task-123"`},
+			wantSubstrings: []string{`"artifactUpdate":`, `"taskId":"task-123"`},
+		},
+		{
+			name:      "Unknown Type Error",
+			event:     &customEvent{&Message{ID: "oops"}},
+			wantError: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			jsonBytes, err := json.Marshal(tc.event)
+			jsonBytes, err := MarshalEventJSON(tc.event)
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Marshal() failed: %v", err)
 			}
 
 			jsonStr := string(jsonBytes)
-
-			// Verify kind field is present
-			var kindCheck struct {
-				Kind string `json:"kind"`
-			}
-			if err := json.Unmarshal(jsonBytes, &kindCheck); err != nil {
-				t.Fatalf("Failed to unmarshal kind field: %v", err)
-			}
-
-			if kindCheck.Kind != tc.wantKind {
-				t.Errorf("got kind %q, want %q", kindCheck.Kind, tc.wantKind)
-			}
-
 			// Check for required substrings
 			for _, substr := range tc.wantSubstrings {
 				if !strings.Contains(jsonStr, substr) {
@@ -126,7 +116,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 	}{
 		{
 			name:     "Message",
-			json:     `{"kind":"message","messageId":"msg-123","role":"user","parts":[{"kind":"text","text":"hello"}]}`,
+			json:     `{"message":{"messageId":"msg-123","role":"user","parts":[{"kind":"text","text":"hello"}]}}`,
 			wantType: "*a2a.Message",
 			checkFunc: func(t *testing.T, event Event) {
 				msg, ok := event.(*Message)
@@ -143,7 +133,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 		},
 		{
 			name:     "Task",
-			json:     `{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`,
+			json:     `{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`,
 			wantType: "*a2a.Task",
 			checkFunc: func(t *testing.T, event Event) {
 				task, ok := event.(*Task)
@@ -154,13 +144,13 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Errorf("got ID %s, want task-123", task.ID)
 				}
 				if task.Status.State != TaskStateSubmitted {
-					t.Errorf("got state %s, want submitted", task.Status.State)
+					t.Errorf("got state %v (%T), want %v (%T)", task.Status.State, task.Status.State, TaskStateSubmitted, TaskStateSubmitted)
 				}
 			},
 		},
 		{
 			name:     "TaskStatusUpdateEvent",
-			json:     `{"kind":"status-update","taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"working"}}`,
+			json:     `{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"WORKING"}}}`,
 			wantType: "*a2a.TaskStatusUpdateEvent",
 			checkFunc: func(t *testing.T, event Event) {
 				statusUpdate, ok := event.(*TaskStatusUpdateEvent)
@@ -171,13 +161,13 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Errorf("got taskId %s, want task-123", statusUpdate.TaskID)
 				}
 				if statusUpdate.Status.State != TaskStateWorking {
-					t.Errorf("got state %s, want working", statusUpdate.Status.State)
+					t.Errorf("got state %v (%T), want %v (%T)", statusUpdate.Status.State, statusUpdate.Status.State, TaskStateWorking, TaskStateWorking)
 				}
 			},
 		},
 		{
 			name:     "TaskArtifactUpdateEvent",
-			json:     `{"kind":"artifact-update","taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-123","parts":[{"kind":"text","text":"result"}]}}`,
+			json:     `{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-123","parts":[{"kind":"text","text":"result"}]}}}`,
 			wantType: "*a2a.TaskArtifactUpdateEvent",
 			checkFunc: func(t *testing.T, event Event) {
 				artifactUpdate, ok := event.(*TaskArtifactUpdateEvent)
@@ -221,18 +211,18 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 			wantErr: "failed to unmarshal event",
 		},
 		{
-			name:    "missing kind field",
+			name:    "missing one of the event fields",
 			json:    `{"id":"task-123"}`,
-			wantErr: "unknown event kind",
+			wantErr: "unknown event type",
 		},
 		{
-			name:    "unknown kind",
-			json:    `{"kind":"unknown","id":"123"}`,
-			wantErr: "unknown event kind: unknown",
+			name:    "unknown type",
+			json:    `{"unknown": {"id":"123"}}`,
+			wantErr: "unknown event type:",
 		},
 		{
 			name:    "malformed task",
-			json:    `{"kind":"task","id":123}`,
+			json:    `{"task":{"id":123}}`,
 			wantErr: "failed to unmarshal Task event",
 		},
 	}
@@ -264,7 +254,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 				ID:   "msg-123",
 				Role: MessageRoleUser,
 				Parts: ContentParts{
-					TextPart{Text: "hello"},
+					{Content: Text("hello")},
 				},
 			},
 		},
@@ -284,7 +274,6 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 			event: &TaskStatusUpdateEvent{
 				TaskID:    "task-123",
 				ContextID: "ctx-123",
-				Final:     true,
 				Status: TaskStatus{
 					State:     TaskStateCompleted,
 					Timestamp: &now,
@@ -298,7 +287,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 				ContextID: "ctx-123",
 				Artifact: &Artifact{
 					ID:    "art-123",
-					Parts: ContentParts{TextPart{Text: "result"}},
+					Parts: ContentParts{{Content: Text("result")}},
 				},
 			},
 		},
@@ -308,7 +297,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			original := tc.event
 			// Marshal
-			jsonBytes, err := json.Marshal(original)
+			jsonBytes, err := MarshalEventJSON(original)
 			if err != nil {
 				t.Fatalf("Marshal() failed: %v", err)
 			}
@@ -320,7 +309,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 			}
 
 			// Marshal again
-			jsonBytes2, err := json.Marshal(decoded)
+			jsonBytes2, err := MarshalEventJSON(decoded)
 			if err != nil {
 				t.Fatalf("Second Marshal() failed: %v", err)
 			}
@@ -332,3 +321,9 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 		})
 	}
 }
+
+type customEvent struct {
+	*Message
+}
+
+func (c *customEvent) isEvent() {}
