@@ -29,8 +29,8 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 )
 
@@ -153,8 +153,8 @@ func TestREST_Validations(t *testing.T) {
 	}
 	task := &a2a.Task{ID: taskID}
 
-	authenticator := func(ctx context.Context) (taskstore.UserName, bool) {
-		return "TestUser", true
+	authenticator := func(ctx context.Context) (string, error) {
+		return "TestUser", nil
 	}
 
 	methods := []string{"POST", "GET", "PUT", "DELETE", "PATCH"}
@@ -214,7 +214,9 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/v1/card",
 		},
 	}
-	store := testutil.NewTestTaskStore(taskstore.WithAuthenticator(authenticator)).WithTasks(t, task)
+	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: authenticator,
+	}).WithTasks(t, task)
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	mock := &mockAgentExecutor{

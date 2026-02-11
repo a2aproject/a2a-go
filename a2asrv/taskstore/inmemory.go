@@ -32,36 +32,20 @@ import (
 type storedTask struct {
 	task        *a2a.Task
 	version     TaskVersion
-	user        UserName
+	user        string
 	lastUpdated time.Time
 }
 
-type UserName string
-
-type Authenticator func(context.Context) (UserName, bool)
-
-type TimeProvider func() time.Time
-
-type Option func(*InMemory)
-
-func WithAuthenticator(a Authenticator) Option {
-	return func(m *InMemory) {
-		m.authenticator = a
-	}
-}
-
-func WithTimeProvider(tp TimeProvider) Option {
-	return func(m *InMemory) {
-		m.timeProvider = tp
-	}
+type InMemoryStoreConfig struct {
+	Authenticator func(context.Context) (string, error)
+	TimeProvider  func() time.Time
 }
 
 type InMemory struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask
 
-	authenticator Authenticator
-	timeProvider  TimeProvider
+	config InMemoryStoreConfig
 }
 
 var _ Store = (*InMemory)(nil)
@@ -72,18 +56,23 @@ func init() {
 }
 
 // NewInMemory creates an empty [InMemory] store.
-func NewInMemory(opts ...Option) *InMemory {
-	m := &InMemory{
-		tasks: make(map[a2a.TaskID]*storedTask),
-		authenticator: func(ctx context.Context) (UserName, bool) {
-			return "", false
-		},
-		timeProvider: func() time.Time {
-			return time.Now()
-		},
+func NewInMemory(config *InMemoryStoreConfig) *InMemory {
+	m := &InMemory{tasks: make(map[a2a.TaskID]*storedTask)}
+
+	if config != nil {
+		m.config = *config
 	}
-	for _, opt := range opts {
-		opt(m)
+
+	if m.config.TimeProvider == nil {
+		m.config.TimeProvider = func() time.Time {
+			return time.Now()
+		}
+	}
+
+	if m.config.Authenticator == nil {
+		m.config.Authenticator = func(ctx context.Context) (string, error) {
+			return "", fmt.Errorf("unauthenticated")
+		}
 	}
 
 	return m
@@ -94,10 +83,11 @@ func (s *InMemory) Save(ctx context.Context, task *a2a.Task, event a2a.Event, pr
 		return TaskVersionMissing, err
 	}
 
-	userName, ok := s.authenticator(ctx)
-	if !ok {
+	userName, err := s.config.Authenticator(ctx)
+	if err != nil {
 		userName = "anonymous"
 	}
+
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
 		return TaskVersionMissing, err
@@ -118,7 +108,7 @@ func (s *InMemory) Save(ctx context.Context, task *a2a.Task, event a2a.Event, pr
 		task:        copy,
 		version:     version,
 		user:        userName,
-		lastUpdated: s.timeProvider(),
+		lastUpdated: s.config.TimeProvider(),
 	}
 
 	return version, nil
@@ -142,10 +132,11 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 }
 
 func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	userName, ok := s.authenticator(ctx)
-	if !ok {
+	userName, err := s.config.Authenticator(ctx)
+	if err != nil {
 		return nil, a2a.ErrUnauthenticated
 	}
+
 	pageSize := req.PageSize
 	if pageSize == 0 {
 		pageSize = 50
@@ -185,7 +176,7 @@ func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.Li
 	}, nil
 }
 
-func filterTasks(tasks map[a2a.TaskID]*storedTask, userName UserName, req *a2a.ListTasksRequest) []*storedTask {
+func filterTasks(tasks map[a2a.TaskID]*storedTask, userName string, req *a2a.ListTasksRequest) []*storedTask {
 	var filteredTasks []*storedTask
 	for _, storedTask := range tasks {
 		if storedTask.user != userName {

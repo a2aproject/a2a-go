@@ -486,7 +486,7 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			store := taskstore.NewInMemory()
+			store := taskstore.NewInMemory(nil)
 
 			m := NewManager(store, seedTask)
 			_, err := m.Process(ctx, tc.invalidUpdate)

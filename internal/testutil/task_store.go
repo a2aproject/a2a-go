@@ -74,10 +74,15 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	return m
 }
 
-// NewTestTaskStore allows to mock execution of task store operations.
-// Without any overrides it defaults to in memory implementation.
-func NewTestTaskStore(opts ...taskstore.Option) *TestTaskStore {
+// NewTestTaskStore invokes NewTestTaskStoreWithConfig with nil to use the default config.
+func NewTestTaskStore() *TestTaskStore {
+	return NewTestTaskStoreWithConfig(nil)
+}
+
+// NewTestTaskStoreWithConfig allows to mock execution of task store operations.
+// Without any overrides it defaults to in memory implementation with given config.
+func NewTestTaskStoreWithConfig(config *taskstore.InMemoryStoreConfig) *TestTaskStore {
 	return &TestTaskStore{
-		InMemory: taskstore.NewInMemory(opts...),
+		InMemory: taskstore.NewInMemory(config),
 	}
 }

@@ -1061,7 +1061,7 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 
 func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	ctx := t.Context()
-	ts := taskstore.NewInMemory()
+	ts := taskstore.NewInMemory(nil)
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
@@ -1183,19 +1183,19 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	cutOffTime := startTime.Add(2 * time.Second)
 
 	tests := []struct {
-		name          string
-		givenTasks    []*a2a.Task
-		request       *a2a.ListTasksRequest
-		wantResponse  *a2a.ListTasksResponse
-		wantErr       error
-		authenticator taskstore.Authenticator
+		name         string
+		givenTasks   []*a2a.Task
+		request      *a2a.ListTasksRequest
+		wantResponse *a2a.ListTasksResponse
+		wantErr      error
+		storeConfig  *taskstore.InMemoryStoreConfig
 	}{
 		{
-			name:          "success",
-			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
-			request:       &a2a.ListTasksRequest{},
-			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
-			authenticator: testAuthenticator(),
+			name:         "success",
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:      &a2a.ListTasksRequest{},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
 			name: "success with filters",
@@ -1204,16 +1204,16 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			request:       &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, LastUpdatedAfter: &cutOffTime, IncludeArtifacts: true},
-			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
-			authenticator: testAuthenticator(),
+			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, LastUpdatedAfter: &cutOffTime, IncludeArtifacts: true},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
-			name:          "invalid pageToken",
-			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
-			request:       &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
-			wantErr:       fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
-			authenticator: testAuthenticator(),
+			name:        "invalid pageToken",
+			givenTasks:  []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:     &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
+			wantErr:     fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
+			storeConfig: &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
 			name:       "unauthorized",
@@ -1226,11 +1226,7 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			var opts []taskstore.Option
-			if tt.authenticator != nil {
-				opts = append(opts, taskstore.WithAuthenticator(tt.authenticator))
-			}
-			ts := testutil.NewTestTaskStore(opts...).WithTasks(t, tt.givenTasks...)
+			ts := testutil.NewTestTaskStoreWithConfig(tt.storeConfig).WithTasks(t, tt.givenTasks...)
 			handler := newTestHandler(WithTaskStore(ts))
 			result, err := handler.OnListTasks(ctx, tt.request)
 
@@ -1255,9 +1251,9 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	}
 }
 
-func testAuthenticator() taskstore.Authenticator {
-	return func(ctx context.Context) (taskstore.UserName, bool) {
-		return "test", true
+func testAuthenticator() func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return "test", nil
 	}
 }
 

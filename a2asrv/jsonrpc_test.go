@@ -153,7 +153,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 	want := mustUnmarshal(t, mustMarshal(t, task))
 	listResponse := &a2a.ListTasksResponse{Tasks: []*a2a.Task{task}, TotalSize: 1, PageSize: 3}
 	listTasksWant := mustUnmarshal(t, mustMarshal(t, listResponse))
-	auth := func(ctx context.Context) (taskstore.UserName, bool) { return "TestUser", true }
+	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
 
 	testCases := []struct {
 		name    string
@@ -248,7 +248,9 @@ func TestJSONRPC_Validations(t *testing.T) {
 		},
 	}
 
-	store := testutil.NewTestTaskStore(taskstore.WithAuthenticator(auth)).WithTasks(t, task)
+	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: auth,
+	}).WithTasks(t, task)
 	reqHandler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store))
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
 
