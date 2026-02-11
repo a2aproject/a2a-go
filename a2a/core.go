@@ -570,13 +570,11 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	}
 
 	if fileObj, ok := raw["file"].(map[string]any); ok {
-		for k, v := range fileObj {
-			switch k {
-			case "name":
-				p.Filename = v.(string)
-			case "mediaType":
-				p.MediaType = v.(string)
-			}
+		if name, ok := fileObj["name"].(string); ok {
+			p.Filename = name
+		}
+		if mediaType, ok := fileObj["mediaType"].(string); ok {
+			p.MediaType = mediaType
 		}
 		delete(raw, "file")
 	}
@@ -593,9 +591,10 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		delete(raw, "raw")
 	} else if v, ok := raw["data"]; ok {
 		data, ok := v.(map[string]any)
-		if ok {
-			p.Content = Data(data)
+		if !ok {
+			return fmt.Errorf("part 'data' field must be a JSON object, got %T", v)
 		}
+		p.Content = Data(data)
 		delete(raw, "data")
 	} else if v, ok := raw["url"].(string); ok {
 		p.Content = URL(v)
