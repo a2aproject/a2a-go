@@ -28,14 +28,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func mustSave(t *testing.T, store *Mem, tasks ...*a2a.Task) {
+func mustSave(t *testing.T, store *InMemory, tasks ...*a2a.Task) {
 	t.Helper()
 	for _, task := range tasks {
-		_ = mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+		_ = mustSaveVersioned(t, store, task, TaskVersionMissing)
 	}
 }
 
-func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task, prev a2a.TaskVersion) a2a.TaskVersion {
+func mustSaveVersioned(t *testing.T, store *InMemory, task *a2a.Task, prev TaskVersion) TaskVersion {
 	t.Helper()
 	version, err := store.Save(t.Context(), task, task, prev)
 	if err != nil {
@@ -44,17 +44,17 @@ func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task, prev a2a.TaskVe
 	return version
 }
 
-func mustGet(t *testing.T, store *Mem, id a2a.TaskID) *a2a.Task {
+func mustGet(t *testing.T, store *InMemory, id a2a.TaskID) *a2a.Task {
 	t.Helper()
-	got, _, err := store.Get(t.Context(), id)
+	got, err := store.Get(t.Context(), id)
 	if err != nil {
 		t.Fatalf("Get() failed: %v", err)
 	}
-	return got
+	return got.Task
 }
 
 func TestInMemoryTaskStore_GetSaved(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
 	meta := map[string]any{"k1": 42, "k2": []any{1, 2, 3}}
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id", Metadata: meta}
@@ -70,7 +70,7 @@ func TestInMemoryTaskStore_GetSaved(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
 	mustSave(t, store, task)
@@ -85,7 +85,7 @@ func TestInMemoryTaskStore_GetUpdated(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 	metaKey := "key"
 
 	task := &a2a.Task{
@@ -113,9 +113,9 @@ func TestInMemoryTaskStore_StoredImmutability(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_TaskNotFound(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
-	_, _, err := store.Get(t.Context(), a2a.TaskID("invalid"))
+	_, err := store.Get(t.Context(), a2a.TaskID("invalid"))
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
 		t.Fatalf("Unexpected error: got = %v, want ErrTaskNotFound", err)
 	}
@@ -144,7 +144,7 @@ func newIncreasingTimeProvider(startTime time.Time) func() time.Time {
 }
 
 func TestInMemoryTaskStore_List_NoAuth(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 	_, err := store.List(t.Context(), &a2a.ListTasksRequest{})
 	if !errors.Is(err, a2a.ErrUnauthenticated) {
 		t.Fatalf("Unexpected error: got = %v, want ErrUnauthenticated", err)
@@ -152,7 +152,7 @@ func TestInMemoryTaskStore_List_NoAuth(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_List_Basic(t *testing.T) {
-	store := NewMem(WithAuthenticator(getAuthInfo))
+	store := NewInMemory(WithAuthenticator(getAuthInfo))
 
 	// Call List before saving any tasks
 	emptyListResponse, err := store.List(t.Context(), &a2a.ListTasksRequest{})
@@ -185,7 +185,7 @@ func TestInMemoryTaskStore_List_Basic(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
-	store := NewMem(WithAuthenticator(getAuthInfo))
+	store := NewInMemory(WithAuthenticator(getAuthInfo))
 	task1 := &a2a.Task{
 		ID:        a2a.NewTaskID(),
 		ContextID: "id1",
@@ -328,7 +328,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(newIncreasingTimeProvider(startTime)))
+			store := NewInMemory(WithAuthenticator(getAuthInfo), WithTimeProvider(newIncreasingTimeProvider(startTime)))
 			mustSave(t, store, tc.givenTasks...)
 
 			listResponse, err := store.List(t.Context(), tc.request)
@@ -405,7 +405,7 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 				timeProvider = newTimeProvider(startTime, tc.lastUpdatedOffsets)
 			}
 
-			store := NewMem(WithAuthenticator(getAuthInfo), WithTimeProvider(timeProvider))
+			store := NewInMemory(WithAuthenticator(getAuthInfo), WithTimeProvider(timeProvider))
 			mustSave(t, store, tc.givenTasks...)
 
 			result := []*a2a.Task{}
@@ -434,10 +434,10 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_VersionIncrements(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
-	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+	v1 := mustSaveVersioned(t, store, task, TaskVersionMissing)
 
 	task.ContextID = "id2"
 	v2 := mustSaveVersioned(t, store, task, v1)
@@ -448,19 +448,19 @@ func TestInMemoryTaskStore_VersionIncrements(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
 
 	goroutines := 100
 
-	versionChan := make(chan a2a.TaskVersion, goroutines)
+	versionChan := make(chan TaskVersion, goroutines)
 	for range goroutines {
 		go func() {
-			versionChan <- mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+			versionChan <- mustSaveVersioned(t, store, task, TaskVersionMissing)
 		}()
 	}
-	var versions []a2a.TaskVersion
+	var versions []TaskVersion
 	for range goroutines {
 		versions = append(versions, <-versionChan)
 	}
@@ -475,10 +475,10 @@ func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
 }
 
 func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
-	store := NewMem()
+	store := NewInMemory()
 
 	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id"}
-	v1 := mustSaveVersioned(t, store, task, a2a.TaskVersionMissing)
+	v1 := mustSaveVersioned(t, store, task, TaskVersionMissing)
 
 	task.ContextID = "id2"
 	_ = mustSaveVersioned(t, store, task, v1)

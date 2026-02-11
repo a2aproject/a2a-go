@@ -23,6 +23,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -77,7 +78,7 @@ func (m *dbEventQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) er
 
 type versionedEvent struct {
 	event   a2a.Event
-	version a2a.TaskVersion
+	version taskstore.TaskVersion
 }
 
 type dbEventQueueReader struct {
@@ -137,7 +138,7 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 					select {
 					case queue.eventsCh <- &versionedEvent{
 						event:   event,
-						version: a2a.TaskVersion(version),
+						version: taskstore.TaskVersion(version),
 					}:
 					case <-queue.closeSignal:
 						closeSQLRows(ctx, rows)

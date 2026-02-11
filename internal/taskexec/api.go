@@ -19,6 +19,7 @@ import (
 	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
@@ -30,11 +31,6 @@ type Manager interface {
 	Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error)
 	// Cancel requests a task cancelation.
 	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
-}
-
-// TaskStore is a dependency required for loading latest task snapshots.
-type TaskStore interface {
-	Get(context.Context, a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
 }
 
 // Subscription encapsulates the logic of subscribing to execution events.
@@ -71,7 +67,7 @@ type ProcessorResult struct {
 	// ExecutionResult becomes the result of the execution if a non-nil value is returned.
 	ExecutionResult a2a.SendMessageResult
 	// TaskVersion is the version of the task after the event was processed.
-	TaskVersion a2a.TaskVersion
+	TaskVersion taskstore.TaskVersion
 	// EventOverride can be returned by the processor to change which event gets emitted to subscribers.
 	// This is useful when we failed to process a malformed event and moved the task to failed state.
 	EventOverride a2a.Event

@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 // PushSender defines the interface for sending push notifications
@@ -56,21 +57,9 @@ func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHand
 	}
 }
 
-type TaskStore interface {
-	// Save stores a task. Implementations might choose to store event and use the previous known TaskVersion
-	// for optimistic concurrency control during updates.
-	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error)
-
-	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
-	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
-
-	// List retrieves a list of tasks based on the provided request.
-	List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
-}
-
 // WithTaskStore overrides TaskStore with a custom implementation. If not provided,
 // default to an in-memory implementation.
-func WithTaskStore(store TaskStore) RequestHandlerOption {
+func WithTaskStore(store taskstore.Store) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.taskStore = store
 	}

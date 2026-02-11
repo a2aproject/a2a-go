@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
@@ -102,7 +103,7 @@ type AgentExecutor interface {
 }
 
 type factory struct {
-	taskStore       TaskStore
+	taskStore       taskstore.Store
 	pushSender      PushSender
 	pushConfigStore PushConfigStore
 	agent           AgentExecutor
@@ -143,22 +144,22 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 
 type executionContext struct {
 	execCtx *ExecutorContext
-	task    *taskupdate.VersionedTask
+	task    *taskstore.StoredTask
 }
 
 // loadExecutionContext returns the information necessary for creating agent executor and agent event processor.
 func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
 	msg := params.Message
 
-	storedTask, lastVersion, err := f.taskStore.Get(ctx, tid)
+	taskStoreTask, err := f.taskStore.Get(ctx, tid)
 	if errors.Is(err, a2a.ErrTaskNotFound) && msg.TaskID == "" {
 		return f.createNewExecutionContext(tid, params)
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("task loading failed: %w", err)
 	}
 
+	storedTask, lastVersion := taskStoreTask.Task, taskStoreTask.Version
 	if msg.TaskID != tid {
 		return nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
@@ -187,7 +188,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	return &executionContext{
-		task: &taskupdate.VersionedTask{
+		task: &taskstore.StoredTask{
 			Task:    storedTask,
 			Version: lastVersion,
 		},
@@ -215,19 +216,20 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageS
 	}
 	return &executionContext{
 		execCtx: execCtx,
-		task: &taskupdate.VersionedTask{
+		task: &taskstore.StoredTask{
 			Task:    a2a.NewSubmittedTask(execCtx, msg),
-			Version: a2a.TaskVersionMissing,
+			Version: taskstore.TaskVersionMissing,
 		},
 	}, nil
 }
 
 func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, error) {
-	task, version, err := f.taskStore.Get(ctx, params.ID)
+	storedTask, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load a task: %w", err)
 	}
 
+	task, version := storedTask.Task, storedTask.Version
 	if task.Status.State.Terminal() && task.Status.State != a2a.TaskStateCanceled {
 		return nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
@@ -244,7 +246,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 	}
 
 	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}
-	updateManager := taskupdate.NewManager(f.taskStore, &taskupdate.VersionedTask{Task: task, Version: version})
+	updateManager := taskupdate.NewManager(f.taskStore, &taskstore.StoredTask{Task: task, Version: version})
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx)
 	return canceler, processor, nil
 }

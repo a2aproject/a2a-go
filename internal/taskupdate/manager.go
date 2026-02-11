@@ -20,37 +20,28 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/a2aproject/a2a-go/log"
 )
 
-type VersionedTask struct {
-	Task    *a2a.Task
-	Version a2a.TaskVersion
-}
-
-// Saver is used for saving the [a2a.Task] after updating its state.
-type Saver interface {
-	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error)
-}
-
 // Manager is used for processing [a2a.Event] related to an [a2a.Task]. It updates
-// the Task accordingly and uses [Saver] to store the new state.
+// the Task accordingly and uses [taskstore.Store] to store the new state.
 type Manager struct {
-	lastSaved *VersionedTask
-	saver     Saver
+	lastSaved *taskstore.StoredTask
+	store     taskstore.Store
 }
 
 // NewManager is a [Manager] constructor function.
-func NewManager(saver Saver, task *VersionedTask) *Manager {
+func NewManager(store taskstore.Store, task *taskstore.StoredTask) *Manager {
 	return &Manager{
 		lastSaved: task,
-		saver:     saver,
+		store:     store,
 	}
 }
 
 // SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
-func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*VersionedTask, error) {
+func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*taskstore.StoredTask, error) {
 	task := *mgr.lastSaved.Task // copy to update task status
 
 	// do not store cause.Error() as part of status to not disclose the cause to clients
@@ -65,7 +56,7 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause er
 }
 
 // Process validates the event associated with the managed [a2a.Task] and integrates the new state into it.
-func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTask, error) {
+func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.StoredTask, error) {
 	if mgr.lastSaved == nil || mgr.lastSaved.Task == nil {
 		return nil, fmt.Errorf("event processor Task not set")
 	}
@@ -97,7 +88,7 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTas
 	}
 }
 
-func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*VersionedTask, error) {
+func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*taskstore.StoredTask, error) {
 	task := mgr.lastSaved.Task
 
 	// The copy is required because the event will be passed to subscriber goroutines, while
@@ -135,7 +126,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	return mgr.saveTask(ctx, task, event)
 }
 
-func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*VersionedTask, error) {
+func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*taskstore.StoredTask, error) {
 	task, err := utils.DeepCopy(mgr.lastSaved.Task)
 	if err != nil {
 		return nil, err
@@ -159,12 +150,12 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 	return mgr.saveTask(ctx, task, event)
 }
 
-func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*VersionedTask, error) {
-	version, err := mgr.saver.Save(ctx, task, event, mgr.lastSaved.Version)
+func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*taskstore.StoredTask, error) {
+	version, err := mgr.store.Save(ctx, task, event, mgr.lastSaved.Version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
-	mgr.lastSaved = &VersionedTask{Task: task, Version: version}
+	mgr.lastSaved = &taskstore.StoredTask{Task: task, Version: version}
 	return mgr.lastSaved, nil
 }
 

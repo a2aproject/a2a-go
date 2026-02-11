@@ -19,6 +19,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 )
 
@@ -39,7 +40,7 @@ func (m *TestEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) 
 		return m.ReadFunc(ctx)
 	}
 	event, err := m.pipe.Reader.Read(ctx)
-	return &eventqueue.Message{Event: event, TaskVersion: a2a.TaskVersionMissing}, err
+	return &eventqueue.Message{Event: event, TaskVersion: taskstore.TaskVersionMissing}, err
 }
 
 func (m *TestEventQueue) Write(ctx context.Context, msg *eventqueue.Message) error {
@@ -60,13 +61,13 @@ func (m *TestEventQueue) Close() error {
 // SetReadOverride overrides Read execution
 func (m *TestEventQueue) SetReadOverride(event a2a.Event, err error) *TestEventQueue {
 	m.ReadFunc = func(ctx context.Context) (*eventqueue.Message, error) {
-		return &eventqueue.Message{Event: event, TaskVersion: a2a.TaskVersionMissing}, err
+		return &eventqueue.Message{Event: event, TaskVersion: taskstore.TaskVersionMissing}, err
 	}
 	return m
 }
 
 // SetReadOverride overrides Read execution with an option to provide a version.
-func (m *TestEventQueue) SetReadVersionedOverride(event a2a.Event, version a2a.TaskVersion, err error) *TestEventQueue {
+func (m *TestEventQueue) SetReadVersionedOverride(event a2a.Event, version taskstore.TaskVersion, err error) *TestEventQueue {
 	m.ReadFunc = func(ctx context.Context) (*eventqueue.Message, error) {
 		return &eventqueue.Message{Event: event, TaskVersion: version}, err
 	}

@@ -24,9 +24,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
-	"github.com/a2aproject/a2a-go/internal/taskstore"
 )
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
@@ -76,7 +76,7 @@ type defaultRequestHandler struct {
 	concurrencyConfig limiter.ConcurrencyConfig
 
 	pushConfigStore        PushConfigStore
-	taskStore              TaskStore
+	taskStore              taskstore.Store
 	workQueue              workqueue.Queue
 	reqContextInterceptors []ExecutorContextInterceptor
 
@@ -123,7 +123,7 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 type ClusterConfig struct {
 	QueueManager eventqueue.Manager
 	WorkQueue    workqueue.Queue
-	TaskStore    TaskStore
+	TaskStore    taskstore.Store
 }
 
 // WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
@@ -168,7 +168,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			h.queueManager = eventqueue.NewInMemoryManager()
 		}
 		if h.taskStore == nil {
-			h.taskStore = taskstore.NewMem()
+			h.taskStore = taskstore.NewInMemory()
 			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
@@ -188,11 +188,12 @@ func (h *defaultRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQu
 		return nil, fmt.Errorf("missing TaskID: %w", a2a.ErrInvalidParams)
 	}
 
-	task, _, err := h.taskStore.Get(ctx, taskID)
+	storedTask, err := h.taskStore.Get(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
+	task := storedTask.Task
 	if query.HistoryLength != nil {
 		historyLength := *query.HistoryLength
 
@@ -239,11 +240,11 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		}
 
 		if taskID, interrupt := shouldInterruptNonStreaming(params, event); interrupt {
-			task, _, err := h.taskStore.Get(ctx, taskID)
+			storedTask, err := h.taskStore.Get(ctx, taskID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load task on event processing interrupt: %w", err)
 			}
-			return task, nil
+			return storedTask.Task, nil
 		}
 		lastEvent = event
 	}
@@ -252,11 +253,11 @@ func (h *defaultRequestHandler) OnSendMessage(ctx context.Context, params *a2a.M
 		return res, nil
 	}
 
-	task, _, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
+	task, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
 	}
-	return task, nil
+	return task.Task, nil
 }
 
 func (h *defaultRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
