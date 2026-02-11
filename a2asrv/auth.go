@@ -16,9 +16,9 @@ package a2asrv
 
 // User can be attached to [CallContext] by authentication middleware.
 type User struct {
-	// Name returns a username.
+	// Name is a username.
 	Name string
-	// Authenticated returns true if the request was authenticated.
+	// Authenticated is true if the request was authenticated.
 	Authenticated bool
 	// Attributes is a map of attributes associated with the user.
 	Attributes map[string]any

@@ -37,10 +37,12 @@ func TestInMemoryManager(t *testing.T) {
 		t.Fatalf("manager.CreateWriter() error = %v", err)
 	}
 	wantEvent := a2a.NewMessage(a2a.MessageRoleUser)
+	doneChan := make(chan struct{})
 	go func() {
 		if err := writer.Write(ctx, &Message{Event: wantEvent}); err != nil {
 			t.Errorf("writer.Write() error = %v", err)
 		}
+		close(doneChan)
 	}()
 	got, err := reader.Read(ctx)
 	if err != nil {
@@ -49,6 +51,7 @@ func TestInMemoryManager(t *testing.T) {
 	if diff := cmp.Diff(wantEvent, got.Event); diff != "" {
 		t.Fatalf("reader.Read() wrong result (+got,-want) diff = %s", diff)
 	}
+	<-doneChan
 	if err := manager.Destroy(ctx, tid); err != nil {
 		t.Fatalf("manager.Destroy() error = %v", err)
 	}

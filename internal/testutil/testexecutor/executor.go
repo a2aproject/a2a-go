@@ -56,12 +56,12 @@ func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executo
 	if e.ExecuteFn != nil {
 		return e.ExecuteFn(ctx, execCtx)
 	}
-	return nil
+	return func(yield func(a2a.Event, error) bool) {}
 }
 
 func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	if e.CancelFn != nil {
 		return e.CancelFn(ctx, execCtx)
 	}
-	return nil
+	return func(yield func(a2a.Event, error) bool) {}
 }

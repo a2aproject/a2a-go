@@ -102,13 +102,13 @@ func TestTripleHopPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(&tc.serverCfg)
 			clientInterceptor := NewClientPropagator(&tc.clientCfg)
 
-			var gotexecCtx *a2asrv.ExecutorContext
+			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
 						maps.Insert(gotHeaders, rc.ServiceParams.List())
-						gotexecCtx = rc
+						gotExecCtx = rc
 
 						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
 						event.Final = true
@@ -139,7 +139,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantPropagatedMeta, gotexecCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantPropagatedMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
@@ -208,13 +208,13 @@ func TestDefaultPropagation(t *testing.T) {
 			serverInterceptor := NewServerPropagator(nil)
 			clientInterceptor := NewClientPropagator(nil)
 
-			var gotexecCtx *a2asrv.ExecutorContext
+			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
 				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
 						maps.Insert(gotHeaders, rc.ServiceParams.List())
-						gotexecCtx = rc
+						gotExecCtx = rc
 
 						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
 						event.Final = true
@@ -244,7 +244,7 @@ func TestDefaultPropagation(t *testing.T) {
 			if task, ok := resp.(*a2a.Task); !ok || task.Status.State != a2a.TaskStateCompleted {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
-			if diff := cmp.Diff(tc.wantBReceivedMeta, gotexecCtx.Metadata); diff != "" {
+			if diff := cmp.Diff(tc.wantBReceivedMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {

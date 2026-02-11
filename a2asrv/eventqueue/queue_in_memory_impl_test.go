@@ -192,8 +192,11 @@ func TestInMemoryQueue_WriteWithNoSubscribersDoesNotBlock(t *testing.T) {
 	qm := newTestManager(t, WithQueueBufferSize(0))
 	tid := a2a.NewTaskID()
 
-	_, writeQueue := mustCreateReadWriter(t, qm, tid)
-	mustWrite(t, writeQueue, newUnversioned(&a2a.Message{ID: "test"}))
+	writer, err := qm.CreateWriter(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateWriter() error = %v", err)
+	}
+	mustWrite(t, writer, newUnversioned(&a2a.Message{ID: "test"}))
 }
 
 func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
