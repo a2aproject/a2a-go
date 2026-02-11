@@ -93,9 +93,6 @@ func MarshalEventJSON(e Event) ([]byte, error) {
 	case *TaskStatusUpdateEvent:
 		m["statusUpdate"] = v
 	case *TaskArtifactUpdateEvent:
-		if v.Artifact != nil && v.Artifact.Parts == nil {
-			v.Artifact.Parts = ContentParts{}
-		}
 		m["artifactUpdate"] = v
 	default:
 		return nil, fmt.Errorf("unknown event type: %T", e)
@@ -546,15 +543,11 @@ func (p Part) MarshalJSON() ([]byte, error) {
 		m["url"] = string(v)
 	}
 
-	if p.Filename != "" || p.MediaType != "" {
-		fileObj := make(map[string]any)
-		if p.Filename != "" {
-			fileObj["name"] = p.Filename
-		}
-		if p.MediaType != "" {
-			fileObj["mediaType"] = p.MediaType
-		}
-		m["file"] = fileObj
+	if p.Filename != "" {
+		m["filename"] = p.Filename
+	}
+	if p.MediaType != "" {
+		m["mediaType"] = p.MediaType
 	}
 
 	for k, v := range p.Metadata {
@@ -567,16 +560,6 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	var raw map[string]any
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
-	}
-
-	if fileObj, ok := raw["file"].(map[string]any); ok {
-		if name, ok := fileObj["name"].(string); ok {
-			p.Filename = name
-		}
-		if mediaType, ok := fileObj["mediaType"].(string); ok {
-			p.MediaType = mediaType
-		}
-		delete(raw, "file")
 	}
 
 	if v, ok := raw["text"].(string); ok {
@@ -599,6 +582,15 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	} else if v, ok := raw["url"].(string); ok {
 		p.Content = URL(v)
 		delete(raw, "url")
+	}
+
+	if filename, ok := raw["filename"].(string); ok {
+		p.Filename = filename
+		delete(raw, "filename")
+	}
+	if mediaType, ok := raw["mediaType"].(string); ok {
+		p.MediaType = mediaType
+		delete(raw, "mediaType")
 	}
 	if len(raw) > 0 {
 		p.Metadata = make(map[string]any)

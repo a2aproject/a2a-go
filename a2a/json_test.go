@@ -44,19 +44,17 @@ func TestContentPartsJSONCodec(t *testing.T) {
 	parts := ContentParts{
 		{Content: Text("hello, world")},
 		{Content: Data(map[string]any{"foo": "bar"})},
-		{Content: URL("https://cats.com/1.png")},
-		{Content: Raw([]byte{0xFF, 0xFE})},
+		{Content: URL("https://cats.com/1.png"), Filename: "foo"},
+		{Content: Raw([]byte{0xFF, 0xFE}), Filename: "foo", MediaType: "image/png"},
 		{Content: Text("42"), Metadata: map[string]any{"foo": "bar"}},
-		{Content: Raw([]byte{0xFF, 0xFE}), Filename: "foo", MediaType: "mime", Metadata: map[string]any{"foo": "bar"}},
 	}
 
 	jsons := []string{
 		`{"text":"hello, world"}`,
 		`{"data":{"foo":"bar"}}`,
-		`{"url":"https://cats.com/1.png"}`,
-		`{"raw":"//4="}`,
+		`{"filename":"foo","url":"https://cats.com/1.png"}`,
+		`{"filename":"foo","mediaType":"image/png","raw":"//4="}`,
 		`{"foo":"bar","text":"42"}`,
-		`{"file":{"mediaType":"mime","name":"foo"},"foo":"bar","raw":"//4="}`,
 	}
 
 	wantJSON := fmt.Sprintf("[%s]", strings.Join(jsons, ","))
@@ -110,23 +108,6 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
-func TestEventMarshalEmptyContentParts(t *testing.T) {
-	event := &TaskArtifactUpdateEvent{Artifact: &Artifact{ID: "art-123"}}
-	jsonBytes, err := MarshalEventJSON(event)
-	if err != nil {
-		t.Fatalf("Marshal() failed: %v", err)
-	}
-	if decoded, err := UnmarshalEventJSON(jsonBytes); err != nil {
-		t.Fatalf("Unmarshal() failed: %v", err)
-	} else {
-		if !reflect.DeepEqual(event, decoded) {
-			t.Fatalf("Unmarshal() failed: %#v != %#v", event, decoded)
-		}
-	}
-	if !strings.Contains(string(jsonBytes), `"parts":[]`) {
-		t.Fatalf("json.Marshal() = %q, want parts to be non-nil", string(jsonBytes))
-	}
-}
 
 // func TestAgentCardParsing(t *testing.T) {
 // 	cardJSON := `
