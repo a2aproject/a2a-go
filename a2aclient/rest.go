@@ -82,6 +82,12 @@ func (t *RESTTransport) sendRequest(ctx context.Context, method string, meta Ser
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", acceptHeader)
 
+	for k, vals := range meta {
+		for _, v := range vals {
+			httpReq.Header.Add(k, v)
+		}
+	}
+
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
