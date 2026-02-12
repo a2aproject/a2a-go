@@ -109,10 +109,9 @@ func TestTripleHopPropagation(t *testing.T) {
 					return func(yield func(a2a.Event, error) bool) {
 						maps.Insert(gotHeaders, rc.ServiceParams.List())
 						gotExecCtx = rc
-
-						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
-						event.Final = true
-						yield(event, nil)
+						task := a2a.NewSubmittedTask(rc, rc.Message)
+						task.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
+						yield(task, nil)
 					}
 				},
 			))
@@ -215,9 +214,8 @@ func TestDefaultPropagation(t *testing.T) {
 					return func(yield func(a2a.Event, error) bool) {
 						maps.Insert(gotHeaders, rc.ServiceParams.List())
 						gotExecCtx = rc
-
-						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
-						event.Final = true
+						event := a2a.NewSubmittedTask(rc, rc.Message)
+						event.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
 						yield(event, nil)
 					}
 				},

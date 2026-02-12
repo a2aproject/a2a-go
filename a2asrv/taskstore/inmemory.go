@@ -36,11 +36,14 @@ type storedTask struct {
 	lastUpdated time.Time
 }
 
+// InMemoryStoreConfig is a configuration for [InMemory] store.
 type InMemoryStoreConfig struct {
 	Authenticator func(context.Context) (string, error)
 	TimeProvider  func() time.Time
 }
 
+// InMemory is an implementation of [Store] which stores tasks in memory.
+// This means that store contents do not survive server restarts.
 type InMemory struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask
@@ -78,7 +81,7 @@ func NewInMemory(config *InMemoryStoreConfig) *InMemory {
 	return m
 }
 
-func (s *InMemory) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion TaskVersion) (TaskVersion, error) {
+func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, error) {
 	if err := validateTask(task); err != nil {
 		return TaskVersionMissing, err
 	}
@@ -95,22 +98,49 @@ func (s *InMemory) Save(ctx context.Context, task *a2a.Task, event a2a.Event, pr
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	version := TaskVersion(1)
 	if stored := s.tasks[task.ID]; stored != nil {
-		if prevVersion != TaskVersionMissing && stored.version != prevVersion {
-			return TaskVersionMissing, fmt.Errorf("concurrent task modification failed")
-		}
-		version = stored.version + 1
+		return TaskVersionMissing, ErrTaskAlreadyExists
 	}
 
+	version := TaskVersion(1)
 	s.tasks[task.ID] = &storedTask{
 		task:        copy,
 		version:     version,
 		user:        userName,
 		lastUpdated: s.config.TimeProvider(),
 	}
+	return version, nil
+}
 
+func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion, error) {
+	if err := validateTask(req.Task); err != nil {
+		return TaskVersionMissing, err
+	}
+
+	copy, err := utils.DeepCopy(req.Task)
+	if err != nil {
+		return TaskVersionMissing, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stored := s.tasks[req.Task.ID]
+	if stored == nil {
+		return TaskVersionMissing, a2a.ErrTaskNotFound
+	}
+
+	if req.PrevVersion != TaskVersionMissing && stored.version != req.PrevVersion {
+		return TaskVersionMissing, ErrConcurrentModification
+	}
+
+	version := stored.version + 1
+	s.tasks[req.Task.ID] = &storedTask{
+		task:        copy,
+		version:     version,
+		user:        stored.user,
+		lastUpdated: s.config.TimeProvider(),
+	}
 	return version, nil
 }
 

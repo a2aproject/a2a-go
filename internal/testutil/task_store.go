@@ -26,15 +26,23 @@ import (
 type TestTaskStore struct {
 	*taskstore.InMemory
 
-	SaveFunc func(ctx context.Context, task *a2a.Task, event a2a.Event, version taskstore.TaskVersion) (taskstore.TaskVersion, error)
-	GetFunc  func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error)
+	CreateFunc func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error)
+	UpdateFunc func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error)
+	GetFunc    func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error)
 }
 
-func (m *TestTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, version taskstore.TaskVersion) (taskstore.TaskVersion, error) {
-	if m.SaveFunc != nil {
-		return m.SaveFunc(ctx, task, event, version)
+func (m *TestTaskStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+	if m.CreateFunc != nil {
+		return m.CreateFunc(ctx, task)
 	}
-	return m.InMemory.Save(ctx, task, event, version)
+	return m.InMemory.Create(ctx, task)
+}
+
+func (m *TestTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, req)
+	}
+	return m.InMemory.Update(ctx, req)
 }
 
 func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
@@ -46,9 +54,13 @@ func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.
 
 // SetSaveError overrides Save execution with given error
 func (m *TestTaskStore) SetSaveError(err error) *TestTaskStore {
-	m.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version taskstore.TaskVersion) (taskstore.TaskVersion, error) {
-		return version, err
+	m.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, err
 	}
+	m.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, err
+	}
+
 	return m
 }
 
@@ -66,7 +78,7 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	ctx := t.Context()
 
 	for _, task := range tasks {
-		_, err := m.Save(ctx, task, nil, taskstore.TaskVersionMissing)
+		_, err := m.Create(ctx, task)
 		if err != nil {
 			t.Errorf("failed to save task: %v", err)
 		}
