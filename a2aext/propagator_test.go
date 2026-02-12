@@ -54,7 +54,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			},
 			clientReqHeaders: map[string][]string{
 				ServiceParamsKey: {"extension1.com", "extension2.com"},
-				"x-ignore":  {"ignored"},
+				"x-ignore":       {"ignored"},
 			},
 			wantPropagatedMeta: map[string]any{
 				"extension1.com": "bar",
