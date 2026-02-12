@@ -245,13 +245,13 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 	}
 }
 
-func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
+func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	ctx := t.Context()
 
-	var receivedCallMeta ServiceParams
+	var receivedParams ServiceParams
 	transport := &testTransport{
 		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
-			receivedCallMeta = params
+			receivedParams = params
 			return &a2a.Task{}, nil
 		},
 	}
@@ -274,9 +274,9 @@ func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantCallMeta := ServiceParams{k1: []string{v1}, k2: []string{v2}}
-	if !reflect.DeepEqual(receivedCallMeta, wantCallMeta) {
-		t.Fatalf("client.GetTask() meta = %v, want %v", receivedCallMeta, wantCallMeta)
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}}
+	if !reflect.DeepEqual(receivedParams, wantParams) {
+		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
 	}
 }
 

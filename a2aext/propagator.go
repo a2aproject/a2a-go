@@ -102,7 +102,7 @@ func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallIntercept
 	if cfg.HeaderPredicate == nil {
 		// Propagate requested extensions.
 		cfg.HeaderPredicate = func(ctx context.Context, card *a2a.AgentCard, key string, val string) bool {
-			if !strings.EqualFold(key, CallMetaKey) {
+			if !strings.EqualFold(key, ServiceParamsKey) {
 				return false
 			}
 			return isExtensionSupported(card, val)
@@ -130,7 +130,7 @@ func NewServerPropagator(config *ServerPropagatorConfig) a2asrv.CallInterceptor 
 	if cfg.HeaderPredicate == nil {
 		// Propagate requested extensions.
 		cfg.HeaderPredicate = func(ctx context.Context, key string) bool {
-			return strings.EqualFold(key, CallMetaKey)
+			return strings.EqualFold(key, ServiceParamsKey)
 		}
 	}
 	return &serverPropagator{ServerPropagatorConfig: cfg}

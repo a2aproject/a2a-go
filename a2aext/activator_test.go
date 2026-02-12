@@ -108,7 +108,7 @@ func TestActivator(t *testing.T) {
 			}
 
 			var gotExtensions []string
-			if vals, ok := gotHeaders[CallMetaKey]; ok {
+			if vals, ok := gotHeaders[ServiceParamsKey]; ok {
 				gotExtensions = vals
 			}
 			if diff := cmp.Diff(tc.clientSends, gotExtensions); diff != "" {

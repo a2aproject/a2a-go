@@ -128,7 +128,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	}
 }
 
-func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
+func TestJSONRPCTransport_ServiceParamsHeaders(t *testing.T) {
 	wantValues := []string{"bar", "baz"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "tasks/get")

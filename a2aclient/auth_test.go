@@ -275,7 +275,7 @@ func TestAuthInterceptor(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			callMeta := ServiceParams{}
+			params := ServiceParams{}
 
 			ctx := t.Context()
 			if tc.sid != "" {
@@ -288,13 +288,13 @@ func TestAuthInterceptor(t *testing.T) {
 			}
 
 			interceptor := &AuthInterceptor{Service: credStore}
-			_, _, err := interceptor.Before(ctx, &Request{ServiceParams: callMeta, Card: tc.card})
+			_, _, err := interceptor.Before(ctx, &Request{ServiceParams: params, Card: tc.card})
 			if err != nil {
 				t.Errorf("interceptor.Before() error = %v", err)
 			}
 
-			if diff := cmp.Diff(tc.want, callMeta); diff != "" {
-				t.Errorf("wrong CallMeta (+got,-want) diff = %s", diff)
+			if diff := cmp.Diff(tc.want, params); diff != "" {
+				t.Errorf("wrong ServiceParams (+got,-want) diff = %s", diff)
 			}
 		})
 	}

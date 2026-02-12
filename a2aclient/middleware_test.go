@@ -57,7 +57,7 @@ func TestServiceParams(t *testing.T) {
 			tt.initial.Append(tt.key, tt.vals...)
 			got := tt.initial.Get(tt.key)
 			if !slices.Equal(got, tt.expected) {
-				t.Errorf("CallMeta.Append() = %v, want %v", got, tt.expected)
+				t.Errorf("ServiceParams.Append() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

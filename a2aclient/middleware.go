@@ -22,9 +22,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// CallMeta holds things like auth headers and signatures.
+// ServiceParams holds things like auth headers and signatures.
 // In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of [context.Context].
-// Custom protocol implementations can use [CallMetaFrom] to access this data and
+// Custom protocol implementations can use [ServiceParams] to access this data and
 // perform the operations necessary for attaching it to the request.
 type ServiceParams map[string][]string
 
@@ -97,8 +97,8 @@ type CallInterceptor interface {
 }
 
 // NewServiceParamsInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
-func NewServiceParamsInjector(meta ServiceParams) CallInterceptor {
-	return &serviceParamsInjector{inject: meta}
+func NewServiceParamsInjector(params ServiceParams) CallInterceptor {
+	return &serviceParamsInjector{inject: params}
 }
 
 type serviceParamsInjector struct {

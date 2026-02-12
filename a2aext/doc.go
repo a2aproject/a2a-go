@@ -15,4 +15,4 @@
 // Package a2aext provides utilities for A2A extension implementers.
 package a2aext
 
-const CallMetaKey = "x-a2a-extensions"
+const ServiceParamsKey = "x-a2a-extensions"

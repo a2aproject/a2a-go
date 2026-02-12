@@ -53,7 +53,7 @@ func TestTripleHopPropagation(t *testing.T) {
 				"not-extension":  "qux",
 			},
 			clientReqHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com", "extension2.com"},
+				ServiceParamsKey: {"extension1.com", "extension2.com"},
 				"x-ignore":  {"ignored"},
 			},
 			wantPropagatedMeta: map[string]any{
@@ -61,7 +61,7 @@ func TestTripleHopPropagation(t *testing.T) {
 				"extension2.com": map[string]any{"nested": "bar"},
 			},
 			wantPropagatedHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com", "extension2.com"},
+				ServiceParamsKey: {"extension1.com", "extension2.com"},
 			},
 		},
 		{
@@ -169,7 +169,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
 			clientReqHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com", "extension2.com"},
+				ServiceParamsKey: {"extension1.com", "extension2.com"},
 			},
 			serverASupports: []string{"extension1.com", "extension2.com"},
 			serverBSupports: []string{"extension1.com", "extension2.com"},
@@ -178,7 +178,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]any{"nested": "bar"},
 			},
 			wantBReceivedHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com", "extension2.com"},
+				ServiceParamsKey: {"extension1.com", "extension2.com"},
 			},
 		},
 		{
@@ -188,7 +188,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
 			clientReqHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com", "extension2.com"},
+				ServiceParamsKey: {"extension1.com", "extension2.com"},
 			},
 			serverASupports: []string{"extension1.com", "extension2.com"},
 			serverBSupports: []string{"extension1.com"},
@@ -196,7 +196,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension1.com": "bar",
 			},
 			wantBReceivedHeaders: map[string][]string{
-				CallMetaKey: {"extension1.com"},
+				ServiceParamsKey: {"extension1.com"},
 			},
 		},
 	}
