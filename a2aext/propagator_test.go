@@ -105,12 +105,12 @@ func TestTripleHopPropagation(t *testing.T) {
 			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+				func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
-						maps.Insert(gotHeaders, rc.ServiceParams.List())
-						gotExecCtx = rc
+						maps.Insert(gotHeaders, ec.ServiceParams.List())
+						gotExecCtx = ec
 
-						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
+						event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
 						event.Final = true
 						yield(event, nil)
 					}
@@ -211,12 +211,12 @@ func TestDefaultPropagation(t *testing.T) {
 			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+				func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
-						maps.Insert(gotHeaders, rc.ServiceParams.List())
-						gotExecCtx = rc
+						maps.Insert(gotHeaders, ec.ServiceParams.List())
+						gotExecCtx = ec
 
-						event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
+						event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
 						event.Final = true
 						yield(event, nil)
 					}
