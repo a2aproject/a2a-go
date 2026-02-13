@@ -304,7 +304,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 			mustUnmarshal(t, []byte(jsonStr), &sr)
 
 			// Marshal again
-			jsonStr2 := mustMarshal(t, StreamResponse{Event: sr.Event})
+			jsonStr2 := mustMarshal(t, sr)
 
 			// Compare JSON (should be identical)
 			if jsonStr != jsonStr2 {
