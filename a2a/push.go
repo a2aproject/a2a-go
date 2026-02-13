@@ -16,7 +16,7 @@ package a2a
 
 // TaskPushConfig is a container associating a push notification configuration with a specific task.
 type TaskPushConfig struct {
-	// Tenant is the optional tenant associated with this push notification configuration.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// Config is the push notification configuration for this task.
@@ -31,7 +31,7 @@ type TaskPushConfig struct {
 
 // GetTaskPushConfigRequest defines request for fetching a specific push notification configuration for a task.
 type GetTaskPushConfigRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// TaskID is the unique identifier of the parent task.
@@ -43,7 +43,7 @@ type GetTaskPushConfigRequest struct {
 
 // ListTaskPushConfigRequest defines the request for listing all push notification configurations associated with a task.
 type ListTaskPushConfigRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// TaskID is the unique identifier of the task.
@@ -66,7 +66,7 @@ type ListTaskPushConfigResponse struct {
 
 // DeleteTaskPushConfigRequest defines parameters for deleting a specific push notification configuration for a task.
 type DeleteTaskPushConfigRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// TaskID is the unique identifier of the parent task.
@@ -78,7 +78,7 @@ type DeleteTaskPushConfigRequest struct {
 
 // CreateTaskPushConfigRequest defines request for creating a push notification configuration for a task.
 type CreateTaskPushConfigRequest struct {
-	// Tenant is the optional tenant associated with this push notification configuration.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// Config is the push notification configuration for this task.

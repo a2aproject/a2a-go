@@ -167,7 +167,7 @@ type AgentInterface struct {
 	// This is an open form string, to be easily extended for other protocol bindings.
 	ProtocolBinding string `json:"protocolBinding" yaml:"protocolBinding" mapstructure:"protocolBinding"`
 
-	// Tenant is the tenant to be set in the request when calling the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ProtocolVersion is the version of the A2A protocol this interface exposes.

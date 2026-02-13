@@ -646,7 +646,7 @@ type SendMessageConfig struct {
 // SendMessageRequest defines the request to send a message to an agent. This can be used
 // to create a new task, continue an existing one, or restart a task.
 type SendMessageRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// Config is an optional configuration for the send request.
@@ -681,7 +681,7 @@ func newUUIDString() string {
 
 // GetTaskRequest defines the parameters for a request to get a task.
 type GetTaskRequest struct {
-	// Tenant is the tenant to get the task for.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ID is the ID of the task to get.
@@ -693,7 +693,7 @@ type GetTaskRequest struct {
 
 // ListTasksRequest defines the parameters for a request to list tasks.
 type ListTasksRequest struct {
-	// Tenant is the tenant to list tasks for.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ContextID is the ID of the context to list tasks for.
@@ -737,7 +737,7 @@ type ListTasksResponse struct {
 
 // CancelTaskRequest represents a request to cancel a task.
 type CancelTaskRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ID is the ID of the task to cancel.
@@ -746,7 +746,7 @@ type CancelTaskRequest struct {
 
 // SubscribeToTaskRequest represents a request to subscribe to task events.
 type SubscribeToTaskRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ID is the ID of the task to subscribe to.
@@ -754,6 +754,6 @@ type SubscribeToTaskRequest struct {
 }
 
 type GetExtendedAgentCardRequest struct {
-	// Tenant is the tenant of the agent.
+	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 }
