@@ -111,7 +111,7 @@ func TestDurationsExtension(t *testing.T) {
 			serverCard.URL = server.URL
 			defer server.Close()
 
-			client, err := a2aclient.NewFromCard(ctx, serverCard, a2aclient.WithInterceptors(
+			client, err := a2aclient.NewFromCard(ctx, serverCard, a2aclient.WithCallInterceptors(
 				a2aext.NewActivator(tc.activatorConfig...),
 			))
 			if err != nil {

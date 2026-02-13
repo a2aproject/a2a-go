@@ -43,7 +43,7 @@ func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context
 		}
 	}
 	if len(toAppend) > 0 {
-		req.Meta.Append(CallMetaKey, toAppend...)
+		req.ServiceParams.Append(ServiceParamsKey, toAppend...)
 	}
 
 	return ctx, nil, nil

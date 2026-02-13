@@ -19,31 +19,31 @@ import (
 	"testing"
 )
 
-func TestCallMeta(t *testing.T) {
+func TestServiceParams(t *testing.T) {
 	tests := []struct {
 		name     string
-		initial  CallMeta
+		initial  ServiceParams
 		key      string
 		vals     []string
 		expected []string
 	}{
 		{
 			name:     "case insensitive key storage",
-			initial:  make(CallMeta),
+			initial:  make(ServiceParams),
 			key:      "Key",
 			vals:     []string{"value"},
 			expected: []string{"value"},
 		},
 		{
 			name:     "multiple values",
-			initial:  make(CallMeta),
+			initial:  make(ServiceParams),
 			key:      "Multi",
 			vals:     []string{"v1", "v2", "v3"},
 			expected: []string{"v1", "v2", "v3"},
 		},
 		{
 			name: "multiple values with duplicates",
-			initial: CallMeta{
+			initial: ServiceParams{
 				"multi": {"v1"},
 			},
 			key:      "Multi",
@@ -57,7 +57,7 @@ func TestCallMeta(t *testing.T) {
 			tt.initial.Append(tt.key, tt.vals...)
 			got := tt.initial.Get(tt.key)
 			if !slices.Equal(got, tt.expected) {
-				t.Errorf("CallMeta.Append() = %v, want %v", got, tt.expected)
+				t.Errorf("ServiceParams.Append() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

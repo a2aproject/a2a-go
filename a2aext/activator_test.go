@@ -94,7 +94,7 @@ func TestActivator(t *testing.T) {
 			client, err := a2aclient.NewFromCard(
 				ctx,
 				agentCard,
-				a2aclient.WithInterceptors(activator),
+				a2aclient.WithCallInterceptors(activator),
 			)
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -108,7 +108,7 @@ func TestActivator(t *testing.T) {
 			}
 
 			var gotExtensions []string
-			if vals, ok := gotHeaders[CallMetaKey]; ok {
+			if vals, ok := gotHeaders[ServiceParamsKey]; ok {
 				gotExtensions = vals
 			}
 			if diff := cmp.Diff(tc.clientSends, gotExtensions); diff != "" {

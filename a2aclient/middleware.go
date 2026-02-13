@@ -22,24 +22,21 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// Used to store CallMeta in context.Context after all the interceptors were applied.
-type callMetaKey struct{}
-
-// CallMeta holds things like auth headers and signatures.
+// ServiceParams holds things like auth headers and signatures.
 // In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of [context.Context].
-// Custom protocol implementations can use [CallMetaFrom] to access this data and
+// Custom protocol implementations can use [ServiceParams] to access this data and
 // perform the operations necessary for attaching it to the request.
-type CallMeta map[string][]string
+type ServiceParams map[string][]string
 
 // Get performs case-insensitive lookup or the provided key. Returns nil if value is not present.
-func (m CallMeta) Get(key string) []string {
+func (m ServiceParams) Get(key string) []string {
 	val := m[strings.ToLower(key)]
 	return val
 }
 
 // Append appends the provided values to the list of values associated with the key.
 // Duplicates values will not be added. Key matching is case-insensitive.
-func (m CallMeta) Append(key string, vals ...string) {
+func (m ServiceParams) Append(key string, vals ...string) {
 	result := m.Get(key)
 	for _, v := range vals {
 		if slices.Contains(result, v) {
@@ -56,8 +53,9 @@ type Request struct {
 	Method string
 	// BaseURL is the URL of the agent interface to which the Client is connected.
 	BaseURL string
-	// CallMeta holds request metadata like auth headers and signatures.
-	Meta CallMeta
+	// ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.
+	// The transmission mechanism for these service parameter key-value pairs is defined by the specific protocol binding
+	ServiceParams ServiceParams
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
@@ -73,8 +71,9 @@ type Response struct {
 	BaseURL string
 	// Err is the error response. It is nil for successful invocations.
 	Err error
-	// CallMeta holds request metadata like auth headers and signatures.
-	Meta CallMeta
+	// ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.
+	// The transmission mechanism for these service parameter key-value pairs is defined by the specific protocol binding
+	ServiceParams ServiceParams
 	// Card is the AgentCard of the agent the client is connected to. Might be nil if Client was
 	// created directly from server URL and extended AgentCard was never fetched.
 	Card *a2a.AgentCard
@@ -97,29 +96,19 @@ type CallInterceptor interface {
 	After(ctx context.Context, resp *Response) error
 }
 
-// CallMetaFrom allows [Transport] implementations to access CallMeta after all the interceptors were applied.
-func CallMetaFrom(ctx context.Context) (CallMeta, bool) {
-	meta, ok := ctx.Value(callMetaKey{}).(CallMeta)
-	return meta, ok
+// NewServiceParamsInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
+func NewServiceParamsInjector(params ServiceParams) CallInterceptor {
+	return &serviceParamsInjector{inject: params}
 }
 
-func withCallMeta(ctx context.Context, meta CallMeta) context.Context {
-	return context.WithValue(ctx, callMetaKey{}, meta)
-}
-
-// NewCallMetaInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
-func NewStaticCallMetaInjector(meta CallMeta) CallInterceptor {
-	return &callMetaInjector{inject: meta}
-}
-
-type callMetaInjector struct {
+type serviceParamsInjector struct {
 	PassthroughInterceptor
-	inject CallMeta
+	inject ServiceParams
 }
 
-func (mi *callMetaInjector) Before(ctx context.Context, req *Request) (context.Context, any, error) {
+func (mi *serviceParamsInjector) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	for k, values := range mi.inject {
-		req.Meta.Append(k, values...)
+		req.ServiceParams.Append(k, values...)
 	}
 	return ctx, nil, nil
 }
