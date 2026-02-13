@@ -356,7 +356,7 @@ type PasswordOAuthFlow struct {
 	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// Scopes are еру available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 
