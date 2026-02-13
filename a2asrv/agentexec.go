@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/push"
 	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
@@ -104,8 +105,8 @@ type AgentExecutor interface {
 
 type factory struct {
 	taskStore       taskstore.Store
-	pushSender      PushSender
-	pushConfigStore PushConfigStore
+	pushSender      push.Sender
+	pushConfigStore push.ConfigStore
 	agent           AgentExecutor
 	interceptors    []ExecutorContextInterceptor
 }
@@ -315,8 +316,8 @@ type processor struct {
 	// happens in event consumer goroutine. Once request context is loaded and validate the processor
 	// gets initialized.
 	updateManager   *taskupdate.Manager
-	pushConfigStore PushConfigStore
-	pushSender      PushSender
+	pushConfigStore push.ConfigStore
+	pushSender      push.Sender
 	execCtx         *ExecutorContext
 
 	processedCount int
@@ -324,7 +325,7 @@ type processor struct {
 
 var _ taskexec.Processor = (*processor)(nil)
 
-func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, execCtx *ExecutorContext) *processor {
+func newProcessor(updateManager *taskupdate.Manager, store push.ConfigStore, sender push.Sender, execCtx *ExecutorContext) *processor {
 	return &processor{
 		updateManager:   updateManager,
 		pushConfigStore: store,

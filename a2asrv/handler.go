@@ -71,11 +71,11 @@ type defaultRequestHandler struct {
 	execManager   taskexec.Manager
 	panicHandler  taskexec.PanicHandlerFn
 
-	pushSender        PushSender
+	pushSender        push.Sender
 	queueManager      eventqueue.Manager
 	concurrencyConfig limiter.ConcurrencyConfig
 
-	pushConfigStore        PushConfigStore
+	pushConfigStore        push.ConfigStore
 	taskStore              taskstore.Store
 	workQueue              workqueue.Queue
 	reqContextInterceptors []ExecutorContextInterceptor
@@ -116,6 +116,23 @@ func WithExecutionPanicHandler(handler func(r any) error) RequestHandlerOption {
 func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.concurrencyConfig = config
+	}
+}
+
+// WithPushNotifications adds support for push notifications. If dependencies are not provided
+// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
+func WithPushNotifications(store push.ConfigStore, sender push.Sender) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.pushConfigStore = store
+		h.pushSender = sender
+	}
+}
+
+// WithTaskStore overrides TaskStore with a custom implementation. If not provided,
+// default to an in-memory implementation.
+func WithTaskStore(store taskstore.Store) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.taskStore = store
 	}
 }
 

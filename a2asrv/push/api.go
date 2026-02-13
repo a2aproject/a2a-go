@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,24 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2asrv
+package push
 
 import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
-// PushSender defines the interface for sending push notifications
+// Sender defines the interface for sending push notifications
 // about task state changes to external endpoints.
-type PushSender interface {
+type Sender interface {
 	// SendPush sends a push notification containing the latest task state. If an error is returned execution is stopped.
 	SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
 }
 
-// PushConfigStore manages push notification configurations for tasks.
-type PushConfigStore interface {
+// ConfigStore manages push notification configurations for tasks.
+type ConfigStore interface {
 	// Save creates or updates a push notification configuration for a task. If no ID is set
 	// on the provided config, it will have a store-generated ID for the returned config.
 	// PushConfig has an ID and a Task can have multiple associated configurations.
@@ -46,21 +45,4 @@ type PushConfigStore interface {
 
 	// DeleteAll removes all registered push configurations of a Task.
 	DeleteAll(ctx context.Context, taskID a2a.TaskID) error
-}
-
-// WithPushNotifications adds support for push notifications. If dependencies are not provided
-// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
-func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.pushConfigStore = store
-		h.pushSender = sender
-	}
-}
-
-// WithTaskStore overrides TaskStore with a custom implementation. If not provided,
-// default to an in-memory implementation.
-func WithTaskStore(store taskstore.Store) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.taskStore = store
-	}
 }
