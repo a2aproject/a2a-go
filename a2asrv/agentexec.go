@@ -18,10 +18,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 )
@@ -89,7 +90,7 @@ type AgentExecutor interface {
 	//
 	// Failures should generally be reported by writing events carrying the cancelation information
 	// and task state. An error should be returned in special cases like a failure to write an event.
-	Execute(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
+	Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 
 	// Cancel is called when a client requests the agent to stop working on a task.
 	// The simplest implementation can write a cancelation event to the queue and let
@@ -97,7 +98,7 @@ type AgentExecutor interface {
 	// Context gets canceled.
 	//
 	// An an error should be returned if the cancelation request cannot be processed or a queue write failed.
-	Cancel(ctx context.Context, execCtx *ExecutorContext, queue eventqueue.Queue) error
+	Cancel(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
 type factory struct {
@@ -256,7 +257,7 @@ type executor struct {
 
 var _ taskexec.Executor = (*executor)(nil)
 
-func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
+func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 	var err error
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, e.execCtx)
@@ -264,7 +265,16 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 			return fmt.Errorf("interceptor failed: %w", err)
 		}
 	}
-	return e.agent.Execute(ctx, e.execCtx, q)
+
+	for event, err := range e.agent.Execute(ctx, e.execCtx) {
+		if err != nil {
+			return err
+		}
+		if err := q.Write(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type canceler struct {
@@ -276,7 +286,7 @@ type canceler struct {
 
 var _ taskexec.Canceler = (*canceler)(nil)
 
-func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
+func (c *canceler) Cancel(ctx context.Context, q eventpipe.Writer) error {
 	if c.task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, c.task)
 	}
@@ -289,7 +299,15 @@ func (c *canceler) Cancel(ctx context.Context, q eventqueue.Queue) error {
 		}
 	}
 
-	return c.agent.Cancel(ctx, c.execCtx, q)
+	for event, err := range c.agent.Cancel(ctx, c.execCtx) {
+		if err != nil {
+			return err
+		}
+		if err := q.Write(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type processor struct {

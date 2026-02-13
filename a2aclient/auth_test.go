@@ -17,13 +17,13 @@ package a2aclient
 import (
 	"context"
 	"errors"
+	"iter"
 	"net"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2agrpc"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
@@ -54,9 +54,11 @@ func TestAuth_GRPC(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 
 	var capturedCallContext *a2asrv.CallContext
-	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-		capturedCallContext, _ = a2asrv.CallContextFrom(ctx)
-		return q.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent))
+	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			capturedCallContext, _ = a2asrv.CallContextFrom(ctx)
+			yield(a2a.NewMessage(a2a.MessageRoleAgent), nil)
+		}
 	})
 	handler := a2asrv.NewHandler(executor)
 	go startGRPCTestServer(t, handler, listener)

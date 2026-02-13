@@ -25,25 +25,25 @@ import (
 type TestQueueManager struct {
 	eventqueue.Manager
 
-	GetOrCreateFunc func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error)
-	GetFunc         func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool)
-	DestroyFunc     func(ctx context.Context, taskID a2a.TaskID) error
+	CreateWriterFunc func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error)
+	CreateReaderFunc func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error)
+	DestroyFunc      func(ctx context.Context, taskID a2a.TaskID) error
 }
 
 var _ eventqueue.Manager = (*TestQueueManager)(nil)
 
-func (m *TestQueueManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
-	if m.GetOrCreateFunc != nil {
-		return m.GetOrCreateFunc(ctx, taskID)
+func (m *TestQueueManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
+	if m.CreateWriterFunc != nil {
+		return m.CreateWriterFunc(ctx, taskID)
 	}
-	return m.Manager.GetOrCreate(ctx, taskID)
+	return m.Manager.CreateWriter(ctx, taskID)
 }
 
-func (m *TestQueueManager) Get(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
-	if m.GetFunc != nil {
-		return m.GetFunc(ctx, taskID)
+func (m *TestQueueManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
+	if m.CreateReaderFunc != nil {
+		return m.CreateReaderFunc(ctx, taskID)
 	}
-	return m.Manager.Get(ctx, taskID)
+	return m.Manager.CreateReader(ctx, taskID)
 }
 
 func (m *TestQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
@@ -53,18 +53,24 @@ func (m *TestQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error
 	return m.Manager.Destroy(ctx, taskID)
 }
 
-// SetGetOrCreateOverride overrides GetOrCreate execution
-func (m *TestQueueManager) SetGetOrCreateOverride(queue eventqueue.Queue, err error) *TestQueueManager {
-	m.GetOrCreateFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
-		return queue, err
+// SetQueue sets the queue to be returned by CreateWriter and CreateReader
+func (m *TestQueueManager) SetQueue(queue *TestEventQueue) *TestQueueManager {
+	m.CreateWriterFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
+		return queue, nil
+	}
+	m.CreateReaderFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
+		return queue, nil
 	}
 	return m
 }
 
-// SetGetOverride overrides Get execution
-func (m *TestQueueManager) SetGetOverride(queue eventqueue.Queue, ok bool) *TestQueueManager {
-	m.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, bool) {
-		return queue, ok
+// SetError sets the error to be returned by CreateWriter and CreateReader
+func (m *TestQueueManager) SetError(err error) *TestQueueManager {
+	m.CreateWriterFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
+		return nil, err
+	}
+	m.CreateReaderFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
+		return nil, err
 	}
 	return m
 }

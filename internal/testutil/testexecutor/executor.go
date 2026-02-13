@@ -16,21 +16,21 @@ package testexecutor
 
 import (
 	"context"
+	"iter"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 type TestAgentExecutor struct {
 	Emitted   []a2a.Event
-	ExecuteFn func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error
-	CancelFn  func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error
+	ExecuteFn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
+	CancelFn  func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
-func FromFunction(fn func(context.Context, *a2asrv.ExecutorContext, eventqueue.Queue) error) *TestAgentExecutor {
+func FromFunction(fn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
 
@@ -38,29 +38,30 @@ func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Ev
 	var exec *TestAgentExecutor
 	exec = &TestAgentExecutor{
 		Emitted: []a2a.Event{},
-		ExecuteFn: func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-			for _, ev := range generator(execCtx) {
-				if err := q.Write(ctx, ev); err != nil {
-					return err
+		ExecuteFn: func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				for _, ev := range generator(execCtx) {
+					if !yield(ev, nil) {
+						return
+					}
+					exec.Emitted = append(exec.Emitted, ev)
 				}
-				exec.Emitted = append(exec.Emitted, ev)
 			}
-			return nil
 		},
 	}
 	return exec
 }
 
-func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	if e.ExecuteFn != nil {
-		return e.ExecuteFn(ctx, execCtx, q)
+		return e.ExecuteFn(ctx, execCtx)
 	}
-	return nil
+	return func(yield func(a2a.Event, error) bool) {}
 }
 
-func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
+func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	if e.CancelFn != nil {
-		return e.CancelFn(ctx, execCtx, q)
+		return e.CancelFn(ctx, execCtx)
 	}
-	return nil
+	return func(yield func(a2a.Event, error) bool) {}
 }

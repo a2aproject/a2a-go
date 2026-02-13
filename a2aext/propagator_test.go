@@ -17,6 +17,7 @@ package a2aext
 import (
 	"context"
 	"fmt"
+	"iter"
 	"maps"
 	"net/http/httptest"
 	"slices"
@@ -25,7 +26,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -105,15 +105,15 @@ func TestTripleHopPropagation(t *testing.T) {
 			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			server := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
-					}
-					gotExecCtx = rc
+				func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) {
+						maps.Insert(gotHeaders, ec.ServiceParams.List())
+						gotExecCtx = ec
 
-					event := a2a.NewStatusUpdateEvent(rc, a2a.TaskStateCompleted, nil)
-					event.Final = true
-					return q.Write(ctx, event)
+						event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
+						event.Final = true
+						yield(event, nil)
+					}
 				},
 			))
 			reverseProxy := startServer(t, serverInterceptor, newProxyExecutor(clientInterceptor, proxyTarget{ai: server}))
@@ -211,15 +211,15 @@ func TestDefaultPropagation(t *testing.T) {
 			var gotExecCtx *a2asrv.ExecutorContext
 			gotHeaders := map[string][]string{}
 			serverB := startServer(t, serverInterceptor, testexecutor.FromFunction(
-				func(ctx context.Context, ec *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-					if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
-						maps.Insert(gotHeaders, callCtx.ServiceParams().List())
-					}
-					gotExecCtx = ec
+				func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) {
+						maps.Insert(gotHeaders, ec.ServiceParams.List())
+						gotExecCtx = ec
 
-					event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
-					event.Final = true
-					return q.Write(ctx, event)
+						event := a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, nil)
+						event.Final = true
+						yield(event, nil)
+					}
 				},
 			))
 			serverBCard := newAgentCard(serverB, tc.serverBSupports)
@@ -294,23 +294,28 @@ func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallI
 }
 
 func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget) a2asrv.AgentExecutor {
-	return testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q eventqueue.Queue) error {
-		client, err := target.newClient(ctx, interceptor)
-		if err != nil {
-			return err
+	return testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			client, err := target.newClient(ctx, interceptor)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, execCtx.Message.Parts...),
+			})
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			task, ok := result.(*a2a.Task)
+			if !ok {
+				yield(nil, fmt.Errorf("result was %T, want a2a.Task", task))
+				return
+			}
+			task.ID = execCtx.TaskID
+			task.ContextID = execCtx.ContextID
+			yield(task, nil)
 		}
-		result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-			Message: a2a.NewMessage(a2a.MessageRoleUser, execCtx.Message.Parts...),
-		})
-		if err != nil {
-			return err
-		}
-		task, ok := result.(*a2a.Task)
-		if !ok {
-			return fmt.Errorf("result was %T, want a2a.Task", task)
-		}
-		task.ID = execCtx.TaskID
-		task.ContextID = execCtx.ContextID
-		return q.Write(ctx, result)
 	})
 }

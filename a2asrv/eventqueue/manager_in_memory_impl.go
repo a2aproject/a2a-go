@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/log"
 )
 
 const defaultQueueBufferSize = 32
@@ -63,7 +62,15 @@ func NewInMemoryManager(options ...MemManagerOption) Manager {
 	return manager
 }
 
-func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Queue, error) {
+func (m *inMemoryManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (Reader, error) {
+	return m.createReadWriter(ctx, taskID)
+}
+
+func (m *inMemoryManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (Writer, error) {
+	return m.createReadWriter(ctx, taskID)
+}
+
+func (m *inMemoryManager) createReadWriter(ctx context.Context, taskID a2a.TaskID) (*inMemoryQueue, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	broker, ok := m.brokers[taskID]
@@ -72,22 +79,6 @@ func (m *inMemoryManager) GetOrCreate(ctx context.Context, taskID a2a.TaskID) (Q
 		m.brokers[taskID] = broker
 	}
 	return broker.connect()
-}
-
-func (m *inMemoryManager) Get(ctx context.Context, taskID a2a.TaskID) (Queue, bool) {
-	m.mu.Lock()
-	broker, ok := m.brokers[taskID]
-	m.mu.Unlock()
-
-	if !ok {
-		return nil, false
-	}
-	conn, err := broker.connect()
-	if err != nil {
-		log.Warn(ctx, "error connecting to a broker", "error", err)
-		return nil, false
-	}
-	return conn, true
 }
 
 func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {

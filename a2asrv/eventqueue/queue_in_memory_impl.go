@@ -17,18 +17,11 @@ package eventqueue
 import (
 	"context"
 	"fmt"
-
-	"github.com/a2aproject/a2a-go/a2a"
 )
-
-type queueMessage struct {
-	event   a2a.Event
-	version a2a.TaskVersion
-}
 
 type broadcast struct {
 	sender     *inMemoryQueue // sender does not receive its own broadcasts
-	payload    *queueMessage
+	payload    *Message
 	dispatched chan struct{} // closed after all registered Queues-s received the broadcast.
 }
 
@@ -99,7 +92,7 @@ func (b *inMemoryEventBroker) connect() (*inMemoryQueue, error) {
 	conn := &inMemoryQueue{
 		broker:     b,
 		closedChan: make(chan struct{}),
-		eventsChan: make(chan *queueMessage, b.queueBufferSize),
+		eventsChan: make(chan *Message, b.queueBufferSize),
 	}
 	select {
 	case <-b.destroyed:
@@ -122,22 +115,18 @@ func (b *inMemoryEventBroker) destroy() {
 type inMemoryQueue struct {
 	broker     *inMemoryEventBroker
 	closedChan chan struct{}
-	eventsChan chan *queueMessage
+	eventsChan chan *Message
 	closed     bool
 }
 
-var _ Queue = (*inMemoryQueue)(nil)
+var _ Reader = (*inMemoryQueue)(nil)
+var _ Writer = (*inMemoryQueue)(nil)
 
-func (q *inMemoryQueue) Write(ctx context.Context, event a2a.Event) error {
-	return q.WriteVersioned(ctx, event, a2a.TaskVersionMissing)
-}
-
-func (q *inMemoryQueue) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
+func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
 	if q.closed {
 		return ErrQueueClosed
 	}
 
-	message := &queueMessage{event: event, version: version}
 	broadcast := &broadcast{sender: q, payload: message, dispatched: make(chan struct{})}
 
 	select {
@@ -159,15 +148,15 @@ func (q *inMemoryQueue) WriteVersioned(ctx context.Context, event a2a.Event, ver
 	return nil
 }
 
-func (q *inMemoryQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+func (q *inMemoryQueue) Read(ctx context.Context) (*Message, error) {
 	select {
 	case <-ctx.Done():
-		return nil, a2a.TaskVersionMissing, ctx.Err()
+		return nil, ctx.Err()
 	case message, ok := <-q.eventsChan: // allow to drain
 		if !ok {
-			return nil, a2a.TaskVersionMissing, ErrQueueClosed
+			return nil, ErrQueueClosed
 		}
-		return message.event, message.version, nil
+		return message, nil
 	}
 }
 

@@ -118,8 +118,8 @@ func (m *localManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subs
 	if !ok {
 		return nil, fmt.Errorf("no active execution")
 	}
-	queue, ok := m.queueManager.Get(ctx, taskID)
-	if !ok {
+	queue, err := m.queueManager.CreateReader(ctx, taskID)
+	if err != nil {
 		return nil, fmt.Errorf("no queue for active execution")
 	}
 	return newLocalSubscription(execution, queue), nil
@@ -141,14 +141,14 @@ func (m *localManager) Execute(ctx context.Context, params *a2a.MessageSendParam
 		return nil, err
 	}
 
-	eventBroadcastQueue, err := m.queueManager.GetOrCreate(ctx, tid)
+	eventBroadcastQueue, err := m.queueManager.CreateWriter(ctx, tid)
 	if err != nil {
 		m.cleanupExecution(ctx, execution)
 		return nil, fmt.Errorf("failed to create a queue: %w", err)
 	}
 
-	defaultSubReadQueue, ok := m.queueManager.Get(ctx, tid)
-	if !ok {
+	defaultSubReadQueue, err := m.queueManager.CreateReader(ctx, tid)
+	if err != nil {
 		m.cleanupExecution(ctx, execution)
 		return nil, fmt.Errorf("failed to create a default subscription event queue: %w", err)
 	}
