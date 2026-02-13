@@ -14,37 +14,81 @@
 
 package a2a
 
-// GetTaskPushConfigParams defines parameters for fetching a specific push notification configuration for a task.
-type GetTaskPushConfigParams struct {
-	// TaskID is the unique identifier of the task.
-	TaskID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// ConfigID is an optional ID of the push notification configuration to retrieve.
-	ConfigID string `json:"pushNotificationConfigId,omitempty" yaml:"pushNotificationConfigId,omitempty" mapstructure:"pushNotificationConfigId,omitempty"`
-}
-
-// ListTaskPushConfigParams defines parameters for listing all push notification configurations associated with a task.
-type ListTaskPushConfigParams struct {
-	// TaskID is the unique identifier of the task.
-	TaskID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-}
-
-// DeleteTaskPushConfigParams defines parameters for deleting a specific push notification configuration for a task.
-type DeleteTaskPushConfigParams struct {
-	// TaskID is the unique identifier of the task.
-	TaskID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// ConfigID is the ID of the push notification configuration to delete.
-	ConfigID string `json:"pushNotificationConfigId" yaml:"pushNotificationConfigId" mapstructure:"pushNotificationConfigId"`
-}
-
 // TaskPushConfig is a container associating a push notification configuration with a specific task.
 type TaskPushConfig struct {
+	// Tenant is the optional tenant associated with this push notification configuration.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
 	// Config is the push notification configuration for this task.
-	Config PushConfig `json:"pushNotificationConfig" yaml:"pushNotificationConfig" mapstructure:"pushNotificationConfig"`
+	Config PushConfig `json:"config" yaml:"config" mapstructure:"config"`
 
 	// TaskID is the ID of the task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// ID is the ID of the push notification configuration.
+	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+// GetTaskPushConfigRequest defines request for fetching a specific push notification configuration for a task.
+type GetTaskPushConfigRequest struct {
+	// Tenant is the tenant of the agent.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// TaskID is the unique identifier of the parent task.
+	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// ConfigID is the ID of the push notification configuration to retrieve.
+	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+// ListTaskPushConfigRequest defines the request for listing all push notification configurations associated with a task.
+type ListTaskPushConfigRequest struct {
+	// Tenant is the tenant of the agent.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// TaskID is the unique identifier of the task.
+	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// PageSize is the maximum number of push notification configurations to return.
+	PageSize int `json:"pageSize,omitempty" yaml:"pageSize,omitempty" mapstructure:"pageSize,omitempty"`
+
+	// PageToken is the token received from the previous ListTaskPushConfigRequest call.
+	PageToken string `json:"pageToken,omitempty" yaml:"pageToken,omitempty" mapstructure:"pageToken,omitempty"`
+}
+
+type ListTaskPushConfigResponse struct {
+	// Configs is a list of push notification configurations for the task.
+	Configs []TaskPushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`
+
+	// NextPageToken is the token to use to retrieve the next page of push notification configurations.
+	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`
+}
+
+// DeleteTaskPushConfigRequest defines parameters for deleting a specific push notification configuration for a task.
+type DeleteTaskPushConfigRequest struct {
+	// Tenant is the tenant of the agent.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// TaskID is the unique identifier of the parent task.
+	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// ConfigID is the ID of the push notification configuration to delete.
+	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+// CreateTaskPushConfigRequest defines request for creating a push notification configuration for a task.
+type CreateTaskPushConfigRequest struct {
+	// Tenant is the optional tenant associated with this push notification configuration.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// Config is the push notification configuration for this task.
+	Config PushConfig `json:"config" yaml:"config" mapstructure:"config"`
+
+	// TaskID is the ID of the task.
+	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// ID is the ID of the push notification configuration.
+	ConfigID string `json:"configId" yaml:"configId" mapstructure:"configId"`
 }
 
 // PushConfig defines the configuration for setting up push notifications for task updates.

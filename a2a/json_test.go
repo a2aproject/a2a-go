@@ -76,8 +76,8 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		"name3": MutualTLSSecurityScheme{Description: "optional"},
 		"name4": HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
 		"name5": OAuth2SecurityScheme{
-			Flows: OAuthFlows{
-				Password: &PasswordOAuthFlow{
+			Flows: NamedOAuthFlows{
+				"flowName1": PasswordOAuthFlow{
 					TokenURL: "url",
 					Scopes:   map[string]string{"email": "read user emails"},
 				},
@@ -86,11 +86,11 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 
 	entriesJSON := []string{
-		`"name1":{"apiKey":{"in":"cookie","name":"abc"}}`,
+		`"name1":{"apiKey":{"location":"cookie","name":"abc"}}`,
 		`"name2":{"openIdConnect":{"openIdConnectUrl":"url"}}`,
 		`"name3":{"mutualTLS":{"description":"optional"}}`,
 		`"name4":{"http":{"bearerFormat":"JWT","scheme":"Bearer"}}`,
-		`"name5":{"oauth2":{"flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}`,
+		`"name5":{"oauth2":{"flows":{"flowName1":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}}`,
 	}
 	wantJSON := fmt.Sprintf("{%s}", strings.Join(entriesJSON, ","))
 

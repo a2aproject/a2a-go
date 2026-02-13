@@ -84,7 +84,8 @@ func TestEventMarshalJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			jsonBytes, err := MarshalEventJSON(tc.event)
+			sr := StreamResponse{Event: tc.event}
+			jsonBytes, err := sr.MarshalJSON()
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -186,13 +187,11 @@ func TestUnmarshalEventJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			event, err := UnmarshalEventJSON([]byte(tc.json))
-			if err != nil {
-				t.Fatalf("UnmarshalEventJSON() failed: %v", err)
-			}
+			var sr StreamResponse
+			mustUnmarshal(t, []byte(tc.json), &sr)
 
 			if tc.checkFunc != nil {
-				tc.checkFunc(t, event)
+				tc.checkFunc(t, sr.Event)
 			}
 		})
 	}
@@ -229,7 +228,8 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := UnmarshalEventJSON([]byte(tc.json))
+			var sr StreamResponse
+			err := sr.UnmarshalJSON([]byte(tc.json))
 			if err == nil {
 				t.Fatal("Expected error, got nil")
 			}
@@ -297,26 +297,18 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			original := tc.event
 			// Marshal
-			jsonBytes, err := MarshalEventJSON(original)
-			if err != nil {
-				t.Fatalf("Marshal() failed: %v", err)
-			}
+			jsonStr := mustMarshal(t, StreamResponse{Event: original})
 
 			// Unmarshal
-			decoded, err := UnmarshalEventJSON(jsonBytes)
-			if err != nil {
-				t.Fatalf("UnmarshalEventJSON() failed: %v", err)
-			}
+			var sr StreamResponse
+			mustUnmarshal(t, []byte(jsonStr), &sr)
 
 			// Marshal again
-			jsonBytes2, err := MarshalEventJSON(decoded)
-			if err != nil {
-				t.Fatalf("Second Marshal() failed: %v", err)
-			}
+			jsonStr2 := mustMarshal(t, StreamResponse{Event: sr.Event})
 
 			// Compare JSON (should be identical)
-			if string(jsonBytes) != string(jsonBytes2) {
-				t.Errorf("Roundtrip failed:\noriginal: %s\ndecoded:  %s", string(jsonBytes), string(jsonBytes2))
+			if jsonStr != jsonStr2 {
+				t.Errorf("Roundtrip failed:\noriginal: %s\ndecoded:  %s", jsonStr, jsonStr2)
 			}
 		})
 	}
