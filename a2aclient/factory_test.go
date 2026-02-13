@@ -42,7 +42,7 @@ func makeEndpoints(protocols []string) []a2a.AgentInterface {
 
 func TestFactory_WithAdditionalOptions(t *testing.T) {
 	f1 := NewFactory(WithConfig(Config{AcceptedOutputModes: []string{"application/json"}}))
-	f2 := WithAdditionalOptions(f1, WithInterceptors(PassthroughInterceptor{}))
+	f2 := WithAdditionalOptions(f1, WithCallInterceptors(PassthroughInterceptor{}))
 
 	if !reflect.DeepEqual(f1.config, f2.config) {
 		t.Fatalf("WithAdditionalOptions() factory.config = %v, want %v", f2.config, f1.config)

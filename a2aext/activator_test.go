@@ -79,10 +79,10 @@ func TestActivator(t *testing.T) {
 
 			gotHeaders := map[string][]string{}
 			captureExecutor := testexecutor.FromFunction(
-				func(ctx context.Context, rc *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+				func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
-						maps.Insert(gotHeaders, rc.ServiceParams.List())
-						event := a2a.NewSubmittedTask(rc, rc.Message)
+						maps.Insert(gotHeaders, ec.ServiceParams.List())
+						event := a2a.NewSubmittedTask(ec, ec.Message)
 						event.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
 						yield(event, nil)
 					}
@@ -94,7 +94,7 @@ func TestActivator(t *testing.T) {
 			client, err := a2aclient.NewFromCard(
 				ctx,
 				agentCard,
-				a2aclient.WithInterceptors(activator),
+				a2aclient.WithCallInterceptors(activator),
 			)
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -108,7 +108,7 @@ func TestActivator(t *testing.T) {
 			}
 
 			var gotExtensions []string
-			if vals, ok := gotHeaders[CallMetaKey]; ok {
+			if vals, ok := gotHeaders[ServiceParamsKey]; ok {
 				gotExtensions = vals
 			}
 			if diff := cmp.Diff(tc.clientSends, gotExtensions); diff != "" {

@@ -21,7 +21,7 @@ If a client is created in multiple places, a [Factory] can be used to share the 
 
 	factory := NewFactory(
 		WithConfig(&a2aclient.Config{...}),
-		WithInterceptors(loggingInterceptor),
+		WithCallInterceptors(loggingInterceptor),
 		WithGRPCTransport(customGRPCOptions)
 	)
 
@@ -36,14 +36,14 @@ using either package-level functions or [Factory] methods.
 	if err != nil {
 		log.Fatalf("Failed to resolve an AgentCard: %v", err)
 	}
-	client, err := a2aclient.NewFromCard(ctx, card, WithInterceptors(&customInterceptor{}))
+	client, err := a2aclient.NewFromCard(ctx, card, WithCallInterceptors(&customInterceptor{}))
 
 An [AuthInterceptor] provides a basic support for attaching credentials listed as security requirements in agent card to requests.
 Credentials retrieval logic is application specific and is not handled by the package.
 
 	// client setup
 	store :=  a2aclient.InMemoryCredentialsStore()
-	interceptors := WithInterceptors(&a2aclient.AuthInterceptor{Service: store})
+	interceptors := WithCallInterceptors(&a2aclient.AuthInterceptor{Service: store})
 	client, err := a2aclient.NewFromCard(ctx, card, interceptors)
 
 	// session setup

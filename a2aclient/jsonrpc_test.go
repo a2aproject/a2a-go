@@ -72,7 +72,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	// Send message
-	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
+	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
 
@@ -106,7 +106,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	result, err := transport.SendMessage(t.Context(), &a2a.MessageSendParams{
+	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
 	})
 
@@ -128,7 +128,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 	}
 }
 
-func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
+func TestJSONRPCTransport_ServiceParamsHeaders(t *testing.T) {
 	wantValues := []string{"bar", "baz"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "tasks/get")
@@ -144,9 +144,7 @@ func TestJSONRPCTransport_CallMetaHeaders(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	ctx := withCallMeta(t.Context(), CallMeta{"foo": wantValues})
-
-	_, err := transport.GetTask(ctx, &a2a.TaskQueryParams{})
+	_, err := transport.GetTask(t.Context(), ServiceParams{"foo": wantValues}, &a2a.TaskQueryParams{})
 	if err != nil {
 		t.Fatalf("GetTask failed: %v", err)
 	}
@@ -166,7 +164,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
@@ -228,7 +226,7 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 		NextPageToken: "test-page-token",
 	}
 
-	tasks, err := transport.ListTasks(t.Context(), &a2a.ListTasksRequest{})
+	tasks, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
 	if err != nil {
 		t.Fatalf("ListTasks failed: %v", err)
 	}
@@ -256,7 +254,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+	_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
@@ -295,7 +293,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	events := []a2a.Event{}
-	for event, err := range transport.SendStreamingMessage(t.Context(), &a2a.MessageSendParams{
+	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test"}),
 	}) {
 		if err != nil {
@@ -375,7 +373,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	transport := NewJSONRPCTransport(server.URL, nil)
 
 	events := []a2a.Event{}
-	for event, err := range transport.ResubscribeToTask(t.Context(), &a2a.TaskIDParams{
+	for event, err := range transport.ResubscribeToTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
 		ID: "task-123",
 	}) {
 		if err != nil {
@@ -413,7 +411,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	got, err := transport.GetAgentCard(t.Context())
+	got, err := transport.GetAgentCard(t.Context(), ServiceParams{})
 
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
@@ -439,7 +437,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	task, err := transport.CancelTask(t.Context(), &a2a.TaskIDParams{
+	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
 		ID: "task-123",
 	})
 
@@ -467,7 +465,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.GetTaskPushConfig(t.Context(), &a2a.GetTaskPushConfigParams{
+		config, err := transport.GetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.GetTaskPushConfigParams{
 			TaskID: "task-123",
 		})
 
@@ -494,7 +492,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		configs, err := transport.ListTaskPushConfig(t.Context(), &a2a.ListTaskPushConfigParams{})
+		configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigParams{})
 
 		if err != nil {
 			t.Fatalf("ListTaskPushConfig failed: %v", err)
@@ -519,7 +517,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.SetTaskPushConfig(t.Context(), &a2a.TaskPushConfig{
+		config, err := transport.SetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.TaskPushConfig{
 			TaskID: "task-123",
 			Config: a2a.PushConfig{
 				ID:  "config-123",
@@ -551,7 +549,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		err := transport.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigParams{
+		err := transport.DeleteTaskPushConfig(t.Context(), ServiceParams{}, &a2a.DeleteTaskPushConfigParams{
 			TaskID: "task-123",
 		})
 
@@ -589,7 +587,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 		t.Errorf("got timeout %v, want 10s", jt.httpClient.Timeout)
 	}
 
-	task, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 
@@ -622,7 +620,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	_, err := transport.GetTask(t.Context(), &a2a.TaskQueryParams{
+	_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
 		ID: "task-123",
 	})
 

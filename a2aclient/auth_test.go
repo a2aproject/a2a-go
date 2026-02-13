@@ -78,7 +78,7 @@ func TestAuth_GRPC(t *testing.T) {
 		ctx,
 		card,
 		withTestGRPCTransport(listener),
-		WithInterceptors(&AuthInterceptor{Service: credStore}),
+		WithCallInterceptors(&AuthInterceptor{Service: credStore}),
 	)
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
@@ -114,7 +114,7 @@ func TestAuthInterceptor(t *testing.T) {
 		sid    SessionID
 		stored []*storedCred
 		card   *a2a.AgentCard
-		want   CallMeta
+		want   ServiceParams
 	}{
 		{
 			name: "http auth",
@@ -130,7 +130,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.HTTPAuthSecurityScheme{},
 				},
 			},
-			want: CallMeta{"Authorization": []string{"Bearer secret"}},
+			want: ServiceParams{"Authorization": []string{"Bearer secret"}},
 		},
 		{
 			name: "ouath2",
@@ -146,7 +146,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.OAuth2SecurityScheme{},
 				},
 			},
-			want: CallMeta{"Authorization": []string{"Bearer secret"}},
+			want: ServiceParams{"Authorization": []string{"Bearer secret"}},
 		},
 		{
 			name: "api key",
@@ -162,7 +162,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: CallMeta{"X-Custom-Auth": []string{"secret"}},
+			want: ServiceParams{"X-Custom-Auth": []string{"secret"}},
 		},
 		{
 			name: "first credential chosen",
@@ -191,7 +191,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test-3"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: CallMeta{"Authorization": []string{"Bearer secret-2"}},
+			want: ServiceParams{"Authorization": []string{"Bearer secret-2"}},
 		},
 		{
 			name: "no session",
@@ -201,7 +201,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 		{
 			name: "different session",
@@ -217,7 +217,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 		{
 			name: "no card",
@@ -227,7 +227,7 @@ func TestAuthInterceptor(t *testing.T) {
 				scheme: toSchemeName("test"),
 				cred:   AuthCredential("secret"),
 			}},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 		{
 			name: "no matching credential",
@@ -243,7 +243,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.OAuth2SecurityScheme{},
 				},
 			},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 		{
 			name: "no security requirements",
@@ -258,7 +258,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.OAuth2SecurityScheme{},
 				},
 			},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 		{
 			name: "no security schemes",
@@ -271,13 +271,13 @@ func TestAuthInterceptor(t *testing.T) {
 			card: &a2a.AgentCard{
 				Security: []a2a.SecurityRequirements{{toSchemeName("test"): []string{}}},
 			},
-			want: CallMeta{},
+			want: ServiceParams{},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			callMeta := CallMeta{}
+			params := ServiceParams{}
 
 			ctx := t.Context()
 			if tc.sid != "" {
@@ -290,13 +290,13 @@ func TestAuthInterceptor(t *testing.T) {
 			}
 
 			interceptor := &AuthInterceptor{Service: credStore}
-			_, _, err := interceptor.Before(ctx, &Request{Meta: callMeta, Card: tc.card})
+			_, _, err := interceptor.Before(ctx, &Request{ServiceParams: params, Card: tc.card})
 			if err != nil {
 				t.Errorf("interceptor.Before() error = %v", err)
 			}
 
-			if diff := cmp.Diff(tc.want, callMeta); diff != "" {
-				t.Errorf("wrong CallMeta (+got,-want) diff = %s", diff)
+			if diff := cmp.Diff(tc.want, params); diff != "" {
+				t.Errorf("wrong ServiceParams (+got,-want) diff = %s", diff)
 			}
 		})
 	}

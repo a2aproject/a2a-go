@@ -80,7 +80,7 @@ func GetMetadata(ctx context.Context) map[string]any {
 }
 
 // NewClientPropagator returns a client interceptor that propagates payload metada header values.
-// The client interceptor needs to be set on a2aclient or client factory using [a2aclient.WithInterceptors] option.
+// The client interceptor needs to be set on a2aclient or client factory using [a2aclient.WithCallInterceptors] option.
 func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallInterceptor {
 	var cfg ClientPropagatorConfig
 	if config != nil {
@@ -102,7 +102,7 @@ func NewClientPropagator(config *ClientPropagatorConfig) a2aclient.CallIntercept
 	if cfg.HeaderPredicate == nil {
 		// Propagate requested extensions.
 		cfg.HeaderPredicate = func(ctx context.Context, card *a2a.AgentCard, key string, val string) bool {
-			if !strings.EqualFold(key, CallMetaKey) {
+			if !strings.EqualFold(key, ServiceParamsKey) {
 				return false
 			}
 			return isExtensionSupported(card, val)
@@ -130,7 +130,7 @@ func NewServerPropagator(config *ServerPropagatorConfig) a2asrv.CallInterceptor 
 	if cfg.HeaderPredicate == nil {
 		// Propagate requested extensions.
 		cfg.HeaderPredicate = func(ctx context.Context, key string) bool {
-			return strings.EqualFold(key, CallMetaKey)
+			return strings.EqualFold(key, ServiceParamsKey)
 		}
 	}
 	return &serverPropagator{ServerPropagatorConfig: cfg}
@@ -196,7 +196,7 @@ func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (
 			if !c.HeaderPredicate(ctx, req.Card, headerName, headerValue) {
 				continue
 			}
-			req.Meta.Append(headerName, headerValue)
+			req.ServiceParams.Append(headerName, headerValue)
 		}
 	}
 
