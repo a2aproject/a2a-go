@@ -43,6 +43,14 @@ func (h *mockHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams)
 	return &a2a.Task{}, nil
 }
 
+func (h *mockHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	h.lastCallContext, _ = CallContextFrom(ctx)
+	if h.resultErr != nil {
+		return nil, h.resultErr
+	}
+	return &a2a.ListTasksResponse{}, nil
+}
+
 func (h *mockHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {

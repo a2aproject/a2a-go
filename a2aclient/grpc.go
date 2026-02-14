@@ -90,6 +90,20 @@ func (c *grpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams)
 	return pbconv.FromProtoTask(pResp)
 }
 
+func (c *grpcTransport) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	pReq, err := pbconv.ToProtoListTasksRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pResp, err := c.client.ListTasks(ctx, pReq)
+	if err != nil {
+		return nil, grpcutil.FromGRPCError(err)
+	}
+
+	return pbconv.FromProtoListTasksResponse(pResp)
+}
+
 func (c *grpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	req, err := pbconv.ToProtoCancelTaskRequest(id)
 	if err != nil {

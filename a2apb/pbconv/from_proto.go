@@ -175,6 +175,25 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Mess
 	return result, nil
 }
 
+func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksResponse, error) {
+	if resp == nil {
+		return nil, nil
+	}
+	tasks := make([]*a2a.Task, len(resp.GetTasks()))
+	for i, pTask := range resp.GetTasks() {
+		task, err := FromProtoTask(pTask)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert task: %w", err)
+		}
+		tasks[i] = task
+	}
+	return &a2a.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     int(resp.GetTotalSize()),
+		NextPageToken: resp.GetNextPageToken(),
+	}, nil
+}
+
 func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.TaskQueryParams, error) {
 	if req == nil {
 		return nil, nil

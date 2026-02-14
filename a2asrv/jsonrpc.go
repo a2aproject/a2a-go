@@ -151,6 +151,8 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	switch req.Method {
 	case jsonrpc.MethodTasksGet:
 		result, err = h.onGetTask(ctx, req.Params)
+	case jsonrpc.MethodTasksList:
+		result, err = h.onListTasks(ctx, req.Params)
 	case jsonrpc.MethodMessageSend:
 		result, err = h.onSendMessage(ctx, req.Params)
 	case jsonrpc.MethodTasksCancel:
@@ -301,6 +303,14 @@ func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a
 		return nil, handleUnmarshalError(err)
 	}
 	return h.handler.OnGetTask(ctx, &query)
+}
+
+func (h *jsonrpcHandler) onListTasks(ctx context.Context, raw json.RawMessage) (*a2a.ListTasksResponse, error) {
+	var req a2a.ListTasksRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return nil, handleUnmarshalError(err)
+	}
+	return h.handler.OnListTasks(ctx, &req)
 }
 
 func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) (*a2a.Task, error) {

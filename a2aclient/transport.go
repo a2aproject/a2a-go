@@ -28,6 +28,9 @@ type Transport interface {
 	// GetTask calls the 'tasks/get' protocol method.
 	GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error)
 
+	// ListTasks calls the 'tasks/list' protocol method.
+	ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+
 	// CancelTask calls the 'tasks/cancel' protocol method.
 	CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error)
 
@@ -79,6 +82,10 @@ type unimplementedTransport struct{}
 var _ Transport = (*unimplementedTransport)(nil)
 
 func (unimplementedTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	return nil, errNotImplemented
+}
+
+func (unimplementedTransport) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	return nil, errNotImplemented
 }
 

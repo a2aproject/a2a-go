@@ -104,6 +104,26 @@ func toProtoSendMessageConfig(config *a2a.MessageSendConfig) (*a2apb.SendMessage
 	return pConf, nil
 }
 
+func ToProtoListTasksRequest(req *a2a.ListTasksRequest) (*a2apb.ListTasksRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+	pReq := &a2apb.ListTasksRequest{
+		ContextId:        req.ContextID,
+		PageSize:         int32(req.PageSize),
+		PageToken:        req.PageToken,
+		HistoryLength:    int32(req.HistoryLength),
+		IncludeArtifacts: req.IncludeArtifacts,
+	}
+	if req.Status != "" {
+		pReq.Status = toProtoTaskState(req.Status)
+	}
+	if req.LastUpdatedAfter != nil {
+		pReq.LastUpdatedTime = timestamppb.New(*req.LastUpdatedAfter)
+	}
+	return pReq, nil
+}
+
 func ToProtoGetTaskRequest(params *a2a.TaskQueryParams) (*a2apb.GetTaskRequest, error) {
 	if params == nil {
 		return nil, nil
