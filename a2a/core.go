@@ -226,7 +226,7 @@ func NewContextID() string {
 	return newUUIDString()
 }
 
-// TastState defines a set of possible task states.
+// TaskState defines a set of possible task states.
 type TaskState string
 
 const (

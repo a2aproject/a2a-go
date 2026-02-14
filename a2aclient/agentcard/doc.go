@@ -23,8 +23,8 @@ A [Resolver] can be created with a custom [http.Client] or package-level Default
 	resolver := agentcard.NewResolver(customClient)
 	card, err := resolver.Resolve(ctx, baseURL)
 
-By default the request is sent for a well-known card location, but custom
-this can be configured by providing [ResolveOption]s.
+By default the request is sent for a well-known card location, but
+this can be customized by providing [ResolveOption]s.
 
 	card, err := resolver.Resolve(
 		ctx,
