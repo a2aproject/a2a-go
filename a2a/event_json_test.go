@@ -33,9 +33,9 @@ func TestEventMarshalJSON(t *testing.T) {
 		{
 			name: "Message",
 			event: &Message{
-				ID:   "msg-123",
-				Role: MessageRoleUser,
-				Parts: ContentParts{{Content: Text("hello")}},
+				ID:    "msg-123",
+				Role:  MessageRoleUser,
+				Parts: ContentParts{NewTextPart("hello")},
 			},
 			wantSubstrings: []string{`"message":`, `"messageId":"msg-123"`},
 		},
@@ -70,7 +70,7 @@ func TestEventMarshalJSON(t *testing.T) {
 				ContextID: "ctx-123",
 				Artifact: &Artifact{
 					ID:    "art-123",
-					Parts: ContentParts{{Content: Text("result")}},
+					Parts: ContentParts{NewTextPart("result")},
 				},
 			},
 			wantSubstrings: []string{`"artifactUpdate":`, `"taskId":"task-123"`},
@@ -251,11 +251,9 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 		{
 			name: "Message",
 			event: &Message{
-				ID:   "msg-123",
-				Role: MessageRoleUser,
-				Parts: ContentParts{
-					{Content: Text("hello")},
-				},
+				ID:    "msg-123",
+				Role:  MessageRoleUser,
+				Parts: ContentParts{NewTextPart("hello")},
 			},
 		},
 		{
@@ -287,7 +285,7 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 				ContextID: "ctx-123",
 				Artifact: &Artifact{
 					ID:    "art-123",
-					Parts: ContentParts{{Content: Text("result")}},
+					Parts: ContentParts{NewTextPart("result")},
 				},
 			},
 		},

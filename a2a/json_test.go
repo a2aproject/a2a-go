@@ -41,8 +41,8 @@ func mustUnmarshal(t *testing.T, data []byte, out any) {
 
 func TestContentPartsJSONCodec(t *testing.T) {
 	parts := ContentParts{
-		{Content: Text("hello, world")},
-		{Content: Data(map[string]any{"foo": "bar"})},
+		NewTextPart("hello, world"),
+		NewDataPart(map[string]any{"foo": "bar"}),
 		{Content: URL("https://cats.com/1.png"), Filename: "foo"},
 		{Content: Raw([]byte{0xFF, 0xFE}), Filename: "foo", MediaType: "image/png"},
 		{Content: Text("42"), Metadata: map[string]any{"foo": "bar"}},
