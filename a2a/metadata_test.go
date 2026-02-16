@@ -29,9 +29,7 @@ func TestMetadataCarrierImplementation(t *testing.T) {
 		{"TaskArtifactUpdateEvent", &TaskArtifactUpdateEvent{}},
 		{"TaskStatusUpdateEvent", &TaskStatusUpdateEvent{}},
 		{"Part", &Part{}},
-		{"TaskIDParams", &TaskIDParams{}},
-		{"TaskQueryParams", &TaskQueryParams{}},
-		{"MessageSendParams", &MessageSendParams{}},
+		{"SendMessageRequest", &SendMessageRequest{}},
 	}
 
 	for _, tc := range tests {

@@ -83,9 +83,13 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
-func MarshalEventJSON(e Event) ([]byte, error) {
+type StreamResponse struct {
+	Event
+}
+
+func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
-	switch v := e.(type) {
+	switch v := sr.Event.(type) {
 	case *Message:
 		m["message"] = v
 	case *Task:
@@ -95,46 +99,47 @@ func MarshalEventJSON(e Event) ([]byte, error) {
 	case *TaskArtifactUpdateEvent:
 		m["artifactUpdate"] = v
 	default:
-		return nil, fmt.Errorf("unknown event type: %T", e)
+		return nil, fmt.Errorf("unknown event type: %T", v)
 	}
 	return json.Marshal(m)
 }
 
 // UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
 // The kind field is used as a discriminator to determine which concrete type to unmarshal into.
-func UnmarshalEventJSON(data []byte) (Event, error) {
+func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
+		return fmt.Errorf("failed to unmarshal event: %w", err)
 	}
-	
+
 	if v, ok := raw["message"]; ok {
 		var msg Message
 		if err := json.Unmarshal(v, &msg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
+			return fmt.Errorf("failed to unmarshal Message event: %w", err)
 		}
-		return &msg, nil
+		sr.Event = &msg
 	} else if v, ok := raw["task"]; ok {
 		var task Task
 		if err := json.Unmarshal(v, &task); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
+			return fmt.Errorf("failed to unmarshal Task event: %w", err)
 		}
-		return &task, nil
+		sr.Event = &task
 	} else if v, ok := raw["statusUpdate"]; ok {
 		var statusUpdate TaskStatusUpdateEvent
 		if err := json.Unmarshal(v, &statusUpdate); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
+			return fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
 		}
-		return &statusUpdate, nil
+		sr.Event = &statusUpdate
 	} else if v, ok := raw["artifactUpdate"]; ok {
 		var artifactUpdate TaskArtifactUpdateEvent
 		if err := json.Unmarshal(v, &artifactUpdate); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
+			return fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
 		}
-		return &artifactUpdate, nil
+		sr.Event = &artifactUpdate
 	} else {
-		return nil, fmt.Errorf("unknown event type: %v", raw)
+		return fmt.Errorf("unknown event type: %v", raw)
 	}
+	return nil
 }
 
 // MessageRole represents a set of possible values that identify the message sender.
@@ -498,10 +503,18 @@ func (j *ContentParts) UnmarshalJSON(b []byte) error {
 // Part is a discriminated union representing a part of a message or artifact, which can
 // be text, a file, or structured data.
 type Part struct {
-	Content   PartContent
-	Filename  string
-	MediaType string
-	Metadata  map[string]any
+	// Types that are valid to be assigned to Content are [Text], [Raw], [Data], [URL].
+	Content PartContent `json:"content" yaml:"content" mapstructure:"content"`
+
+	// Filename is an optional name for the file (e.g., "document.pdf").
+	Filename string `json:"filename,omitempty" yaml:"filename,omitempty" mapstructure:"filename,omitempty"`
+
+	// MediaType is the media type of the part content (e.g. "text/plain", "image/png", "application/json").
+	// This field is available for all part types.
+	MediaType string `json:"mediaType,omitempty" yaml:"mediaType,omitempty" mapstructure:"mediaType,omitempty"`
+
+	// Metadata is the optional metadata associated with this part.
+	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
 type PartContent interface {
@@ -609,45 +622,8 @@ func (p *Part) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
 
-// TaskIDParams defines parameters containing a task ID, used for simple task operations.
-type TaskIDParams struct {
-	// TaskID is the unique identifier of the task.
-	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Metadata is an optional metadata associated with the request.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *TaskIDParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *TaskIDParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-// TaskQueryParams defines parameters for querying a task, with an option to limit history length.
-type TaskQueryParams struct {
-	// HistoryLength is the number of most recent messages from the task's history to retrieve.
-	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
-
-	// ID is the unique identifier of the task.
-	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Metadata is an optional metadata associated with the request.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *TaskQueryParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *TaskQueryParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-// MessageSendConfig defines configuration options for a `message/send` or `message/stream` request.
-type MessageSendConfig struct {
+// SendMessageConfig defines configuration options for a `message/send` or `message/stream` request.
+type SendMessageConfig struct {
 	// AcceptedOutputModes is a list of output MIME types the client is prepared to accept in the response.
 	AcceptedOutputModes []string `json:"acceptedOutputModes,omitempty" yaml:"acceptedOutputModes,omitempty" mapstructure:"acceptedOutputModes,omitempty"`
 
@@ -662,11 +638,14 @@ type MessageSendConfig struct {
 	PushConfig *PushConfig `json:"pushNotificationConfig,omitempty" yaml:"pushNotificationConfig,omitempty" mapstructure:"pushNotificationConfig,omitempty"`
 }
 
-// MessageSendParams defines the parameters for a request to send a message to an agent. This can be used
+// SendMessageRequest defines the request to send a message to an agent. This can be used
 // to create a new task, continue an existing one, or restart a task.
-type MessageSendParams struct {
+type SendMessageRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
 	// Config is an optional configuration for the send request.
-	Config *MessageSendConfig `json:"configuration,omitempty" yaml:"configuration,omitempty" mapstructure:"configuration,omitempty"`
+	Config *SendMessageConfig `json:"configuration,omitempty" yaml:"configuration,omitempty" mapstructure:"configuration,omitempty"`
 
 	// Message is the message object being sent to the agent.
 	Message *Message `json:"message" yaml:"message" mapstructure:"message"`
@@ -675,11 +654,11 @@ type MessageSendParams struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (p *MessageSendParams) Meta() map[string]any {
+func (p *SendMessageRequest) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *MessageSendParams) SetMeta(k string, v any) {
+func (p *SendMessageRequest) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
 
@@ -695,8 +674,23 @@ func newUUIDString() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
+// GetTaskRequest defines the parameters for a request to get a task.
+type GetTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to get.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+
+	// HistoryLength is the number of most recent messages from the task's history to retrieve.
+	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
+}
+
 // ListTasksRequest defines the parameters for a request to list tasks.
 type ListTasksRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
 	// ContextID is the ID of the context to list tasks for.
 	ContextID string `json:"contextId,omitempty" yaml:"contextId,omitempty" mapstructure:"contextId,omitempty"`
 
@@ -713,8 +707,8 @@ type ListTasksRequest struct {
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
-	// LastUpdatedAfter is the time to list tasks updated after.
-	LastUpdatedAfter *time.Time `json:"lastUpdatedAfter,omitempty" yaml:"lastUpdatedAfter,omitempty" mapstructure:"lastUpdatedAfter,omitempty"`
+	// StatusTimestampAfter is the time to list tasks updated after.
+	StatusTimestampAfter *time.Time `json:"statusTimestampAfter,omitempty" yaml:"statusTimestampAfter,omitempty" mapstructure:"statusTimestampAfter,omitempty"`
 
 	// IncludeArtifacts is whether to include artifacts in the response.
 	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
@@ -723,15 +717,38 @@ type ListTasksRequest struct {
 // ListTasksResponse defines the response for a request to tasks/list.
 type ListTasksResponse struct {
 	// Tasks is the list of tasks matching the specified criteria.
-	Tasks []*Task `json:"tasks,omitempty" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
+	Tasks []*Task `json:"tasks" yaml:"tasks" mapstructure:"tasks"`
 
 	// TotalSize is the total number of tasks available (before pagination).
-	TotalSize int `json:"totalSize,omitempty" yaml:"totalSize,omitempty" mapstructure:"totalSize,omitempty"`
+	TotalSize int `json:"totalSize" yaml:"totalSize" mapstructure:"totalSize"`
 
 	// PageSize is the maximum number of tasks returned in the response.
-	PageSize int `json:"pageSize,omitempty" yaml:"pageSize,omitempty" mapstructure:"pageSize,omitempty"`
+	PageSize int `json:"pageSize" yaml:"pageSize" mapstructure:"pageSize"`
 
 	// NextPageToken is the token for retrieving the next page of results.
 	// Empty string if no more results.
-	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`
+	NextPageToken string `json:"nextPageToken" yaml:"nextPageToken" mapstructure:"nextPageToken"`
+}
+
+// CancelTaskRequest represents a request to cancel a task.
+type CancelTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to cancel.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+// SubscribeToTaskRequest represents a request to subscribe to task events.
+type SubscribeToTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to subscribe to.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+type GetExtendedAgentCardRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 }
