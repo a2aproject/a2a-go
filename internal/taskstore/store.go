@@ -196,8 +196,10 @@ func filterTasks(tasks map[a2a.TaskID]*storedTask, userName UserName, req *a2a.L
 		if req.Status != a2a.TaskStateUnspecified && storedTask.task.Status.State != req.Status {
 			continue
 		}
-		if req.LastUpdatedAfter != nil && storedTask.lastUpdated.Before(*req.LastUpdatedAfter) {
-			continue
+		if req.StatusTimestampAfter != nil && storedTask.task.Status.Timestamp != nil {
+			if storedTask.task.Status.Timestamp.Before(*req.StatusTimestampAfter) {
+				continue
+			}
 		}
 
 		filteredTasks = append(filteredTasks, storedTask)

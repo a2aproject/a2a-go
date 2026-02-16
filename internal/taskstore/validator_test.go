@@ -60,7 +60,7 @@ func TestValidateArtifact(t *testing.T) {
 		{artifact: nil, valid: true},
 		{artifact: &a2a.Artifact{}, valid: true},
 		{artifact: &a2a.Artifact{Metadata: invalidMeta}},
-		{artifact: &a2a.Artifact{Parts: a2a.ContentParts{a2a.TextPart{Metadata: invalidMeta}}}},
+		{artifact: &a2a.Artifact{Parts: a2a.ContentParts{{Metadata: invalidMeta}}}},
 	}
 	for i, tc := range testCases {
 		err := validateArtifact(tc.artifact)
@@ -83,7 +83,7 @@ func TestValidateMessage(t *testing.T) {
 		{msg: nil, valid: true},
 		{msg: &a2a.Message{}, valid: true},
 		{msg: &a2a.Message{Metadata: invalidMeta}},
-		{msg: &a2a.Message{Parts: a2a.ContentParts{a2a.DataPart{Metadata: invalidMeta}}}},
+		{msg: &a2a.Message{Parts: a2a.ContentParts{{Metadata: invalidMeta}}}},
 	}
 	for i, tc := range testCases {
 		err := validateMessage(tc.msg)
@@ -105,10 +105,13 @@ func TestValidateParts(t *testing.T) {
 	}{
 		{parts: nil, valid: true},
 		{parts: a2a.ContentParts{}, valid: true},
-		{parts: a2a.ContentParts{a2a.TextPart{}, a2a.DataPart{}, a2a.FilePart{}}, valid: true},
-		{parts: a2a.ContentParts{a2a.TextPart{Metadata: invalidMeta}}},
-		{parts: a2a.ContentParts{a2a.DataPart{Metadata: invalidMeta}}},
-		{parts: a2a.ContentParts{a2a.FilePart{Metadata: invalidMeta}}},
+		{parts: a2a.ContentParts{
+			a2a.NewTextPart("hello"),
+			a2a.NewDataPart(map[string]any{}),
+			a2a.NewFileURLPart("ftp://..."),
+			a2a.NewRawPart([]byte{1, 2, 3}),
+		}, valid: true},
+		{parts: a2a.ContentParts{{Metadata: invalidMeta}}},
 	}
 	for i, tc := range testCases {
 		err := validateParts(tc.parts)
