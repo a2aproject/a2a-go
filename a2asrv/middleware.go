@@ -16,6 +16,9 @@ package a2asrv
 
 import (
 	"context"
+
+	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 type callContextKeyType struct{}
@@ -88,6 +91,16 @@ type CallInterceptor interface {
 
 	// After allows to observe, modify or reject a Response.
 	After(ctx context.Context, callCtx *CallContext, resp *Response) error
+}
+
+// NewTaskStoreAuthenticator returns a taskstore.Authenticator which uses the CallContext to get the user name.
+func NewTaskStoreAuthenticator() taskstore.Authenticator {
+	return func(ctx context.Context) (string, error) {
+		if callCtx, ok := CallContextFrom(ctx); ok {
+			return callCtx.User.Name, nil
+		}
+		return "", a2a.ErrUnauthenticated
+	}
 }
 
 // WithCallInterceptors adds a CallInterceptor which will be applied to all requests and responses.

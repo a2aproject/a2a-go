@@ -36,9 +36,12 @@ type storedTask struct {
 	lastUpdated time.Time
 }
 
+// Authenticator is a function that returns the name of the user who created the task.
+type Authenticator func(context.Context) (string, error)
+
 // InMemoryStoreConfig is a configuration for [InMemory] store.
 type InMemoryStoreConfig struct {
-	Authenticator func(context.Context) (string, error)
+	Authenticator Authenticator
 	TimeProvider  func() time.Time
 }
 
@@ -74,7 +77,7 @@ func NewInMemory(config *InMemoryStoreConfig) *InMemory {
 
 	if m.config.Authenticator == nil {
 		m.config.Authenticator = func(ctx context.Context) (string, error) {
-			return "", fmt.Errorf("unauthenticated")
+			return "", nil
 		}
 	}
 
@@ -88,7 +91,7 @@ func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, err
 
 	userName, err := s.config.Authenticator(ctx)
 	if err != nil {
-		userName = "anonymous"
+		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
 
 	copy, err := utils.DeepCopy(task)
@@ -163,7 +166,7 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 
 func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	userName, err := s.config.Authenticator(ctx)
-	if err != nil {
+	if userName == "" || err != nil {
 		return nil, a2a.ErrUnauthenticated
 	}
 
