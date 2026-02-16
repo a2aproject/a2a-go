@@ -19,6 +19,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -190,7 +191,7 @@ type Message struct {
 }
 
 // NewMessage creates a new message with a random identifier.
-func NewMessage(role MessageRole, parts ...Part) *Message {
+func NewMessage(role MessageRole, parts ...*Part) *Message {
 	return &Message{
 		ID:    NewMessageID(),
 		Role:  role,
@@ -199,7 +200,7 @@ func NewMessage(role MessageRole, parts ...Part) *Message {
 }
 
 // NewMessageForTask creates a new message with a random identifier that references the provided Task.
-func NewMessageForTask(role MessageRole, infoProvider TaskInfoProvider, parts ...Part) *Message {
+func NewMessageForTask(role MessageRole, infoProvider TaskInfoProvider, parts ...*Part) *Message {
 	taskInfo := infoProvider.TaskInfo()
 	return &Message{
 		ID:        NewMessageID(),
@@ -413,7 +414,7 @@ func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
 }
 
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
-func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...*Part) *TaskArtifactUpdateEvent {
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskArtifactUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -426,7 +427,7 @@ func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...Part) *TaskArtifac
 }
 
 // NewArtifactUpdateEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
-func NewArtifactUpdateEvent(infoProvider TaskInfoProvider, id ArtifactID, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactUpdateEvent(infoProvider TaskInfoProvider, id ArtifactID, parts ...*Part) *TaskArtifactUpdateEvent {
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskArtifactUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -485,14 +486,14 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 }
 
 // ContentParts is an array of content parts that form the message body or an artifact.
-type ContentParts []Part
+type ContentParts []*Part
 
 func (j ContentParts) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]Part(j))
+	return json.Marshal([]*Part(j))
 }
 
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
-	var parts []Part
+	var parts []*Part
 	if err := json.Unmarshal(b, &parts); err != nil {
 		return err
 	}
@@ -517,6 +518,58 @@ type Part struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+// NewTextPart creates a Part that contains text.
+func NewTextPart(text string) *Part {
+	return &Part{Content: Text(text)}
+}
+
+// NewRawPart creates a Part that contains raw bytes.
+func NewRawPart(raw []byte) *Part {
+	return &Part{Content: Raw(raw)}
+}
+
+// NewFileURLPart creates a Part that contains a URL.
+func NewFileURLPart(url string) *Part {
+	return &Part{Content: URL(url)}
+}
+
+// NewDataPart creates a Part that contains structured data.
+func NewDataPart(data map[string]any) *Part {
+	return &Part{Content: Data(data)}
+}
+
+// Text is a helper that returns the text content of the part if it is a Text part.
+func (p *Part) Text() string {
+	if v, ok := p.Content.(Text); ok {
+		return string(v)
+	}
+	return ""
+}
+
+// Raw is a helper that returns the raw content of the part if it is a Raw part.
+func (p *Part) Raw() []byte {
+	if v, ok := p.Content.(Raw); ok {
+		return []byte(v)
+	}
+	return nil
+}
+
+// Data is a helper that returns the data content of the part if it is a Data part.
+func (p *Part) Data() map[string]any {
+	if v, ok := p.Content.(Data); ok {
+		return map[string]any(v)
+	}
+	return nil
+}
+
+// URL is a helper that returns the URL content of the part if it is a URL part.
+func (p *Part) URL() URL {
+	if v, ok := p.Content.(URL); ok {
+		return v
+	}
+	return ""
+}
+
 type PartContent interface {
 	isPartContent()
 }
@@ -533,13 +586,16 @@ func init() {
 	gob.Register(URL(""))
 }
 
+// Text represents content of a Part carrying text.
 type Text string
 
-// Make sure serializes to base64 in JSON
+// Raw represents content of a Part carrying raw bytes.
 type Raw []byte
 
+// URL represents content of a Part carrying a URL.
 type URL string
 
+// Data represents content of a Part carrying structured data.
 type Data map[string]any
 
 func (p Part) MarshalJSON() ([]byte, error) {
@@ -563,9 +619,8 @@ func (p Part) MarshalJSON() ([]byte, error) {
 		m["mediaType"] = p.MediaType
 	}
 
-	for k, v := range p.Metadata {
-		m[k] = v
-	}
+	maps.Copy(m, p.Metadata)
+
 	return json.Marshal(m)
 }
 
