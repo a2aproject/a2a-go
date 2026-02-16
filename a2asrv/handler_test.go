@@ -546,9 +546,6 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 	}
 
 	for _, tt := range createTestCases() {
-		if tt.name != "artifact update" {
-			continue
-		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
@@ -585,9 +582,6 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 	}
 
 	for _, tt := range createTestCases() {
-		if tt.name != "" {
-			continue
-		}
 		t.Run(tt.name+" (streaming)", func(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
