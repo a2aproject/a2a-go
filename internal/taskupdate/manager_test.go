@@ -37,7 +37,7 @@ func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
 }
 
 func getText(m *a2a.Message) string {
-	return m.Parts[0].(a2a.TextPart).Text
+	return m.Parts[0].Text()
 }
 
 type testSaver struct {
@@ -65,7 +65,7 @@ func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, p
 func makeTextParts(texts ...string) a2a.ContentParts {
 	result := make(a2a.ContentParts, len(texts))
 	for i, text := range texts {
-		result[i] = a2a.TextPart{Text: text}
+		result[i] = a2a.NewTextPart(text)
 	}
 	return result
 }
@@ -136,8 +136,7 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
 		event := newStatusUpdate(m.lastSaved.Task)
-		textPart := a2a.TextPart{Text: msg}
-		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
+		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(msg))
 
 		versioned, err := m.Process(t.Context(), event)
 		if err != nil {
@@ -295,24 +294,24 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 				{
 					TaskID: tid, ContextID: ctxid,
 					Artifact: &a2a.Artifact{ID: aid, Parts: a2a.ContentParts{
-						a2a.TextPart{Text: "1"},
-						a2a.TextPart{Text: "2"},
+						a2a.NewTextPart("1"),
+						a2a.NewTextPart("2"),
 					}},
 				},
 				{
 					Append: true,
 					TaskID: tid, ContextID: ctxid,
 					Artifact: &a2a.Artifact{ID: aid, Parts: a2a.ContentParts{
-						a2a.FilePart{File: a2a.FileURI{URI: "ftp://..."}},
-						a2a.DataPart{Data: map[string]any{"meta": 42}},
+						a2a.NewFileURLPart(a2a.URL("ftp://..."), ""),
+						a2a.NewDataPart(map[string]any{"meta": 42}),
 					}},
 				},
 			},
 			want: []*a2a.Artifact{{ID: aid, Parts: a2a.ContentParts{
-				a2a.TextPart{Text: "1"},
-				a2a.TextPart{Text: "2"},
-				a2a.FilePart{File: a2a.FileURI{URI: "ftp://..."}},
-				a2a.DataPart{Data: map[string]any{"meta": 42}},
+				a2a.NewTextPart("1"),
+				a2a.NewTextPart("2"),
+				a2a.NewFileURLPart(a2a.URL("ftp://..."), ""),
+				a2a.NewDataPart(map[string]any{"meta": 42}),
 			}}},
 		},
 		{
