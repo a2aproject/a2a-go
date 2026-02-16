@@ -37,7 +37,7 @@ func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
 }
 
 func getText(m *a2a.Message) string {
-	return string(m.Parts[0].Content.(a2a.Text))
+	return m.Parts[0].Text()
 }
 
 type testSaver struct {
