@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -129,12 +128,10 @@ func TestClusterBackend(t *testing.T) {
 			}
 
 			queueCreated := false
-			qm.GetOrCreateFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
-				if tc.createQueueErr != nil {
-					return nil, tc.createQueueErr
-				}
-				queueCreated = true
-				return queue, nil
+			if tc.createQueueErr != nil {
+				qm.SetError(tc.createQueueErr)
+			} else {
+				qm.SetQueue(queue)
 			}
 
 			factory := newStaticFactory(tc.executor, tc.canceler)

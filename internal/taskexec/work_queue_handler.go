@@ -78,7 +78,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		return nil, fmt.Errorf("unknown payload type: %q", payload.Type)
 	}
 
-	queue, err := b.queueManager.GetOrCreate(ctx, payload.TaskID)
+	queue, err := b.queueManager.CreateWriter(ctx, payload.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a queue: %w", err)
 	}

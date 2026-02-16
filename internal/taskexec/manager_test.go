@@ -26,6 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
@@ -122,7 +123,7 @@ type testExecutor struct {
 
 	executeCalled   chan struct{}
 	executeErr      error
-	queue           eventqueue.Queue
+	queue           eventpipe.Writer
 	contextCanceled bool
 	block           chan struct{}
 	emitTask        *a2a.Task
@@ -134,7 +135,7 @@ func newExecutor() *testExecutor {
 	return &testExecutor{executeCalled: make(chan struct{}), testProcessor: &testProcessor{}}
 }
 
-func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) error {
+func (e *testExecutor) Execute(ctx context.Context, queue eventpipe.Writer) error {
 	e.queue = queue
 	close(e.executeCalled)
 
@@ -161,7 +162,7 @@ type testCanceler struct {
 
 	cancelCalled    chan struct{}
 	cancelErr       error
-	queue           eventqueue.Queue
+	queue           eventpipe.Writer
 	contextCanceled bool
 	block           chan struct{}
 	emitTask        *a2a.Task
@@ -173,7 +174,7 @@ func newCanceler() *testCanceler {
 	return &testCanceler{cancelCalled: make(chan struct{}), testProcessor: &testProcessor{}}
 }
 
-func (c *testCanceler) Cancel(ctx context.Context, queue eventqueue.Queue) error {
+func (c *testCanceler) Cancel(ctx context.Context, queue eventpipe.Writer) error {
 	c.queue = queue
 	close(c.cancelCalled)
 

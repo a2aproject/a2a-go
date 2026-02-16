@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"iter"
 	"os"
 	"strconv"
 	"strings"
@@ -25,7 +26,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -43,99 +43,96 @@ func newAgentExecutor(workerID string) *agentExecutor {
 	}
 }
 
-func (a *agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	log.Info(ctx, "agent received task", "task_id", reqCtx.TaskID)
+func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		log.Info(ctx, "agent received task", "task_id", execCtx.TaskID)
 
-	text := reqCtx.Message.Parts[0].(a2a.TextPart).Text
+		text := execCtx.Message.Parts[0].(a2a.TextPart).Text
 
-	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-	countTo := fs.Int("count-to", 0, "number to count to")
-	dieEvery := fs.Int("die-every", 0, "die every N steps")
-	interval := fs.Duration("interval", 1*time.Second, "interval in ms")
+		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+		countTo := fs.Int("count-to", 0, "number to count to")
+		dieEvery := fs.Int("die-every", 0, "die every N steps")
+		interval := fs.Duration("interval", 1*time.Second, "interval in ms")
 
-	if err := fs.Parse(strings.Fields(text)); err != nil {
-		log.Info(ctx, "failed to interpret task", "task_id", reqCtx.TaskID)
+		if err := fs.Parse(strings.Fields(text)); err != nil {
+			log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
+			msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: fmt.Sprintf("failed to interpret task: %v", err)})
+			yield(msg, nil)
+			return
+		}
 
-		return q.Write(
-			ctx,
-			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: fmt.Sprintf("failed to interpret task: %v", err)}),
-		)
-	}
-
-	if *countTo <= 0 {
-		log.Info(ctx, "failed to interpret task", "task_id", reqCtx.TaskID)
-
-		return q.Write(
-			ctx,
-			a2a.NewMessage(
+		if *countTo <= 0 {
+			log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
+			msg := a2a.NewMessage(
 				a2a.MessageRoleAgent,
 				a2a.TextPart{Text: "Hello, world! Use --count-to=N --die-every=M --interval=I to test me."},
-			))
-	}
-
-	start := 1
-	if reqCtx.StoredTask == nil {
-		log.Info(ctx, "task submitted", "task_id", reqCtx.TaskID)
-
-		if err := q.Write(ctx, a2a.NewSubmittedTask(reqCtx, reqCtx.Message)); err != nil {
-			return fmt.Errorf("queue write failed: %w", err)
+			)
+			yield(msg, nil)
+			return
 		}
-	} else if len(reqCtx.StoredTask.Artifacts) > 0 {
-		lastArtifact := reqCtx.StoredTask.Artifacts[len(reqCtx.StoredTask.Artifacts)-1]
-		if len(lastArtifact.Parts) > 0 {
-			lastCount := lastArtifact.Parts[len(lastArtifact.Parts)-1].(a2a.TextPart).Text
-			countPart := strings.Split(lastCount, ": ")[1]
-			if val, err := strconv.Atoi(countPart); err == nil {
-				start = val + 1
+
+		start := 1
+		if execCtx.StoredTask == nil {
+			log.Info(ctx, "task submitted", "task_id", execCtx.TaskID)
+			if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+				return
+			}
+		} else if len(execCtx.StoredTask.Artifacts) > 0 {
+			lastArtifact := execCtx.StoredTask.Artifacts[len(execCtx.StoredTask.Artifacts)-1]
+			if len(lastArtifact.Parts) > 0 {
+				lastCount := lastArtifact.Parts[len(lastArtifact.Parts)-1].(a2a.TextPart).Text
+				countPart := strings.Split(lastCount, ": ")[1]
+				if val, err := strconv.Atoi(countPart); err == nil {
+					start = val + 1
+				}
+
+				log.Info(ctx, "resuming from artifact checkpoint", "task_id", execCtx.TaskID)
+			}
+		}
+
+		log.Info(ctx, "agent starting", "start", start, "countTo", *countTo, "dieEvery", *dieEvery)
+
+		dieMod := *dieEvery
+
+		var artifactID a2a.ArtifactID
+		for i := 0; i+start <= *countTo; i++ {
+			if i > 0 && dieMod > 0 && i%dieMod == 0 {
+				log.Info(ctx, "rebooting...", "iterations", i, "dieEvery", dieMod)
+				a.exitFunc(1)
 			}
 
-			log.Info(ctx, "resuming from artifact checkpoint", "task_id", reqCtx.TaskID)
+			time.Sleep(*interval)
+
+			log.Info(ctx, "counting", "value", i+start)
+
+			chunk := fmt.Sprintf("%s: %d", a.workerID, i+start)
+			var event *a2a.TaskArtifactUpdateEvent
+			if artifactID == "" {
+				event = a2a.NewArtifactEvent(execCtx, a2a.TextPart{Text: chunk})
+			} else {
+				event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.TextPart{Text: chunk})
+			}
+			if !yield(event, nil) {
+				return
+			}
 		}
+
+		taskCompleted := a2a.NewStatusUpdateEvent(
+			execCtx,
+			a2a.TaskStateCompleted,
+			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}),
+		)
+		taskCompleted.Final = true
+		yield(taskCompleted, nil)
 	}
-
-	log.Info(ctx, "agent starting", "start", start, "countTo", *countTo, "dieEvery", *dieEvery)
-
-	dieMod := *dieEvery
-
-	var artifactID a2a.ArtifactID
-	for i := 0; i+start <= *countTo; i++ {
-		if i > 0 && dieMod > 0 && i%dieMod == 0 {
-			log.Info(ctx, "rebooting...", "iterations", i, "dieEvery", dieMod)
-			a.exitFunc(1)
-		}
-
-		time.Sleep(*interval)
-
-		log.Info(ctx, "counting", "value", i+start)
-
-		chunk := fmt.Sprintf("%s: %d", a.workerID, i+start)
-		var event *a2a.TaskArtifactUpdateEvent
-		if artifactID == "" {
-			event = a2a.NewArtifactEvent(reqCtx, a2a.TextPart{Text: chunk})
-		} else {
-			event = a2a.NewArtifactUpdateEvent(reqCtx, artifactID, a2a.TextPart{Text: chunk})
-		}
-		if err := q.Write(ctx, event); err != nil {
-			return err
-		}
-	}
-
-	taskCompleted := a2a.NewStatusUpdateEvent(
-		reqCtx,
-		a2a.TaskStateCompleted,
-		a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}),
-	)
-	taskCompleted.Final = true
-	return q.Write(ctx, taskCompleted)
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	return q.Write(
-		ctx,
-		a2a.NewStatusUpdateEvent(
-			reqCtx,
+func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		yield(a2a.NewStatusUpdateEvent(
+			execCtx,
 			a2a.TaskStateCanceled,
 			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Task cancelled"}),
-		),
-	)
+		), nil)
+	}
 }

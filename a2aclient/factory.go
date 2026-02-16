@@ -206,8 +206,8 @@ func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) Fac
 	})
 }
 
-// WithInterceptors attaches call interceptors to created [Client]s.
-func WithInterceptors(interceptors ...CallInterceptor) FactoryOption {
+// WithCallInterceptors attaches call interceptors to created [Client]s.
+func WithCallInterceptors(interceptors ...CallInterceptor) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
 		f.interceptors = append(f.interceptors, interceptors...)
 	})
@@ -256,7 +256,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 	options := []FactoryOption{
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
-		WithInterceptors(f.interceptors...),
+		WithCallInterceptors(f.interceptors...),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithTransport(k, v))

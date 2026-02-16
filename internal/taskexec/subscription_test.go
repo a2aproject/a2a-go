@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
@@ -141,9 +142,9 @@ func TestRemoteSubscription_Events(t *testing.T) {
 
 			queue := testutil.NewTestEventQueue()
 			events, eventVersions := tc.events, tc.eventVersions
-			queue.ReadFunc = func(context.Context) (a2a.Event, a2a.TaskVersion, error) {
+			queue.ReadFunc = func(context.Context) (*eventqueue.Message, error) {
 				if len(events) == 0 {
-					return nil, a2a.TaskVersionMissing, tc.queueReadErr
+					return nil, tc.queueReadErr
 				}
 				version := a2a.TaskVersionMissing
 				if len(eventVersions) > 0 {
@@ -152,7 +153,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 				}
 				event := events[0]
 				events = events[1:]
-				return event, version, nil
+				return &eventqueue.Message{Event: event, TaskVersion: version}, nil
 			}
 			queueClosed := false
 			queue.CloseFunc = func() error {

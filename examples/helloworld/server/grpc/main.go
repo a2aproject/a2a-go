@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"iter"
 	"log"
 	"net"
 	"net/http"
@@ -25,7 +26,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2agrpc"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
@@ -36,13 +36,15 @@ type agentExecutor struct{}
 
 var _ a2asrv.AgentExecutor = (*agentExecutor)(nil)
 
-func (*agentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello, world!"})
-	return q.Write(ctx, response)
+func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello, world!"})
+		yield(response, nil)
+	}
 }
 
-func (*agentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	return nil
+func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {}
 }
 
 func startGRPCServer(port int, card *a2a.AgentCard) error {

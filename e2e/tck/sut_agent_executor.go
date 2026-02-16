@@ -16,53 +16,48 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"iter"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
 type SUTAgentExecutor struct{}
 
-func (c *SUTAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	task := reqCtx.StoredTask
+func (c *SUTAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		task := execCtx.StoredTask
 
-	if task == nil {
-		event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateSubmitted, nil)
-		if err := q.Write(ctx, event); err != nil {
-			return fmt.Errorf("failed to write state submitted: %w", err)
+		if task == nil {
+			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateSubmitted, nil), nil) {
+				return
+			}
 		}
+		// Short delay to allow tests to see current state
+		time.Sleep(1 * time.Second)
+		if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+			return
+		}
+		time.Sleep(1 * time.Second)
+		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
+		event.Final = true
+		yield(event, nil)
 	}
-	// Short delay to allow tests to see current state
-	time.Sleep(1 * time.Second)
-	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateWorking, nil)
-	if err := q.Write(ctx, event); err != nil {
-		return fmt.Errorf("failed to write state working: %w", err)
-	}
-	time.Sleep(1 * time.Second)
-	event = a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
-	event.Final = true
-	if err := q.Write(ctx, event); err != nil {
-		return fmt.Errorf("failed to write state completed: %w", err)
-	}
-
-	return nil
 }
 
-func (c *SUTAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	task := reqCtx.StoredTask
-	if task == nil {
-		return a2a.ErrTaskNotFound
-	}
+func (c *SUTAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		task := execCtx.StoredTask
+		if task == nil {
+			yield(nil, a2a.ErrTaskNotFound)
+			return
+		}
 
-	event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil)
-	event.Final = true
-	if err := q.Write(ctx, event); err != nil {
-		return fmt.Errorf("failed to write state canceled: %w", err)
+		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil)
+		event.Final = true
+		yield(event, nil)
 	}
-	return nil
 }
 
 func newCustomAgentExecutor() a2asrv.AgentExecutor {

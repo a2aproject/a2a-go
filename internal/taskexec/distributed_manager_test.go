@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -181,8 +180,10 @@ func TestClusterFrontend_Execute(t *testing.T) {
 				return nil
 			}
 			qm := testutil.NewTestQueueManager()
-			qm.GetOrCreateFunc = func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Queue, error) {
-				return queue, tc.getQueueErr
+			if tc.getQueueErr != nil {
+				qm.SetError(tc.getQueueErr)
+			} else {
+				qm.SetQueue(queue)
 			}
 
 			wq := testutil.NewTestWorkQueue()

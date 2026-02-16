@@ -28,13 +28,13 @@ import (
 
 type localSubscription struct {
 	execution *localExecution
-	queue     eventqueue.Queue
+	queue     eventqueue.Reader
 	consumed  bool
 }
 
 var _ Subscription = (*localSubscription)(nil)
 
-func newLocalSubscription(e *localExecution, q eventqueue.Queue) *localSubscription {
+func newLocalSubscription(e *localExecution, q eventqueue.Reader) *localSubscription {
 	return &localSubscription{execution: e, queue: q}
 }
 
@@ -58,7 +58,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 
 		terminalReported := false
 		for {
-			event, _, err := s.queue.Read(ctx)
+			msg, err := s.queue.Read(ctx)
 			if errors.Is(err, eventqueue.ErrQueueClosed) {
 				break
 			}
@@ -66,6 +66,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 				yield(nil, err)
 				return
 			}
+			event := msg.Event
 			terminalReported = taskupdate.IsFinal(event)
 			if !yield(event, nil) {
 				return
@@ -83,13 +84,13 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 type remoteSubscription struct {
 	tid      a2a.TaskID
 	store    TaskStore
-	queue    eventqueue.Queue
+	queue    eventqueue.Reader
 	consumed bool
 }
 
 var _ Subscription = (*remoteSubscription)(nil)
 
-func newRemoteSubscription(queue eventqueue.Queue, store TaskStore, tid a2a.TaskID) *remoteSubscription {
+func newRemoteSubscription(queue eventqueue.Reader, store TaskStore, tid a2a.TaskID) *remoteSubscription {
 	return &remoteSubscription{tid: tid, queue: queue, store: store}
 }
 
@@ -127,19 +128,19 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 		}
 
 		for {
-			event, version, err := s.queue.Read(ctx)
-			if version != a2a.TaskVersionMissing && !version.After(snapshotVersion) {
-				log.Info(ctx, "skipping old event", "event", event, "version", version)
-				continue
-			}
+			msg, err := s.queue.Read(ctx)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
-			if !yield(event, nil) {
+			if msg.TaskVersion != a2a.TaskVersionMissing && !msg.TaskVersion.After(snapshotVersion) {
+				log.Info(ctx, "skipping old event", "event", msg.Event, "version", msg.TaskVersion)
+				continue
+			}
+			if !yield(msg.Event, nil) {
 				return
 			}
-			if taskupdate.IsFinal(event) {
+			if taskupdate.IsFinal(msg.Event) {
 				return
 			}
 		}

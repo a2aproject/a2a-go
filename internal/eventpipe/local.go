@@ -16,7 +16,6 @@ package eventpipe
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -28,6 +27,11 @@ const defaultBufferSize = 1024
 type Reader interface {
 	// Read dequeues an event or blocks if the queue is empty.
 	Read(ctx context.Context) (a2a.Event, error)
+}
+
+type Writer interface {
+	// Write enqueues an event or blocks if the queue is full.
+	Write(ctx context.Context, event a2a.Event) error
 }
 
 type localOptions struct {
@@ -44,8 +48,7 @@ func WithBufferSize(size int) LocalPipeOption {
 
 type Local struct {
 	Reader Reader
-	// TODO(yarolegovich): change to eventqueue.Writer when AgentExecutor interface is updated
-	Writer eventqueue.Queue
+	Writer Writer
 
 	closeWriter func()
 }
@@ -73,7 +76,7 @@ type pipeWriter struct {
 	closeChan chan struct{}
 }
 
-var _ eventqueue.Queue = (*pipeWriter)(nil)
+var _ Writer = (*pipeWriter)(nil)
 
 func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
 	if w.closed.Load() {
@@ -88,18 +91,6 @@ func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func (w *pipeWriter) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
-	return fmt.Errorf("versioned write is not allowed")
-}
-
-func (w *pipeWriter) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
-	return nil, a2a.TaskVersionMissing, fmt.Errorf("only queue write is allowed")
-}
-
-func (w *pipeWriter) Close() error {
-	return fmt.Errorf("only queue write is allowed")
 }
 
 func (w *pipeWriter) close() {

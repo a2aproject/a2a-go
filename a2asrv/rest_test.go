@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -28,7 +29,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
@@ -117,7 +117,7 @@ func TestREST_RequestRouting(t *testing.T) {
 	}
 	reqHandler := NewHandler(
 		&mockAgentExecutor{},
-		WithCallInterceptor(interceptor),
+		WithCallInterceptors(interceptor),
 		WithExtendedAgentCard(&a2a.AgentCard{}),
 	)
 
@@ -218,15 +218,18 @@ func TestREST_Validations(t *testing.T) {
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	mock := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
-			return queue.Write(ctx, &a2a.Message{})
-		},
-		CancelFunc: func(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error {
-			canceledTask := &a2a.Task{
-				ID:     taskID,
-				Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"}), nil)
 			}
-			return queue.Write(ctx, canceledTask)
+		},
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(&a2a.Task{
+					ID:     taskID,
+					Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},
+				}, nil)
+			}
 		},
 	}
 

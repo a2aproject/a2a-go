@@ -63,7 +63,7 @@ func (m *distributedManager) Resubscribe(ctx context.Context, taskID a2a.TaskID)
 	if _, _, err := m.taskStore.Get(ctx, taskID); err != nil {
 		return nil, a2a.ErrTaskNotFound
 	}
-	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
+	queue, err := m.queueManager.CreateReader(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get event queue: %w", err)
 	}
@@ -101,7 +101,7 @@ func (m *distributedManager) Execute(ctx context.Context, params *a2a.MessageSen
 		}
 	}
 
-	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
+	queue, err := m.queueManager.CreateReader(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
@@ -135,7 +135,7 @@ func (m *distributedManager) Cancel(ctx context.Context, params *a2a.TaskIDParam
 		return nil, fmt.Errorf("task in non-cancelable state %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
-	queue, err := m.queueManager.GetOrCreate(ctx, params.ID)
+	queue, err := m.queueManager.CreateReader(ctx, params.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}

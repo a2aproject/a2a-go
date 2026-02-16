@@ -21,42 +21,42 @@ import (
 	"strings"
 )
 
-// RequestMeta holds the metadata associated with a request, like auth headers and signatures.
+// ServiceParams holds the metadata associated with a request, like auth headers and signatures.
 // Custom transport implementations can call WithCallContext to make it accessible during request processing.
-type RequestMeta struct {
+type ServiceParams struct {
 	kv map[string][]string
 }
 
-// NewRequestMeta is a [RequestMeta] constructor function.
-func NewRequestMeta(src map[string][]string) *RequestMeta {
+// NewServiceParams is a [ServiceParams] constructor function.
+func NewServiceParams(src map[string][]string) *ServiceParams {
 	if src == nil {
-		return &RequestMeta{kv: map[string][]string{}}
+		return &ServiceParams{kv: map[string][]string{}}
 	}
 
 	kv := make(map[string][]string, len(src))
 	for k, v := range src {
 		kv[strings.ToLower(k)] = slices.Clone(v)
 	}
-	return &RequestMeta{kv: kv}
+	return &ServiceParams{kv: kv}
 }
 
 // Get performs a case-insensitive lookup of values for the given key.
-func (rm *RequestMeta) Get(key string) ([]string, bool) {
-	if rm == nil {
+func (sp *ServiceParams) Get(key string) ([]string, bool) {
+	if sp == nil {
 		return nil, false
 	}
 
-	val, ok := rm.kv[strings.ToLower(key)]
+	val, ok := sp.kv[strings.ToLower(key)]
 	return val, ok
 }
 
 // List allows to inspect all request meta values.
-func (rm *RequestMeta) List() iter.Seq2[string, []string] {
+func (sp *ServiceParams) List() iter.Seq2[string, []string] {
 	return func(yield func(string, []string) bool) {
-		if rm == nil {
+		if sp == nil {
 			return
 		}
-		for k, v := range rm.kv {
+		for k, v := range sp.kv {
 			if !yield(k, slices.Clone(v)) {
 				return
 			}
@@ -64,16 +64,16 @@ func (rm *RequestMeta) List() iter.Seq2[string, []string] {
 	}
 }
 
-// With allows to create a RequestMeta instance holding the extended set of values.
-func (rm *RequestMeta) With(additional map[string][]string) *RequestMeta {
+// With allows to create a ServiceParams instance holding the extended set of values.
+func (sp *ServiceParams) With(additional map[string][]string) *ServiceParams {
 	if len(additional) == 0 {
-		return rm
+		return sp
 	}
 
-	merged := make(map[string][]string, len(additional)+len(rm.kv))
-	maps.Copy(merged, rm.kv)
+	merged := make(map[string][]string, len(additional)+len(sp.kv))
+	maps.Copy(merged, sp.kv)
 	for k, v := range additional {
 		merged[strings.ToLower(k)] = slices.Clone(v)
 	}
-	return &RequestMeta{kv: merged}
+	return &ServiceParams{kv: merged}
 }

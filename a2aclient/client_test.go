@@ -27,63 +27,63 @@ import (
 )
 
 type testTransport struct {
-	GetTaskFn              func(context.Context, *a2a.TaskQueryParams) (*a2a.Task, error)
-	ListTasksFn            func(context.Context, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
-	CancelTaskFn           func(context.Context, *a2a.TaskIDParams) (*a2a.Task, error)
-	SendMessageFn          func(context.Context, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
-	ResubscribeToTaskFn    func(context.Context, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
-	SendStreamingMessageFn func(context.Context, *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
-	GetTaskPushConfigFn    func(context.Context, *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
-	ListTaskPushConfigFn   func(context.Context, *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
-	SetTaskPushConfigFn    func(context.Context, *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
-	DeleteTaskPushConfigFn func(context.Context, *a2a.DeleteTaskPushConfigParams) error
-	GetAgentCardFn         func(context.Context) (*a2a.AgentCard, error)
+	GetTaskFn              func(context.Context, ServiceParams, *a2a.TaskQueryParams) (*a2a.Task, error)
+	ListTasksFn            func(context.Context, ServiceParams, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	CancelTaskFn           func(context.Context, ServiceParams, *a2a.TaskIDParams) (*a2a.Task, error)
+	SendMessageFn          func(context.Context, ServiceParams, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
+	ResubscribeToTaskFn    func(context.Context, ServiceParams, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
+	SendStreamingMessageFn func(context.Context, ServiceParams, *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
+	GetTaskPushConfigFn    func(context.Context, ServiceParams, *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
+	ListTaskPushConfigFn   func(context.Context, ServiceParams, *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
+	SetTaskPushConfigFn    func(context.Context, ServiceParams, *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
+	DeleteTaskPushConfigFn func(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigParams) error
+	GetAgentCardFn         func(context.Context, ServiceParams) (*a2a.AgentCard, error)
 }
 
 var _ Transport = (*testTransport)(nil)
 
-func (t *testTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return t.GetTaskFn(ctx, query)
+func (t *testTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	return t.GetTaskFn(ctx, params, query)
 }
 
-func (t *testTransport) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	return t.ListTasksFn(ctx, request)
+func (t *testTransport) ListTasks(ctx context.Context, params ServiceParams, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	return t.ListTasksFn(ctx, params, request)
 }
 
-func (t *testTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return t.CancelTaskFn(ctx, id)
+func (t *testTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
+	return t.CancelTaskFn(ctx, params, id)
 }
 
-func (t *testTransport) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	return t.SendMessageFn(ctx, message)
+func (t *testTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	return t.SendMessageFn(ctx, params, message)
 }
 
-func (t *testTransport) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return t.ResubscribeToTaskFn(ctx, id)
+func (t *testTransport) ResubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+	return t.ResubscribeToTaskFn(ctx, params, id)
 }
 
-func (t *testTransport) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	return t.SendStreamingMessageFn(ctx, message)
+func (t *testTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	return t.SendStreamingMessageFn(ctx, params, message)
 }
 
-func (t *testTransport) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return t.GetTaskPushConfigFn(ctx, params)
+func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+	return t.GetTaskPushConfigFn(ctx, sParams, params)
 }
 
-func (t *testTransport) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return t.ListTaskPushConfigFn(ctx, params)
+func (t *testTransport) ListTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+	return t.ListTaskPushConfigFn(ctx, sParams, params)
 }
 
-func (t *testTransport) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return t.SetTaskPushConfigFn(ctx, params)
+func (t *testTransport) SetTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	return t.SetTaskPushConfigFn(ctx, sParams, params)
 }
 
-func (t *testTransport) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	return t.DeleteTaskPushConfigFn(ctx, params)
+func (t *testTransport) DeleteTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.DeleteTaskPushConfigParams) error {
+	return t.DeleteTaskPushConfigFn(ctx, sParams, params)
 }
 
-func (t *testTransport) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return t.GetAgentCardFn(ctx)
+func (t *testTransport) GetAgentCard(ctx context.Context, sParams ServiceParams) (*a2a.AgentCard, error) {
+	return t.GetAgentCardFn(ctx, sParams)
 }
 
 func (t *testTransport) Destroy() error {
@@ -103,18 +103,18 @@ func makeEventSeq2(events []a2a.Event) iter.Seq2[a2a.Event, error] {
 type testInterceptor struct {
 	lastReq  *Request
 	lastResp *Response
-	BeforeFn func(context.Context, *Request) (context.Context, error)
+	BeforeFn func(context.Context, *Request) (context.Context, any, error)
 	AfterFn  func(context.Context, *Response) error
 }
 
 var _ CallInterceptor = (*testInterceptor)(nil)
 
-func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, error) {
+func (ti *testInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	ti.lastReq = req
 	if ti.BeforeFn != nil {
 		return ti.BeforeFn(ctx, req)
 	}
-	return ctx, nil
+	return ctx, nil, nil
 }
 
 func (ti *testInterceptor) After(ctx context.Context, resp *Response) error {
@@ -134,7 +134,7 @@ func TestClient_CallFails(t *testing.T) {
 	wantErr := errors.New("call failed")
 
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			return nil, wantErr
 		},
 	}
@@ -150,17 +150,17 @@ func TestClient_InterceptorModifiesRequest(t *testing.T) {
 	task := &a2a.Task{}
 	var receivedMeta map[string]any
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
-			receivedMeta = tqp.Metadata
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
+			receivedMeta = req.Metadata
 			return task, nil
 		},
 	}
 	metaKey, metaVal := "answer", 42
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
 			typed := r.Payload.(*a2a.TaskQueryParams)
 			typed.Metadata = map[string]any{metaKey: metaVal}
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 
@@ -179,7 +179,7 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 	acceptedModes := []string{"text/plain"}
 	pushConfig := &a2a.PushConfig{URL: "https://push.com", Token: "secret"}
 	transport := &testTransport{
-		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+		SendMessageFn: func(ctx context.Context, sParams ServiceParams, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 			return task, nil
 		},
 	}
@@ -218,7 +218,7 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 	acceptedModes := []string{"text/plain"}
 	pushConfig := &a2a.PushConfig{URL: "https://push.com", Token: "secret"}
 	transport := &testTransport{
-		SendStreamingMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+		SendStreamingMessageFn: func(ctx context.Context, sParams ServiceParams, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) { yield(task, nil) }
 		},
 	}
@@ -245,28 +245,28 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 	}
 }
 
-func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
+func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	ctx := t.Context()
 
-	var receivedCallMeta CallMeta
+	var receivedParams ServiceParams
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
-			receivedCallMeta, _ = CallMetaFrom(ctx)
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
+			receivedParams = params
 			return &a2a.Task{}, nil
 		},
 	}
 
 	k1, v1, k2, v2 := "Authorization", "Basic ABCD", "X-Custom", "test"
 	interceptor1 := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			r.Meta[k1] = []string{v1}
-			return ctx, nil
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			r.ServiceParams[k1] = []string{v1}
+			return ctx, nil, nil
 		},
 	}
 	interceptor2 := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			r.Meta[k2] = []string{v2}
-			return ctx, nil
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			r.ServiceParams[k2] = []string{v2}
+			return ctx, nil, nil
 		},
 	}
 
@@ -274,9 +274,9 @@ func TestClient_InterceptorsAttachCallMeta(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.TaskQueryParams{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantCallMeta := CallMeta{k1: []string{v1}, k2: []string{v2}}
-	if !reflect.DeepEqual(receivedCallMeta, wantCallMeta) {
-		t.Fatalf("client.GetTask() meta = %v, want %v", receivedCallMeta, wantCallMeta)
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}}
+	if !reflect.DeepEqual(receivedParams, wantParams) {
+		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestClient_InterceptorModifiesResponse(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			return task, nil
 		},
 	}
@@ -311,15 +311,15 @@ func TestClient_InterceptorRejectsRequest(t *testing.T) {
 	ctx := t.Context()
 	called := false
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			called = true
 			return &a2a.Task{}, nil
 		},
 	}
 	wantErr := errors.New("failed")
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			return ctx, wantErr
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			return ctx, nil, wantErr
 		},
 	}
 
@@ -336,7 +336,7 @@ func TestClient_InterceptorRejectsResponse(t *testing.T) {
 	ctx := t.Context()
 	called := false
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			called = true
 			return &a2a.Task{}, nil
 		},
@@ -360,7 +360,7 @@ func TestClient_InterceptorRejectsResponse(t *testing.T) {
 func TestClient_InterceptorMethodsDataSharing(t *testing.T) {
 	ctx := t.Context()
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			return &a2a.Task{}, nil
 		},
 	}
@@ -368,8 +368,8 @@ func TestClient_InterceptorMethodsDataSharing(t *testing.T) {
 	val := 42
 	var receivedVal int
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, r *Request) (context.Context, error) {
-			return context.WithValue(ctx, ctxKey{}, val), nil
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			return context.WithValue(ctx, ctxKey{}, val), nil, nil
 		},
 		AfterFn: func(ctx context.Context, r *Response) error {
 			receivedVal = ctx.Value(ctxKey{}).(int)
@@ -392,7 +392,7 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 	want := &a2a.AgentCard{Name: "test", SupportsAuthenticatedExtendedCard: true}
 	extendedCard := &a2a.AgentCard{Name: "test", Description: "secret"}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
 			return extendedCard, nil
 		},
 	}
@@ -415,7 +415,7 @@ func TestClient_PassAgentCardToInterceptorsAfterResolved(t *testing.T) {
 	ctx := t.Context()
 	extendedCard := &a2a.AgentCard{Name: "test", Description: "secret", SupportsAuthenticatedExtendedCard: true}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
 			return extendedCard, nil
 		},
 	}
@@ -466,7 +466,7 @@ func TestClient_FallbackToNonStreamingSend(t *testing.T) {
 	ctx := t.Context()
 	want := a2a.NewMessage(a2a.MessageRoleAgent)
 	transport := &testTransport{
-		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+		SendMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 			return want, nil
 		},
 	}
@@ -493,7 +493,7 @@ func TestClient_InterceptGetTask(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
 	transport := &testTransport{
-		GetTaskFn: func(ctx context.Context, tqp *a2a.TaskQueryParams) (*a2a.Task, error) {
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
 			return task, nil
 		},
 	}
@@ -523,7 +523,7 @@ func TestClient_InterceptListTasks(t *testing.T) {
 	task := &a2a.Task{}
 	response := &a2a.ListTasksResponse{Tasks: []*a2a.Task{task}}
 	transport := &testTransport{
-		ListTasksFn: func(ctx context.Context, tqp *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+		ListTasksFn: func(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 			return response, nil
 		},
 	}
@@ -552,7 +552,7 @@ func TestClient_InterceptCancelTask(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
 	transport := &testTransport{
-		CancelTaskFn: func(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
+		CancelTaskFn: func(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
 			return task, nil
 		},
 	}
@@ -581,7 +581,7 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
 	transport := &testTransport{
-		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+		SendMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 			return task, nil
 		},
 	}
@@ -614,7 +614,7 @@ func TestClient_InterceptResubscribeToTask(t *testing.T) {
 		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 	}
 	transport := &testTransport{
-		ResubscribeToTaskFn: func(ctx context.Context, ti *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+		ResubscribeToTaskFn: func(ctx context.Context, params ServiceParams, ti *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
 			return makeEventSeq2(events)
 		},
 	}
@@ -650,7 +650,7 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		&a2a.TaskStatusUpdateEvent{Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 	}
 	transport := &testTransport{
-		SendStreamingMessageFn: func(ctx context.Context, ti *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+		SendStreamingMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
 			return makeEventSeq2(events)
 		},
 	}
@@ -685,7 +685,7 @@ func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	config := &a2a.TaskPushConfig{}
 	transport := &testTransport{
-		GetTaskPushConfigFn: func(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+		GetTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
 			return config, nil
 		},
 	}
@@ -714,7 +714,7 @@ func TestClient_InterceptListTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	config := &a2a.TaskPushConfig{}
 	transport := &testTransport{
-		ListTaskPushConfigFn: func(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+		ListTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
 			return []*a2a.TaskPushConfig{config}, nil
 		},
 	}
@@ -743,7 +743,7 @@ func TestClient_InterceptSetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	config := &a2a.TaskPushConfig{}
 	transport := &testTransport{
-		SetTaskPushConfigFn: func(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+		SetTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
 			return config, nil
 		},
 	}
@@ -771,7 +771,7 @@ func TestClient_InterceptSetTaskPushConfig(t *testing.T) {
 func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	transport := &testTransport{
-		DeleteTaskPushConfigFn: func(ctx context.Context, dtpcp *a2a.DeleteTaskPushConfigParams) error {
+		DeleteTaskPushConfigFn: func(ctx context.Context, params ServiceParams, dtpcp *a2a.DeleteTaskPushConfigParams) error {
 			return nil
 		},
 	}
@@ -800,7 +800,7 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	ctx := t.Context()
 	card := &a2a.AgentCard{}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context) (*a2a.AgentCard, error) {
+		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
 			return card, nil
 		},
 	}
@@ -823,8 +823,8 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
-	if interceptor.lastReq.Payload != struct{}{} {
-		t.Fatalf("interceptor.Before payload = %v, want struct{}", interceptor.lastReq.Payload)
+	if payload, ok := interceptor.lastReq.Payload.(*struct{}); !ok || payload != nil {
+		t.Fatalf("interceptor.Before payload = %v, want *struct{}", interceptor.lastReq.Payload)
 	}
 	if interceptor.lastResp.Payload != resp {
 		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, resp)
@@ -841,17 +841,17 @@ func TestClient_Intercept_RequestModification(t *testing.T) {
 	}
 	var receivedParams *a2a.MessageSendParams
 	transport := &testTransport{
-		SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-			receivedParams = params
-			message := params.Message.Parts[0].(a2a.TextPart).Text
+		SendMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			receivedParams = req
+			message := req.Message.Parts[0].(a2a.TextPart).Text
 			return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: message}), nil
 		},
 	}
 
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, req *Request) (context.Context, error) {
+		BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) {
 			req.Payload = modifiedParams
-			return ctx, nil
+			return ctx, nil, nil
 		},
 	}
 
@@ -928,7 +928,7 @@ func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			transport := &testTransport{
-				SendMessageFn: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+				SendMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
 					return tt.transportResp, tt.transportErr
 				},
 			}
@@ -952,5 +952,64 @@ func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClient_intercept_EarlyReturn(t *testing.T) {
+	ctx := t.Context()
+	originalQuery := &a2a.TaskQueryParams{ID: "original"}
+	earlyResult := &a2a.Task{ID: "early-cached-result"}
+
+	transport := &testTransport{}
+	interceptor1, interceptor2, interceptor3 := &testInterceptor{}, &testInterceptor{}, &testInterceptor{}
+
+	transportMethodCalled := false
+	transport.GetTaskFn = func(ctx context.Context, params ServiceParams, req *a2a.TaskQueryParams) (*a2a.Task, error) {
+		transportMethodCalled = true
+		return nil, errors.New("transport method should not be called")
+	}
+
+	var callOrder []string
+	interceptor1.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "1-Before")
+		return ctx, nil, nil
+	}
+	interceptor1.AfterFn = func(ctx context.Context, resp *Response) error {
+		callOrder = append(callOrder, "1-After")
+		return nil
+	}
+	//interceptor2 returns early result
+	interceptor2.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "2-Before")
+		return ctx, earlyResult, nil
+	}
+	interceptor2.AfterFn = func(ctx context.Context, resp *Response) error {
+		callOrder = append(callOrder, "2-After")
+		return nil
+	}
+	//interceptor3 should not be called
+	interceptor3.BeforeFn = func(ctx context.Context, req *Request) (context.Context, any, error) {
+		callOrder = append(callOrder, "3-Before")
+		return ctx, nil, nil
+	}
+
+	client := &Client{
+		interceptors: []CallInterceptor{interceptor1, interceptor2, interceptor3},
+		transport:    transport,
+	}
+
+	task, err := client.GetTask(ctx, originalQuery)
+	if err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if task != earlyResult {
+		t.Fatalf("client.GetTask() task = %v, want %v", task, earlyResult)
+	}
+	if transportMethodCalled {
+		t.Fatalf("transport method should not be called")
+	}
+	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
+	if !reflect.DeepEqual(callOrder, wantCallOrder) {
+		t.Fatalf("callOrder = %v, want %v", callOrder, wantCallOrder)
 	}
 }

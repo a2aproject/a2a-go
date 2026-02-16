@@ -289,11 +289,11 @@ func (h *Handler) DeleteTaskPushNotificationConfig(ctx context.Context, req *a2a
 }
 
 func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext) {
-	var reqMeta *a2asrv.RequestMeta
+	var svcParams *a2asrv.ServiceParams
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
-		reqMeta = a2asrv.NewRequestMeta(meta)
+		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.WithCallContext(ctx, reqMeta)
+	return a2asrv.WithCallContext(ctx, svcParams)
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {
