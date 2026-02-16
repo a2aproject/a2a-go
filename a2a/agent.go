@@ -108,10 +108,6 @@ type AgentCard struct {
 	// Skills is the set of skills, or distinct capabilities, that the agent can perform.
 	Skills []AgentSkill `json:"skills" yaml:"skills" mapstructure:"skills"`
 
-	// SupportsAuthenticatedExtendedCard indicates if the agent can provide an extended agent card with additional details
-	// to authenticated users. Defaults to false.
-	SupportsAuthenticatedExtendedCard bool `json:"supportsAuthenticatedExtendedCard,omitempty" yaml:"supportsAuthenticatedExtendedCard,omitempty" mapstructure:"supportsAuthenticatedExtendedCard,omitempty"`
-
 	// Version is the agent's own version number. The format is defined by the provider.
 	Version string `json:"version" yaml:"version" mapstructure:"version"`
 }

@@ -45,7 +45,7 @@ type transportCandidate struct {
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
 // Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST and then gRPC.
-var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil), WithGRPCTransport()}
+var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil) /*, WithGRPCTransport()*/}
 
 // NewFromCard is a client [Client] constructor method which takes an [a2a.AgentCard] as input.
 // It is equivalent to [Factory].CreateFromCard method.
@@ -68,9 +68,12 @@ func NewFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts 
 //
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
-	serverPrefs := make([]a2a.AgentInterface, 1+len(card.AdditionalInterfaces))
-	serverPrefs[0] = a2a.AgentInterface{Transport: card.PreferredTransport, URL: card.URL}
-	copy(serverPrefs[1:], card.AdditionalInterfaces)
+	if len(card.SupportedInterfaces) == 0 {
+		return nil, fmt.Errorf("agent card has no supported interfaces")
+	}
+
+	serverPrefs := make([]a2a.AgentInterface, len(card.SupportedInterfaces))
+	copy(serverPrefs, card.SupportedInterfaces)
 
 	candidates, err := f.selectTransport(serverPrefs)
 	if err != nil {
@@ -152,10 +155,10 @@ func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCa
 	candidates := make([]transportCandidate, 0, len(available))
 
 	for _, opt := range available {
-		if tf, ok := f.transports[opt.Transport]; ok {
+		if tf, ok := f.transports[a2a.TransportProtocol(opt.ProtocolBinding)]; ok {
 			priority := len(f.config.PreferredTransports)
 			for i, clientPref := range f.config.PreferredTransports {
-				if clientPref == opt.Transport {
+				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
 					priority = i
 					break
 				}
@@ -167,7 +170,7 @@ func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCa
 	if len(candidates) == 0 {
 		protocols := make([]string, len(available))
 		for i, a := range available {
-			protocols[i] = string(a.Transport)
+			protocols[i] = string(a.ProtocolBinding)
 		}
 		return nil, fmt.Errorf("no compatible transports found: available transports - [%s]", strings.Join(protocols, ","))
 	}
