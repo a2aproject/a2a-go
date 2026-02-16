@@ -50,10 +50,9 @@ type AgentCard struct {
 	// URLs.
 	//
 	// Best practices:
-	// - SHOULD include all supported transports for completeness
-	// - SHOULD include an entry matching the main 'url' and 'preferredTransport'
-	// - MAY reuse URLs if multiple transports are available at the same endpoint
+	// - MUST include all supported transports for completeness
 	// - MUST accurately declare the transport available at each URL
+	// - MAY reuse URLs if multiple transports are available at the same endpoint
 	//
 	// Clients can select any interface from this list based on their transport capabilities
 	// and preferences. This enables transport negotiation and fallback scenarios.
@@ -83,14 +82,6 @@ type AgentCard struct {
 	// Name is a human-readable name for the agent.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 
-	// PreferredTransport is the transport protocol for the preferred endpoint (the main 'url' field).
-	// If not specified, defaults to 'JSONRPC'.
-	//
-	// IMPORTANT: The transport specified here MUST be available at the main 'url'.
-	// This creates a binding between the main URL and its supported transport protocol.
-	// Clients should prefer this transport and URL combination when both are supported.
-	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
-
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
@@ -105,7 +96,7 @@ type AgentCard struct {
 	//		{"oauth2": SecuritySchemeScopes{"read"}},
 	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
 	// }
-	Security []SecurityRequirement `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	SecurityRequirements []SecurityRequirement `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
@@ -165,13 +156,13 @@ type AgentInterface struct {
 
 	// ProtocolBinding is the protocol binding supported at this URL.
 	// This is an open form string, to be easily extended for other protocol bindings.
-	ProtocolBinding string `json:"protocolBinding" yaml:"protocolBinding" mapstructure:"protocolBinding"`
+	ProtocolBinding TransportProtocol `json:"protocolBinding" yaml:"protocolBinding" mapstructure:"protocolBinding"`
 
 	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
 	// ProtocolVersion is the version of the A2A protocol this interface exposes.
-	ProtocolVersion string `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
+	ProtocolVersion ProtocolVersion `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
 }
 
 // AgentProvider represents the service provider of an agent.
