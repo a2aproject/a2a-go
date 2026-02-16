@@ -86,6 +86,7 @@ func (*TaskArtifactUpdateEvent) isEvent() {}
 type StreamResponse struct {
 	Event
 }
+
 func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	switch v := sr.Event.(type) {
@@ -103,7 +104,6 @@ func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-
 // UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
 // The kind field is used as a discriminator to determine which concrete type to unmarshal into.
 func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
@@ -111,7 +111,7 @@ func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("failed to unmarshal event: %w", err)
 	}
-	
+
 	if v, ok := raw["message"]; ok {
 		var msg Message
 		if err := json.Unmarshal(v, &msg); err != nil {
@@ -503,16 +503,11 @@ func (j *ContentParts) UnmarshalJSON(b []byte) error {
 // Part is a discriminated union representing a part of a message or artifact, which can
 // be text, a file, or structured data.
 type Part struct {
-	// Types that are valid to be assigned to Content:
-	//
-	// Text
-	// Raw
-	// Data
-	// URL
-	Content   PartContent `json:"content" yaml:"content" mapstructure:"content"`
+	// Types that are valid to be assigned to Content are [Text], [Raw], [Data], [URL].
+	Content PartContent `json:"content" yaml:"content" mapstructure:"content"`
 
 	// Filename is an optional name for the file (e.g., "document.pdf").
-	Filename  string `json:"filename,omitempty" yaml:"filename,omitempty" mapstructure:"filename,omitempty"`
+	Filename string `json:"filename,omitempty" yaml:"filename,omitempty" mapstructure:"filename,omitempty"`
 
 	// MediaType is the media type of the part content (e.g. "text/plain", "image/png", "application/json").
 	// This field is available for all part types.

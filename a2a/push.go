@@ -26,7 +26,7 @@ type TaskPushConfig struct {
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
 
 	// ID is the ID of the push notification configuration.
-	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+	ID string `json:"id" yaml:"id" mapstructure:"id"`
 }
 
 // GetTaskPushConfigRequest defines request for fetching a specific push notification configuration for a task.
@@ -37,8 +37,8 @@ type GetTaskPushConfigRequest struct {
 	// TaskID is the unique identifier of the parent task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
 
-	// ConfigID is the ID of the push notification configuration to retrieve.
-	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+	// ID is the ID of the push notification configuration to retrieve.
+	ID string `json:"id" yaml:"id" mapstructure:"id"`
 }
 
 // ListTaskPushConfigRequest defines the request for listing all push notification configurations associated with a task.
@@ -72,8 +72,8 @@ type DeleteTaskPushConfigRequest struct {
 	// TaskID is the unique identifier of the parent task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
 
-	// ConfigID is the ID of the push notification configuration to delete.
-	ConfigID string `json:"id" yaml:"id" mapstructure:"id"`
+	// ID is the ID of the push notification configuration to delete.
+	ID string `json:"id" yaml:"id" mapstructure:"id"`
 }
 
 // CreateTaskPushConfigRequest defines request for creating a push notification configuration for a task.

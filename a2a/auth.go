@@ -54,7 +54,6 @@ func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
@@ -136,19 +135,19 @@ type APIKeySecurityScheme struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
 	// The location of the API key. Valid values are "query", "header", or "cookie".
-	In APIKeySecuritySchemeIn `json:"location" yaml:"location" mapstructure:"location"`
+	Location APIKeySecuritySchemeLocation `json:"location" yaml:"location" mapstructure:"location"`
 
 	// The name of the header, query, or cookie parameter to be used.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 }
 
-// APIKeySecuritySchemeIn defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
-type APIKeySecuritySchemeIn string
+// APIKeySecuritySchemeLocation defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
+type APIKeySecuritySchemeLocation string
 
 const (
-	APIKeySecuritySchemeInCookie APIKeySecuritySchemeIn = "cookie"
-	APIKeySecuritySchemeInHeader APIKeySecuritySchemeIn = "header"
-	APIKeySecuritySchemeInQuery  APIKeySecuritySchemeIn = "query"
+	APIKeySecuritySchemeLocationCookie APIKeySecuritySchemeLocation = "cookie"
+	APIKeySecuritySchemeLocationHeader APIKeySecuritySchemeLocation = "header"
+	APIKeySecuritySchemeLocationQuery  APIKeySecuritySchemeLocation = "query"
 )
 
 // HTTPAuthSecurityScheme defines a security scheme using HTTP authentication.
@@ -199,9 +198,9 @@ type OAuthFlowName string
 const (
 	AuthorizationCodeOAuthFlowName OAuthFlowName = "authorizationCode"
 	ClientCredentialsOAuthFlowName OAuthFlowName = "clientCredentials"
-	ImplicitOAuthFlowName        OAuthFlowName = "implicit"
-	PasswordOAuthFlowName        OAuthFlowName = "password"
-	DeviceCodeOAuthFlowName      OAuthFlowName = "deviceCode"
+	ImplicitOAuthFlowName          OAuthFlowName = "implicit"
+	PasswordOAuthFlowName          OAuthFlowName = "password"
+	DeviceCodeOAuthFlowName        OAuthFlowName = "deviceCode"
 )
 
 type NamedOAuthFlows map[OAuthFlowName]OAuthFlows
@@ -234,7 +233,7 @@ func (s *NamedOAuthFlows) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &flows); err != nil {
 		return err
 	}
-	
+
 	result := make(map[OAuthFlowName]OAuthFlows, len(flows))
 	for name, rawMessage := range flows {
 		var raw map[string]json.RawMessage
@@ -290,9 +289,9 @@ type OAuthFlows interface {
 
 func (AuthorizationCodeOAuthFlow) isOAuthFlows_Flow() {}
 func (ClientCredentialsOAuthFlow) isOAuthFlows_Flow() {}
-func (ImplicitOAuthFlow) isOAuthFlows_Flow() {}
-func (PasswordOAuthFlow) isOAuthFlows_Flow() {}
-func (DeviceCodeOAuthFlow) isOAuthFlows_Flow() {}
+func (ImplicitOAuthFlow) isOAuthFlows_Flow()          {}
+func (PasswordOAuthFlow) isOAuthFlows_Flow()          {}
+func (DeviceCodeOAuthFlow) isOAuthFlows_Flow()        {}
 
 func init() {
 	gob.Register(AuthorizationCodeOAuthFlow{})
@@ -301,7 +300,6 @@ func init() {
 	gob.Register(PasswordOAuthFlow{})
 	gob.Register(DeviceCodeOAuthFlow{})
 }
-
 
 // AuthorizationCodeOAuthFlow defines configuration details for the OAuth 2.0 Authorization Code flow.
 type AuthorizationCodeOAuthFlow struct {
@@ -320,9 +318,9 @@ type AuthorizationCodeOAuthFlow struct {
 	// TokenURL is the URL to be used for this flow. This MUST be a URL and use TLS.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 
-	// PkceRequired is an optional boolean indicating whether PKCE is required for this flow.
+	// PKCERequired is an optional boolean indicating whether PKCE is required for this flow.
 	// PKCE should always be used for public clients and is recommended for all clients.
-	PkceRequired bool `json:"pkceRequired,omitempty" yaml:"pkceRequired,omitempty" mapstructure:"pkceRequired,omitempty"`
+	PKCERequired bool `json:"pkceRequired,omitempty" yaml:"pkceRequired,omitempty" mapstructure:"pkceRequired,omitempty"`
 }
 
 // ClientCredentialsOAuthFlow defines configuration details for the OAuth 2.0 Client Credentials flow.

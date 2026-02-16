@@ -20,7 +20,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
 	// "github.com/google/go-cmp/cmp"
 )
 
@@ -71,7 +70,7 @@ func TestContentPartsJSONCodec(t *testing.T) {
 
 func TestSecuritySchemeJSONCodec(t *testing.T) {
 	schemes := NamedSecuritySchemes{
-		"name1": APIKeySecurityScheme{Name: "abc", In: APIKeySecuritySchemeInCookie},
+		"name1": APIKeySecurityScheme{Name: "abc", Location: APIKeySecuritySchemeLocationCookie},
 		"name2": OpenIDConnectSecurityScheme{OpenIDConnectURL: "url"},
 		"name3": MutualTLSSecurityScheme{Description: "optional"},
 		"name4": HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
@@ -107,7 +106,6 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		t.Fatalf("Decoding back failed:\nwant %v\ngot: %s", decodedJSON, decodedBack)
 	}
 }
-
 
 // func TestAgentCardParsing(t *testing.T) {
 // 	cardJSON := `
