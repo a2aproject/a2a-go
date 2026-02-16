@@ -96,7 +96,7 @@ type AgentCard struct {
 	//		{"oauth2": SecuritySchemeScopes{"read"}},
 	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
 	// }
-	SecurityRequirements []SecurityRequirement `json:"securityRequirements,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	SecurityRequirements []SecurityRequirement `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
