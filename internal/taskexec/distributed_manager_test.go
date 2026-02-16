@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -56,11 +57,11 @@ func TestClusterFrontend_GetExecution(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*taskstore.StoredTask, error) {
 				if tc.getTaskErr != nil {
-					return nil, a2a.TaskVersionMissing, tc.getTaskErr
+					return nil, tc.getTaskErr
 				}
-				return store.Mem.Get(ctx, tid)
+				return store.InMemory.Get(ctx, tid)
 			}
 
 			frontend := NewDistributedManager(&DistributedManagerConfig{
@@ -166,11 +167,11 @@ func TestClusterFrontend_Execute(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed, terminalStateTaskSeed)
-			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+			store.GetFunc = func(ctx context.Context, tid a2a.TaskID) (*taskstore.StoredTask, error) {
 				if tc.getTaskErr != nil {
-					return nil, a2a.TaskVersionMissing, tc.getTaskErr
+					return nil, tc.getTaskErr
 				}
-				return store.Mem.Get(ctx, tid)
+				return store.InMemory.Get(ctx, tid)
 			}
 
 			queue := testutil.NewTestEventQueue()
@@ -307,16 +308,16 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 
 			store := testutil.NewTestTaskStore()
 			getResults := tc.getTaskResults
-			store.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+			store.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 				if len(getResults) == 0 && tc.getTaskErr != nil {
-					return nil, a2a.TaskVersionMissing, tc.getTaskErr
+					return nil, tc.getTaskErr
 				}
 				if len(getResults) == 0 {
-					return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
+					return nil, a2a.ErrTaskNotFound
 				}
 				result := getResults[0]
 				getResults = getResults[1:]
-				return result, a2a.TaskVersionMissing, nil
+				return &taskstore.StoredTask{Task: result}, nil
 			}
 
 			wq := testutil.NewTestWorkQueue()

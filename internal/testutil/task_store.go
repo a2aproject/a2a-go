@@ -19,43 +19,55 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 // TestTaskStore is a mock of TaskStore
 type TestTaskStore struct {
-	*taskstore.Mem
+	*taskstore.InMemory
 
-	SaveFunc func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error)
-	GetFunc  func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
+	CreateFunc func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error)
+	UpdateFunc func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error)
+	GetFunc    func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error)
 }
 
-func (m *TestTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
-	if m.SaveFunc != nil {
-		return m.SaveFunc(ctx, task, event, version)
+func (m *TestTaskStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+	if m.CreateFunc != nil {
+		return m.CreateFunc(ctx, task)
 	}
-	return m.Mem.Save(ctx, task, event, version)
+	return m.InMemory.Create(ctx, task)
 }
 
-func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+func (m *TestTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, req)
+	}
+	return m.InMemory.Update(ctx, req)
+}
+
+func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 	if m.GetFunc != nil {
 		return m.GetFunc(ctx, taskID)
 	}
-	return m.Mem.Get(ctx, taskID)
+	return m.InMemory.Get(ctx, taskID)
 }
 
 // SetSaveError overrides Save execution with given error
 func (m *TestTaskStore) SetSaveError(err error) *TestTaskStore {
-	m.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
-		return version, err
+	m.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, err
 	}
+	m.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, err
+	}
+
 	return m
 }
 
 // SetGetOverride overrides Get execution
-func (m *TestTaskStore) SetGetOverride(task *a2a.Task, version a2a.TaskVersion, err error) *TestTaskStore {
-	m.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
-		return task, version, err
+func (m *TestTaskStore) SetGetOverride(task *taskstore.StoredTask, err error) *TestTaskStore {
+	m.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+		return task, err
 	}
 	return m
 }
@@ -66,7 +78,7 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	ctx := t.Context()
 
 	for _, task := range tasks {
-		_, err := m.Save(ctx, task, nil, a2a.TaskVersionMissing)
+		_, err := m.Create(ctx, task)
 		if err != nil {
 			t.Errorf("failed to save task: %v", err)
 		}
@@ -74,10 +86,15 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	return m
 }
 
-// NewTestTaskStore allows to mock execution of task store operations.
-// Without any overrides it defaults to in memory implementation.
-func NewTestTaskStore(opts ...taskstore.Option) *TestTaskStore {
+// NewTestTaskStore invokes NewTestTaskStoreWithConfig with nil to use the default config.
+func NewTestTaskStore() *TestTaskStore {
+	return NewTestTaskStoreWithConfig(nil)
+}
+
+// NewTestTaskStoreWithConfig allows to mock execution of task store operations.
+// Without any overrides it defaults to in memory implementation with given config.
+func NewTestTaskStoreWithConfig(config *taskstore.InMemoryStoreConfig) *TestTaskStore {
 	return &TestTaskStore{
-		Mem: taskstore.NewMem(opts...),
+		InMemory: taskstore.NewInMemory(config),
 	}
 }
