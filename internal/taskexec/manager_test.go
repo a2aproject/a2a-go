@@ -25,6 +25,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/internal/testutil"
@@ -280,7 +281,7 @@ func (q *testWorkQueue) Close() error {
 	return nil
 }
 
-func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore TaskStore) Manager {
+func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore taskstore.Store) Manager {
 	config := &DistributedManagerConfig{
 		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}, nil),
 		QueueManager: eventqueue.NewInMemoryManager(),

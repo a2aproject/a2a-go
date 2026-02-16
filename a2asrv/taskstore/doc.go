@@ -12,5 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package taskstore provides types and utilities for storing [a2a.Task] snapshots.
+// Package taskstore provides the contract and in-memory implementation of [a2a.Task] storage.
 package taskstore

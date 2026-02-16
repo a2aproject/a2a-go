@@ -22,6 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/log"
@@ -33,7 +34,7 @@ type DistributedManagerConfig struct {
 	WorkQueue         workqueue.Queue
 	QueueManager      eventqueue.Manager
 	Factory           Factory
-	TaskStore         TaskStore
+	TaskStore         taskstore.Store
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Logger            *slog.Logger
 	PanicHandler      PanicHandlerFn
@@ -43,7 +44,7 @@ type distributedManager struct {
 	workHandler  *workQueueHandler
 	workQueue    workqueue.Queue
 	queueManager eventqueue.Manager
-	taskStore    TaskStore
+	taskStore    taskstore.Store
 }
 
 var _ Manager = (*distributedManager)(nil)
@@ -60,7 +61,7 @@ func NewDistributedManager(cfg *DistributedManagerConfig) Manager {
 }
 
 func (m *distributedManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error) {
-	if _, _, err := m.taskStore.Get(ctx, taskID); err != nil {
+	if _, err := m.taskStore.Get(ctx, taskID); err != nil {
 		return nil, a2a.ErrTaskNotFound
 	}
 	queue, err := m.queueManager.CreateReader(ctx, taskID)
@@ -84,10 +85,11 @@ func (m *distributedManager) Execute(ctx context.Context, params *a2a.MessageSen
 
 	msg := params.Message
 	if msg.TaskID != "" {
-		storedTask, _, err := m.taskStore.Get(ctx, msg.TaskID)
+		taskStoreTask, err := m.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("task loading failed: %w", err)
 		}
+		storedTask := taskStoreTask.Task
 		if storedTask == nil {
 			return nil, a2a.ErrTaskNotFound
 		}
@@ -122,11 +124,12 @@ func (m *distributedManager) Execute(ctx context.Context, params *a2a.MessageSen
 }
 
 func (m *distributedManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
-	task, _, err := m.taskStore.Get(ctx, params.ID)
+	storedTask, err := m.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load a task: %w", err)
 	}
 
+	task := storedTask.Task
 	if task.Status.State == a2a.TaskStateCanceled {
 		return task, nil
 	}
@@ -163,11 +166,11 @@ func (m *distributedManager) Cancel(ctx context.Context, params *a2a.TaskIDParam
 		}
 	}
 	if cancelationResult == nil && cancelationErr != nil {
-		task, _, err := m.taskStore.Get(ctx, params.ID)
+		storedTask, err := m.taskStore.Get(ctx, params.ID)
 		if err != nil {
 			cancelationErr = err
 		} else {
-			cancelationResult = task
+			cancelationResult = storedTask.Task
 		}
 	}
 	return convertToCancelationResult(ctx, cancelationResult, cancelationErr)

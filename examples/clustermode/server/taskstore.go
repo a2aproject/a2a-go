@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/google/uuid"
 )
 
@@ -35,32 +35,57 @@ func newDBTaskStore(db *sql.DB, version a2a.ProtocolVersion) *dbTaskStore {
 	return &dbTaskStore{db: db, version: version}
 }
 
-var _ a2asrv.TaskStore = (*dbTaskStore)(nil)
+var _ taskstore.Store = (*dbTaskStore)(nil)
 
-func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *dbTaskStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return a2a.TaskVersionMissing, err
+		return taskstore.TaskVersionMissing, err
 	}
 	defer rollbackTx(ctx, tx)
 
 	newVersion := time.Now().UnixNano()
+
 	taskJSON, err := json.Marshal(task)
 	if err != nil {
-		return a2a.TaskVersionMissing, fmt.Errorf("failed to marshal task: %w", err)
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to marshal task: %w", err)
 	}
 
-	if prevVersion == a2a.TaskVersionMissing {
-		_, err := tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 			INSERT INTO task (id, state, last_updated, task_json, protocol_version)
 			VALUES (?, ?, ?, ?, ?)
 		`, task.ID, task.Status.State, newVersion, string(taskJSON), s.version)
 
-		if err != nil {
-			return a2a.TaskVersionMissing, fmt.Errorf("failed to insert task: %w", err)
-		}
-	} else {
-		res, err := tx.ExecContext(ctx, `
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to insert task: %w", err)
+	}
+
+	if err := s.insertEvent(ctx, tx, task.ID, taskstore.TaskVersion(newVersion), task); err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+
+	return taskstore.TaskVersion(newVersion), nil
+}
+
+func (s *dbTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+	defer rollbackTx(ctx, tx)
+
+	task, prevVersion := req.Task, req.PrevVersion
+	newVersion := time.Now().UnixNano()
+	taskJSON, err := json.Marshal(task)
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to marshal task: %w", err)
+	}
+
+	res, err := tx.ExecContext(ctx, `
 			UPDATE task SET
 				state = ?,
 				last_updated = ?,
@@ -68,57 +93,67 @@ func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event,
 			WHERE id = ? AND last_updated = ?
 		`, task.Status.State, newVersion, string(taskJSON), task.ID, int64(prevVersion))
 
-		if err != nil {
-			return a2a.TaskVersionMissing, fmt.Errorf("failed to update task: %w", err)
-		}
-
-		rows, err := res.RowsAffected()
-		if err != nil {
-			return a2a.TaskVersionMissing, fmt.Errorf("failed to get rows affected: %w", err)
-		}
-		if rows == 0 {
-			return a2a.TaskVersionMissing, fmt.Errorf("optimistic concurrency failure: task updated by another transaction")
-		}
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to update task: %w", err)
 	}
 
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return taskstore.TaskVersionMissing, fmt.Errorf("optimistic concurrency failure: task updated by another transaction")
+	}
+
+	if err := s.insertEvent(ctx, tx, task.ID, taskstore.TaskVersion(newVersion), req.Event); err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to insert event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+
+	return taskstore.TaskVersion(newVersion), nil
+}
+
+func (s *dbTaskStore) insertEvent(ctx context.Context, tx *sql.Tx, taskID a2a.TaskID, version taskstore.TaskVersion, event a2a.Event) error {
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
-		return a2a.TaskVersionMissing, fmt.Errorf("failed to marshal event: %w", err)
+		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
 	eventID, eventType := uuid.Must(uuid.NewV7()).String(), getEventType(event)
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO task_event (id, task_id, type, task_version, event_json)
 		VALUES (?, ?, ?, ?, ?)
-	`, eventID, task.ID, eventType, newVersion, string(eventJSON))
+	`, eventID, taskID, eventType, version, string(eventJSON))
 	if err != nil {
-		return a2a.TaskVersionMissing, fmt.Errorf("failed to insert event: %w", err)
+		return fmt.Errorf("failed to insert event: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return a2a.TaskVersionMissing, err
-	}
-
-	return a2a.TaskVersion(newVersion), nil
+	return nil
 }
 
-func (s *dbTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+func (s *dbTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 	var taskJSON string
 	var version int64
 	err := s.db.QueryRowContext(ctx, "SELECT task_json, last_updated FROM task WHERE id = ?", taskID).Scan(&taskJSON, &version)
 	if err == sql.ErrNoRows {
-		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
+		return nil, a2a.ErrTaskNotFound
 	}
 	if err != nil {
-		return nil, a2a.TaskVersionMissing, err
+		return nil, err
 	}
 
 	var task a2a.Task
 	if err := json.Unmarshal([]byte(taskJSON), &task); err != nil {
-		return nil, a2a.TaskVersionMissing, fmt.Errorf("failed to unmarshal task: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
-	return &task, a2a.TaskVersion(version), nil
+	return &taskstore.StoredTask{
+		Task:    &task,
+		Version: taskstore.TaskVersion(version),
+	}, nil
 }
 
 func (s *dbTaskStore) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
