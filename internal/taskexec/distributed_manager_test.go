@@ -84,7 +84,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		params         *a2a.MessageSendParams
+		req            *a2a.SendMessageRequest
 		storedTask     *a2a.Task
 		getTaskErr     error
 		getQueueErr    error
@@ -95,22 +95,22 @@ func TestClusterFrontend_Execute(t *testing.T) {
 		wantErr        error
 	}{
 		{
-			name:   "execute new task",
-			params: &a2a.MessageSendParams{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
+			name: "execute new task",
+			req:  &a2a.SendMessageRequest{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
 			wantQueueWrite: &workqueue.Payload{
 				Type: workqueue.PayloadTypeExecute,
-				ExecuteParams: &a2a.MessageSendParams{
+				ExecuteRequest: &a2a.SendMessageRequest{
 					Message: &a2a.Message{Role: a2a.MessageRoleUser},
 				},
 			},
 		},
 		{
-			name:   "execute existing task",
-			params: &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID, Role: a2a.MessageRoleUser}},
+			name: "execute existing task",
+			req:  &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: taskSeed.ID, Role: a2a.MessageRoleUser}},
 			wantQueueWrite: &workqueue.Payload{
 				TaskID: taskSeed.ID,
 				Type:   workqueue.PayloadTypeExecute,
-				ExecuteParams: &a2a.MessageSendParams{
+				ExecuteRequest: &a2a.SendMessageRequest{
 					Message: &a2a.Message{TaskID: taskSeed.ID, Role: a2a.MessageRoleUser},
 				},
 			},
@@ -121,42 +121,42 @@ func TestClusterFrontend_Execute(t *testing.T) {
 		},
 		{
 			name:    "nil message field",
-			params:  &a2a.MessageSendParams{},
+			req:     &a2a.SendMessageRequest{},
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
 			name:       "task not found",
-			params:     &a2a.MessageSendParams{Message: &a2a.Message{TaskID: a2a.NewTaskID()}},
+			req:        &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: a2a.NewTaskID()}},
 			getTaskErr: a2a.ErrTaskNotFound,
 			wantErr:    a2a.ErrTaskNotFound,
 		},
 		{
 			name:       "store error",
-			params:     &a2a.MessageSendParams{Message: &a2a.Message{TaskID: taskSeed.ID}},
+			req:        &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: taskSeed.ID}},
 			getTaskErr: fmt.Errorf("store failed"),
 			wantErr:    fmt.Errorf("store failed"),
 		},
 		{
 			name: "context ID mismatch",
-			params: &a2a.MessageSendParams{
+			req: &a2a.SendMessageRequest{
 				Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: "not-" + taskSeed.ContextID},
 			},
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
 			name:    "task in terminal state",
-			params:  &a2a.MessageSendParams{Message: &a2a.Message{TaskID: terminalStateTaskSeed.ID}},
+			req:     &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: terminalStateTaskSeed.ID}},
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
 			name:        "queue creation error",
-			params:      &a2a.MessageSendParams{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
+			req:         &a2a.SendMessageRequest{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
 			getQueueErr: fmt.Errorf("queue failed"),
 			wantErr:     fmt.Errorf("queue failed"),
 		},
 		{
 			name:          "work queue write error - closes queue",
-			params:        &a2a.MessageSendParams{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
+			req:           &a2a.SendMessageRequest{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
 			writeQueueErr: fmt.Errorf("write failed"),
 			queueClosed:   true,
 			wantErr:       fmt.Errorf("write failed"),
@@ -195,7 +195,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 				WorkQueue:    wq,
 			})
 
-			sub, err := frontend.Execute(ctx, tc.params)
+			sub, err := frontend.Execute(ctx, tc.req)
 			if err != nil {
 				if tc.wantErr == nil {
 					t.Fatalf("Execute() error = %v, want nil", err)
@@ -255,9 +255,9 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 			},
 			wantQueueWrite: &workqueue.Payload{
-				Type:         workqueue.PayloadTypeCancel,
-				TaskID:       tid,
-				CancelParams: &a2a.TaskIDParams{ID: tid},
+				Type:          workqueue.PayloadTypeCancel,
+				TaskID:        tid,
+				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
 			},
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
@@ -268,9 +268,9 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
 			wantQueueWrite: &workqueue.Payload{
-				Type:         workqueue.PayloadTypeCancel,
-				TaskID:       tid,
-				CancelParams: &a2a.TaskIDParams{ID: tid},
+				Type:          workqueue.PayloadTypeCancel,
+				TaskID:        tid,
+				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
 			},
 			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
@@ -329,7 +329,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				WorkQueue:    wq,
 			})
 
-			gotTask, err := frontend.Cancel(t.Context(), &a2a.TaskIDParams{ID: tid})
+			gotTask, err := frontend.Cancel(t.Context(), &a2a.CancelTaskRequest{ID: tid})
 			if err != nil {
 				if tc.wantErrContain == "" {
 					t.Fatalf("Cancel() error = %v, want nil", err)

@@ -131,7 +131,7 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 			manager := NewLocalManager(LocalManagerConfig{
 				ConcurrencyConfig: tc.config,
 				Factory: &testFactory{
-					CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error) {
+					CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, error) {
 						executor := <-nextExecutorChan
 						return executor, executor, nil
 					},
@@ -173,7 +173,7 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 					}
 
 					tid := a2a.TaskID(fmt.Sprintf("task-%d", i))
-					subscription, err := manager.Execute(scopedCtx, &a2a.MessageSendParams{})
+					subscription, err := manager.Execute(scopedCtx, &a2a.SendMessageRequest{})
 					if err != nil {
 						exec.err <- err
 						return
