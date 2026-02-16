@@ -274,11 +274,8 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			name:    "StatusTimestampAfter filter",
 			request: &a2a.ListTasksRequest{StatusTimestampAfter: &cutoffTime},
 			givenTasks: []*a2a.Task{{
-				ID: id1,
-				Status: a2a.TaskStatus{
-					State:     a2a.TaskStateWorking,
-					Timestamp: &startTime,
-				},
+				ID:     id1,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &startTime},
 			}, {ID: id2}, {ID: id3}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
 		},

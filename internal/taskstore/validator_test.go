@@ -108,7 +108,7 @@ func TestValidateParts(t *testing.T) {
 		{parts: a2a.ContentParts{
 			a2a.NewTextPart("hello"),
 			a2a.NewDataPart(map[string]any{}),
-			a2a.NewFileURLPart("ftp://..."),
+			a2a.NewFileURLPart(a2a.URL("ftp://..."), ""),
 			a2a.NewRawPart([]byte{1, 2, 3}),
 		}, valid: true},
 		{parts: a2a.ContentParts{{Metadata: invalidMeta}}},

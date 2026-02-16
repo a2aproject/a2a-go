@@ -302,7 +302,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 					Append: true,
 					TaskID: tid, ContextID: ctxid,
 					Artifact: &a2a.Artifact{ID: aid, Parts: a2a.ContentParts{
-						a2a.NewFileURLPart("ftp://..."),
+						a2a.NewFileURLPart(a2a.URL("ftp://..."), ""),
 						a2a.NewDataPart(map[string]any{"meta": 42}),
 					}},
 				},
@@ -310,7 +310,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			want: []*a2a.Artifact{{ID: aid, Parts: a2a.ContentParts{
 				a2a.NewTextPart("1"),
 				a2a.NewTextPart("2"),
-				a2a.NewFileURLPart("ftp://..."),
+				a2a.NewFileURLPart(a2a.URL("ftp://..."), ""),
 				a2a.NewDataPart(map[string]any{"meta": 42}),
 			}}},
 		},
