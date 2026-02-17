@@ -145,6 +145,35 @@ func TestClient_CallFails(t *testing.T) {
 	}
 }
 
+func TestClient_InterceptorModifiesRequest(t *testing.T) {
+	ctx := t.Context()
+	var receivedMeta map[string]any
+	transport := &testTransport{
+		SendMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+			receivedMeta = req.Metadata
+			return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hi!")), nil
+		},
+	}
+	metaKey, metaVal := "answer", 42
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			typed := r.Payload.(*a2a.SendMessageRequest)
+			typed.Metadata = map[string]any{metaKey: metaVal}
+			return ctx, nil, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	if _, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hello!")),
+	}); err != nil {
+		t.Fatalf("client.SendMessage() error = %v, want nil", err)
+	}
+	if receivedMeta[metaKey] != metaVal {
+		t.Fatalf("client.SendMessage() meta[%s]=%v, want %v", metaKey, receivedMeta[metaKey], metaVal)
+	}
+}
+
 func TestClient_DefaultSendMessageConfig(t *testing.T) {
 	ctx := t.Context()
 	task := &a2a.Task{}
