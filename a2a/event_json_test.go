@@ -84,7 +84,8 @@ func TestEventMarshalJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			jsonBytes, err := MarshalEventJSON(tc.event)
+			sr := StreamResponse{Event: tc.event}
+			jsonBytes, err := sr.MarshalJSON()
 			if tc.wantError {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -186,10 +187,11 @@ func TestUnmarshalEventJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			event := mustUnmarshalEvent(t, []byte(tc.json))
+			var sr StreamResponse
+			mustUnmarshal(t, []byte(tc.json), &sr)
 
 			if tc.checkFunc != nil {
-				tc.checkFunc(t, event)
+				tc.checkFunc(t, sr.Event)
 			}
 		})
 	}
@@ -226,7 +228,8 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := UnmarshalEventJSON([]byte(tc.json))
+			var sr StreamResponse
+			err := sr.UnmarshalJSON([]byte(tc.json))
 			if err == nil {
 				t.Fatal("Expected error, got nil")
 			}
@@ -292,13 +295,14 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			original := tc.event
 			// Marshal
-			jsonStr := mustMarshalEvent(t, original)
+			jsonStr := mustMarshal(t, StreamResponse{Event: original})
 
 			// Unmarshal
-			event := mustUnmarshalEvent(t, []byte(jsonStr))
+			var sr StreamResponse
+			mustUnmarshal(t, []byte(jsonStr), &sr)
 
 			// Marshal again
-			jsonStr2 := mustMarshalEvent(t, event)
+			jsonStr2 := mustMarshal(t, sr)
 
 			// Compare JSON (should be identical)
 			if jsonStr != jsonStr2 {
@@ -313,21 +317,3 @@ type customEvent struct {
 }
 
 func (c *customEvent) isEvent() {}
-
-func mustMarshalEvent(t *testing.T, data Event) string {
-	t.Helper()
-	bytes, err := MarshalEventJSON(data)
-	if err != nil {
-		t.Fatalf("Marshal() failed with: %v", err)
-	}
-	return string(bytes)
-}
-
-func mustUnmarshalEvent(t *testing.T, data []byte) Event {
-	t.Helper()
-	event, err := UnmarshalEventJSON(data)
-	if err != nil {
-		t.Fatalf("Unmarshal() failed with: %v", err)
-	}
-	return event
-}
