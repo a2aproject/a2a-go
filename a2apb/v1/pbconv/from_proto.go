@@ -322,16 +322,11 @@ func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 	if taskID == "" {
 		return nil, fmt.Errorf("task id cannot be empty")
 	}
-	configID := req.GetConfigId()
-	if configID == "" {
-		return nil, fmt.Errorf("config id cannot be empty")
-	}
 
 	return &a2a.CreateTaskPushConfigRequest{
 		Tenant:   req.GetTenant(),
 		TaskID:   taskID,
 		Config:   *pConf,
-		ConfigID: configID,
 	}, nil
 }
 

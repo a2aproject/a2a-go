@@ -168,7 +168,6 @@ func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest)
 	return &a2apb.CreateTaskPushNotificationConfigRequest{
 		Tenant:   config.Tenant,
 		TaskId:   string(config.TaskID),
-		ConfigId: string(config.ConfigID),
 		Config:   pConfig,
 	}, nil
 }

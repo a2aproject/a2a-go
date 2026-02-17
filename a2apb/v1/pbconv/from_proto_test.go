@@ -528,14 +528,13 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "success",
 			req: &a2apb.CreateTaskPushNotificationConfigRequest{
-				TaskId:   "test-task",
-				ConfigId: "test-config",
+				TaskId: "test-task",
 				Config: &a2apb.PushNotificationConfig{
 					Url: "http://example.com/hook",
-					Id: "test-config",
+					Id:  "test-config",
 				},
 			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test-task", ConfigID: "test-config", Config: a2a.PushConfig{ID: "test-config", URL: "http://example.com/hook"}},
+			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config", URL: "http://example.com/hook"}},
 		},
 		{
 			name: "nil config",
@@ -555,11 +554,10 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 		{
 			name: "empty optional ID conversion push config conversion",
 			req: &a2apb.CreateTaskPushNotificationConfigRequest{
-				TaskId:   "t1",
-				ConfigId: "c1",
-				Config:   &a2apb.PushNotificationConfig{Id: "", Url: "http://example.com/hook"},
+				TaskId: "t1",
+				Config: &a2apb.PushNotificationConfig{Id: "", Url: "http://example.com/hook"},
 			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", ConfigID: "c1", Config: a2a.PushConfig{URL: "http://example.com/hook"}},
+			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{URL: "http://example.com/hook"}},
 		},
 	}
 	for _, tt := range tests {
