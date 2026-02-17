@@ -35,7 +35,7 @@ import (
 
 var fixedTime = time.Now()
 
-func TestRequestHandler_OnSendMessage(t *testing.T) {
+func TestRequestHandler_SendMessage(t *testing.T) {
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
@@ -290,19 +290,19 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 			result, gotErr := handler.SendMessage(ctx, input)
 			if tt.wantErr == nil {
 				if gotErr != nil {
-					t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
+					t.Errorf("SendMessage() error = %v, wantErr nil", gotErr)
 					return
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
-					t.Errorf("OnSendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
+					t.Errorf("SendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
-					t.Errorf("OnSendMessage() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("SendMessage() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
 				if gotErr.Error() != tt.wantErr.Error() && !errors.Is(gotErr, tt.wantErr) {
-					t.Errorf("OnSendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
+					t.Errorf("SendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 			}
 		})
@@ -325,12 +325,12 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 			var streamErr error
 			for got, gotErr := range handler.SendStreamingMessage(ctx, input) {
 				if streamErr != nil {
-					t.Errorf("handler.OnSendMessageStream() got (%v, %v) after error, want stream end", got, gotErr)
+					t.Errorf("handler.SendStreamingMessage() got (%v, %v) after error, want stream end", got, gotErr)
 					return
 				}
 
 				if gotErr != nil && tt.wantErr == nil {
-					t.Errorf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+					t.Errorf("SendStreamingMessage() error = %v, wantErr nil", gotErr)
 					return
 				}
 				if gotErr != nil {
@@ -344,26 +344,26 @@ func TestRequestHandler_OnSendMessage(t *testing.T) {
 					eventI++
 				}
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("OnSendMessageStream() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+					t.Errorf("SendStreamingMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					return
 				}
 			}
 			if tt.wantErr == nil && eventI != len(tt.agentEvents) {
-				t.Errorf("OnSendMessageStream() received %d events, want %d", eventI, len(tt.agentEvents))
+				t.Errorf("SendStreamingMessage() received %d events, want %d", eventI, len(tt.agentEvents))
 				return
 			}
 			if tt.wantErr != nil && streamErr == nil {
-				t.Errorf("OnSendMessageStream() error = nil, want %v", tt.wantErr)
+				t.Errorf("SendStreamingMessage() error = nil, want %v", tt.wantErr)
 				return
 			}
 			if tt.wantErr != nil && (streamErr.Error() != tt.wantErr.Error() && !errors.Is(streamErr, tt.wantErr)) {
-				t.Errorf("OnSendMessageStream() error = %v, wantErr %v", streamErr, tt.wantErr)
+				t.Errorf("SendStreamingMessage() error = %v, wantErr %v", streamErr, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
+func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 	ctx := t.Context()
 	ts := testutil.NewTestTaskStore()
 	authCredentialsChan := make(chan struct{})
@@ -386,22 +386,22 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("perform protected operation"))
 	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
 	if err != nil {
-		t.Fatalf("OnSendMessage() error = %v, wantErr nil", err)
+		t.Fatalf("SendMessage() error = %v, wantErr nil", err)
 	}
 	var taskID a2a.TaskID
 	if task, ok := result.(*a2a.Task); ok {
 		if task.Status.State != a2a.TaskStateAuthRequired {
-			t.Fatalf("OnSendMessage() = %v, want a2a.Task in %q state", result, a2a.TaskStateAuthRequired)
+			t.Fatalf("SendMessage() = %v, want a2a.Task in %q state", result, a2a.TaskStateAuthRequired)
 		}
 		msg.TaskID = task.ID
 		taskID = task.ID
 	} else {
-		t.Fatalf("OnSendMessage() = %v, want a2a.Task", result)
+		t.Fatalf("SendMessage() = %v, want a2a.Task", result)
 	}
 
 	_, err = handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
 	if !strings.Contains(err.Error(), "execution is already in progress") {
-		t.Fatalf("OnSendMessage() error = %v, want err to contain 'execution is already in progress'", err)
+		t.Fatalf("SendMessage() error = %v, want err to contain 'execution is already in progress'", err)
 	}
 
 	authCredentialsChan <- struct{}{}
@@ -413,7 +413,7 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
+func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 
 	createExecutor := func(generateEvent func(execCtx *ExecutorContext) []a2a.Event) (*mockAgentExecutor, chan struct{}) {
@@ -541,21 +541,21 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 				close(waitingChan)
 			}
 			if gotErr != nil {
-				t.Errorf("OnSendMessage() error = %v, wantErr nil", gotErr)
+				t.Errorf("SendMessage() error = %v, wantErr nil", gotErr)
 				return
 			}
 			if tt.wantState != a2a.TaskStateUnspecified {
 				task, ok := result.(*a2a.Task)
 				if !ok {
-					t.Errorf("OnSendMessage() returned %T, want a2a.Task", result)
+					t.Errorf("SendMessage() returned %T, want a2a.Task", result)
 					return
 				}
 				if task.Status.State != tt.wantState {
-					t.Errorf("OnSendMessage() task.State = %v, want %v", task.Status.State, tt.wantState)
+					t.Errorf("SendMessage() task.State = %v, want %v", task.Status.State, tt.wantState)
 				}
 			} else {
 				if _, ok := result.(*a2a.Message); !ok {
-					t.Errorf("OnSendMessage() returned %T, want a2a.Message", result)
+					t.Errorf("SendMessage() returned %T, want a2a.Message", result)
 				}
 			}
 		})
@@ -573,18 +573,18 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 			gotEvents := 0
 			for _, gotErr := range handler.SendStreamingMessage(ctx, tt.input) {
 				if gotErr != nil {
-					t.Errorf("OnSendMessageStream() error = %v, wantErr nil", gotErr)
+					t.Errorf("SendStreamingMessage() error = %v, wantErr nil", gotErr)
 				}
 				gotEvents++
 			}
 			if gotEvents != tt.wantEvents {
-				t.Errorf("OnSendMessageStream() event count = %d, want %d", gotEvents, tt.wantEvents)
+				t.Errorf("SendStreamingMessage() event count = %d, want %d", gotEvents, tt.wantEvents)
 			}
 		})
 	}
 }
 
-func TestRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
+func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 	ctx := t.Context()
 	ts := testutil.NewTestTaskStore()
 	authCredentialsChan := make(chan struct{})
@@ -611,21 +611,21 @@ func TestRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
 			go func() { authCredentialsChan <- struct{}{} }()
 		}
 		if err != nil {
-			t.Fatalf("OnSendMessageStream() error = %v, wantErr nil", err)
+			t.Fatalf("SendStreamingMessage() error = %v, wantErr nil", err)
 		}
 		lastEvent = event
 	}
 
 	if task, ok := lastEvent.(*a2a.TaskStatusUpdateEvent); ok {
 		if task.Status.State != a2a.TaskStateCompleted {
-			t.Fatalf("OnSendMessageStream() = %v, want status update with state %q", lastEvent, a2a.TaskStateAuthRequired)
+			t.Fatalf("SendStreamingMessage() = %v, want status update with state %q", lastEvent, a2a.TaskStateAuthRequired)
 		}
 	} else {
-		t.Fatalf("OnSendMessageStream() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
+		t.Fatalf("SendStreamingMessage() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_PushNotifications(t *testing.T) {
+func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	ctx := t.Context()
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
@@ -650,10 +650,10 @@ func TestRequestHandler_OnSendMessage_PushNotifications(t *testing.T) {
 
 	result, err := handler.SendMessage(ctx, input)
 	if err != nil {
-		t.Fatalf("OnSendMessage() failed: %v", err)
+		t.Fatalf("SendMessage() failed: %v", err)
 	}
 	if diff := cmp.Diff(wantResult, result); diff != "" {
-		t.Fatalf("OnSendMessage() mismatch (-want +got):\n%s", diff)
+		t.Fatalf("SendMessage() mismatch (-want +got):\n%s", diff)
 	}
 	saved, err := ps.List(ctx, taskSeed.ID)
 	if err != nil || len(saved) != 1 {
@@ -688,14 +688,14 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 
 	result, err := handler.SendMessage(ctx, input)
 	if err != nil {
-		t.Fatalf("OnSendMessage() error = %v", err)
+		t.Fatalf("SendMessage() error = %v", err)
 	}
 	task, ok := result.(*a2a.Task)
 	if !ok {
-		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+		t.Fatalf("SendMessage() result type = %T, want *a2a.Task", result)
 	}
 	if task.Status.State != a2a.TaskStateFailed {
-		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+		t.Fatalf("SendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
@@ -734,31 +734,31 @@ func TestRequestHandler_TaskExecutionFailOnInvalidEvent(t *testing.T) {
 				if streaming {
 					for event, err := range handler.SendStreamingMessage(ctx, input) {
 						if err != nil {
-							t.Fatalf("OnSendMessageStream() error = %v", err)
+							t.Fatalf("SendStreamingMessage() error = %v", err)
 						}
 						result = event
 					}
 				} else {
 					localResult, err := handler.SendMessage(ctx, input)
 					if err != nil {
-						t.Fatalf("OnSendMessage() error = %v", err)
+						t.Fatalf("SendMessage() error = %v", err)
 					}
 					result = localResult
 				}
 
 				task, ok := result.(*a2a.Task)
 				if !ok {
-					t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+					t.Fatalf("SendMessage() result type = %T, want *a2a.Task", result)
 				}
 				if task.Status.State != a2a.TaskStateFailed {
-					t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+					t.Fatalf("SendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 				}
 			})
 		}
 	}
 }
 
-func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
+func TestRequestHandler_SendMessage_FailsToStoreFailedState(t *testing.T) {
 	ctx := t.Context()
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
@@ -777,11 +777,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 	wantErr := "wrong id"
 	_, err := handler.SendMessage(ctx, input)
 	if !strings.Contains(err.Error(), wantErr) {
-		t.Fatalf("OnSendMessage() err = %v, want to contain %q", err, wantErr)
+		t.Fatalf("SendMessage() err = %v, want to contain %q", err, wantErr)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
+func TestRequestHandler_SendMessage_TaskVersion(t *testing.T) {
 	ctx := t.Context()
 
 	gotPrevVersions := make([]taskstore.TaskVersion, 0)
@@ -831,11 +831,11 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 		}
 		res, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
 		if err != nil {
-			t.Fatalf("OnSendMessage() error = %v", err)
+			t.Fatalf("SendMessage() error = %v", err)
 		}
 		task, ok := res.(*a2a.Task)
 		if !ok {
-			t.Fatalf("OnSendMessage() returned %T, want *a2a.Task", res)
+			t.Fatalf("SendMessage() returned %T, want *a2a.Task", res)
 		}
 		existingTask = task
 
@@ -847,7 +847,7 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 
 }
 
-func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
+func TestRequestHandler_SendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
 	ctx := t.Context()
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
@@ -865,18 +865,18 @@ func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) 
 
 	result, err := handler.SendMessage(ctx, input)
 	if err != nil {
-		t.Fatalf("OnSendMessage() error = %v", err)
+		t.Fatalf("SendMessage() error = %v", err)
 	}
 	task, ok := result.(*a2a.Task)
 	if !ok {
-		t.Fatalf("OnSendMessage() result type = %T, want *a2a.Task", result)
+		t.Fatalf("SendMessage() result type = %T, want *a2a.Task", result)
 	}
 	if task.Status.State != a2a.TaskStateFailed {
-		t.Fatalf("OnSendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+		t.Fatalf("SendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
 	}
 }
 
-func TestRequestHandler_OnGetAgentCard(t *testing.T) {
+func TestRequestHandler_GetAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
 	tests := []struct {
@@ -942,7 +942,7 @@ func TestRequestHandler_OnGetAgentCard(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
+func TestRequestHandler_SendMessage_QueueCreationFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
 	qm := testutil.NewTestQueueManager().SetError(wantErr)
@@ -953,11 +953,11 @@ func TestRequestHandler_OnSendMessage_QueueCreationFails(t *testing.T) {
 	})
 
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
+		t.Fatalf("handler.SendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_QueueReadFails(t *testing.T) {
+func TestRequestHandler_SendMessage_QueueReadFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("Read() failed")
 	queue := testutil.NewTestEventQueue().SetReadOverride(nil, wantErr)
@@ -968,11 +968,11 @@ func TestRequestHandler_OnSendMessage_QueueReadFails(t *testing.T) {
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
 	})
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
+		t.Fatalf("handler.SendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
+func TestRequestHandler_SendMessage_RelatedTaskLoading(t *testing.T) {
 	existingTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	ctx := t.Context()
 	ts := testutil.NewTestTaskStore().WithTasks(t, existingTask)
@@ -989,7 +989,7 @@ func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 	}
 	_, err := handler.SendMessage(ctx, request)
 	if err != nil {
-		t.Fatalf("handler.OnSendMessage() failed: %v", err)
+		t.Fatalf("handler.SendMessage() failed: %v", err)
 	}
 
 	capturedExecContext := executor.capturedExecContext
@@ -998,7 +998,7 @@ func TestRequestHandler_OnSendMessage_RelatedTaskLoading(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnSendMessage_AgentExecutionFails(t *testing.T) {
+func TestRequestHandler_SendMessage_AgentExecutionFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
 	executor := newEventReplayAgent([]a2a.Event{}, wantErr)
@@ -1008,11 +1008,11 @@ func TestRequestHandler_OnSendMessage_AgentExecutionFails(t *testing.T) {
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
 	})
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("handler.OnSendMessage() = (%v, %v), want error %v", result, err, wantErr)
+		t.Fatalf("handler.SendMessage() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
+func TestRequestHandler_SendMessage_NoTaskCreated(t *testing.T) {
 	ctx := t.Context()
 	getCalled := 0
 	savedCalled := 0
@@ -1033,21 +1033,21 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
 	})
 	if gotErr != nil {
-		t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+		t.Fatalf("SendMessage() error = %v, wantErr nil", gotErr)
 	}
 	if _, ok := result.(*a2a.Message); !ok {
-		t.Fatalf("OnSendMessage() = %v, want a2a.Message", result)
+		t.Fatalf("SendMessage() = %v, want a2a.Message", result)
 	}
 
 	if getCalled != 1 {
-		t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want 1", getCalled)
+		t.Fatalf("SendMessage() TaskStore.Get called %d times, want 1", getCalled)
 	}
 	if savedCalled > 0 {
-		t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+		t.Fatalf("SendMessage() TaskStore.Save called %d times, want 0", savedCalled)
 	}
 }
 
-func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
+func TestRequestHandler_SendMessage_NewTaskHistory(t *testing.T) {
 	ctx := t.Context()
 	ts := taskstore.NewInMemory(nil)
 	executor := &mockAgentExecutor{
@@ -1064,18 +1064,18 @@ func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Complete the task!"))
 	result, gotErr := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
 	if gotErr != nil {
-		t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+		t.Fatalf("SendMessage() error = %v, wantErr nil", gotErr)
 	}
 	if task, ok := result.(*a2a.Task); ok {
 		if diff := cmp.Diff([]*a2a.Message{msg}, task.History); diff != "" {
-			t.Fatalf("OnSendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
+			t.Fatalf("SendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
 		}
 	} else {
-		t.Fatalf("OnSendMessage() = %v, want a2a.Task", result)
+		t.Fatalf("SendMessage() = %v, want a2a.Task", result)
 	}
 }
 
-func TestRequestHandler_OnGetTask(t *testing.T) {
+func TestRequestHandler_GetTask(t *testing.T) {
 	ptr := func(i int) *int {
 		return &i
 	}
@@ -1153,7 +1153,7 @@ func TestRequestHandler_OnGetTask(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
+func TestRequestHandler_GetTask_StoreGetFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to get task: store get failed")
 	ts := testutil.NewTestTaskStore().SetGetOverride(nil, wantErr)
@@ -1165,7 +1165,7 @@ func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnListTasks(t *testing.T) {
+func TestRequestHandler_ListTasks(t *testing.T) {
 	id1, id2, id3 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	startTime := time.Date(2025, time.December, 11, 14, 54, 0, 0, time.UTC)
 	cutOffTime := startTime.Add(2 * time.Second)
@@ -1245,7 +1245,7 @@ func testAuthenticator() func(context.Context) (string, error) {
 	}
 }
 
-func TestRequestHandler_OnCancelTask(t *testing.T) {
+func TestRequestHandler_CancelTask(t *testing.T) {
 	taskToCancel := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
 	completedTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 	canceledTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
@@ -1319,7 +1319,7 @@ func TestRequestHandler_OnCancelTask(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
+func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	ctx := t.Context()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	wantEvents := []a2a.Event{
@@ -1366,7 +1366,7 @@ func TestRequestHandler_OnResubscribeToTask_Success(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnResubscribeToTask_NotFound(t *testing.T) {
+func TestRequestHandler_ResubscribeToTask_NotFound(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrTaskNotFound
@@ -1380,7 +1380,7 @@ func TestRequestHandler_OnResubscribeToTask_NotFound(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnCancelTask_AgentCancelFails(t *testing.T) {
+func TestRequestHandler_CancelTask_AgentCancelFails(t *testing.T) {
 	ctx := t.Context()
 	taskToCancel := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
 	wantErr := fmt.Errorf("failed to cancel: cancelation failed: agent cancel error")
@@ -1421,7 +1421,7 @@ func TestRequestHandler_MultipleRequestContextInterceptors(t *testing.T) {
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
 	})
 	if err != nil {
-		t.Fatalf("handler.OnSendMessage() failed: %v", err)
+		t.Fatalf("handler.SendMessage() failed: %v", err)
 	}
 
 	capturedContext := executor.capturedContext
@@ -1444,7 +1444,7 @@ func TestRequestHandler_RequestContextInterceptorRejectsRequest(t *testing.T) {
 	})
 
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("handler.OnSendMessage() error = %v, want %v", err, wantErr)
+		t.Fatalf("handler.SendMessage() error = %v, want %v", err, wantErr)
 	}
 	if executor.executeCalled {
 		t.Fatal("want agent executor to no be called")
@@ -1519,7 +1519,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			request := tc.newRequest()
 			_, err := handler.SendMessage(ctx, request)
 			if err != nil {
-				t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 			}
 			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.Task{}, "History")}
 			if diff := cmp.Diff(tc.wantStoredTask, gotExecCtx.StoredTask, opts...); diff != "" {
@@ -1537,7 +1537,7 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnSetTaskPushConfig(t *testing.T) {
+func TestRequestHandler_SetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 
@@ -1600,9 +1600,9 @@ func TestRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 			}
 
 			want := &a2a.TaskPushConfig{
-				TaskID: tc.params.TaskID,
-				ID:     tc.params.ConfigID,
+				ID:     tc.params.Config.ID,
 				Config: tc.params.Config,
+				TaskID: tc.params.TaskID,
 			}
 			if want.ID == "" {
 				want.ID = got.ID
@@ -1610,7 +1610,6 @@ func TestRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 			if want.Config.ID == "" {
 				want.Config.ID = got.Config.ID
 			}
-
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
 			}
@@ -1618,7 +1617,7 @@ func TestRequestHandler_OnSetTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnGetTaskPushConfig(t *testing.T) {
+func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 	config1 := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
@@ -1665,7 +1664,7 @@ func TestRequestHandler_OnGetTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnListTaskPushConfig(t *testing.T) {
+func TestRequestHandler_ListTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
@@ -1723,7 +1722,7 @@ func TestRequestHandler_OnListTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_OnDeleteTaskPushConfig(t *testing.T) {
+func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}

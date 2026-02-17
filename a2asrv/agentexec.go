@@ -235,7 +235,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 		TaskID:     task.ID,
 		StoredTask: task,
 		ContextID:  task.ContextID,
-		Metadata:   nil,
+		Metadata:   nil, // TODO: Fix spec https://github.com/a2aproject/A2A/pull/1485
 	}
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.User = callCtx.User
