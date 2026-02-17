@@ -29,16 +29,18 @@ type AgentCapabilities struct {
 	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty" yaml:"extendedAgentCard,omitempty" mapstructure:"extendedAgentCard,omitempty"`
 }
 
-// SecurityRequirements describes a set of security requirements that must be present on a request.
+// SecurityRequirement describes a set of security requirements that must be present on a request.
 // For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
 // following requirements object needs to be created:
 //
-//	SecurityRequirements{
-//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
-//		SecuritySchemeName("mTLS"): {}
+//	SecurityRequirement{
+//		Schemes: map[SecuritySchemeName]SecuritySchemeScopes{
+//			"oauth2": SecuritySchemeScopes{"read", "write"},
+//			"mTLS":   SecuritySchemeScopes{},
+//		},
 //	}
 type SecurityRequirement struct {
-	Scheme map[SecuritySchemeName]SecuritySchemeScopes `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
+	Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
 }
 
 // AgentCard is a self-describing manifest for an agent. It provides essential
@@ -83,14 +85,6 @@ type AgentCard struct {
 	// Name is a human-readable name for the agent.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 
-	// PreferredTransport is the transport protocol for the preferred endpoint (the main 'url' field).
-	// If not specified, defaults to 'JSONRPC'.
-	//
-	// IMPORTANT: The transport specified here MUST be available at the main 'url'.
-	// This creates a binding between the main URL and its supported transport protocol.
-	// Clients should prefer this transport and URL combination when both are supported.
-	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
-
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
@@ -116,10 +110,6 @@ type AgentCard struct {
 
 	// Skills is the set of skills, or distinct capabilities, that the agent can perform.
 	Skills []AgentSkill `json:"skills" yaml:"skills" mapstructure:"skills"`
-
-	// SupportsAuthenticatedExtendedCard indicates if the agent can provide an extended agent card with additional details
-	// to authenticated users. Defaults to false.
-	SupportsAuthenticatedExtendedCard bool `json:"supportsAuthenticatedExtendedCard,omitempty" yaml:"supportsAuthenticatedExtendedCard,omitempty" mapstructure:"supportsAuthenticatedExtendedCard,omitempty"`
 
 	// Version is the agent's own version number. The format is defined by the provider.
 	Version string `json:"version" yaml:"version" mapstructure:"version"`
