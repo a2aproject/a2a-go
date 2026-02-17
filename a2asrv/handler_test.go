@@ -26,7 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/testutil"
 	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
@@ -388,6 +388,9 @@ func TestRequestHandler_OnSendMessage_AuthRequired(t *testing.T) {
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
+				if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+					return
+				}
 				if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil), nil) {
 					return
 				}
@@ -505,15 +508,15 @@ func TestRequestHandler_OnSendMessage_NonBlocking(t *testing.T) {
 				wantEvents: 2,
 			},
 			{
-				name:  "artifact update update",
-				input: &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"}), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
+				name:  "artifact update",
+				input: &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.MessageSendConfig{Blocking: utils.Ptr(false)}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
-						newArtifactEvent(execCtx, a2a.NewArtifactID()),
+						newArtifactEvent(execCtx, a2a.NewArtifactID(), a2a.TextPart{Text: "Artifact"}),
 						newFinalTaskStatusUpdate(execCtx, a2a.TaskStateCompleted, "Done!"),
 					}
 				},
-				wantState:  a2a.TaskStateSubmitted,
+				wantState:  a2a.TaskStateInputRequired,
 				wantEvents: 2,
 			},
 			{
@@ -608,6 +611,9 @@ func TestRequestHandler_OnSendMessageStreaming_AuthRequired(t *testing.T) {
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
+				if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+					return
+				}
 				if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil), nil) {
 					return
 				}
@@ -779,11 +785,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
-		if task.Status.State == a2a.TaskStateFailed {
-			return a2a.TaskVersionMissing, fmt.Errorf("exploded")
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		if req.Task.Status.State == a2a.TaskStateFailed {
+			return taskstore.TaskVersionMissing, fmt.Errorf("exploded")
 		}
-		return store.Mem.Save(ctx, task, event, version)
+		return store.InMemory.Update(ctx, req)
 	}
 	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
@@ -800,11 +806,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 	ctx := t.Context()
 
-	gotPrevVersions := make([]a2a.TaskVersion, 0)
+	gotPrevVersions := make([]taskstore.TaskVersion, 0)
 	store := testutil.NewTestTaskStore()
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
-		gotPrevVersions = append(gotPrevVersions, version)
-		return store.Mem.Save(ctx, task, event, version)
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		gotPrevVersions = append(gotPrevVersions, req.PrevVersion)
+		return store.InMemory.Update(ctx, req)
 	}
 
 	statusUpdates := [][]a2a.TaskState{
@@ -814,6 +820,11 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
+				if execCtx.StoredTask == nil {
+					if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+						return
+					}
+				}
 				events := statusUpdates[0]
 				for i, state := range events {
 					event := a2a.NewStatusUpdateEvent(execCtx, state, nil)
@@ -828,9 +839,9 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 	}
 	handler := NewHandler(executor, WithTaskStore(store))
 
-	wantPrevVersions := [][]a2a.TaskVersion{
-		{a2a.TaskVersionMissing, a2a.TaskVersion(1)},                 // Save newly created task and update to input-required
-		{a2a.TaskVersion(2), a2a.TaskVersion(3), a2a.TaskVersion(4)}, // Update task history, move to working, move to completed
+	wantPrevVersions := [][]taskstore.TaskVersion{
+		{taskstore.TaskVersion(1), taskstore.TaskVersion(2)},                           // Save newly created task and update to input-required
+		{taskstore.TaskVersion(3), taskstore.TaskVersion(4), taskstore.TaskVersion(5)}, // Update task history, move to working, move to completed
 	}
 
 	var existingTask *a2a.Task
@@ -854,7 +865,7 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 		if diff := cmp.Diff(wantPrev, gotPrevVersions); diff != "" {
 			t.Fatalf("Save() was called with %v, want %v", gotPrevVersions, wantPrev)
 		}
-		gotPrevVersions = make([]a2a.TaskVersion, 0)
+		gotPrevVersions = make([]taskstore.TaskVersion, 0)
 	}
 
 }
@@ -1029,13 +1040,13 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 	getCalled := 0
 	savedCalled := 0
 	mockStore := testutil.NewTestTaskStore()
-	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 		getCalled += 1
-		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
+		return nil, a2a.ErrTaskNotFound
 	}
-	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+	mockStore.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
 		savedCalled += 1
-		return version, nil
+		return taskstore.TaskVersionMissing, nil
 	}
 
 	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
@@ -1061,12 +1072,12 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 
 func TestRequestHandler_OnSendMessage_NewTaskHistory(t *testing.T) {
 	ctx := t.Context()
-	ts := taskstore.NewMem()
+	ts := taskstore.NewInMemory(nil)
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
-				event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
-				event.Final = true
+				event := a2a.NewSubmittedTask(execCtx, execCtx.Message)
+				event.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
 				yield(event, nil)
 			}
 		},
@@ -1168,7 +1179,7 @@ func TestRequestHandler_OnGetTask(t *testing.T) {
 func TestRequestHandler_OnGetTask_StoreGetFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to get task: store get failed")
-	ts := testutil.NewTestTaskStore().SetGetOverride(nil, a2a.TaskVersionMissing, wantErr)
+	ts := testutil.NewTestTaskStore().SetGetOverride(nil, wantErr)
 	handler := newTestHandler(WithTaskStore(ts))
 
 	result, err := handler.OnGetTask(ctx, &a2a.TaskQueryParams{ID: a2a.NewTaskID()})
@@ -1183,19 +1194,19 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	cutOffTime := startTime.Add(2 * time.Second)
 
 	tests := []struct {
-		name          string
-		givenTasks    []*a2a.Task
-		request       *a2a.ListTasksRequest
-		wantResponse  *a2a.ListTasksResponse
-		wantErr       error
-		authenticator taskstore.Authenticator
+		name         string
+		givenTasks   []*a2a.Task
+		request      *a2a.ListTasksRequest
+		wantResponse *a2a.ListTasksResponse
+		wantErr      error
+		storeConfig  *taskstore.InMemoryStoreConfig
 	}{
 		{
-			name:          "success",
-			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
-			request:       &a2a.ListTasksRequest{},
-			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
-			authenticator: testAuthenticator(),
+			name:         "success",
+			givenTasks:   []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:      &a2a.ListTasksRequest{},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}, {ID: id1}}, TotalSize: 3, PageSize: 50},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
 			name: "success with filters",
@@ -1204,16 +1215,16 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			request:       &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, LastUpdatedAfter: &cutOffTime, IncludeArtifacts: true},
-			wantResponse:  &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
-			authenticator: testAuthenticator(),
+			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, LastUpdatedAfter: &cutOffTime, IncludeArtifacts: true},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
-			name:          "invalid pageToken",
-			givenTasks:    []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
-			request:       &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
-			wantErr:       fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
-			authenticator: testAuthenticator(),
+			name:        "invalid pageToken",
+			givenTasks:  []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
+			request:     &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
+			wantErr:     fmt.Errorf("failed to list tasks: %w", a2a.ErrParseError),
+			storeConfig: &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
 			name:       "unauthorized",
@@ -1226,11 +1237,7 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			var opts []taskstore.Option
-			if tt.authenticator != nil {
-				opts = append(opts, taskstore.WithAuthenticator(tt.authenticator))
-			}
-			ts := testutil.NewTestTaskStore(opts...).WithTasks(t, tt.givenTasks...)
+			ts := testutil.NewTestTaskStoreWithConfig(tt.storeConfig).WithTasks(t, tt.givenTasks...)
 			handler := newTestHandler(WithTaskStore(ts))
 			result, err := handler.OnListTasks(ctx, tt.request)
 
@@ -1255,9 +1262,9 @@ func TestRequestHandler_OnListTasks(t *testing.T) {
 	}
 }
 
-func testAuthenticator() taskstore.Authenticator {
-	return func(ctx context.Context) (taskstore.UserName, bool) {
-		return "test", true
+func testAuthenticator() func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		return "test", nil
 	}
 }
 

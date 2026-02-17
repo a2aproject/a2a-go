@@ -39,7 +39,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 		finalUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}))
 		finalUpdate.Final = true
 		return []a2a.Event{
-			a2a.NewStatusUpdateEvent(task, a2a.TaskStateSubmitted, nil),
+			a2a.NewSubmittedTask(execCtx, execCtx.Message),
 			a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil),
 			artifact,
 			a2a.NewArtifactUpdateEvent(task, artifact.Artifact.ID, a2a.TextPart{Text: ", world!"}),

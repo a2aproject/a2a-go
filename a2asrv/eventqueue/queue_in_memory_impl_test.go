@@ -22,15 +22,16 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 type eventVersionPair struct {
 	event   a2a.Event
-	version a2a.TaskVersion
+	version taskstore.TaskVersion
 }
 
 func newUnversioned(event a2a.Event) *eventVersionPair {
-	return &eventVersionPair{event: event, version: a2a.TaskVersionMissing}
+	return &eventVersionPair{event: event, version: taskstore.TaskVersionMissing}
 }
 
 func mustCreateReadWriter(t *testing.T, qm Manager, tid a2a.TaskID) (Reader, Writer) {
@@ -55,7 +56,7 @@ func mustWrite(t *testing.T, q Writer, messages ...*eventVersionPair) {
 	}
 }
 
-func mustRead(t *testing.T, q Reader) (a2a.Event, a2a.TaskVersion) {
+func mustRead(t *testing.T, q Reader) (a2a.Event, taskstore.TaskVersion) {
 	t.Helper()
 	result, err := q.Read(t.Context())
 	if err != nil {
@@ -88,14 +89,14 @@ func TestInMemoryQueue_WriteRead(t *testing.T) {
 	tid := a2a.NewTaskID()
 	readQueue, writeQueue := mustCreateReadWriter(t, qm, tid)
 
-	want := &eventVersionPair{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersion(1)}
+	want := &eventVersionPair{event: &a2a.Message{ID: "test-event"}, version: taskstore.TaskVersion(1)}
 	mustWrite(t, writeQueue, want)
 	got, gotVersion := mustRead(t, readQueue)
 	if !reflect.DeepEqual(got, want.event) {
 		t.Errorf("Read() got = %v, want %v", got, want)
 	}
-	if gotVersion != a2a.TaskVersion(1) {
-		t.Errorf("Read() got version = %v, want %v", gotVersion, a2a.TaskVersion(1))
+	if gotVersion != taskstore.TaskVersion(1) {
+		t.Errorf("Read() got version = %v, want %v", gotVersion, taskstore.TaskVersion(1))
 	}
 }
 
@@ -106,8 +107,8 @@ func TestInMemoryQueue_DrainAfterDestroy(t *testing.T) {
 
 	readQueue, writeQueue := mustCreateReadWriter(t, qm, tid)
 	want := []*eventVersionPair{
-		{event: &a2a.Message{ID: "test-event"}, version: a2a.TaskVersion(1)},
-		{event: &a2a.Message{ID: "test-event2"}, version: a2a.TaskVersion(2)},
+		{event: &a2a.Message{ID: "test-event"}, version: taskstore.TaskVersion(1)},
+		{event: &a2a.Message{ID: "test-event2"}, version: taskstore.TaskVersion(2)},
 	}
 
 	mustWrite(t, writeQueue, want...)

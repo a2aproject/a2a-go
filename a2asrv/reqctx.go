@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -64,7 +65,7 @@ func (ec *ExecutorContext) TaskInfo() a2a.TaskInfo {
 // ReferencedTasksLoader implements RequestContextInterceptor. It populates RelatedTasks field of RequestContext
 // with Tasks referenced in the ReferenceTasks field of the Message which triggered the agent execution.
 type ReferencedTasksLoader struct {
-	Store TaskStore
+	Store taskstore.Store
 }
 
 var _ ExecutorContextInterceptor = (*ReferencedTasksLoader)(nil)
@@ -81,12 +82,12 @@ func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, execCtx *Executo
 
 	tasks := make([]*a2a.Task, 0, len(msg.ReferenceTasks))
 	for _, taskID := range msg.ReferenceTasks {
-		task, _, err := ri.Store.Get(ctx, taskID)
+		storedTask, err := ri.Store.Get(ctx, taskID)
 		if err != nil {
 			log.Info(ctx, "failed to get a referenced task", "referenced_task_id", taskID)
 			continue
 		}
-		tasks = append(tasks, task)
+		tasks = append(tasks, storedTask.Task)
 	}
 
 	if len(tasks) > 0 {

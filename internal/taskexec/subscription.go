@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -83,14 +84,14 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 
 type remoteSubscription struct {
 	tid      a2a.TaskID
-	store    TaskStore
+	store    taskstore.Store
 	queue    eventqueue.Reader
 	consumed bool
 }
 
 var _ Subscription = (*remoteSubscription)(nil)
 
-func newRemoteSubscription(queue eventqueue.Reader, store TaskStore, tid a2a.TaskID) *remoteSubscription {
+func newRemoteSubscription(queue eventqueue.Reader, store taskstore.Store, tid a2a.TaskID) *remoteSubscription {
 	return &remoteSubscription{tid: tid, queue: queue, store: store}
 }
 
@@ -112,19 +113,22 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 			}
 		}()
 
-		task, snapshotVersion, err := s.store.Get(ctx, s.tid)
+		storedTask, err := s.store.Get(ctx, s.tid)
 		if err != nil && !errors.Is(err, a2a.ErrTaskNotFound) {
 			yield(nil, fmt.Errorf("task snapshot loading failed: %w", err))
 			return
 		}
 
-		if task != nil {
+		snapshotVersion := taskstore.TaskVersionMissing
+		if storedTask != nil {
+			task := storedTask.Task
 			if !yield(task, nil) {
 				return
 			}
 			if task.Status.State.Terminal() {
 				return
 			}
+			snapshotVersion = storedTask.Version
 		}
 
 		for {
@@ -133,7 +137,7 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 				yield(nil, err)
 				return
 			}
-			if msg.TaskVersion != a2a.TaskVersionMissing && !msg.TaskVersion.After(snapshotVersion) {
+			if msg.TaskVersion != taskstore.TaskVersionMissing && !msg.TaskVersion.After(snapshotVersion) {
 				log.Info(ctx, "skipping old event", "event", msg.Event, "version", msg.TaskVersion)
 				continue
 			}

@@ -19,6 +19,7 @@ import (
 	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 // ErrQueueClosed indicates that the event queue has been closed.
@@ -29,7 +30,7 @@ type Message struct {
 	// Event is the event which was applied to task store.
 	Event a2a.Event
 	// TaskVersion is the version of the task after event was applied.
-	TaskVersion a2a.TaskVersion
+	TaskVersion taskstore.TaskVersion
 	// Protocol is the version of the protocol which emitting process running.
 	Protocol a2a.ProtocolVersion
 }

@@ -18,17 +18,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/google/go-cmp/cmp"
 )
 
-func newTestTask() *VersionedTask {
-	return &VersionedTask{
+func newTestTask() *taskstore.StoredTask {
+	return &taskstore.StoredTask{
 		Task:    &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()},
-		Version: a2a.TaskVersionMissing,
+		Version: taskstore.TaskVersionMissing,
 	}
 }
 
@@ -41,27 +42,31 @@ func getText(m *a2a.Message) string {
 }
 
 type testSaver struct {
+	*taskstore.InMemory
 	saved      *a2a.Task
-	version    a2a.TaskVersion
+	version    taskstore.TaskVersion
 	versionSet bool
 	fail       error
 }
 
-var _ Saver = (*testSaver)(nil)
+func newTestSaver() *testSaver {
+	return &testSaver{InMemory: taskstore.NewInMemory(nil)}
+}
 
-func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *testSaver) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
 	if s.fail != nil {
-		return a2a.TaskVersionMissing, s.fail
+		return taskstore.TaskVersionMissing, s.fail
 	}
 	if s.versionSet {
-		if prev != a2a.TaskVersionMissing && prev != s.version {
-			return a2a.TaskVersionMissing, fmt.Errorf("")
+		if req.PrevVersion != taskstore.TaskVersionMissing && req.PrevVersion != s.version {
+			return taskstore.TaskVersionMissing, fmt.Errorf("")
 		}
 	}
 	s.version = s.version + 1
-	s.saved = task
+	s.saved = req.Task
 	return s.version, nil
 }
+
 func makeTextParts(texts ...string) a2a.ContentParts {
 	result := make(a2a.ContentParts, len(texts))
 	for i, text := range texts {
@@ -70,10 +75,14 @@ func makeTextParts(texts ...string) a2a.ContentParts {
 	return result
 }
 
-func TestManager_TaskSaved(t *testing.T) {
-	saver := &testSaver{}
+func newUpdaterWithStoredTask() (*Manager, *testSaver) {
+	saver := newTestSaver()
 	task := newTestTask()
-	m := NewManager(saver, task)
+	return NewManager(saver, task.Task.TaskInfo(), task), saver
+}
+
+func TestManager_TaskSaved(t *testing.T) {
+	m, saver := newUpdaterWithStoredTask()
 
 	newState := a2a.TaskStateCanceled
 	updated := &a2a.Task{
@@ -98,8 +107,7 @@ func TestManager_TaskSaved(t *testing.T) {
 }
 
 func TestManager_SaverError(t *testing.T) {
-	saver := &testSaver{}
-	m := NewManager(saver, newTestTask())
+	m, saver := newUpdaterWithStoredTask()
 
 	wantErr := errors.New("saver failed")
 	saver.fail = wantErr
@@ -109,8 +117,8 @@ func TestManager_SaverError(t *testing.T) {
 }
 
 func TestManager_StatusUpdate_StateChanges(t *testing.T) {
-	saver := &testSaver{}
-	m := NewManager(saver, newTestTask())
+	m, _ := newUpdaterWithStoredTask()
+
 	m.lastSaved.Task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
@@ -129,10 +137,9 @@ func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 }
 
 func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
-	saver := &testSaver{}
-	m := NewManager(saver, newTestTask())
+	m, _ := newUpdaterWithStoredTask()
 
-	var lastResult *VersionedTask
+	var lastResult *taskstore.StoredTask
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
 		event := newStatusUpdate(m.lastSaved.Task)
@@ -160,8 +167,7 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 }
 
 func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
-	saver := &testSaver{}
-	m := NewManager(saver, newTestTask())
+	m, _ := newUpdaterWithStoredTask()
 
 	updates := []map[string]any{
 		{"foo": "bar"},
@@ -263,30 +269,39 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 			events: []*a2a.TaskArtifactUpdateEvent{
 				{
 					TaskID: tid, ContextID: ctxid,
-					Artifact: &a2a.Artifact{ID: aid},
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("Hel")},
 				},
 				{
 					Append: true,
 					TaskID: tid, ContextID: ctxid,
-					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"foo": "bar"}},
+					Artifact: &a2a.Artifact{ID: aid, Parts: makeTextParts("lo"), Metadata: map[string]any{"foo": "bar"}},
 				},
 			},
-			want: []*a2a.Artifact{{ID: aid, Metadata: map[string]any{"foo": "bar"}}},
+			want: []*a2a.Artifact{{ID: aid, Parts: makeTextParts("Hel", "lo"), Metadata: map[string]any{"foo": "bar"}}},
 		},
 		{
 			name: "artifact updates metadata merged",
 			events: []*a2a.TaskArtifactUpdateEvent{
 				{
 					TaskID: tid, ContextID: ctxid,
-					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"hello": "world", "1": "2"}},
+					Artifact: &a2a.Artifact{
+						ID: aid, Parts: makeTextParts("Hel"),
+						Metadata: map[string]any{"hello": "world", "1": "2"},
+					},
 				},
 				{
 					Append: true,
 					TaskID: tid, ContextID: ctxid,
-					Artifact: &a2a.Artifact{ID: aid, Metadata: map[string]any{"foo": "bar", "1": "3"}},
+					Artifact: &a2a.Artifact{
+						ID: aid, Parts: makeTextParts("lo"),
+						Metadata: map[string]any{"foo": "bar", "1": "3"},
+					},
 				},
 			},
-			want: []*a2a.Artifact{{ID: aid, Metadata: map[string]any{"hello": "world", "foo": "bar", "1": "3"}}},
+			want: []*a2a.Artifact{{
+				ID: aid, Parts: makeTextParts("Hel", "lo"),
+				Metadata: map[string]any{"hello": "world", "foo": "bar", "1": "3"},
+			}},
 		},
 		{
 			name: "multiple parts in an update",
@@ -376,12 +391,12 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			saver := &testSaver{}
+			saver := newTestSaver()
 			task := &a2a.Task{ID: tid, ContextID: ctxid}
-			m := NewManager(saver, &VersionedTask{Task: task, Version: a2a.TaskVersionMissing})
+			m := NewManager(saver, task.TaskInfo(), &taskstore.StoredTask{Task: task, Version: taskstore.TaskVersionMissing})
 
 			var gotErr error
-			var lastResult *VersionedTask
+			var lastResult *taskstore.StoredTask
 			for _, ev := range tc.events {
 				result, err := m.Process(t.Context(), ev)
 				if err != nil {
@@ -418,7 +433,7 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 func TestManager_IDValidationFailure(t *testing.T) {
 	versioned := newTestTask()
 	task := versioned.Task
-	m := NewManager(&testSaver{}, versioned)
+	m := NewManager(newTestSaver(), task.TaskInfo(), versioned)
 
 	testCases := []a2a.Event{
 		&a2a.Task{ID: task.ID + "1", ContextID: task.ContextID},
@@ -441,6 +456,64 @@ func TestManager_IDValidationFailure(t *testing.T) {
 		if _, err := m.Process(t.Context(), event); err == nil {
 			t.Fatalf("want ID validation to fail for %d-th event: %+v", i, event)
 		}
+	}
+}
+
+func TestManager_InvalidAgentResponse(t *testing.T) {
+	taskID, contextID := a2a.NewTaskID(), a2a.NewContextID()
+	taskInfo := a2a.TaskInfo{TaskID: taskID, ContextID: contextID}
+	testCases := []struct {
+		name           string
+		storedTask     bool
+		event          a2a.Event
+		wantErrContain string
+	}{
+		{
+			name:           "artifact update before task snapshot",
+			storedTask:     false,
+			event:          a2a.NewArtifactEvent(taskInfo),
+			wantErrContain: "first event must be a Task or a message",
+		},
+		{
+			name:           "status update before task snapshot",
+			storedTask:     false,
+			event:          a2a.NewStatusUpdateEvent(taskInfo, a2a.TaskStateSubmitted, nil),
+			wantErrContain: "first event must be a Task or a message",
+		},
+		{
+			name:           "artifact with empty part",
+			storedTask:     true,
+			event:          a2a.NewArtifactEvent(taskInfo),
+			wantErrContain: "artifact cannot be empty",
+		},
+		{
+			name:           "message in the task lifecycle",
+			storedTask:     true,
+			event:          a2a.NewMessageForTask(a2a.MessageRoleAgent, taskInfo),
+			wantErrContain: "message not allowed after task was stored",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var storedTask *taskstore.StoredTask
+			if tc.storedTask {
+				storedTask = &taskstore.StoredTask{
+					Task:    &a2a.Task{ID: taskID, ContextID: contextID},
+					Version: taskstore.TaskVersion(1),
+				}
+			}
+			manager := NewManager(newTestSaver(), taskInfo, storedTask)
+			_, err := manager.Process(t.Context(), tc.event)
+			if err == nil {
+				t.Fatal("manager.Process() error = nil, want non-nil")
+			}
+			if !errors.Is(err, a2a.ErrInvalidAgentResponse) {
+				t.Fatalf("manager.Process() error = %q, want %q", err, a2a.ErrInvalidAgentResponse)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrContain) {
+				t.Fatalf("manager.Process() error = %q, want to contain %q", err.Error(), tc.wantErrContain)
+			}
+		})
 	}
 }
 
@@ -485,9 +558,13 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			store := taskstore.NewMem()
+			store := taskstore.NewInMemory(nil)
 
-			m := NewManager(store, seedTask)
+			if _, err := store.Create(ctx, seedTask.Task); err != nil {
+				t.Fatalf("store.Create() error = %v, want nil", err)
+			}
+
+			m := NewManager(store, seedTask.Task.TaskInfo(), seedTask)
 			_, err := m.Process(ctx, tc.invalidUpdate)
 			if err == nil {
 				t.Fatalf("m.Process() error = nil, expected serialization failure")

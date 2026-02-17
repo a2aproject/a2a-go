@@ -31,120 +31,145 @@ import (
 
 type storedTask struct {
 	task        *a2a.Task
-	version     a2a.TaskVersion
-	user        UserName
+	version     TaskVersion
+	user        string
 	lastUpdated time.Time
 }
 
-type UserName string
+// Authenticator is a function that returns the name of the user who created the task.
+type Authenticator func(context.Context) (string, error)
 
-type Authenticator func(context.Context) (UserName, bool)
-
-type TimeProvider func() time.Time
-
-type Option func(*Mem)
-
-func WithAuthenticator(a Authenticator) Option {
-	return func(m *Mem) {
-		m.authenticator = a
-	}
+// InMemoryStoreConfig is a configuration for [InMemory] store.
+type InMemoryStoreConfig struct {
+	Authenticator Authenticator
+	TimeProvider  func() time.Time
 }
 
-func WithTimeProvider(tp TimeProvider) Option {
-	return func(m *Mem) {
-		m.timeProvider = tp
-	}
-}
-
-type Mem struct {
+// InMemory is an implementation of [Store] which stores tasks in memory.
+// This means that store contents do not survive server restarts.
+type InMemory struct {
 	mu    sync.RWMutex
 	tasks map[a2a.TaskID]*storedTask
 
-	authenticator Authenticator
-	timeProvider  TimeProvider
+	config InMemoryStoreConfig
 }
+
+var _ Store = (*InMemory)(nil)
 
 func init() {
 	gob.Register(map[string]any{})
 	gob.Register([]any{})
 }
 
-// NewMem creates an empty [Mem] store.
-func NewMem(opts ...Option) *Mem {
-	m := &Mem{
-		tasks: make(map[a2a.TaskID]*storedTask),
-		authenticator: func(ctx context.Context) (UserName, bool) {
-			return "", false
-		},
-		timeProvider: func() time.Time {
-			return time.Now()
-		},
+// NewInMemory creates an empty [InMemory] store.
+func NewInMemory(config *InMemoryStoreConfig) *InMemory {
+	m := &InMemory{tasks: make(map[a2a.TaskID]*storedTask)}
+
+	if config != nil {
+		m.config = *config
 	}
 
-	for _, opt := range opts {
-		opt(m)
+	if m.config.TimeProvider == nil {
+		m.config.TimeProvider = func() time.Time {
+			return time.Now()
+		}
+	}
+
+	if m.config.Authenticator == nil {
+		m.config.Authenticator = func(ctx context.Context) (string, error) {
+			return "", nil
+		}
 	}
 
 	return m
 }
 
-func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, error) {
 	if err := validateTask(task); err != nil {
-		return a2a.TaskVersionMissing, err
+		return TaskVersionMissing, err
 	}
 
-	userName, ok := s.authenticator(ctx)
-	if !ok {
-		userName = "anonymous"
+	userName, err := s.config.Authenticator(ctx)
+	if err != nil {
+		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
+
 	copy, err := utils.DeepCopy(task)
 	if err != nil {
-		return a2a.TaskVersionMissing, err
+		return TaskVersionMissing, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if stored := s.tasks[task.ID]; stored != nil {
+		return TaskVersionMissing, ErrTaskAlreadyExists
+	}
+
+	version := TaskVersion(1)
+	s.tasks[task.ID] = &storedTask{
+		task:        copy,
+		version:     version,
+		user:        userName,
+		lastUpdated: s.config.TimeProvider(),
+	}
+	return version, nil
+}
+
+func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion, error) {
+	if err := validateTask(req.Task); err != nil {
+		return TaskVersionMissing, err
+	}
+
+	copy, err := utils.DeepCopy(req.Task)
+	if err != nil {
+		return TaskVersionMissing, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	version := a2a.TaskVersion(1)
-	if stored := s.tasks[task.ID]; stored != nil {
-		if prevVersion != a2a.TaskVersionMissing && stored.version != prevVersion {
-			return a2a.TaskVersionMissing, fmt.Errorf("concurrent task modification failed")
-		}
-		version = stored.version + 1
+	stored := s.tasks[req.Task.ID]
+	if stored == nil {
+		return TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 
-	s.tasks[task.ID] = &storedTask{
+	if req.PrevVersion != TaskVersionMissing && stored.version != req.PrevVersion {
+		return TaskVersionMissing, ErrConcurrentModification
+	}
+
+	version := stored.version + 1
+	s.tasks[req.Task.ID] = &storedTask{
 		task:        copy,
 		version:     version,
-		user:        userName,
-		lastUpdated: s.timeProvider(),
+		user:        stored.user,
+		lastUpdated: s.config.TimeProvider(),
 	}
-
-	return a2a.TaskVersion(version), nil
+	return version, nil
 }
 
-func (s *Mem) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, error) {
 	s.mu.RLock()
 	storedTask, ok := s.tasks[taskID]
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
+		return nil, a2a.ErrTaskNotFound
 	}
 
 	task, err := utils.DeepCopy(storedTask.task)
 	if err != nil {
-		return nil, a2a.TaskVersionMissing, fmt.Errorf("task copy failed: %w", err)
+		return nil, fmt.Errorf("task copy failed: %w", err)
 	}
 
-	return task, a2a.TaskVersion(storedTask.version), nil
+	return &StoredTask{Task: task, Version: storedTask.version}, nil
 }
 
-func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	userName, ok := s.authenticator(ctx)
-	if !ok {
+func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	userName, err := s.config.Authenticator(ctx)
+	if userName == "" || err != nil {
 		return nil, a2a.ErrUnauthenticated
 	}
+
 	pageSize := req.PageSize
 	if pageSize == 0 {
 		pageSize = 50
@@ -184,7 +209,7 @@ func (s *Mem) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTas
 	}, nil
 }
 
-func filterTasks(tasks map[a2a.TaskID]*storedTask, userName UserName, req *a2a.ListTasksRequest) []*storedTask {
+func filterTasks(tasks map[a2a.TaskID]*storedTask, userName string, req *a2a.ListTasksRequest) []*storedTask {
 	var filteredTasks []*storedTask
 	for _, storedTask := range tasks {
 		if storedTask.user != userName {
