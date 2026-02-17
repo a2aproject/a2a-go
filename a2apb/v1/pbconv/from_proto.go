@@ -669,9 +669,9 @@ func fromProtoSupportedInterfaces(pInterfaces []*a2apb.AgentInterface) ([]a2a.Ag
 		}
 		interfaces[i] = a2a.AgentInterface{
 			URL:             url,
-			ProtocolBinding: pb,
+			ProtocolBinding: a2a.TransportProtocol(pb),
 			Tenant:          pIface.GetTenant(),
-			ProtocolVersion: pIface.GetProtocolVersion(),
+			ProtocolVersion: a2a.ProtocolVersion(pIface.GetProtocolVersion()),
 		}
 	}
 	return interfaces, nil
@@ -970,7 +970,7 @@ func FromProtoAgentCard(pCard *a2apb.AgentCard) (*a2a.AgentCard, error) {
 		DefaultOutputModes:                defaultOutputModes,
 		SecuritySchemes:                   schemes,
 		Provider:                          provider,
-		Security:                          fromProtoSecurity(pCard.GetSecurityRequirements()),
+		SecurityRequirements:              fromProtoSecurity(pCard.GetSecurityRequirements()),
 		Skills:                            skills,
 		IconURL:                           pCard.GetIconUrl(),
 		Signatures:                        signatures,

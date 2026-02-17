@@ -807,7 +807,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				},
 			},
 		},
-		Security: []a2a.SecurityRequirement{
+		SecurityRequirements: []a2a.SecurityRequirement{
 			{
 				Schemes: map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
 					a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},

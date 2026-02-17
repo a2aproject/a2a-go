@@ -605,9 +605,9 @@ func toProtoSupportedInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentI
 	for i, iface := range interfaces {
 		pInterfaces[i] = &a2apb.AgentInterface{
 			Url:             iface.URL,
-			ProtocolBinding: iface.ProtocolBinding,
+			ProtocolBinding: string(iface.ProtocolBinding),
 			Tenant:          iface.Tenant,
-			ProtocolVersion: iface.ProtocolVersion,
+			ProtocolVersion: string(iface.ProtocolVersion),
 		}
 	}
 	return pInterfaces
@@ -898,7 +898,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		DocumentationUrl:                  &card.DocumentationURL,
 		Capabilities:                      capabilities,
 		SecuritySchemes:                   schemes,
-		SecurityRequirements:              toProtoSecurity(card.Security),
+		SecurityRequirements:              toProtoSecurity(card.SecurityRequirements),
 		DefaultInputModes:                 card.DefaultInputModes,
 		DefaultOutputModes:                card.DefaultOutputModes,
 		Skills:                            toProtoSkills(card.Skills),

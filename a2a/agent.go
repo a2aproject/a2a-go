@@ -87,14 +87,14 @@ type AgentCard struct {
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
-	// Security is a list of security requirement objects that apply to all agent interactions.
+	// SecurityRequirements is a list of security requirement objects that apply to all agent interactions.
 	// Each object lists security schemes that can be used.
 	// Follows the OpenAPI 3.0 Security Requirement Object.
 	// This list can be seen as an OR of ANDs. Each object in the list describes one
 	// possible set of security requirements that must be present on a request.
 	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
 	//
-	// Security: []SecurityRequirements{
+	// SecurityRequirements: []SecurityRequirements{
 	//		{"oauth2": SecuritySchemeScopes{"read"}},
 	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
 	// }
