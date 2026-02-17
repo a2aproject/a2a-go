@@ -145,12 +145,11 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, p
 				return
 			}
 
-			var sr a2a.StreamResponse
-			if err := json.Unmarshal(data, &sr); err != nil {
+			event, err := a2a.UnmarshalEventJSON(data)
+			if err != nil {
 				yield(nil, err)
 				return
 			}
-			event := sr.Event
 
 			if !yield(event, nil) {
 				return
@@ -236,11 +235,10 @@ func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, r
 		return nil, err
 	}
 
-	var sr a2a.StreamResponse
-	if err := json.Unmarshal(result, &sr); err != nil {
+	event, err := a2a.UnmarshalEventJSON(result)
+	if err != nil {
 		return nil, fmt.Errorf("result violates A2A spec - could not determine type: %w; data: %s", err, string(result))
 	}
-	event := sr.Event
 
 	// SendMessage can return either a Task or a Message
 	switch e := event.(type) {

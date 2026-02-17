@@ -84,13 +84,11 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
-type StreamResponse struct {
-	Event
-}
-
-func (sr StreamResponse) MarshalJSON() ([]byte, error) {
+// MarshalEventJSON marshals event into a JSON object with one of the following fields:
+// "message", "task", "statusUpdate", "artifactUpdate" based on the event type.
+func MarshalEventJSON(event Event) ([]byte, error) {
 	m := make(map[string]any)
-	switch v := sr.Event.(type) {
+	switch v := event.(type) {
 	case *Message:
 		m["message"] = v
 	case *Task:
@@ -105,42 +103,41 @@ func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
-// The kind field is used as a discriminator to determine which concrete type to unmarshal into.
-func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
+// UnmarshalEventJSON unmarshals event from a JSON object with one of the following fields:
+// "message", "task", "statusUpdate", "artifactUpdate" based on the event type.
+func UnmarshalEventJSON(data []byte) (Event, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("failed to unmarshal event: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 	}
 
 	if v, ok := raw["message"]; ok {
 		var msg Message
 		if err := json.Unmarshal(v, &msg); err != nil {
-			return fmt.Errorf("failed to unmarshal Message event: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
 		}
-		sr.Event = &msg
+		return &msg, nil
 	} else if v, ok := raw["task"]; ok {
 		var task Task
 		if err := json.Unmarshal(v, &task); err != nil {
-			return fmt.Errorf("failed to unmarshal Task event: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
 		}
-		sr.Event = &task
+		return &task, nil
 	} else if v, ok := raw["statusUpdate"]; ok {
 		var statusUpdate TaskStatusUpdateEvent
 		if err := json.Unmarshal(v, &statusUpdate); err != nil {
-			return fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
 		}
-		sr.Event = &statusUpdate
+		return &statusUpdate, nil
 	} else if v, ok := raw["artifactUpdate"]; ok {
 		var artifactUpdate TaskArtifactUpdateEvent
 		if err := json.Unmarshal(v, &artifactUpdate); err != nil {
-			return fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
 		}
-		sr.Event = &artifactUpdate
+		return &artifactUpdate, nil
 	} else {
-		return fmt.Errorf("unknown event type: %v", raw)
+		return nil, fmt.Errorf("unknown event type: %v", raw)
 	}
-	return nil
 }
 
 // MessageRole represents a set of possible values that identify the message sender.
