@@ -28,6 +28,7 @@ import (
 
 type testTransport struct {
 	GetTaskFn              func(context.Context, *a2a.TaskQueryParams) (*a2a.Task, error)
+	ListTasksFn            func(context.Context, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 	CancelTaskFn           func(context.Context, *a2a.TaskIDParams) (*a2a.Task, error)
 	SendMessageFn          func(context.Context, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
 	ResubscribeToTaskFn    func(context.Context, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
@@ -43,6 +44,13 @@ var _ Transport = (*testTransport)(nil)
 
 func (t *testTransport) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
 	return t.GetTaskFn(ctx, query)
+}
+
+func (t *testTransport) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	if t.ListTasksFn != nil {
+		return t.ListTasksFn(ctx, req)
+	}
+	return &a2a.ListTasksResponse{}, nil
 }
 
 func (t *testTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {

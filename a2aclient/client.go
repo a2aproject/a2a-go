@@ -77,6 +77,18 @@ func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.
 	return interceptAfter(ctx, c, method, resp, err)
 }
 
+func (c *Client) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	method := "ListTasks"
+
+	ctx, interceptedReq, err := interceptBefore(ctx, c, method, req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.transport.ListTasks(ctx, interceptedReq)
+	return interceptAfter(ctx, c, method, resp, err)
+}
+
 func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	method := "CancelTask"
 

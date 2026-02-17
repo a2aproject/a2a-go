@@ -53,6 +53,17 @@ func (h *InterceptedHandler) OnGetTask(ctx context.Context, query *a2a.TaskQuery
 	return interceptAfter(ctx, h, callCtx, response, err)
 }
 
+func (h *InterceptedHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	ctx, callCtx := withMethodCallContext(ctx, "OnListTasks")
+	ctx = h.withLoggerContext(ctx)
+	ctx, interceptedReq, err := interceptBefore(ctx, h, callCtx, req)
+	if err != nil {
+		return nil, err
+	}
+	response, err := h.Handler.OnListTasks(ctx, interceptedReq)
+	return interceptAfter(ctx, h, callCtx, response, err)
+}
+
 func (h *InterceptedHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "OnCancelTask")
 	if params != nil {

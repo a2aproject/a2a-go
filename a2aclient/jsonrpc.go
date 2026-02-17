@@ -282,6 +282,21 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, query *a2a.TaskQueryPara
 	return &task, nil
 }
 
+// ListTasks lists tasks matching the specified criteria.
+func (t *jsonrpcTransport) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksList, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp a2a.ListTasksResponse
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal list tasks response: %w", err)
+	}
+
+	return &resp, nil
+}
+
 // CancelTask requests cancellation of a task.
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksCancel, id)
