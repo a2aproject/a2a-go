@@ -29,14 +29,14 @@ import (
 type mockHandler struct {
 	lastCallContext       *CallContext
 	resultErr             error
-	OnGetTaskFn           func(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error)
-	OnSendMessageFn       func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error)
-	OnSendMessageStreamFn func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
+	OnGetTaskFn           func(context.Context, *a2a.GetTaskRequest) (*a2a.Task, error)
+	OnSendMessageFn       func(context.Context, *a2a.SendMessageRequest) (a2a.SendMessageResult, error)
+	OnSendMessageStreamFn func(context.Context, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 }
 
 var _ RequestHandler = (*mockHandler)(nil)
 
-func (h *mockHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+func (h *mockHandler) GetTask(ctx context.Context, query *a2a.GetTaskRequest) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.OnGetTaskFn != nil {
 		return h.OnGetTaskFn(ctx, query)
@@ -47,7 +47,7 @@ func (h *mockHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams)
 	return &a2a.Task{}, nil
 }
 
-func (h *mockHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+func (h *mockHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -55,7 +55,7 @@ func (h *mockHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest
 	return &a2a.ListTasksResponse{}, nil
 }
 
-func (h *mockHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+func (h *mockHandler) CancelTask(ctx context.Context, params *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -63,7 +63,7 @@ func (h *mockHandler) OnCancelTask(ctx context.Context, params *a2a.TaskIDParams
 	return &a2a.Task{}, nil
 }
 
-func (h *mockHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+func (h *mockHandler) SendMessage(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.OnSendMessageFn != nil {
 		return h.OnSendMessageFn(ctx, params)
@@ -74,7 +74,7 @@ func (h *mockHandler) OnSendMessage(ctx context.Context, params *a2a.MessageSend
 	return &a2a.Task{}, nil
 }
 
-func (h *mockHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (h *mockHandler) SendStreamingMessage(ctx context.Context, params *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	if h.OnSendMessageStreamFn != nil {
 		return h.OnSendMessageStreamFn(ctx, params)
 	}
@@ -88,7 +88,7 @@ func (h *mockHandler) OnSendMessageStream(ctx context.Context, params *a2a.Messa
 	}
 }
 
-func (h *mockHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (h *mockHandler) SubscribeToTask(ctx context.Context, params *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		h.lastCallContext, _ = CallContextFrom(ctx)
 		if h.resultErr != nil {
@@ -99,7 +99,7 @@ func (h *mockHandler) OnResubscribeToTask(ctx context.Context, params *a2a.TaskI
 	}
 }
 
-func (h *mockHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -107,7 +107,7 @@ func (h *mockHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTa
 	return &a2a.TaskPushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+func (h *mockHandler) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -115,7 +115,7 @@ func (h *mockHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.List
 	return []*a2a.TaskPushConfig{{}}, nil
 }
 
-func (h *mockHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, params *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -123,12 +123,12 @@ func (h *mockHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskP
 	return &a2a.TaskPushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+func (h *mockHandler) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigRequest) error {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	return h.resultErr
 }
 
-func (h *mockHandler) OnGetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+func (h *mockHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -173,69 +173,69 @@ var methodCalls = []struct {
 	call   func(ctx context.Context, h RequestHandler) (any, error)
 }{
 	{
-		method: "OnGetTask",
+		method: "GetTask",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnGetTask(ctx, &a2a.TaskQueryParams{})
+			return h.GetTask(ctx, &a2a.GetTaskRequest{})
 		},
 	},
 	{
-		method: "OnListTasks",
+		method: "ListTasks",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnListTasks(ctx, &a2a.ListTasksRequest{})
+			return h.ListTasks(ctx, &a2a.ListTasksRequest{})
 		},
 	},
 	{
-		method: "OnCancelTask",
+		method: "CancelTask",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnCancelTask(ctx, &a2a.TaskIDParams{})
+			return h.CancelTask(ctx, &a2a.CancelTaskRequest{})
 		},
 	},
 	{
-		method: "OnSendMessage",
+		method: "SendMessage",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnSendMessage(ctx, &a2a.MessageSendParams{})
+			return h.SendMessage(ctx, &a2a.SendMessageRequest{})
 		},
 	},
 	{
-		method: "OnSendMessageStream",
+		method: "SendStreamingMessage",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return handleSingleItemSeq(h.OnSendMessageStream(ctx, &a2a.MessageSendParams{}))
+			return handleSingleItemSeq(h.SendStreamingMessage(ctx, &a2a.SendMessageRequest{}))
 		},
 	},
 	{
-		method: "OnResubscribeToTask",
+		method: "SubscribeToTask",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return handleSingleItemSeq(h.OnResubscribeToTask(ctx, &a2a.TaskIDParams{}))
+			return handleSingleItemSeq(h.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{}))
 		},
 	},
 	{
-		method: "OnListTaskPushConfig",
+		method: "ListTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{})
+			return h.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{})
 		},
 	},
 	{
-		method: "OnSetTaskPushConfig",
+		method: "CreateTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnSetTaskPushConfig(ctx, &a2a.TaskPushConfig{})
+			return h.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{})
 		},
 	},
 	{
-		method: "OnGetTaskPushConfig",
+		method: "GetTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnGetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{})
+			return h.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigRequest{})
 		},
 	},
 	{
-		method: "OnDeleteTaskPushConfig",
+		method: "DeleteTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return nil, h.OnDeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{})
+			return nil, h.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigRequest{})
 		},
 	},
 	{
-		method: "OnGetExtendedAgentCard",
+		method: "GetExtendedAgentCard",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.OnGetExtendedAgentCard(ctx)
+			return h.GetExtendedAgentCard(ctx)
 		},
 	},
 }
@@ -246,11 +246,11 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
 	var capturedCallCtx *CallContext
-	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 		if callCtx, ok := CallContextFrom(ctx); ok {
 			capturedCallCtx = callCtx
 		}
-		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}), nil
+		return a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")), nil
 	}
 
 	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
@@ -258,7 +258,7 @@ func TestInterceptedHandler_Auth(t *testing.T) {
 		return ctx, nil, nil
 	}
 
-	_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
+	_, _ = handler.SendMessage(ctx, &a2a.SendMessageRequest{})
 
 	if !capturedCallCtx.User.Authenticated {
 		t.Fatal("CallContext.User.Authenticated = false, want true")
@@ -273,15 +273,15 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
-	var capturedRequest *a2a.MessageSendParams
-	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	var capturedRequest *a2a.SendMessageRequest
+	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 		capturedRequest = params
-		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}), nil
+		return a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")), nil
 	}
 
 	wantReqKey, wantReqVal := "reqKey", 42
 	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-		payload := req.Payload.(*a2a.MessageSendParams)
+		payload := req.Payload.(*a2a.SendMessageRequest)
 		payload.Metadata = map[string]any{wantReqKey: wantReqVal}
 		return ctx, nil, nil
 	}
@@ -293,20 +293,20 @@ func TestInterceptedHandler_RequestResponseModification(t *testing.T) {
 		return nil
 	}
 
-	request := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"})}
-	response, err := handler.OnSendMessage(ctx, request)
-	if mockHandler.lastCallContext.method != "OnSendMessage" {
-		t.Fatalf("handler.OnSendMessage() CallContext = %v, want method=OnSendMessage", mockHandler.lastCallContext)
+	request := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hello!"))}
+	response, err := handler.SendMessage(ctx, request)
+	if mockHandler.lastCallContext.method != "SendMessage" {
+		t.Fatalf("handler.SendMessage() CallContext = %v, want method=SendMessage", mockHandler.lastCallContext)
 	}
 	if err != nil {
-		t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 	}
 	if capturedRequest.Metadata[wantReqKey] != wantReqVal {
-		t.Fatalf("OnSendMessage() Request.Metadata[%q] = %v, want %d", wantReqKey, capturedRequest.Metadata[wantReqKey], wantReqVal)
+		t.Fatalf("SendMessage() Request.Metadata[%q] = %v, want %d", wantReqKey, capturedRequest.Metadata[wantReqKey], wantReqVal)
 	}
 	responsMsg := response.(*a2a.Message)
 	if responsMsg.Metadata[wantRespKey] != wantRespVal {
-		t.Fatalf("OnSendMessage() Response.Metadata[%q] = %v, want %d", wantRespKey, responsMsg.Metadata[wantRespKey], wantRespVal)
+		t.Fatalf("SendMessage() Response.Metadata[%q] = %v, want %d", wantRespKey, responsMsg.Metadata[wantRespKey], wantRespVal)
 	}
 }
 
@@ -314,39 +314,39 @@ func TestInterceptedHandler_RequestModification(t *testing.T) {
 	ctx := t.Context()
 	mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
-	originalParams := &a2a.MessageSendParams{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"}),
+	originalParams := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hello!")),
 	}
-	var receivedParams *a2a.MessageSendParams
+	var receivedParams *a2a.SendMessageRequest
 
-	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+	mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 		receivedParams = params
-		message := params.Message.Parts[0].(a2a.TextPart).Text
-		return a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: message}), nil
+		message := string(params.Message.Parts[0].Content.(a2a.Text))
+		return a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(message)), nil
 	}
 
 	mockInterceptor.beforeFn = func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-		if _, ok := req.Payload.(*a2a.MessageSendParams); ok {
-			req.Payload = &a2a.MessageSendParams{
-				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"}),
+		if _, ok := req.Payload.(*a2a.SendMessageRequest); ok {
+			req.Payload = &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Modified!")),
 			}
 		}
 		return ctx, nil, nil
 	}
 
-	resp, err := handler.OnSendMessage(ctx, originalParams)
+	resp, err := handler.SendMessage(ctx, originalParams)
 	if err != nil {
-		t.Fatalf("handler.OnSendMessage() error = %v, want nil", err)
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 	}
-	if mockHandler.lastCallContext.method != "OnSendMessage" {
-		t.Fatalf("handler.OnSendMessage() CallContext = %v, want method=OnSendMessage", mockHandler.lastCallContext)
+	if mockHandler.lastCallContext.method != "SendMessage" {
+		t.Fatalf("handler.SendMessage() CallContext = %v, want method=SendMessage", mockHandler.lastCallContext)
 	}
 	if receivedParams == originalParams {
-		t.Fatalf("handler.OnSendMessage() receivedParams = %v, want %v", receivedParams, originalParams)
+		t.Fatalf("handler.SendMessage() receivedParams = %v, want %v", receivedParams, originalParams)
 	}
 	reqMsg := resp.(*a2a.Message)
-	if reqMsg.Parts[0].(a2a.TextPart).Text != "Modified!" {
-		t.Fatalf("handler.OnSendMessage() Request.Text = %q, want %q", reqMsg.Parts[0].(a2a.TextPart).Text, "Modified!")
+	if string(reqMsg.Parts[0].Content.(a2a.Text)) != "Modified!" {
+		t.Fatalf("handler.SendMessage() Request.Text = %q, want %q", string(reqMsg.Parts[0].Content.(a2a.Text)), "Modified!")
 	}
 }
 
@@ -364,16 +364,16 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 	}{
 		{
 			name:        "replace response object",
-			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Original!"}),
+			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Original!")),
 			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
-				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Modified!"})
+				resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Modified!"))
 				return nil
 			},
 			wantRespText: "Modified!",
 		},
 		{
 			name:        "injected error: handler success, interceptor error",
-			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Success!"}),
+			handlerResp: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Success!")),
 			interceptorFn: func(ctx context.Context, callCtx *CallContext, resp *Response) error {
 				resp.Err = injectedErr
 				return nil
@@ -387,7 +387,7 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 				if resp.Err != nil {
 					resp.Err = nil
 
-					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Recovered from error!"})
+					resp.Payload = a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Recovered from error!"))
 				}
 				return nil
 			},
@@ -401,14 +401,14 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 			mockHandler, mockInterceptor := &mockHandler{}, &mockInterceptor{}
 			handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
-			mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+			mockHandler.OnSendMessageFn = func(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 				return tt.handlerResp, tt.handlerErr
 			}
 
 			mockInterceptor.afterFn = tt.interceptorFn
 
-			resp, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{
-				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"}),
+			resp, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hello!")),
 			})
 
 			if !errors.Is(err, tt.wantErr) {
@@ -420,8 +420,8 @@ func TestInterceptedHandler_ResponseAndErrorModification(t *testing.T) {
 					t.Errorf("handler.OnSendMessage() resp = nil, want %v", tt.wantRespText)
 				}
 				msg := resp.(*a2a.Message)
-				if msg.Parts[0].(a2a.TextPart).Text != tt.wantRespText {
-					t.Errorf("handler.OnSendMessage() resp.Text = %q, want %q", msg.Parts[0].(a2a.TextPart).Text, tt.wantRespText)
+				if string(msg.Parts[0].Content.(a2a.Text)) != tt.wantRespText {
+					t.Errorf("handler.OnSendMessage() resp.Text = %q, want %q", string(msg.Parts[0].Content.(a2a.Text)), tt.wantRespText)
 				}
 			}
 		})
@@ -438,7 +438,7 @@ func TestInterceptedHandler_TypeSafety(t *testing.T) {
 		return ctx, nil, nil
 	}
 
-	_, err := handler.OnSendMessage(ctx, &a2a.MessageSendParams{})
+	_, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{})
 
 	if err == nil {
 		t.Fatal("got nil error, want error due to payload type mismatch")
@@ -471,7 +471,7 @@ func TestInterceptedHandler_InterceptorOrdering(t *testing.T) {
 	interceptor1, interceptor2 := createInterceptor(1), createInterceptor(2)
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{interceptor1, interceptor2}}
 
-	_, _ = handler.OnGetTask(ctx, &a2a.TaskQueryParams{})
+	_, _ = handler.GetTask(ctx, &a2a.GetTaskRequest{})
 
 	wantBefore := []int{1, 2}
 	if !reflect.DeepEqual(beforeCalls, wantBefore) {
@@ -489,7 +489,7 @@ func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 	handler := &InterceptedHandler{Handler: mockHandler, Interceptors: []CallInterceptor{mockInterceptor}}
 
 	totalCount := 5
-	mockHandler.OnSendMessageStreamFn = func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+	mockHandler.OnSendMessageStreamFn = func(ctx context.Context, params *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
 			for range totalCount {
 				if !yield(&a2a.TaskStatusUpdateEvent{Metadata: map[string]any{"count": 0}}, nil) {
@@ -509,8 +509,8 @@ func TestInterceptedHandler_EveryStreamValueIntercepted(t *testing.T) {
 	}
 
 	count := 0
-	request := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hello!"})}
-	for ev, err := range handler.OnSendMessageStream(ctx, request) {
+	request := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hello!"))}
+	for ev, err := range handler.SendStreamingMessage(ctx, request) {
 		if err != nil {
 			t.Fatalf("handler.OnSendMessageStream() error %v, want nil", err)
 		}
@@ -651,13 +651,13 @@ func TestInterceptedHandler_RejectResponse(t *testing.T) {
 
 func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 	ctx := t.Context()
-	originalQuery := &a2a.TaskQueryParams{ID: "original"}
+	originalQuery := &a2a.GetTaskRequest{ID: "original"}
 	earlyResult := &a2a.Task{ID: "early-cached-result"}
 
 	mockHandler, interceptor1, interceptor2, interceptor3 := &mockHandler{}, &mockInterceptor{}, &mockInterceptor{}, &mockInterceptor{}
 
 	handlerCalled := false
-	mockHandler.OnGetTaskFn = func(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+	mockHandler.OnGetTaskFn = func(ctx context.Context, query *a2a.GetTaskRequest) (*a2a.Task, error) {
 		handlerCalled = true
 		return nil, fmt.Errorf("handler should not be called")
 	}
@@ -690,7 +690,7 @@ func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 		Interceptors: []CallInterceptor{interceptor1, interceptor2, interceptor3},
 	}
 
-	response, err := handler.OnGetTask(ctx, originalQuery)
+	response, err := handler.GetTask(ctx, originalQuery)
 	if err != nil {
 		t.Errorf("OnGetTask() error = %v, want nil", err)
 	}

@@ -179,7 +179,7 @@ func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *
 
 // ListTasks retrieves a list of tasks.
 func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	path := rest.MakeTasksListPath()
+	path := rest.MakeListTasksPath()
 
 	query := url.Values{}
 	if req.ContextID != "" {

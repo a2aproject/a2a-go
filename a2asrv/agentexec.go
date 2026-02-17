@@ -34,8 +34,7 @@ import (
 // For streaming responses [a2a.TaskArtifactUpdatEvent]-s should be used.
 // A2A server stops processing events after one of these events:
 //   - An [a2a.Message] with any payload.
-//   - An [a2a.TaskStatusUpdateEvent] with Final field set to true.
-//   - An [a2a.Task] with a [a2a.TaskState] for which Terminal() method returns true.
+//   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] with a [a2a.TaskState] for which Terminal() method returns true or it is TaskStateInputRequired.
 //
 // The following code can be used as a streaming implementation template with generateOutputs and toParts missing:
 //
@@ -78,7 +77,6 @@ import (
 //		}
 //
 //		event = a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
-//		event.Final = true
 //		if err := queue.Write(ctx, event); err != nil {
 //			return fmt.Errorf("failed to write state working: %w", err)
 //		}
@@ -113,7 +111,7 @@ type factory struct {
 
 var _ taskexec.Factory = (*factory)(nil)
 
-func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (taskexec.Executor, taskexec.Processor, error) {
+func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.SendMessageRequest) (taskexec.Executor, taskexec.Processor, error) {
 	execCtx, err := f.loadExecutionContext(ctx, tid, params)
 	if err != nil {
 		return nil, nil, err
@@ -149,7 +147,7 @@ type executionContext struct {
 }
 
 // loadExecutionContext returns the information necessary for creating agent executor and agent event processor.
-func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
+func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.SendMessageRequest) (*executionContext, error) {
 	message := params.Message
 
 	taskStoreTask, err := f.taskStore.Get(ctx, tid)
@@ -207,7 +205,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}, nil
 }
 
-func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
+func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMessageRequest) (*executionContext, error) {
 	msg := params.Message
 	contextID := msg.ContextID
 	if contextID == "" {
@@ -222,7 +220,7 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageS
 	return &executionContext{ctx: execCtx, task: nil}, nil
 }
 
-func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, error) {
+func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Canceler, taskexec.Processor, error) {
 	storedTask, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load a task: %w", err)
@@ -237,7 +235,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 		TaskID:     task.ID,
 		StoredTask: task,
 		ContextID:  task.ContextID,
-		Metadata:   params.Metadata,
+		Metadata:   nil,
 	}
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.User = callCtx.User
