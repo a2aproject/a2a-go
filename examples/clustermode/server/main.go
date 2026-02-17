@@ -30,18 +30,20 @@ import (
 )
 
 var (
-	port   = flag.Int("port", 9001, "Port for a gGRPC A2A server to listen on.")
+	port   = flag.Int("port", 9001, "Port for a JSONRPC A2A server to listen on.")
 	dbName = flag.String("db", "", "Database connection string (DSN).")
 )
 
 func main() {
 	flag.Parse()
 
+	addr := fmt.Sprintf("http://127.0.0.1:%d/invoke", *port)
 	agentCard := &a2a.AgentCard{
-		Name:               "A2A Cluster",
-		URL:                fmt.Sprintf("http://127.0.0.1:%d/invoke", *port),
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+		Name: "A2A Cluster",
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: addr, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		},
+		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
