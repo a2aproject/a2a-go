@@ -802,16 +802,21 @@ func TestManager_GetExecution(t *testing.T) {
 	manager := newStaticExecutorManager(executor, nil)
 	executor.nextEventTerminal = true
 	subscription, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+	executionResult, _ := consumeEvents(t, subscription)
 	if err != nil {
 		t.Fatalf("manager.Execute() failed: %v", err)
 	}
 
-	resub, err := manager.Resubscribe(ctx, subscription.TaskID())
-	if err != nil {
-		t.Fatalf("manager.Resubscribe() failed: %v", err)
+	tid := subscription.TaskID()
+	if _, err := manager.Resubscribe(ctx, tid); err != nil {
+		t.Fatalf("manager.Resubscribe() to active execution failed: %v", err)
 	}
 
-	if resub.TaskID() != subscription.TaskID() {
-		t.Fatalf("resub.TaskID() = %v, want %v", resub.TaskID(), subscription.TaskID())
+	<-executor.executeCalled
+	executor.mustWrite(t, &a2a.Task{ID: tid})
+	<-executionResult
+
+	if _, err := manager.Resubscribe(ctx, tid); err == nil {
+		t.Fatal("manager.Resubscribe() succeeded for finished execution, want error")
 	}
 }
