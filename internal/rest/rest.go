@@ -23,6 +23,50 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+func MakeListTasksPath() string {
+	return "/tasks"
+}
+
+func MakeSendMessagePath() string {
+	return "/message:send"
+}
+
+func MakeStreamMessagePath() string {
+	return "/message:stream"
+}
+
+func MakeGetExtendedAgentCardPath() string {
+	return "/extendedAgentCard"
+}
+
+func MakeGetTaskPath(taskID string) string {
+	return "/tasks/" + taskID
+}
+
+func MakeCancelTaskPath(taskID string) string {
+	return "/tasks/" + taskID + ":cancel"
+}
+
+func MakeSubscribeTaskPath(taskID string) string {
+	return "/tasks/" + taskID + ":subscribe"
+}
+
+func MakeCreatePushConfigPath(taskID string) string {
+	return "/tasks/" + taskID + "/pushNotificationConfigs"
+}
+
+func MakeGetPushConfigPath(taskID, configID string) string {
+	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+}
+
+func MakeListPushConfigsPath(taskID string) string {
+	return "/tasks/" + taskID + "/pushNotificationConfigs"
+}
+
+func MakeDeletePushConfigPath(taskID, configID string) string {
+	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+}
+
 type Error struct {
 	Type      string `json:"type"`
 	Title     string `json:"title"`
@@ -39,57 +83,57 @@ type errorDetails struct {
 }
 
 var errToDetails = map[error]errorDetails{
-	a2a.ErrTaskNotFound: errorDetails{
+	a2a.ErrTaskNotFound: {
 		status: http.StatusNotFound,
 		uri:    "https://a2a-protocol.org/errors/task-not-found",
 		title:  "Task Not Found",
 	},
-	a2a.ErrTaskNotCancelable: errorDetails{
+	a2a.ErrTaskNotCancelable: {
 		status: http.StatusConflict,
 		uri:    "https://a2a-protocol.org/errors/task-not-cancelable",
 		title:  "Task Not Cancelable",
 	},
-	a2a.ErrPushNotificationNotSupported: errorDetails{
+	a2a.ErrPushNotificationNotSupported: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/push-notification-not-supported",
 		title:  "Push Notification Not Supported",
 	},
-	a2a.ErrUnsupportedOperation: errorDetails{
+	a2a.ErrUnsupportedOperation: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/unsupported-operation",
 		title:  "Unsupported Operation",
 	},
-	a2a.ErrUnsupportedContentType: errorDetails{
+	a2a.ErrUnsupportedContentType: {
 		status: http.StatusUnsupportedMediaType,
 		uri:    "https://a2a-protocol.org/errors/content-type-not-supported",
 		title:  "Content Type Not Supported",
 	},
-	a2a.ErrInvalidAgentResponse: errorDetails{
+	a2a.ErrInvalidAgentResponse: {
 		status: http.StatusBadGateway,
 		uri:    "https://a2a-protocol.org/errors/invalid-agent-response",
 		title:  "Invalid Agent Response",
 	},
-	a2a.ErrAuthenticatedExtendedCardNotConfigured: errorDetails{
+	a2a.ErrAuthenticatedExtendedCardNotConfigured: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
 		title:  "Extended Agent Card Not Configured",
 	},
-	a2a.ErrExtensionSupportRequired: errorDetails{
+	a2a.ErrExtensionSupportRequired: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/extension-support-required",
 		title:  "Extension Support Required",
 	},
-	a2a.ErrVersionNotSupported: errorDetails{
+	a2a.ErrVersionNotSupported: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/version-not-supported",
 		title:  "Version Not Supported",
 	},
-	a2a.ErrParseError: errorDetails{
+	a2a.ErrParseError: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/parse-error",
 		title:  "Parse Error",
 	},
-	a2a.ErrInvalidRequest: errorDetails{
+	a2a.ErrInvalidRequest: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/invalid-request",
 		title:  "Invalid Request",

@@ -35,7 +35,7 @@ func makeProtocols(in []string) []a2a.TransportProtocol {
 func makeEndpoints(protocols []string) []a2a.AgentInterface {
 	out := make([]a2a.AgentInterface, len(protocols))
 	for i, protocol := range protocols {
-		out[i] = a2a.AgentInterface{Transport: a2a.TransportProtocol(protocol), URL: "https://agent.com"}
+		out[i] = a2a.AgentInterface{ProtocolBinding: a2a.TransportProtocol(protocol), URL: "https://agent.com"}
 	}
 	return out
 }
@@ -163,11 +163,9 @@ func TestFactory_TransportSelection(t *testing.T) {
 			factory := NewFactory(options...)
 
 			// CreateFromCard
-			additional := make([]a2a.AgentInterface, len(tc.serverSupports)-1)
-			for i, protocol := range tc.serverSupports[1:] {
-				additional[i] = a2a.AgentInterface{Transport: a2a.TransportProtocol(protocol)}
+			card := &a2a.AgentCard{
+				SupportedInterfaces: makeEndpoints(tc.serverSupports),
 			}
-			card := &a2a.AgentCard{PreferredTransport: a2a.TransportProtocol(tc.serverSupports[0]), AdditionalInterfaces: additional}
 			_, err := factory.CreateFromCard(ctx, card)
 			if err != nil && !tc.wantErr {
 				t.Fatalf("CreateFromCard() error = %v, want nil", err)

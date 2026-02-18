@@ -29,17 +29,17 @@ const (
 	ContentJSON = "application/json"
 
 	// JSON-RPC method names per A2A spec §7
-	MethodMessageSend          = "message/send"
-	MethodMessageStream        = "message/stream"
-	MethodTasksGet             = "tasks/get"
-	MethodTasksList            = "tasks/list"
-	MethodTasksCancel          = "tasks/cancel"
-	MethodTasksResubscribe     = "tasks/resubscribe"
-	MethodPushConfigGet        = "tasks/pushNotificationConfig/get"
-	MethodPushConfigSet        = "tasks/pushNotificationConfig/set"
-	MethodPushConfigList       = "tasks/pushNotificationConfig/list"
-	MethodPushConfigDelete     = "tasks/pushNotificationConfig/delete"
-	MethodGetExtendedAgentCard = "agent/getAuthenticatedExtendedCard"
+	MethodMessageSend          = "SendMessage"
+	MethodMessageStream        = "SendStreamingMessage"
+	MethodTasksGet             = "GetTask"
+	MethodTasksList            = "ListTasks"
+	MethodTasksCancel          = "CancelTask"
+	MethodTasksResubscribe     = "SubscribeToTask"
+	MethodPushConfigGet        = "GetTaskPushNotificationConfig"
+	MethodPushConfigSet        = "CreateTaskPushNotificationConfig"
+	MethodPushConfigList       = "ListTaskPushNotificationConfig" // TODO: should be pluralized?
+	MethodPushConfigDelete     = "DeleteTaskPushNotificationConfig"
+	MethodGetExtendedAgentCard = "GetExtendedAgentCard"
 )
 
 // jsonrpcError represents a JSON-RPC 2.0 error object.

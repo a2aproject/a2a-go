@@ -35,14 +35,13 @@ func TestJSONRPC_Streaming(t *testing.T) {
 
 	executor := testexecutor.FromEventGenerator(func(execCtx *a2asrv.ExecutorContext) []a2a.Event {
 		task := &a2a.Task{ID: execCtx.TaskID, ContextID: execCtx.ContextID}
-		artifact := a2a.NewArtifactEvent(task, a2a.TextPart{Text: "Hello"})
-		finalUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}))
-		finalUpdate.Final = true
+		artifact := a2a.NewArtifactEvent(task, a2a.NewTextPart("Hello"))
+		finalUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Done!")))
 		return []a2a.Event{
 			a2a.NewSubmittedTask(execCtx, execCtx.Message),
 			a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil),
 			artifact,
-			a2a.NewArtifactUpdateEvent(task, artifact.Artifact.ID, a2a.TextPart{Text: ", world!"}),
+			a2a.NewArtifactUpdateEvent(task, artifact.Artifact.ID, a2a.NewTextPart(", world!")),
 			finalUpdate,
 		}
 	})
@@ -64,7 +63,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 	client := mustCreateClient(t, card)
 
 	var received []a2a.Event
-	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	msg := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work"))}
 	for event, err := range client.SendStreamingMessage(ctx, msg) {
 		if err != nil {
 			t.Fatalf("client.SendStreamingMessage() error = %v", err)
@@ -93,7 +92,7 @@ func TestJSONRPC_ExecutionScopeStreamingPanic(t *testing.T) {
 	client := mustCreateClient(t, newAgentCard(server.URL))
 
 	var gotErr error
-	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	msg := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work"))}
 	for _, err := range client.SendStreamingMessage(ctx, msg) {
 		gotErr = err
 	}
@@ -120,7 +119,7 @@ func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 	client := mustCreateClient(t, newAgentCard(server.URL))
 
 	var gotErr error
-	msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+	msg := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work"))}
 	for _, err := range client.SendStreamingMessage(ctx, msg) {
 		gotErr = err
 	}
@@ -140,9 +139,10 @@ func mustCreateClient(t *testing.T, card *a2a.AgentCard) *a2aclient.Client {
 
 func newAgentCard(url string) *a2a.AgentCard {
 	return &a2a.AgentCard{
-		URL:                url,
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: url, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		},
+		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}
 }
 

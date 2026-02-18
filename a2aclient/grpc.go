@@ -14,249 +14,251 @@
 
 package a2aclient
 
-import (
-	"context"
-	"io"
-	"iter"
-	"strings"
+// TODO: uncomment and fix after pbconv is implemented
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
-	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
-	"github.com/a2aproject/a2a-go/internal/grpcutil"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-)
+// import (
+// 	"context"
+// 	"io"
+// 	"iter"
+// 	"strings"
 
-// WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
-func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
-	return WithTransport(
-		a2a.TransportProtocolGRPC,
-		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			conn, err := grpc.NewClient(url, opts...)
-			if err != nil {
-				return nil, err
-			}
-			return NewGRPCTransport(conn), nil
-		}),
-	)
-}
+// 	"github.com/a2aproject/a2a-go/a2a"
+// 	"github.com/a2aproject/a2a-go/a2apb/v0"
+// 	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
+// 	"github.com/a2aproject/a2a-go/internal/grpcutil"
+// 	"google.golang.org/grpc"
+// 	"google.golang.org/grpc/metadata"
+// )
 
-// NewGRPCTransport exposes a method for direct A2A gRPC protocol handler.
-func NewGRPCTransport(conn *grpc.ClientConn) Transport {
-	return &grpcTransport{
-		client:      a2apb.NewA2AServiceClient(conn),
-		closeConnFn: func() error { return conn.Close() },
-	}
-}
+// // WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
+// func WithGRPCTransport(opts ...grpc.DialOption) FactoryOption {
+// 	return WithTransport(
+// 		a2a.TransportProtocolGRPC,
+// 		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
+// 			conn, err := grpc.NewClient(url, opts...)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			return NewGRPCTransport(conn), nil
+// 		}),
+// 	)
+// }
 
-// NewGRPCTransportFromClient creates a gRPC transport where the connection is managed
-// externally and encapsulated in the service client. The transport's Destroy method is a no-op.
-func NewGRPCTransportFromClient(client a2apb.A2AServiceClient) Transport {
-	return &grpcTransport{
-		client:      client,
-		closeConnFn: func() error { return nil },
-	}
-}
+// // NewGRPCTransport exposes a method for direct A2A gRPC protocol handler.
+// func NewGRPCTransport(conn *grpc.ClientConn) Transport {
+// 	return &grpcTransport{
+// 		client:      a2apb.NewA2AServiceClient(conn),
+// 		closeConnFn: func() error { return conn.Close() },
+// 	}
+// }
 
-// grpcTransport implements Transport by delegating to a2apb.A2AServiceClient.
-type grpcTransport struct {
-	client      a2apb.A2AServiceClient
-	closeConnFn func() error
-}
+// // NewGRPCTransportFromClient creates a gRPC transport where the connection is managed
+// // externally and encapsulated in the service client. The transport's Destroy method is a no-op.
+// func NewGRPCTransportFromClient(client a2apb.A2AServiceClient) Transport {
+// 	return &grpcTransport{
+// 		client:      client,
+// 		closeConnFn: func() error { return nil },
+// 	}
+// }
 
-var _ Transport = (*grpcTransport)(nil)
+// // grpcTransport implements Transport by delegating to a2apb.A2AServiceClient.
+// type grpcTransport struct {
+// 	client      a2apb.A2AServiceClient
+// 	closeConnFn func() error
+// }
 
-// A2A protocol methods
+// var _ Transport = (*grpcTransport)(nil)
 
-func (c *grpcTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	req, err := pbconv.ToProtoGetTaskRequest(query)
-	if err != nil {
-		return nil, err
-	}
+// // A2A protocol methods
 
-	pResp, err := c.client.GetTask(withGRPCMetadata(ctx, params), req)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+// 	req, err := pbconv.ToProtoGetTaskRequest(query)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoTask(pResp)
-}
+// 	pResp, err := c.client.GetTask(withGRPCMetadata(ctx, params), req)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	pReq, err := pbconv.ToProtoListTasksRequest(req)
-	if err != nil {
-		return nil, err
-	}
+// 	return pbconv.FromProtoTask(pResp)
+// }
 
-	pResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pReq)
-	if err != nil {
-		return nil, err
-	}
+// func (c *grpcTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+// 	pReq, err := pbconv.ToProtoListTasksRequest(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoListTasksResponse(pResp)
-}
+// 	pResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pReq)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-func (c *grpcTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	req, err := pbconv.ToProtoCancelTaskRequest(id)
-	if err != nil {
-		return nil, err
-	}
+// 	return pbconv.FromProtoListTasksResponse(pResp)
+// }
 
-	pResp, err := c.client.CancelTask(withGRPCMetadata(ctx, params), req)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
+// 	req, err := pbconv.ToProtoCancelTaskRequest(id)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoTask(pResp)
-}
+// 	pResp, err := c.client.CancelTask(withGRPCMetadata(ctx, params), req)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	req, err := pbconv.ToProtoSendMessageRequest(message)
-	if err != nil {
-		return nil, err
-	}
+// 	return pbconv.FromProtoTask(pResp)
+// }
 
-	pResp, err := c.client.SendMessage(withGRPCMetadata(ctx, params), req)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+// 	req, err := pbconv.ToProtoSendMessageRequest(message)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoSendMessageResponse(pResp)
-}
+// 	pResp, err := c.client.SendMessage(withGRPCMetadata(ctx, params), req)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) ResubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		req, err := pbconv.ToProtoTaskSubscriptionRequest(id)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
+// 	return pbconv.FromProtoSendMessageResponse(pResp)
+// }
 
-		stream, err := c.client.TaskSubscription(withGRPCMetadata(ctx, params), req)
-		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
-			return
-		}
+// func (c *grpcTransport) ResubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+// 	return func(yield func(a2a.Event, error) bool) {
+// 		req, err := pbconv.ToProtoTaskSubscriptionRequest(id)
+// 		if err != nil {
+// 			yield(nil, err)
+// 			return
+// 		}
 
-		drainEventStream(stream, yield)
-	}
-}
+// 		stream, err := c.client.TaskSubscription(withGRPCMetadata(ctx, params), req)
+// 		if err != nil {
+// 			yield(nil, grpcutil.FromGRPCError(err))
+// 			return
+// 		}
 
-func (c *grpcTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		req, err := pbconv.ToProtoSendMessageRequest(message)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
+// 		drainEventStream(stream, yield)
+// 	}
+// }
 
-		stream, err := c.client.SendStreamingMessage(withGRPCMetadata(ctx, params), req)
-		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
-			return
-		}
+// func (c *grpcTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+// 	return func(yield func(a2a.Event, error) bool) {
+// 		req, err := pbconv.ToProtoSendMessageRequest(message)
+// 		if err != nil {
+// 			yield(nil, err)
+// 			return
+// 		}
 
-		drainEventStream(stream, yield)
-	}
-}
+// 		stream, err := c.client.SendStreamingMessage(withGRPCMetadata(ctx, params), req)
+// 		if err != nil {
+// 			yield(nil, grpcutil.FromGRPCError(err))
+// 			return
+// 		}
 
-func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], yield func(a2a.Event, error) bool) {
-	for {
-		pResp, err := stream.Recv()
-		if err == io.EOF {
-			return
-		}
-		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
-			return
-		}
+// 		drainEventStream(stream, yield)
+// 	}
+// }
 
-		resp, err := pbconv.FromProtoStreamResponse(pResp)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
+// func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], yield func(a2a.Event, error) bool) {
+// 	for {
+// 		pResp, err := stream.Recv()
+// 		if err == io.EOF {
+// 			return
+// 		}
+// 		if err != nil {
+// 			yield(nil, grpcutil.FromGRPCError(err))
+// 			return
+// 		}
 
-		if !yield(resp, nil) {
-			return
-		}
-	}
-}
+// 		resp, err := pbconv.FromProtoStreamResponse(pResp)
+// 		if err != nil {
+// 			yield(nil, err)
+// 			return
+// 		}
 
-func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	pReq, err := pbconv.ToProtoGetTaskPushConfigRequest(req)
-	if err != nil {
-		return nil, err
-	}
+// 		if !yield(resp, nil) {
+// 			return
+// 		}
+// 	}
+// }
 
-	pResp, err := c.client.GetTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+// 	pReq, err := pbconv.ToProtoGetTaskPushConfigRequest(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoTaskPushConfig(pResp)
-}
+// 	pResp, err := c.client.GetTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	pReq, err := pbconv.ToProtoListTaskPushConfigRequest(req)
-	if err != nil {
-		return nil, err
-	}
+// 	return pbconv.FromProtoTaskPushConfig(pResp)
+// }
 
-	pResp, err := c.client.ListTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+// 	pReq, err := pbconv.ToProtoListTaskPushConfigRequest(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoListTaskPushConfig(pResp)
-}
+// 	pResp, err := c.client.ListTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	pReq, err := pbconv.ToProtoCreateTaskPushConfigRequest(req)
-	if err != nil {
-		return nil, err
-	}
+// 	return pbconv.FromProtoListTaskPushConfig(pResp)
+// }
 
-	pResp, err := c.client.CreateTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// func (c *grpcTransport) SetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+// 	pReq, err := pbconv.ToProtoCreateTaskPushConfigRequest(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return pbconv.FromProtoTaskPushConfig(pResp)
-}
+// 	pResp, err := c.client.CreateTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigParams) error {
-	pReq, err := pbconv.ToProtoDeleteTaskPushConfigRequest(req)
-	if err != nil {
-		return err
-	}
+// 	return pbconv.FromProtoTaskPushConfig(pResp)
+// }
 
-	_, err = c.client.DeleteTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
+// func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigParams) error {
+// 	pReq, err := pbconv.ToProtoDeleteTaskPushConfigRequest(req)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return grpcutil.FromGRPCError(err)
-}
+// 	_, err = c.client.DeleteTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pReq)
 
-func (c *grpcTransport) GetAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
-	pCard, err := c.client.GetAgentCard(withGRPCMetadata(ctx, params), &a2apb.GetAgentCardRequest{})
-	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
-	}
+// 	return grpcutil.FromGRPCError(err)
+// }
 
-	return pbconv.FromProtoAgentCard(pCard)
-}
+// func (c *grpcTransport) GetAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+// 	pCard, err := c.client.GetAgentCard(withGRPCMetadata(ctx, params), &a2apb.GetAgentCardRequest{})
+// 	if err != nil {
+// 		return nil, grpcutil.FromGRPCError(err)
+// 	}
 
-func (c *grpcTransport) Destroy() error {
-	return c.closeConnFn()
-}
+// 	return pbconv.FromProtoAgentCard(pCard)
+// }
 
-func withGRPCMetadata(ctx context.Context, params ServiceParams) context.Context {
-	if len(params) == 0 {
-		return ctx
-	}
-	meta := metadata.MD{}
-	for k, vals := range params {
-		meta[strings.ToLower(k)] = vals
-	}
-	return metadata.NewOutgoingContext(ctx, meta)
-}
+// func (c *grpcTransport) Destroy() error {
+// 	return c.closeConnFn()
+// }
+
+// func withGRPCMetadata(ctx context.Context, params ServiceParams) context.Context {
+// 	if len(params) == 0 {
+// 		return ctx
+// 	}
+// 	meta := metadata.MD{}
+// 	for k, vals := range params {
+// 		meta[strings.ToLower(k)] = vals
+// 	}
+// 	return metadata.NewOutgoingContext(ctx, meta)
+// }

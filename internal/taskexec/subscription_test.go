@@ -72,13 +72,13 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			snapshot: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 			events: []a2a.Event{
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
-				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}, Final: true},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}, // not received
 			},
 			wantEvents: []a2a.Event{
 				&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
-				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}, Final: true},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
 		},
 		{
@@ -89,7 +89,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
-				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}, Final: true},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
 			eventVersions: []taskstore.TaskVersion{
 				// older than snapshot
@@ -100,7 +100,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			wantEvents: []a2a.Event{
 				&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
 				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
-				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}, Final: true},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
 		},
 		{

@@ -42,69 +42,69 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 		call   func(ctx context.Context, client *a2aclient.Client) (any, error)
 	}{
 		{
-			method: "OnGetTask",
+			method: "GetTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetTask(ctx, &a2a.TaskQueryParams{})
+				return client.GetTask(ctx, &a2a.GetTaskRequest{})
 			},
 		},
 		{
-			method: "OnListTasks",
+			method: "ListTasks",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
 				return client.ListTasks(ctx, &a2a.ListTasksRequest{})
 			},
 		},
 		{
-			method: "OnCancelTask",
+			method: "CancelTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.CancelTask(ctx, &a2a.TaskIDParams{})
+				return client.CancelTask(ctx, &a2a.CancelTaskRequest{})
 			},
 		},
 		{
-			method: "OnSendMessage",
+			method: "SendMessage",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.SendMessage(ctx, &a2a.MessageSendParams{})
+				return client.SendMessage(ctx, &a2a.SendMessageRequest{})
 			},
 		},
 		{
-			method: "OnSendMessageStream",
+			method: "SendStreamingMessage",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return handleSingleItemSeq(client.SendStreamingMessage(ctx, &a2a.MessageSendParams{}))
+				return handleSingleItemSeq(client.SendStreamingMessage(ctx, &a2a.SendMessageRequest{}))
 			},
 		},
 		{
-			method: "OnResubscribeToTask",
+			method: "SubscribeToTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return handleSingleItemSeq(client.ResubscribeToTask(ctx, &a2a.TaskIDParams{}))
+				return handleSingleItemSeq(client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{}))
 			},
 		},
 		{
-			method: "OnListTaskPushConfig",
+			method: "ListTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{})
+				return client.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{})
 			},
 		},
 		{
-			method: "OnSetTaskPushConfig",
+			method: "CreateTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.SetTaskPushConfig(ctx, &a2a.TaskPushConfig{})
+				return client.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{})
 			},
 		},
 		{
-			method: "OnGetTaskPushConfig",
+			method: "GetTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{})
+				return client.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigRequest{})
 			},
 		},
 		{
-			method: "OnDeleteTaskPushConfig",
+			method: "DeleteTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return nil, client.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{})
+				return nil, client.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigRequest{})
 			},
 		},
 		{
-			method: "OnGetExtendedAgentCard",
+			method: "GetExtendedAgentCard",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetAgentCard(ctx)
+				return client.GetExtendedAgentCard(ctx)
 			},
 		},
 	}
@@ -125,7 +125,7 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
 
 	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-		{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC},
+		{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC},
 	})
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -327,7 +327,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 					return func(yield func(a2a.Event, error) bool) {
 						time.Sleep(agentTimeout)
-						if !yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"}), nil) {
+						if !yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("test message")), nil) {
 							return
 						}
 					}
@@ -345,8 +345,8 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 			request := jsonrpcRequest{
 				JSONRPC: "2.0",
 				Method:  jsonrpc.MethodMessageStream,
-				Params: mustMarshal(t, &a2a.MessageSendParams{
-					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "hello"}),
+				Params: mustMarshal(t, &a2a.SendMessageRequest{
+					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello")),
 				}),
 				ID: 1,
 			}

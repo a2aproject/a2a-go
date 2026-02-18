@@ -98,8 +98,7 @@ func TestDurationsExtension(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			serverCard := &a2a.AgentCard{
-				PreferredTransport: a2a.TransportProtocolJSONRPC,
-				Capabilities:       a2a.AgentCapabilities{Extensions: tc.serverDeclares},
+				Capabilities: a2a.AgentCapabilities{Extensions: tc.serverDeclares},
 			}
 
 			agentExecutor := testexecutor.FromEventGenerator(func(execCtx *a2asrv.ExecutorContext) []a2a.Event {
@@ -108,7 +107,10 @@ func TestDurationsExtension(t *testing.T) {
 			handler := a2asrv.NewHandler(agentExecutor, a2asrv.WithCallInterceptors(&durationTracker{}))
 
 			server := httptest.NewServer(a2asrv.NewJSONRPCHandler(handler))
-			serverCard.URL = server.URL
+			serverCard.SupportedInterfaces = []a2a.AgentInterface{{
+				URL:             server.URL,
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+			}}
 			defer server.Close()
 
 			client, err := a2aclient.NewFromCard(ctx, serverCard, a2aclient.WithCallInterceptors(
@@ -117,8 +119,8 @@ func TestDurationsExtension(t *testing.T) {
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromCard() error = %v", err)
 			}
-			result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "ping"}),
+			result, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("ping")),
 			})
 			if err != nil {
 				t.Fatalf("SendMessage failed: %v", err)

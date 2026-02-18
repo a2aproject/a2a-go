@@ -47,7 +47,7 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 	return func(yield func(a2a.Event, error) bool) {
 		log.Info(ctx, "agent received task", "task_id", execCtx.TaskID)
 
-		text := execCtx.Message.Parts[0].(a2a.TextPart).Text
+		text := execCtx.Message.Parts[0].Text()
 
 		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 		countTo := fs.Int("count-to", 0, "number to count to")
@@ -56,7 +56,7 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 
 		if err := fs.Parse(strings.Fields(text)); err != nil {
 			log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
-			msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: fmt.Sprintf("failed to interpret task: %v", err)})
+			msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(fmt.Sprintf("failed to interpret task: %v", err)))
 			yield(msg, nil)
 			return
 		}
@@ -65,7 +65,7 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 			log.Info(ctx, "failed to interpret task", "task_id", execCtx.TaskID)
 			msg := a2a.NewMessage(
 				a2a.MessageRoleAgent,
-				a2a.TextPart{Text: "Hello, world! Use --count-to=N --die-every=M --interval=I to test me."},
+				a2a.NewTextPart("Hello, world! Use --count-to=N --die-every=M --interval=I to test me."),
 			)
 			yield(msg, nil)
 			return
@@ -80,7 +80,7 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 		} else if len(execCtx.StoredTask.Artifacts) > 0 {
 			lastArtifact := execCtx.StoredTask.Artifacts[len(execCtx.StoredTask.Artifacts)-1]
 			if len(lastArtifact.Parts) > 0 {
-				lastCount := lastArtifact.Parts[len(lastArtifact.Parts)-1].(a2a.TextPart).Text
+				lastCount := lastArtifact.Parts[len(lastArtifact.Parts)-1].Text()
 				countPart := strings.Split(lastCount, ": ")[1]
 				if val, err := strconv.Atoi(countPart); err == nil {
 					start = val + 1
@@ -108,9 +108,9 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 			chunk := fmt.Sprintf("%s: %d", a.workerID, i+start)
 			var event *a2a.TaskArtifactUpdateEvent
 			if artifactID == "" {
-				event = a2a.NewArtifactEvent(execCtx, a2a.TextPart{Text: chunk})
+				event = a2a.NewArtifactEvent(execCtx, a2a.NewTextPart(chunk))
 			} else {
-				event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.TextPart{Text: chunk})
+				event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, a2a.NewTextPart(chunk))
 			}
 			if !yield(event, nil) {
 				return
@@ -120,9 +120,8 @@ func (a *agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCon
 		taskCompleted := a2a.NewStatusUpdateEvent(
 			execCtx,
 			a2a.TaskStateCompleted,
-			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Done!"}),
+			a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Done!")),
 		)
-		taskCompleted.Final = true
 		yield(taskCompleted, nil)
 	}
 }
@@ -132,7 +131,7 @@ func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContex
 		yield(a2a.NewStatusUpdateEvent(
 			execCtx,
 			a2a.TaskStateCanceled,
-			a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Task cancelled"}),
+			a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Task cancelled")),
 		), nil)
 	}
 }
