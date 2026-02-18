@@ -29,16 +29,18 @@ type AgentCapabilities struct {
 	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty" yaml:"extendedAgentCard,omitempty" mapstructure:"extendedAgentCard,omitempty"`
 }
 
-// SecurityRequirements describes a set of security requirements that must be present on a request.
+// SecurityRequirement describes a set of security requirements that must be present on a request.
 // For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
 // following requirements object needs to be created:
 //
-//	SecurityRequirements{
-//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
-//		SecuritySchemeName("mTLS"): {}
+//	SecurityRequirement{
+//		Schemes: map[SecuritySchemeName]SecuritySchemeScopes{
+//			"oauth2": SecuritySchemeScopes{"read", "write"},
+//			"mTLS":   SecuritySchemeScopes{},
+//		},
 //	}
 type SecurityRequirement struct {
-	Scheme map[SecuritySchemeName]SecuritySchemeScopes `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
+	Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
 }
 
 // AgentCard is a self-describing manifest for an agent. It provides essential
@@ -85,14 +87,14 @@ type AgentCard struct {
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
-	// Security is a list of security requirement objects that apply to all agent interactions.
+	// SecurityRequirements is a list of security requirement objects that apply to all agent interactions.
 	// Each object lists security schemes that can be used.
 	// Follows the OpenAPI 3.0 Security Requirement Object.
 	// This list can be seen as an OR of ANDs. Each object in the list describes one
 	// possible set of security requirements that must be present on a request.
 	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
 	//
-	// Security: []SecurityRequirements{
+	// SecurityRequirements: []SecurityRequirements{
 	//		{"oauth2": SecuritySchemeScopes{"read"}},
 	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
 	// }

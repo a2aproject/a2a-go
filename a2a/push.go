@@ -86,9 +86,6 @@ type CreateTaskPushConfigRequest struct {
 
 	// TaskID is the ID of the task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
-
-	// ID is the ID of the push notification configuration.
-	ConfigID string `json:"configId" yaml:"configId" mapstructure:"configId"`
 }
 
 // PushConfig defines the configuration for setting up push notifications for task updates.
