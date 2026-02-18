@@ -101,9 +101,9 @@ func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
 	}
 	meta := fromProtoMap(p.Metadata)
 	part := a2a.Part{
-		Filename: p.GetFilename(),
+		Filename:  p.GetFilename(),
 		MediaType: p.GetMediaType(),
-		Metadata: meta,
+		Metadata:  meta,
 	}
 	switch content := p.GetContent().(type) {
 	case *a2apb.Part_Text:
@@ -324,9 +324,9 @@ func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 	}
 
 	return &a2a.CreateTaskPushConfigRequest{
-		Tenant:   req.GetTenant(),
-		TaskID:   taskID,
-		Config:   *pConf,
+		Tenant: req.GetTenant(),
+		TaskID: taskID,
+		Config: *pConf,
 	}, nil
 }
 
@@ -594,7 +594,7 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	if id == "" {
 		return nil, fmt.Errorf("config id cannot be empty")
 	}
-	
+
 	pConf := pTaskConfig.GetPushNotificationConfig()
 	if pConf == nil {
 		return nil, fmt.Errorf("push notification config cannot be empty")
@@ -641,9 +641,9 @@ func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfi
 		return nil, fmt.Errorf("task id cannot be empty")
 	}
 	return &a2a.ListTaskPushConfigRequest{
-		Tenant:   req.GetTenant(),
-		TaskID:   taskID,
-		PageSize: int(req.GetPageSize()),
+		Tenant:    req.GetTenant(),
+		TaskID:    taskID,
+		PageSize:  int(req.GetPageSize()),
 		PageToken: req.GetPageToken(),
 	}, nil
 }
@@ -710,10 +710,10 @@ func fromProtoCapabilities(pCapabilities *a2apb.AgentCapabilities) (a2a.AgentCap
 	}
 
 	result := a2a.AgentCapabilities{
-		PushNotifications:      pCapabilities.GetPushNotifications(),
-		Streaming:              pCapabilities.GetStreaming(),
-		Extensions:             extensions,
-		ExtendedAgentCard: 			pCapabilities.GetExtendedAgentCard(),
+		PushNotifications: pCapabilities.GetPushNotifications(),
+		Streaming:         pCapabilities.GetStreaming(),
+		Extensions:        extensions,
+		ExtendedAgentCard: pCapabilities.GetExtendedAgentCard(),
 	}
 	return result, nil
 }
@@ -721,41 +721,41 @@ func fromProtoCapabilities(pCapabilities *a2apb.AgentCapabilities) (a2a.AgentCap
 func fromProtoOAuthFlows(pFlows *a2apb.OAuthFlows) (a2a.OAuthFlows, error) {
 	if pFlows == nil {
 		return nil, fmt.Errorf("oauth flows is nil")
-	}	
+	}
 	switch f := pFlows.Flow.(type) {
 	case *a2apb.OAuthFlows_AuthorizationCode:
 		return &a2a.AuthorizationCodeOAuthFlow{
-				AuthorizationURL: f.AuthorizationCode.GetAuthorizationUrl(),
-				TokenURL:         f.AuthorizationCode.GetTokenUrl(),
-				RefreshURL:       f.AuthorizationCode.GetRefreshUrl(),
-				Scopes:           f.AuthorizationCode.GetScopes(),
-				PKCERequired: f.AuthorizationCode.GetPkceRequired(),
-			},nil
+			AuthorizationURL: f.AuthorizationCode.GetAuthorizationUrl(),
+			TokenURL:         f.AuthorizationCode.GetTokenUrl(),
+			RefreshURL:       f.AuthorizationCode.GetRefreshUrl(),
+			Scopes:           f.AuthorizationCode.GetScopes(),
+			PKCERequired:     f.AuthorizationCode.GetPkceRequired(),
+		}, nil
 	case *a2apb.OAuthFlows_ClientCredentials:
 		return &a2a.ClientCredentialsOAuthFlow{
-				TokenURL:   f.ClientCredentials.GetTokenUrl(),
-				RefreshURL: f.ClientCredentials.GetRefreshUrl(),
-				Scopes:     f.ClientCredentials.GetScopes(),
-			},	 nil
+			TokenURL:   f.ClientCredentials.GetTokenUrl(),
+			RefreshURL: f.ClientCredentials.GetRefreshUrl(),
+			Scopes:     f.ClientCredentials.GetScopes(),
+		}, nil
 	case *a2apb.OAuthFlows_Implicit:
 		return &a2a.ImplicitOAuthFlow{
-				AuthorizationURL: f.Implicit.GetAuthorizationUrl(),
-				RefreshURL:       f.Implicit.GetRefreshUrl(),
-				Scopes:           f.Implicit.GetScopes(),
-			}, nil
+			AuthorizationURL: f.Implicit.GetAuthorizationUrl(),
+			RefreshURL:       f.Implicit.GetRefreshUrl(),
+			Scopes:           f.Implicit.GetScopes(),
+		}, nil
 	case *a2apb.OAuthFlows_Password:
 		return &a2a.PasswordOAuthFlow{
-				TokenURL:   f.Password.GetTokenUrl(),
-				RefreshURL: f.Password.GetRefreshUrl(),
-				Scopes:     f.Password.GetScopes(),
-			}, nil
+			TokenURL:   f.Password.GetTokenUrl(),
+			RefreshURL: f.Password.GetRefreshUrl(),
+			Scopes:     f.Password.GetScopes(),
+		}, nil
 	case *a2apb.OAuthFlows_DeviceCode:
 		return &a2a.DeviceCodeOAuthFlow{
-				DeviceAuthorizationURL: f.DeviceCode.GetDeviceAuthorizationUrl(),
-				TokenURL:               f.DeviceCode.GetTokenUrl(),
-				RefreshURL:             f.DeviceCode.GetRefreshUrl(),
-				Scopes:                 f.DeviceCode.GetScopes(),
-			}, nil
+			DeviceAuthorizationURL: f.DeviceCode.GetDeviceAuthorizationUrl(),
+			TokenURL:               f.DeviceCode.GetTokenUrl(),
+			RefreshURL:             f.DeviceCode.GetRefreshUrl(),
+			Scopes:                 f.DeviceCode.GetScopes(),
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported oauth flow type: %T", f)
 	}
@@ -815,16 +815,14 @@ func fromProtoSecuritySchemes(pSchemes map[string]*a2apb.SecurityScheme) (a2a.Na
 	return schemes, nil
 }
 
-func fromProtoSecurity(pSecurity []*a2apb.SecurityRequirement) []a2a.SecurityRequirement {
-	security := make([]a2a.SecurityRequirement, len(pSecurity))
+func fromProtoSecurity(pSecurity []*a2apb.SecurityRequirement) a2a.SecurityRequirementsOptions {
+	security := make(a2a.SecurityRequirementsOptions, len(pSecurity))
 	for i, pSec := range pSecurity {
 		schemes := make(map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes)
 		for name, scopes := range pSec.Schemes {
 			schemes[a2a.SecuritySchemeName(name)] = scopes.GetList()
 		}
-		security[i] = a2a.SecurityRequirement{
-			Schemes: schemes,
-		}
+		security[i] = schemes
 	}
 	return security
 }
@@ -851,7 +849,7 @@ func fromProtoSkills(pSkills []*a2apb.AgentSkill) ([]a2a.AgentSkill, error) {
 		if tags == nil {
 			return nil, fmt.Errorf("skill tags cannot be empty")
 		}
-		
+
 		skills[i] = a2a.AgentSkill{
 			ID:          id,
 			Name:        name,
@@ -945,20 +943,20 @@ func FromProtoAgentCard(pCard *a2apb.AgentCard) (*a2a.AgentCard, error) {
 	}
 
 	result := &a2a.AgentCard{
-		Name:                              name,
-		Description:                       description,
-		SupportedInterfaces:               interfaces,
-		Version:                           version,
-		DocumentationURL:                  pCard.GetDocumentationUrl(),
-		Capabilities:                      capabilities,
-		DefaultInputModes:                 defaultInputModes,
-		DefaultOutputModes:                defaultOutputModes,
-		SecuritySchemes:                   schemes,
-		Provider:                          provider,
-		SecurityRequirements:              fromProtoSecurity(pCard.GetSecurityRequirements()),
-		Skills:                            skills,
-		IconURL:                           pCard.GetIconUrl(),
-		Signatures:                        signatures,
+		Name:                 name,
+		Description:          description,
+		SupportedInterfaces:  interfaces,
+		Version:              version,
+		DocumentationURL:     pCard.GetDocumentationUrl(),
+		Capabilities:         capabilities,
+		DefaultInputModes:    defaultInputModes,
+		DefaultOutputModes:   defaultOutputModes,
+		SecuritySchemes:      schemes,
+		Provider:             provider,
+		SecurityRequirements: fromProtoSecurity(pCard.GetSecurityRequirements()),
+		Skills:               skills,
+		IconURL:              pCard.GetIconUrl(),
+		Signatures:           signatures,
 	}
 
 	return result, nil

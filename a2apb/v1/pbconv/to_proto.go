@@ -107,8 +107,8 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 	}
 
 	pConf := &a2apb.SendMessageConfiguration{
-		AcceptedOutputModes: config.AcceptedOutputModes,
-		PushNotificationConfig:    pushConf,
+		AcceptedOutputModes:    config.AcceptedOutputModes,
+		PushNotificationConfig: pushConf,
 	}
 	if config.Blocking != nil {
 		pConf.Blocking = *config.Blocking
@@ -166,9 +166,9 @@ func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest)
 	}
 
 	return &a2apb.CreateTaskPushNotificationConfigRequest{
-		Tenant:   config.Tenant,
-		TaskId:   string(config.TaskID),
-		Config:   pConfig,
+		Tenant: config.Tenant,
+		TaskId: string(config.TaskID),
+		Config: pConfig,
 	}, nil
 }
 
@@ -334,8 +334,8 @@ func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
 	}
 
 	pPart := &a2apb.Part{
-		Metadata: meta,
-		Filename: part.Filename,
+		Metadata:  meta,
+		Filename:  part.Filename,
 		MediaType: part.MediaType,
 	}
 
@@ -591,9 +591,9 @@ func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2ap
 		return nil, nil
 	}
 	return &a2apb.ListTaskPushNotificationConfigRequest{
-		Tenant:   req.Tenant,
-		TaskId:   string(req.TaskID),
-		PageSize: int32(req.PageSize),
+		Tenant:    req.Tenant,
+		TaskId:    string(req.TaskID),
+		PageSize:  int32(req.PageSize),
 		PageToken: req.PageToken,
 	}, nil
 }
@@ -645,10 +645,10 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	}
 
 	result := &a2apb.AgentCapabilities{
-		Streaming:              proto.Bool(capabilities.Streaming),
-		PushNotifications:      proto.Bool(capabilities.PushNotifications),
-		Extensions:             extensions,
-		ExtendedAgentCard:      proto.Bool(capabilities.ExtendedAgentCard),
+		Streaming:         proto.Bool(capabilities.Streaming),
+		PushNotifications: proto.Bool(capabilities.PushNotifications),
+		Extensions:        extensions,
+		ExtendedAgentCard: proto.Bool(capabilities.ExtendedAgentCard),
 	}
 	return result, nil
 }
@@ -815,11 +815,11 @@ func toProtoSecuritySchemes(schemes a2a.NamedSecuritySchemes) (map[string]*a2apb
 	return pSchemes, nil
 }
 
-func toProtoSecurity(security []a2a.SecurityRequirement) []*a2apb.SecurityRequirement {
+func toProtoSecurity(security a2a.SecurityRequirementsOptions) []*a2apb.SecurityRequirement {
 	pSecurity := make([]*a2apb.SecurityRequirement, len(security))
 	for i, sec := range security {
 		pSchemes := make(map[string]*a2apb.StringList)
-		for name, scopes := range sec.Schemes {
+		for name, scopes := range sec {
 			pSchemes[string(name)] = &a2apb.StringList{List: scopes}
 		}
 		pSecurity[i] = &a2apb.SecurityRequirement{Schemes: pSchemes}
@@ -887,20 +887,20 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	}
 
 	result := &a2apb.AgentCard{
-		Name:                              card.Name,
-		Description:                       card.Description,
-		SupportedInterfaces:               toProtoSupportedInterfaces(card.SupportedInterfaces),
-		Provider:                          toProtoAgentProvider(card.Provider),
-		Version:                           card.Version,
-		DocumentationUrl:                  &card.DocumentationURL,
-		Capabilities:                      capabilities,
-		SecuritySchemes:                   schemes,
-		SecurityRequirements:              toProtoSecurity(card.SecurityRequirements),
-		DefaultInputModes:                 card.DefaultInputModes,
-		DefaultOutputModes:                card.DefaultOutputModes,
-		Skills:                            toProtoSkills(card.Skills),
-		Signatures:                        signatures,
-		IconUrl:                           &card.IconURL,
+		Name:                 card.Name,
+		Description:          card.Description,
+		SupportedInterfaces:  toProtoSupportedInterfaces(card.SupportedInterfaces),
+		Provider:             toProtoAgentProvider(card.Provider),
+		Version:              card.Version,
+		DocumentationUrl:     &card.DocumentationURL,
+		Capabilities:         capabilities,
+		SecuritySchemes:      schemes,
+		SecurityRequirements: toProtoSecurity(card.SecurityRequirements),
+		DefaultInputModes:    card.DefaultInputModes,
+		DefaultOutputModes:   card.DefaultOutputModes,
+		Skills:               toProtoSkills(card.Skills),
+		Signatures:           signatures,
+		IconUrl:              &card.IconURL,
 	}
 
 	return result, nil
