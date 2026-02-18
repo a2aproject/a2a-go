@@ -25,39 +25,39 @@ import (
 // A2AClient defines a transport-agnostic interface for making A2A requests.
 // Transport implementations are a translation layer between a2a core types and wire formats.
 type Transport interface {
-	// GetTask calls the 'tasks/get' protocol method.
-	GetTask(context.Context, ServiceParams, *a2a.TaskQueryParams) (*a2a.Task, error)
+	// GetTask calls the 'GetTask' protocol method.
+	GetTask(context.Context, ServiceParams, *a2a.GetTaskRequest) (*a2a.Task, error)
 
-	// ListTasks calls the 'tasks/list' protocol method.
+	// ListTasks calls the 'ListTasks' protocol method.
 	ListTasks(context.Context, ServiceParams, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 
-	// CancelTask calls the 'tasks/cancel' protocol method.
-	CancelTask(context.Context, ServiceParams, *a2a.TaskIDParams) (*a2a.Task, error)
+	// CancelTask calls the 'CancelTask' protocol method.
+	CancelTask(context.Context, ServiceParams, *a2a.CancelTaskRequest) (*a2a.Task, error)
 
-	// SendMessage calls the 'message/send' protocol method (non-streaming).
-	SendMessage(context.Context, ServiceParams, *a2a.MessageSendParams) (a2a.SendMessageResult, error)
+	// SendMessage calls the 'SendMessage' protocol method (non-streaming).
+	SendMessage(context.Context, ServiceParams, *a2a.SendMessageRequest) (a2a.SendMessageResult, error)
 
-	// ResubscribeToTask calls the `tasks/resubscribe` protocol method.
-	ResubscribeToTask(context.Context, ServiceParams, *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
+	// SubscribeToTask calls the `SubscribeToTask` protocol method.
+	SubscribeToTask(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 
-	// SendStreamingMessage calls the 'message/stream' protocol method (streaming).
-	SendStreamingMessage(context.Context, ServiceParams, *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
+	// SendStreamingMessage calls the 'SendStreamingMessage' protocol method (streaming).
+	SendStreamingMessage(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 
-	// GetTaskPushNotificationConfig calls the `tasks/pushNotificationConfig/get` protocol method.
-	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error)
+	// GetTaskPushNotificationConfig calls the `GetTaskPushNotificationConfig` protocol method.
+	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// ListTaskPushNotificationConfig calls the `tasks/pushNotificationConfig/list` protocol method.
-	ListTaskPushConfig(context.Context, ServiceParams, *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error)
+	// ListTaskPushNotificationConfig calls the `ListTaskPushNotificationConfig` protocol method.
+	ListTaskPushConfig(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
-	// SetTaskPushConfig calls the `tasks/pushNotificationConfig/set` protocol method.
-	SetTaskPushConfig(context.Context, ServiceParams, *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error)
+	// CreateTaskPushNotificationConfig calls the `CreateTaskPushNotificationConfig` protocol method.
+	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// DeleteTaskPushNotificationConfig calls the `tasks/pushNotificationConfig/delete` protocol method.
-	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigParams) error
+	// DeleteTaskPushNotificationConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
+	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 
-	// GetAgentCard resolves the AgentCard.
-	// If extended card is supported calls the 'agent/getAuthenticatedExtendedCard' protocol method.
-	GetAgentCard(context.Context, ServiceParams) (*a2a.AgentCard, error)
+	// GetExtendedAgentCard resolves the AgentCard.
+	// If extended card is supported calls the 'GetExtendedAgentCard' protocol method.
+	GetExtendedAgentCard(context.Context, ServiceParams) (*a2a.AgentCard, error)
 
 	// Clean up resources associated with the transport (eg. close a gRPC channel).
 	Destroy() error
@@ -81,7 +81,7 @@ type unimplementedTransport struct{}
 
 var _ Transport = (*unimplementedTransport)(nil)
 
-func (unimplementedTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.TaskQueryParams) (*a2a.Task, error) {
+func (unimplementedTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.GetTaskRequest) (*a2a.Task, error) {
 	return nil, errNotImplemented
 }
 
@@ -89,43 +89,43 @@ func (unimplementedTransport) ListTasks(ctx context.Context, params ServiceParam
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
+func (unimplementedTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
+func (unimplementedTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) ResubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (unimplementedTransport) SubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		yield(nil, errNotImplemented)
 	}
 }
 
-func (unimplementedTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (unimplementedTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		yield(nil, errNotImplemented)
 	}
 }
 
-func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) SetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigParams) error {
+func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
 	return errNotImplemented
 }
 
-func (unimplementedTransport) GetAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+func (unimplementedTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
 	return nil, errNotImplemented
 }
 

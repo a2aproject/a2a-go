@@ -100,8 +100,8 @@ func TestActivator(t *testing.T) {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
 			}
 
-			_, err = client.SendMessage(ctx, &a2a.MessageSendParams{
-				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "verify extensions"}),
+			_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("verify extensions")),
 			})
 			if err != nil {
 				t.Fatalf("client.SendMessage() error = %v", err)
@@ -123,15 +123,16 @@ func startServerWithExtensions(t *testing.T, executor a2asrv.AgentExecutor, exte
 	for _, uri := range extensionURIs {
 		extensions = append(extensions, a2a.AgentExtension{URI: uri})
 	}
-	card := &a2a.AgentCard{
-		Capabilities: a2a.AgentCapabilities{
-			Extensions: extensions,
-		},
-	}
+
 	reqHandler := a2asrv.NewHandler(executor)
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
-	card.URL = server.URL
-	card.PreferredTransport = a2a.TransportProtocolJSONRPC
 	t.Cleanup(server.Close)
+
+	card := &a2a.AgentCard{
+		Capabilities: a2a.AgentCapabilities{Extensions: extensions},
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		},
+	}
 	return card
 }

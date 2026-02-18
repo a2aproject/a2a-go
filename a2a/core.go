@@ -84,7 +84,11 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
+// StreamResponse is a wrapper around Event that can be sent over a streaming connection.
+// It implements event JSON codec where the serialized representation is a JSON object
+// with a single field matching the event type name.
 type StreamResponse struct {
+	// Event is the event to be sent over the streaming connection.
 	Event
 }
 
@@ -105,8 +109,6 @@ func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
-// The kind field is used as a discriminator to determine which concrete type to unmarshal into.
 func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {

@@ -61,7 +61,7 @@ type AuthInterceptor struct {
 var _ CallInterceptor = (*AuthInterceptor)(nil)
 
 func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
-	if req.Card == nil || req.Card.Security == nil || req.Card.SecuritySchemes == nil {
+	if req.Card == nil || req.Card.SecurityRequirements == nil || req.Card.SecuritySchemes == nil {
 		return ctx, nil, nil
 	}
 
@@ -70,8 +70,8 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 		return ctx, nil, nil
 	}
 
-	for _, requirement := range req.Card.Security {
-		for schemeName := range requirement {
+	for _, requirement := range req.Card.SecurityRequirements {
+		for schemeName, _ := range requirement.Scheme {
 			credential, err := ai.Service.Get(ctx, sessionID, schemeName)
 			if errors.Is(err, ErrCredentialNotFound) {
 				continue

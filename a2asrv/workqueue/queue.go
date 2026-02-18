@@ -41,10 +41,10 @@ type Payload struct {
 	Type PayloadType
 	// TaskID is an ID of the task to execute or cancel.
 	TaskID a2a.TaskID
-	// CancelParams defines the cancelation parameters. It is only set for [PayloadTypeCancel].
-	CancelParams *a2a.TaskIDParams
-	// ExecuteParams defines the execution parameters. It is only set for [PayloadTypeExecute].
-	ExecuteParams *a2a.MessageSendParams
+	// CancelRequest defines the cancelation parameters. It is only set for [PayloadTypeCancel].
+	CancelRequest *a2a.CancelTaskRequest
+	// ExecuteRequest defines the execution parameters. It is only set for [PayloadTypeExecute].
+	ExecuteRequest *a2a.SendMessageRequest
 }
 
 // HandlerFn starts agent execution for the provided payload.

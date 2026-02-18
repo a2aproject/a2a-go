@@ -45,9 +45,10 @@ func main() {
 
 	ctx := context.Background()
 	card := &a2a.AgentCard{
-		URL:                fmt.Sprintf("%s/invoke", *server),
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: fmt.Sprintf("%s/invoke", *server), ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		},
+		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}
 
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
@@ -86,8 +87,8 @@ func main() {
 }
 
 func send(ctx context.Context, client *a2aclient.Client, text string) error {
-	msg := &a2a.MessageSendParams{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: text}),
+	msg := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(text)),
 	}
 	final := false
 	taskID := a2a.TaskID("")
@@ -100,6 +101,7 @@ func send(ctx context.Context, client *a2aclient.Client, text string) error {
 		}
 		if ev, ok := event.(*a2a.Task); ok {
 			taskID = ev.ID
+			final = ev.Status.State.Terminal()
 		}
 		if ev, ok := event.(*a2a.TaskStatusUpdateEvent); ok {
 			final = ev.Status.State.Terminal()
@@ -112,7 +114,7 @@ func send(ctx context.Context, client *a2aclient.Client, text string) error {
 }
 
 func cancel(ctx context.Context, client *a2aclient.Client, id string) error {
-	task, err := client.CancelTask(ctx, &a2a.TaskIDParams{ID: a2a.TaskID(id)})
+	task, err := client.CancelTask(ctx, &a2a.CancelTaskRequest{ID: a2a.TaskID(id)})
 	if err != nil {
 		return fmt.Errorf("failed to cancel task: %w", err)
 	}
@@ -123,12 +125,15 @@ func cancel(ctx context.Context, client *a2aclient.Client, id string) error {
 func subscribe(ctx context.Context, client *a2aclient.Client, id a2a.TaskID) error {
 	final := false
 	for !final {
-		for event, err := range client.ResubscribeToTask(ctx, &a2a.TaskIDParams{ID: id}) {
+		for event, err := range client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: id}) {
 			if err != nil {
 				return fmt.Errorf("error receiving event: %w", err)
 			}
 			if err := printEvent(event); err != nil {
 				return fmt.Errorf("error printing event: %w", err)
+			}
+			if ev, ok := event.(*a2a.Task); ok {
+				final = ev.Status.State.Terminal()
 			}
 			if ev, ok := event.(*a2a.TaskStatusUpdateEvent); ok {
 				final = ev.Status.State.Terminal()
@@ -141,10 +146,14 @@ func subscribe(ctx context.Context, client *a2aclient.Client, id a2a.TaskID) err
 func printEvent(event a2a.Event) error {
 	switch v := event.(type) {
 	case *a2a.TaskArtifactUpdateEvent:
-		fmt.Printf("[update]: %s\n", v.Artifact.Parts[0].(a2a.TextPart).Text)
+		fmt.Printf("[update]: %s\n", v.Artifact.Parts[0].Text())
 
 	case *a2a.TaskStatusUpdateEvent:
-		fmt.Printf("[state=%q]: %s\n", v.Status.State, v.Status.Message.Parts[0].(a2a.TextPart).Text)
+		var msgText string
+		if v.Status.Message != nil && len(v.Status.Message.Parts) > 0 {
+			msgText = v.Status.Message.Parts[0].Text()
+		}
+		fmt.Printf("[state=%q]: %s\n", v.Status.State, msgText)
 
 	default:
 		data, err := json.MarshalIndent(event, "", "  ")
