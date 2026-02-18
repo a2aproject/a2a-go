@@ -783,11 +783,9 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 	case a2a.OAuth2SecurityScheme:
 		var pFlows *a2apb.OAuthFlows
 		var err error
-		for _, flows := range s.Flows {
-			pFlows, err = toProtoOAuthFlows(flows)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert OAuth flows: %w", err)
-			}
+		pFlows, err = toProtoOAuthFlows(s.Flows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert OAuth flows: %w", err)
 		}
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{

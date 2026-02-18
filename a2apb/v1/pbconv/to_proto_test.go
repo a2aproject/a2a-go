@@ -798,12 +798,10 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			},
 			"oauth2": a2a.OAuth2SecurityScheme{
 				Description: "OAuth2",
-				Flows: a2a.NamedOAuthFlows{
-					a2a.AuthorizationCodeOAuthFlowName: &a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://example.com/auth",
-						TokenURL:         "https://example.com/token",
-						Scopes:           map[string]string{"read": "read scope"},
-					},
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://example.com/auth",
+					TokenURL:         "https://example.com/token",
+					Scopes:           map[string]string{"read": "read scope"},
 				},
 			},
 		},
@@ -1141,12 +1139,10 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 			name: "oauth2 scheme",
 			scheme: a2a.OAuth2SecurityScheme{
 				Description: "OAuth2",
-				Flows: a2a.NamedOAuthFlows{
-					a2a.AuthorizationCodeOAuthFlowName: &a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://auth.com/auth",
-						TokenURL:         "https://auth.com/token",
-						Scopes:           map[string]string{"read": "read data"},
-					},
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://auth.com/auth",
+					TokenURL:         "https://auth.com/token",
+					Scopes:           map[string]string{"read": "read data"},
 				},
 			},
 			want: &a2apb.SecurityScheme{

@@ -718,54 +718,44 @@ func fromProtoCapabilities(pCapabilities *a2apb.AgentCapabilities) (a2a.AgentCap
 	return result, nil
 }
 
-func fromProtoOAuthFlows(pFlows *a2apb.OAuthFlows) (a2a.NamedOAuthFlows, error) {
+func fromProtoOAuthFlows(pFlows *a2apb.OAuthFlows) (a2a.OAuthFlows, error) {
 	if pFlows == nil {
 		return nil, fmt.Errorf("oauth flows is nil")
 	}	
 	switch f := pFlows.Flow.(type) {
 	case *a2apb.OAuthFlows_AuthorizationCode:
-		return map[a2a.OAuthFlowName]a2a.OAuthFlows{
-			a2a.AuthorizationCodeOAuthFlowName: &a2a.AuthorizationCodeOAuthFlow{
+		return &a2a.AuthorizationCodeOAuthFlow{
 				AuthorizationURL: f.AuthorizationCode.GetAuthorizationUrl(),
 				TokenURL:         f.AuthorizationCode.GetTokenUrl(),
 				RefreshURL:       f.AuthorizationCode.GetRefreshUrl(),
 				Scopes:           f.AuthorizationCode.GetScopes(),
 				PKCERequired: f.AuthorizationCode.GetPkceRequired(),
-			}, 
-		}, nil
+			},nil
 	case *a2apb.OAuthFlows_ClientCredentials:
-		return map[a2a.OAuthFlowName]a2a.OAuthFlows{
-			a2a.ClientCredentialsOAuthFlowName: &a2a.ClientCredentialsOAuthFlow{
+		return &a2a.ClientCredentialsOAuthFlow{
 				TokenURL:   f.ClientCredentials.GetTokenUrl(),
 				RefreshURL: f.ClientCredentials.GetRefreshUrl(),
 				Scopes:     f.ClientCredentials.GetScopes(),
-			}, 
-		}, nil
+			},	 nil
 	case *a2apb.OAuthFlows_Implicit:
-		return map[a2a.OAuthFlowName]a2a.OAuthFlows{
-			a2a.ImplicitOAuthFlowName: &a2a.ImplicitOAuthFlow{
+		return &a2a.ImplicitOAuthFlow{
 				AuthorizationURL: f.Implicit.GetAuthorizationUrl(),
 				RefreshURL:       f.Implicit.GetRefreshUrl(),
 				Scopes:           f.Implicit.GetScopes(),
-			}, 
-		}, nil
+			}, nil
 	case *a2apb.OAuthFlows_Password:
-		return map[a2a.OAuthFlowName]a2a.OAuthFlows{
-			a2a.PasswordOAuthFlowName: &a2a.PasswordOAuthFlow{
+		return &a2a.PasswordOAuthFlow{
 				TokenURL:   f.Password.GetTokenUrl(),
 				RefreshURL: f.Password.GetRefreshUrl(),
 				Scopes:     f.Password.GetScopes(),
-			}, 
-		}, nil
+			}, nil
 	case *a2apb.OAuthFlows_DeviceCode:
-		return map[a2a.OAuthFlowName]a2a.OAuthFlows{
-			a2a.DeviceCodeOAuthFlowName: &a2a.DeviceCodeOAuthFlow{
+		return &a2a.DeviceCodeOAuthFlow{
 				DeviceAuthorizationURL: f.DeviceCode.GetDeviceAuthorizationUrl(),
 				TokenURL:               f.DeviceCode.GetTokenUrl(),
 				RefreshURL:             f.DeviceCode.GetRefreshUrl(),
 				Scopes:                 f.DeviceCode.GetScopes(),
-			}, 
-		}, nil
+			}, nil
 	default:
 		return nil, fmt.Errorf("unsupported oauth flow type: %T", f)
 	}
