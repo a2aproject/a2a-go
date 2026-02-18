@@ -186,7 +186,7 @@ type OAuth2SecurityScheme struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
 	// Flows is an object containing configuration information for the supported OAuth 2.0 flows.
-	Flows NamedOAuthFlows `json:"flows" yaml:"flows" mapstructure:"flows"`
+	Flows OAuthFlows `json:"flows" yaml:"flows" mapstructure:"flows"`
 
 	// Oauth2MetadataURL is an optional URL to the oauth2 authorization server metadata
 	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
@@ -203,95 +203,98 @@ const (
 	DeviceCodeOAuthFlowName        OAuthFlowName = "deviceCode"
 )
 
-type NamedOAuthFlows map[OAuthFlowName]OAuthFlows
-
-func (s NamedOAuthFlows) MarshalJSON() ([]byte, error) {
-	out := make(map[OAuthFlowName]any, len(s))
-	for name, flow := range s {
-		var wrapped any
-		switch v := flow.(type) {
-		case AuthorizationCodeOAuthFlow:
-			wrapped = map[string]any{"authorizationCode": v}
-		case ClientCredentialsOAuthFlow:
-			wrapped = map[string]any{"clientCredentials": v}
-		case ImplicitOAuthFlow:
-			wrapped = map[string]any{"implicit": v}
-		case PasswordOAuthFlow:
-			wrapped = map[string]any{"password": v}
-		case DeviceCodeOAuthFlow:
-			wrapped = map[string]any{"deviceCode": v}
-		default:
-			return nil, fmt.Errorf("unknown OAuth flow type %T", v)
-		}
-		out[name] = wrapped
+func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
+	type wrapper struct {
+		Description       string                `json:"description,omitempty"`
+		Oauth2MetadataURL string                `json:"oauth2MetadataUrl,omitempty"`
+		Flows             map[OAuthFlowName]any `json:"flows,omitempty"`
 	}
-	return json.Marshal(out)
+	wrapped := wrapper{Description: s.Description, Oauth2MetadataURL: s.Oauth2MetadataURL}
+	switch v := s.Flows.(type) {
+	case AuthorizationCodeOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"authorizationCode": v}
+	case ClientCredentialsOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"clientCredentials": v}
+	case ImplicitOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"implicit": v}
+	case PasswordOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"password": v}
+	case DeviceCodeOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"deviceCode": v}
+	default:
+		return nil, fmt.Errorf("unknown OAuth flow type %T", v)
+	}
+	return json.Marshal(wrapped)
 }
 
-func (s *NamedOAuthFlows) UnmarshalJSON(b []byte) error {
-	var flows map[OAuthFlowName]json.RawMessage
-	if err := json.Unmarshal(b, &flows); err != nil {
+func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
+	type wrapper struct {
+		Description       string                            `json:"description,omitempty"`
+		Oauth2MetadataURL string                            `json:"oauth2MetadataUrl,omitempty"`
+		Flows             map[OAuthFlowName]json.RawMessage `json:"flows,omitempty"`
+	}
+	var scheme wrapper
+	if err := json.Unmarshal(b, &scheme); err != nil {
 		return err
 	}
 
-	result := make(map[OAuthFlowName]OAuthFlows, len(flows))
-	for name, rawMessage := range flows {
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(rawMessage, &raw); err != nil {
-			return err
-		}
-		if v, ok := raw["authorizationCode"]; ok {
+	if len(scheme.Flows) != 1 {
+		return fmt.Errorf("expected exactly one OAuth flow, got %d", len(scheme.Flows))
+	}
+
+	for name, rawMessage := range scheme.Flows {
+		switch name {
+		case "authorizationCode":
 			var flow AuthorizationCodeOAuthFlow
-			if err := json.Unmarshal(v, &flow); err != nil {
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
 				return err
 			}
-			result[name] = flow
-		} else if v, ok := raw["clientCredentials"]; ok {
+			s.Flows = flow
+		case "clientCredentials":
 			var flow ClientCredentialsOAuthFlow
-			if err := json.Unmarshal(v, &flow); err != nil {
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
 				return err
 			}
-			result[name] = flow
-		} else if v, ok := raw["implicit"]; ok {
+			s.Flows = flow
+		case "implicit":
 			var flow ImplicitOAuthFlow
-			if err := json.Unmarshal(v, &flow); err != nil {
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
 				return err
 			}
-			result[name] = flow
-		} else if v, ok := raw["password"]; ok {
+			s.Flows = flow
+		case "password":
 			var flow PasswordOAuthFlow
-			if err := json.Unmarshal(v, &flow); err != nil {
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
 				return err
 			}
-			result[name] = flow
-		} else if v, ok := raw["deviceCode"]; ok {
+			s.Flows = flow
+		case "deviceCode":
 			var flow DeviceCodeOAuthFlow
-			if err := json.Unmarshal(v, &flow); err != nil {
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
 				return err
 			}
-			result[name] = flow
-		} else {
-			keys := make([]string, 0, len(raw))
-			for k := range raw {
-				keys = append(keys, k)
+			s.Flows = flow
+		default:
+			keys := make([]string, 0, len(scheme.Flows))
+			for k := range scheme.Flows {
+				keys = append(keys, string(k))
 			}
 			return fmt.Errorf("unknown OAuth flow type: %s, available: %v", name, keys)
 		}
 	}
-	*s = result
 	return nil
 }
 
 // OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
 type OAuthFlows interface {
-	isOAuthFlows_Flow()
+	isOAuthFlow()
 }
 
-func (AuthorizationCodeOAuthFlow) isOAuthFlows_Flow() {}
-func (ClientCredentialsOAuthFlow) isOAuthFlows_Flow() {}
-func (ImplicitOAuthFlow) isOAuthFlows_Flow()          {}
-func (PasswordOAuthFlow) isOAuthFlows_Flow()          {}
-func (DeviceCodeOAuthFlow) isOAuthFlows_Flow()        {}
+func (AuthorizationCodeOAuthFlow) isOAuthFlow() {}
+func (ClientCredentialsOAuthFlow) isOAuthFlow() {}
+func (ImplicitOAuthFlow) isOAuthFlow()          {}
+func (PasswordOAuthFlow) isOAuthFlow()          {}
+func (DeviceCodeOAuthFlow) isOAuthFlow()        {}
 
 func init() {
 	gob.Register(AuthorizationCodeOAuthFlow{})

@@ -101,7 +101,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 		config := &a2a.PushConfig{
 			URL: server.URL,
 			Auth: &a2a.PushAuthInfo{
-				Schemes:     []string{"Bearer"},
+				Scheme:      "Bearer",
 				Credentials: "my-bearer-token",
 			},
 		}
@@ -118,7 +118,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	})
 
 	t.Run("success with basic auth", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Schemes: []string{"Basic"}, Credentials: "dXNlcjpwYXNz"}}
+		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Basic", Credentials: "dXNlcjpwYXNz"}}
 		sender := NewHTTPPushSender(nil)
 
 		err := sender.SendPush(ctx, config, task)

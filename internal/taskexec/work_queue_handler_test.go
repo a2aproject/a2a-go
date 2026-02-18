@@ -44,7 +44,7 @@ func TestClusterBackend(t *testing.T) {
 			payload: &workqueue.Payload{
 				Type:          workqueue.PayloadTypeExecute,
 				TaskID:        tid,
-				ExecuteParams: &a2a.MessageSendParams{Message: &a2a.Message{Parts: a2a.ContentParts{a2a.TextPart{Text: "test"}}}},
+				ExecuteRequest: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))},
 			},
 			executor: &testExecutor{
 				executeCalled: make(chan struct{}),
@@ -55,7 +55,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:           "executor creation failed",
-			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeExecute, TaskID: tid, ExecuteParams: &a2a.MessageSendParams{}},
+			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeExecute, TaskID: tid, ExecuteRequest: &a2a.SendMessageRequest{}},
 			wantErrContain: "setup failed: executor was not provided",
 		},
 		{
@@ -65,7 +65,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:    "successful cancellation",
-			payload: &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelParams: &a2a.TaskIDParams{ID: tid}},
+			payload: &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelRequest: &a2a.CancelTaskRequest{ID: tid}},
 			canceler: &testCanceler{
 				cancelCalled:  make(chan struct{}),
 				emitTask:      &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
@@ -75,7 +75,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:           "canceler creation failed",
-			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelParams: &a2a.TaskIDParams{ID: tid}},
+			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelRequest: &a2a.CancelTaskRequest{ID: tid}},
 			wantErrContain: "setup failed: canceler was not provided",
 		},
 		{
@@ -85,7 +85,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:    "executor run failed",
-			payload: &workqueue.Payload{Type: workqueue.PayloadTypeExecute, TaskID: tid, ExecuteParams: &a2a.MessageSendParams{}},
+			payload: &workqueue.Payload{Type: workqueue.PayloadTypeExecute, TaskID: tid, ExecuteRequest: &a2a.SendMessageRequest{}},
 			executor: &testExecutor{
 				executeCalled: make(chan struct{}),
 				executeErr:    fmt.Errorf("failed to execute"),
@@ -95,7 +95,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:    "canceler run failed",
-			payload: &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelParams: &a2a.TaskIDParams{ID: tid}},
+			payload: &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelRequest: &a2a.CancelTaskRequest{ID: tid}},
 			canceler: &testCanceler{
 				cancelCalled:  make(chan struct{}),
 				cancelErr:     fmt.Errorf("failed to cancel"),
@@ -105,7 +105,7 @@ func TestClusterBackend(t *testing.T) {
 		},
 		{
 			name:           "queue creation failed",
-			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelParams: &a2a.TaskIDParams{ID: tid}},
+			payload:        &workqueue.Payload{Type: workqueue.PayloadTypeCancel, TaskID: tid, CancelRequest: &a2a.CancelTaskRequest{ID: tid}},
 			canceler:       &testCanceler{},
 			createQueueErr: fmt.Errorf("queue creation failed"),
 			wantErrContain: "queue creation failed",
@@ -201,7 +201,7 @@ func TestClusterBackend_Heartbeater(t *testing.T) {
 	gotResult, gotErr := wq.HandlerFn(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeExecute,
 		TaskID:        executor.emitTask.ID,
-		ExecuteParams: &a2a.MessageSendParams{},
+		ExecuteRequest: &a2a.SendMessageRequest{},
 	})
 	if gotErr != nil {
 		t.Fatalf("handler() error, want nil = %v", gotErr)

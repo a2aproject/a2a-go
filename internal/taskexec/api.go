@@ -28,9 +28,9 @@ type Manager interface {
 	// Resubscribe is used to resubscribe to events of an active execution.
 	Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subscription, error)
 	// Execute requests an execution for handling a received message.
-	Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error)
+	Execute(ctx context.Context, req *a2a.SendMessageRequest) (Subscription, error)
 	// Cancel requests a task cancelation.
-	Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error)
+	Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error)
 }
 
 // Subscription encapsulates the logic of subscribing to execution events.
@@ -45,10 +45,10 @@ type Subscription interface {
 // Factory is used to setup task execution or cancelation context.
 type Factory interface {
 	// CreateExecutor is used to create initialized Executor and Processor for a Task execution which will run in separate goroutines.
-	CreateExecutor(context.Context, a2a.TaskID, *a2a.MessageSendParams) (Executor, Processor, error)
+	CreateExecutor(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, error)
 
 	// CreateCanceler is used to create initialized Canceler and Processor for a Task cancelation which will run in separate goroutines.
-	CreateCanceler(context.Context, *a2a.TaskIDParams) (Canceler, Processor, error)
+	CreateCanceler(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error)
 }
 
 // Processor implementation handles events produced during AgentExecution.

@@ -58,13 +58,13 @@ type localManager struct {
 }
 
 type cancelation struct {
-	params *a2a.TaskIDParams
+	req    *a2a.CancelTaskRequest
 	result *promise
 }
 
 type localExecution struct {
 	tid    a2a.TaskID
-	params *a2a.MessageSendParams
+	req    *a2a.SendMessageRequest
 	result *promise
 
 	pipe         *eventpipe.Local
@@ -97,14 +97,14 @@ func NewLocalManager(cfg LocalManagerConfig) Manager {
 	return manager
 }
 
-func newCancelation(params *a2a.TaskIDParams) *cancelation {
-	return &cancelation{params: params, result: newPromise()}
+func newCancelation(req *a2a.CancelTaskRequest) *cancelation {
+	return &cancelation{req: req, result: newPromise()}
 }
 
-func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, params *a2a.MessageSendParams) *localExecution {
+func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, req *a2a.SendMessageRequest) *localExecution {
 	return &localExecution{
 		tid:          tid,
-		params:       params,
+		req:          req,
 		queueManager: qm,
 		pipe:         eventpipe.NewLocal(),
 		result:       newPromise(),
@@ -128,15 +128,15 @@ func (m *localManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subs
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
 // the other one will be processing events passed through an [eventqueue.Queue].
 // There can only be a single active execution per TaskID.
-func (m *localManager) Execute(ctx context.Context, params *a2a.MessageSendParams) (Subscription, error) {
+func (m *localManager) Execute(ctx context.Context, req *a2a.SendMessageRequest) (Subscription, error) {
 	var tid a2a.TaskID
-	if params.Message == nil || len(params.Message.TaskID) == 0 {
+	if req.Message == nil || len(req.Message.TaskID) == 0 {
 		tid = a2a.NewTaskID()
 	} else {
-		tid = params.Message.TaskID
+		tid = req.Message.TaskID
 	}
 
-	execution, err := m.createExecution(ctx, tid, params)
+	execution, err := m.createExecution(ctx, tid, req)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (m *localManager) Execute(ctx context.Context, params *a2a.MessageSendParam
 	return newLocalSubscription(execution, defaultSubReadQueue), nil
 }
 
-func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*localExecution, error) {
+func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, req *a2a.SendMessageRequest) (*localExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -178,7 +178,7 @@ func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, para
 		return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
 	}
 
-	execution := newLocalExecution(m.queueManager, tid, params)
+	execution := newLocalExecution(m.queueManager, tid, req)
 	m.executions[tid] = execution
 
 	return execution, nil
@@ -189,14 +189,14 @@ func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, para
 // If there's an active [execution] Canceler will be writing to the same result queue. Consumers
 // subscribed to the Execution will receive a task cancelation event and handle it accordingly.
 // If there's no active Execution Canceler will be processing task events.
-func (m *localManager) Cancel(ctx context.Context, params *a2a.TaskIDParams) (*a2a.Task, error) {
+func (m *localManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	m.mu.Lock()
-	tid := params.ID
+	tid := req.ID
 	execution := m.executions[tid]
 	cancel, cancelInProgress := m.cancelations[tid]
 
 	if cancel == nil {
-		cancel = newCancelation(params)
+		cancel = newCancelation(req)
 		m.cancelations[tid] = cancel
 	}
 	m.mu.Unlock()
@@ -232,7 +232,7 @@ func (m *localManager) cleanupExecution(ctx context.Context, execution *localExe
 func (m *localManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
 	defer m.cleanupExecution(ctx, execution)
 
-	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
+	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.req)
 	if err != nil {
 		execution.result.setError(fmt.Errorf("setup failed: %w", err))
 		m.destroyQueue(ctx, execution.tid)
@@ -267,12 +267,12 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancelations, cancel.params.ID)
+		delete(m.cancelations, cancel.req.ID)
 		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
-	canceler, processor, err := m.factory.CreateCanceler(ctx, cancel.params)
+	canceler, processor, err := m.factory.CreateCanceler(ctx, cancel.req)
 	if err != nil {
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return
@@ -307,12 +307,12 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 
 	defer func() {
 		m.mu.Lock()
-		delete(m.cancelations, cancel.params.ID)
+		delete(m.cancelations, cancel.req.ID)
 		cancel.result.signalDone()
 		m.mu.Unlock()
 	}()
 
-	canceler, _, err := m.factory.CreateCanceler(ctx, cancel.params)
+	canceler, _, err := m.factory.CreateCanceler(ctx, cancel.req)
 	if err != nil {
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return

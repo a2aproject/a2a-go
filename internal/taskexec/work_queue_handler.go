@@ -53,10 +53,10 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 
 	switch payload.Type {
 	case workqueue.PayloadTypeExecute:
-		if payload.ExecuteParams == nil {
-			return nil, fmt.Errorf("execution params not set: %w", workqueue.ErrMalformedPayload)
+		if payload.ExecuteRequest == nil {
+			return nil, fmt.Errorf("execution request not set: %w", workqueue.ErrMalformedPayload)
 		}
-		executor, processor, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteParams)
+		executor, processor, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteRequest)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
 		}
@@ -64,10 +64,10 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		eventProcessor = processor
 
 	case workqueue.PayloadTypeCancel:
-		if payload.CancelParams == nil {
-			return nil, fmt.Errorf("cancelation params not set: %w", workqueue.ErrMalformedPayload)
+		if payload.CancelRequest == nil {
+			return nil, fmt.Errorf("cancelation request not set: %w", workqueue.ErrMalformedPayload)
 		}
-		canceler, processor, err := b.factory.CreateCanceler(ctx, payload.CancelParams)
+		canceler, processor, err := b.factory.CreateCanceler(ctx, payload.CancelRequest)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
 		}

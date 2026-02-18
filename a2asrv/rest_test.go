@@ -40,69 +40,69 @@ func TestREST_RequestRouting(t *testing.T) {
 		call   func(ctx context.Context, client *a2aclient.Client) (any, error)
 	}{
 		{
-			method: "OnSendMessage",
+			method: "SendMessage",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.SendMessage(ctx, &a2a.MessageSendParams{})
+				return client.SendMessage(ctx, &a2a.SendMessageRequest{})
 			},
 		},
 		{
-			method: "OnSendMessageStream",
+			method: "SendStreamingMessage",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return handleSingleItemSeq(client.SendStreamingMessage(ctx, &a2a.MessageSendParams{}))
+				return handleSingleItemSeq(client.SendStreamingMessage(ctx, &a2a.SendMessageRequest{}))
 			},
 		},
 		{
-			method: "OnGetTask",
+			method: "GetTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetTask(ctx, &a2a.TaskQueryParams{ID: "test-id"})
+				return client.GetTask(ctx, &a2a.GetTaskRequest{ID: "test-id"})
 			},
 		},
 		{
-			method: "OnListTasks",
+			method: "ListTasks",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
 				return client.ListTasks(ctx, &a2a.ListTasksRequest{})
 			},
 		},
 		{
-			method: "OnCancelTask",
+			method: "CancelTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.CancelTask(ctx, &a2a.TaskIDParams{})
+				return client.CancelTask(ctx, &a2a.CancelTaskRequest{ID: "test-id"})
 			},
 		},
 		{
-			method: "OnResubscribeToTask",
+			method: "SubscribeToTask",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return handleSingleItemSeq(client.ResubscribeToTask(ctx, &a2a.TaskIDParams{}))
+				return handleSingleItemSeq(client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: "test-id"}))
 			},
 		},
 		{
-			method: "OnSetTaskPushConfig",
+			method: "CreateTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.SetTaskPushConfig(ctx, &a2a.TaskPushConfig{TaskID: a2a.TaskID("test-id")})
+				return client.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{TaskID: a2a.TaskID("test-id")})
 			},
 		},
 		{
-			method: "OnGetTaskPushConfig",
+			method: "GetTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigParams{TaskID: a2a.TaskID("test-id"), ConfigID: "test-config-id"})
+				return client.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigRequest{TaskID: a2a.TaskID("test-id"), ID: "test-config-id"})
 			},
 		},
 		{
-			method: "OnListTaskPushConfig",
+			method: "ListTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigParams{TaskID: a2a.TaskID("test-id")})
+				return client.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{TaskID: a2a.TaskID("test-id")})
 			},
 		},
 		{
-			method: "OnDeleteTaskPushConfig",
+			method: "DeleteTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return nil, client.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigParams{TaskID: a2a.TaskID("test-id"), ConfigID: "test-config-id"})
+				return nil, client.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigRequest{TaskID: a2a.TaskID("test-id"), ID: "test-config-id"})
 			},
 		},
 		{
-			method: "OnGetExtendedAgentCard",
+			method: "GetExtendedAgentCard",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetAgentCard(ctx)
+				return client.GetExtendedAgentCard(ctx)
 			},
 		},
 	}
@@ -124,7 +124,7 @@ func TestREST_RequestRouting(t *testing.T) {
 	server := httptest.NewServer(NewRESTHandler(reqHandler))
 
 	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-		{URL: server.URL, Transport: a2a.TransportProtocolHTTPJSON},
+		{URL: server.URL, ProtocolBinding: a2a.TransportProtocolHTTPJSON},
 	})
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
@@ -168,50 +168,50 @@ func TestREST_Validations(t *testing.T) {
 		{
 			name:    "SendMessage",
 			methods: []string{http.MethodPost},
-			path:    "/v1/message:send",
-			body:    a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test"})},
+			path:    "/message:send",
+			body:    a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))},
 		},
 		{
 			name:    "SendMessageStream",
 			methods: []string{http.MethodPost},
-			path:    "/v1/message:stream",
+			path:    "/message:stream",
 		},
 		{
 			name:    "GetTask",
 			methods: []string{http.MethodGet},
-			path:    "/v1/tasks/" + string(taskID),
+			path:    "/tasks/" + string(taskID),
 		},
 		{
 			name:    "ListTasks",
 			methods: []string{http.MethodGet},
-			path:    "/v1/tasks",
+			path:    "/tasks",
 		},
 		{
 			name:    "CancelTask",
 			methods: []string{http.MethodPost},
-			path:    "/v1/tasks/" + string(taskID) + ":cancel",
+			path:    "/tasks/" + string(taskID) + ":cancel",
 		},
 		{
 			name:    "ResubscribeToTask",
 			methods: []string{http.MethodPost},
-			path:    "/v1/tasks/" + string(taskID) + ":subscribe",
+			path:    "/tasks/" + string(taskID) + ":subscribe",
 		},
 		{
 			name:    "SetAndListTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodPost},
-			path:    "/v1/tasks/" + string(taskID) + "/pushNotificationConfigs",
+			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 			body:    config,
 		},
 		{
 			name:    "GetAndDeleteTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodDelete},
-			path:    "/v1/tasks/" + string(taskID) + "/pushNotificationConfigs/" + string(config.ID),
+			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs/" + string(config.ID),
 			body:    config,
 		},
 		{
 			name:    "GetExtendedAgentCard",
 			methods: []string{http.MethodGet},
-			path:    "/v1/card",
+			path:    "/extendedAgentCard",
 		},
 	}
 	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
@@ -222,7 +222,7 @@ func TestREST_Validations(t *testing.T) {
 	mock := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
-				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "test message"}), nil)
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("test message")), nil)
 			}
 		},
 		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
@@ -302,15 +302,15 @@ func TestREST_InvalidPayloads(t *testing.T) {
 	}{
 		{
 			name: "SendMessage with invalid payload",
-			path: "/v1/message:send",
+			path: "/message:send",
 		},
 		{
 			name: "SendMessageStream with invalid payload",
-			path: "/v1/message:stream",
+			path: "/message:stream",
 		},
 		{
 			name: "SetTaskPushConfig with invalid payload",
-			path: "/v1/tasks/" + string(taskID) + "/pushNotificationConfigs",
+			path: "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 		},
 	}
 

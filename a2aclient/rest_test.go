@@ -28,17 +28,17 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.String() != "/v1/tasks/task-123?historyLength=2" {
-			t.Errorf("expected path /v1/tasks/task-123?historyLength=2, got %s", r.URL.String())
+		if r.URL.String() != "/tasks/task-123?historyLength=2" {
+			t.Errorf("expected path /tasks/task-123?historyLength=2, got %s", r.URL.String())
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"},"history":[{"state":"completed"},{"state":"working"}]}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"},"history":[{"state":"COMPLETED"},{"state":"WORKING"}]}`))
 	}))
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 	historyLength := 2
-	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.TaskQueryParams{
+	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{
 		ID:            "task-123",
 		HistoryLength: &historyLength,
 	})
@@ -63,16 +63,16 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks" {
-			t.Errorf("expected path /v1/tasks, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks" {
+			t.Errorf("expected path /tasks, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(
 			`{
 					"tasks":[
-						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"completed"}},
-						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"working"}}
+						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"COMPLETED"}},
+						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"WORKING"}}
 					], 
 					"totalSize": 2, 
 					"pageSize": 50, 
@@ -120,17 +120,17 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123:cancel" {
-			t.Errorf("expected path /v1/tasks/task-123:cancel, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123:cancel" {
+			t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"canceled"}}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"CANCELED"}}`))
 	}))
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
+	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.CancelTaskRequest{
 		ID: "task-123",
 	})
 
@@ -149,18 +149,18 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
 
-		if r.URL.Path != "/v1/message:send" {
-			t.Errorf("expected path /v1/message:send, got %s", r.URL.Path)
+		if r.URL.Path != "/message:send" {
+			t.Errorf("expected path /message:send, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"submitted"}}`))
+		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`))
 	}))
 	defer server.Close()
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
+	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
 	})
 
 	if err != nil {
@@ -181,8 +181,8 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123:subscribe" {
-			t.Errorf("expected path /v1/tasks/task-123:subscribe, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123:subscribe" {
+			t.Errorf("expected path /tasks/task-123:subscribe, got %s", r.URL.Path)
 		}
 		if r.Header.Get("Accept") != "text/event-stream" {
 			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
@@ -190,9 +190,9 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 
 		events := []string{
-			`data: {"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"working"}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}`,
 			``,
-			`data: {"kind":"status-update","taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"completed"}}`,
+			`data: {"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"COMPLETED"}}}`,
 			``,
 		}
 
@@ -208,7 +208,7 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 	transport := NewRESTTransport(server.URL, server.Client())
 
 	events := []a2a.Event{}
-	for event, err := range transport.ResubscribeToTask(t.Context(), ServiceParams{}, &a2a.TaskIDParams{
+	for event, err := range transport.SubscribeToTask(t.Context(), ServiceParams{}, &a2a.SubscribeToTaskRequest{
 		ID: "task-123",
 	}) {
 		if err != nil {
@@ -233,8 +233,8 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/message:stream" {
-			t.Errorf("expected path /v1/message:stream, got %s", r.URL.Path)
+		if r.URL.Path != "/message:stream" {
+			t.Errorf("expected path /message:stream, got %s", r.URL.Path)
 		}
 		if r.Header.Get("Accept") != "text/event-stream" {
 			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
@@ -242,11 +242,11 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 
 		events := []string{
-			`data: {"kind":"task", "id":"task-123","contextId":"ctx-123","status":{"state":"working"}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}`,
 			``,
-			`data: {"kind":"message","messageId":"msg-1","role":"agent","parts":[{"kind":"text","text":"Processing..."}]}`,
+			`data: {"message":{"messageId":"msg-1","role":"agent","parts":[{"text":"Processing..."}]}}`,
 			``,
-			`data: {"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}`,
 			``,
 		}
 
@@ -262,8 +262,8 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 	transport := NewRESTTransport(server.URL, server.Client())
 
 	events := []a2a.Event{}
-	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.MessageSendParams{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, &a2a.TextPart{Text: "test message"}),
+	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
 	}) {
 		if err != nil {
 			t.Fatalf("Stream error: %v", err)
@@ -291,20 +291,20 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs/config-123" {
-			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123/pushNotificationConfigs/config-123" {
+			t.Errorf("expected path /tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	config, err := transport.GetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.GetTaskPushConfigParams{
-		TaskID:   a2a.TaskID("task-123"),
-		ConfigID: "config-123",
+	config, err := transport.GetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.GetTaskPushConfigRequest{
+		TaskID: a2a.TaskID("task-123"),
+		ID:     "config-123",
 	})
 
 	if err != nil {
@@ -327,21 +327,21 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs" {
-			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123/pushNotificationConfigs" {
+			t.Errorf("expected path /tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
-			{"taskId":"task-123","pushNotificationConfig":{"id":"config-1","url":"https://webhook1.example.com"}},
-			{"taskId":"task-123","pushNotificationConfig":{"id":"config-2","url":"https://webhook2.example.com"}}
+			{"taskId":"task-123","config":{"id":"config-1","url":"https://webhook1.example.com"}},
+			{"taskId":"task-123","config":{"id":"config-2","url":"https://webhook2.example.com"}}
 		]`))
 	}))
 	defer server.Close()
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigParams{
+	configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{
 		TaskID: a2a.TaskID("task-123"),
 	})
 	if err != nil {
@@ -364,18 +364,18 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs" {
-			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123/pushNotificationConfigs" {
+			t.Errorf("expected path /tasks/task-123/pushNotificationConfigs, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"taskId":"task-123","pushNotificationConfig":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	config, err := transport.SetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.TaskPushConfig{
+	config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.CreateTaskPushConfigRequest{
 		TaskID: "task-123",
 		Config: a2a.PushConfig{
 			ID:  "config-123",
@@ -402,17 +402,17 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 		if r.Method != http.MethodDelete {
 			t.Errorf("expected method DELETE, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/tasks/task-123/pushNotificationConfigs/config-123" {
-			t.Errorf("expected path /v1/tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
+		if r.URL.Path != "/tasks/task-123/pushNotificationConfigs/config-123" {
+			t.Errorf("expected path /tasks/task-123/pushNotificationConfigs/config-123, got %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	err := transport.DeleteTaskPushConfig(t.Context(), ServiceParams{}, &a2a.DeleteTaskPushConfigParams{
-		TaskID:   a2a.TaskID("task-123"),
-		ConfigID: "config-123",
+	err := transport.DeleteTaskPushConfig(t.Context(), ServiceParams{}, &a2a.DeleteTaskPushConfigRequest{
+		TaskID: a2a.TaskID("task-123"),
+		ID:     "config-123",
 	})
 
 	if err != nil {
@@ -425,25 +425,22 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/card" {
-			t.Errorf("expected path /v1/card, got %s", r.URL.Path)
+		if r.URL.Path != "/extendedAgentCard" {
+			t.Errorf("expected path /extendedAgentCard, got %s", r.URL.Path)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"url": "http://example.com", "name": "Test agent", "description":"test"}`))
+		_, _ = w.Write([]byte(`{"supportedInterfaces":[{"url":"http://example.com"}], "name": "Test agent", "description":"test"}`))
 	}))
 	defer server.Close()
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	card, err := transport.GetAgentCard(t.Context(), ServiceParams{})
+	card, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{})
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
 	}
 
-	if card.URL != "http://example.com" {
-		t.Errorf("got card URL %s, want http://example.com", card.URL)
-	}
 	if card.Name != "Test agent" {
 		t.Errorf("got card Name %s, want Test agent", card.Name)
 	}
