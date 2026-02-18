@@ -140,10 +140,10 @@ func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, 
 		URL:   pConf.GetUrl(),
 		Token: pConf.GetToken(),
 	}
-	if pConf.GetAuthentication() != nil {
+	if auth := pConf.GetAuthentication(); auth != nil && len(auth.GetSchemes()) > 0 {
 		result.Auth = &a2a.PushAuthInfo{
-			Scheme:      pConf.GetAuthentication().GetSchemes()[0],
-			Credentials: pConf.GetAuthentication().GetCredentials(),
+			Scheme:      auth.GetSchemes()[0],
+			Credentials: auth.GetCredentials(),
 		}
 	}
 	return result, nil
