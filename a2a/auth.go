@@ -20,6 +20,45 @@ import (
 	"fmt"
 )
 
+// SecurityRequirements describes a set of security requirements that must be present on a request.
+// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
+// following requirements object needs to be created:
+//
+//	map[SecuritySchemeName]SecuritySchemeScopes{
+//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
+//		SecuritySchemeName("mTLS"): {}
+//	}
+type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
+
+type SecurityRequirementsOptions []SecurityRequirements
+
+func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {
+	type wrapper struct {
+		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
+	}
+	var out []wrapper
+	for _, req := range rs {
+		out = append(out, wrapper{Schemes: req})
+	}
+	return json.Marshal(out)
+}
+
+func (rs *SecurityRequirementsOptions) UnmarshalJSON(b []byte) error {
+	type wrapper struct {
+		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
+	}
+	var wrapped []wrapper
+	if err := json.Unmarshal(b, &wrapped); err != nil {
+		return err
+	}
+	result := make(SecurityRequirementsOptions, 0, len(wrapped))
+	for _, w := range wrapped {
+		result = append(result, w.Schemes)
+	}
+	*rs = result
+	return nil
+}
+
 // SecuritySchemeName is a string used to describe a security scheme in AgentCard.SecuritySchemes
 // and reference it the AgentCard.Security requirements.
 type SecuritySchemeName string

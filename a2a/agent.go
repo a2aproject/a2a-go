@@ -29,20 +29,6 @@ type AgentCapabilities struct {
 	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty" yaml:"extendedAgentCard,omitempty" mapstructure:"extendedAgentCard,omitempty"`
 }
 
-// SecurityRequirement describes a set of security requirements that must be present on a request.
-// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
-// following requirements object needs to be created:
-//
-//	SecurityRequirement{
-//		Schemes: map[SecuritySchemeName]SecuritySchemeScopes{
-//			"oauth2": SecuritySchemeScopes{"read", "write"},
-//			"mTLS":   SecuritySchemeScopes{},
-//		},
-//	}
-type SecurityRequirement struct {
-	Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
-}
-
 // AgentCard is a self-describing manifest for an agent. It provides essential
 // metadata including the agent's identity, capabilities, skills, supported
 // communication methods, and security requirements.
@@ -98,7 +84,7 @@ type AgentCard struct {
 	//		{"oauth2": SecuritySchemeScopes{"read"}},
 	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
 	// }
-	SecurityRequirements []SecurityRequirement `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
+	SecurityRequirements SecurityRequirementsOptions `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
@@ -198,7 +184,7 @@ type AgentSkill struct {
 	// As in the overall AgentCard.security, this list represents a logical OR of
 	// security requirement objects.
 	// Each object is a set of security schemes that must be used together (a logical AND).
-	Security []SecurityRequirement `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	Security SecurityRequirementsOptions `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// Tags is a set of keywords describing the skill's capabilities.
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`
