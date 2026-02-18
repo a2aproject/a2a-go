@@ -241,7 +241,7 @@ func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksRe
 	}, nil
 }
 
-func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.TaskPushConfig, error) {
+func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.CreateTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -261,7 +261,7 @@ func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 		return nil, fmt.Errorf("failed to extract task id: %w", err)
 	}
 
-	return &a2a.TaskPushConfig{TaskID: taskID, Config: *pConf}, nil
+	return &a2a.CreateTaskPushConfigRequest{TaskID: taskID, Config: *pConf}, nil
 }
 
 func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (*a2a.GetTaskPushConfigRequest, error) {
@@ -520,20 +520,40 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	return &a2a.TaskPushConfig{TaskID: taskID, Config: *config}, nil
 }
 
-func FromProtoListTaskPushConfig(resp *a2apb.ListTaskPushNotificationConfigResponse) ([]*a2a.TaskPushConfig, error) {
+func FromProtoListTaksPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is nil")
+	}
+
+	taskID, err := ExtractTaskID(req.GetParent())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	}
+
+	return &a2a.ListTaskPushConfigRequest{
+		TaskID:    taskID,
+		PageToken: req.GetPageToken(),
+		PageSize:  int(req.GetPageSize()),
+	}, nil
+}
+
+func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigResponse) (*a2a.ListTaskPushConfigResponse, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("response is nil")
 	}
 
-	configs := make([]*a2a.TaskPushConfig, len(resp.GetConfigs()))
+	configs := make([]a2a.TaskPushConfig, len(resp.GetConfigs()))
 	for i, pConfig := range resp.GetConfigs() {
 		config, err := FromProtoTaskPushConfig(pConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
-		configs[i] = config
+		configs[i] = *config
 	}
-	return configs, nil
+	return &a2a.ListTaskPushConfigResponse{
+		Configs:       configs,
+		NextPageToken: resp.GetNextPageToken(),
+	}, nil
 }
 
 func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []a2a.AgentInterface {

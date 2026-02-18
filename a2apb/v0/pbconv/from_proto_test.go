@@ -510,7 +510,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.CreateTaskPushNotificationConfigRequest
-		want    *a2a.TaskPushConfig
+		want    *a2a.CreateTaskPushConfigRequest
 		wantErr bool
 	}{
 		{
@@ -521,7 +521,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
 				},
 			},
-			want: &a2a.TaskPushConfig{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
+			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
 		},
 		{
 			name: "nil config",
@@ -553,7 +553,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: ""},
 				},
 			},
-			want: &a2a.TaskPushConfig{TaskID: "t1", Config: a2a.PushConfig{}},
+			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{}},
 		},
 	}
 	for _, tt := range tests {
