@@ -34,7 +34,7 @@ type agentExecutor struct{}
 
 func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello from REST server!"})
+		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello from REST server!"))
 		yield(response, nil)
 	}
 }
@@ -67,17 +67,19 @@ var (
 func main() {
 	flag.Parse()
 
+	addr := fmt.Sprintf("http://127.0.0.1:%d", *port)
 	agentCard := &a2a.AgentCard{
-		Name:               "REST Hello World Agent",
-		Description:        "Just a rest hello world agent",
-		URL:                fmt.Sprintf("http://127.0.0.1:%d", *port),
-		PreferredTransport: a2a.TransportProtocolHTTPJSON,
+		Name:        "REST Hello World Agent",
+		Description: "Just a rest hello world agent",
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: addr, ProtocolBinding: a2a.TransportProtocolHTTPJSON},
+		},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: true},
 		Skills: []a2a.AgentSkill{
 			{
-				ID:          "",
+				ID:          "hello_world",
 				Name:        "REST Hello world!",
 				Description: "Returns a 'Hello from REST server!'",
 				Tags:        []string{"hello world"},
