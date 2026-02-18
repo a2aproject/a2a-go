@@ -229,7 +229,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		{
 			name: "file with meta",
 			p: a2a.Part{
-				Content: a2a.Raw([]byte("content")), 
+				Content:  a2a.Raw([]byte("content")),
 				Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part: &a2apb.Part_File{File: &a2apb.FilePart{
@@ -801,12 +801,10 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				},
 			},
 		},
-		SecurityRequirements: []a2a.SecurityRequirement{
-			{
-				Scheme: map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-					a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
-					a2a.SecuritySchemeName("oauth2"): a2a.SecuritySchemeScopes{"read"},
-				},
+		SecurityRequirements: a2a.SecurityRequirementsOptions{
+			map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+				a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
+				a2a.SecuritySchemeName("oauth2"): a2a.SecuritySchemeScopes{"read"},
 			},
 		},
 		DefaultInputModes:  []string{"text/plain"},
@@ -820,11 +818,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
-				Security: []a2a.SecurityRequirement{
-					{
-						Scheme: map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-							a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
-						},
+				SecurityRequirements: a2a.SecurityRequirementsOptions{
+					map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+						a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
 					},
 				},
 			},
@@ -832,7 +828,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Signatures: []a2a.AgentCardSignature{
 			{Protected: "abc", Signature: "def", Header: map[string]any{"version": "1"}},
 		},
-		IconURL:                           "https://icons.com/icon.png",
+		IconURL: "https://icons.com/icon.png",
 	}
 
 	extParams, _ := structpb.NewStruct(map[string]any{"key": "val"})
@@ -852,8 +848,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationUrl: "https://example.com/docs",
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:              true,
-			PushNotifications:      true,
+			Streaming:         true,
+			PushNotifications: true,
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -1180,8 +1176,8 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 
 func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 	a2aMsg := &a2a.Message{
-		ID:   "test-message",
-		Role: a2a.MessageRoleAgent,
+		ID:    "test-message",
+		Role:  a2a.MessageRoleAgent,
 		Parts: a2a.ContentParts{a2a.NewTextPart("response")},
 	}
 	pMsg := &a2apb.Message{

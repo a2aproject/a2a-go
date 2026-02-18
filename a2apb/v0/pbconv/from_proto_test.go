@@ -44,7 +44,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 			name: "data",
 			p:    &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
 			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"})},
-		},	
+		},
 		{
 			name: "file with bytes",
 			p: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
@@ -99,8 +99,8 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 			want: a2a.Part{
-				Content:   a2a.Raw([]byte("content")),
-				Metadata:  map[string]any{"hello": "world"},
+				Content:  a2a.Raw([]byte("content")),
+				Metadata: map[string]any{"hello": "world"},
 			},
 		},
 	}
@@ -190,7 +190,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 					URL:   "http://example.com/hook",
 					Token: "secret",
 					Auth: &a2a.PushAuthInfo{
-						Scheme:     "Bearer",
+						Scheme:      "Bearer",
 						Credentials: "token",
 					},
 				},

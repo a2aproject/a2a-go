@@ -30,6 +30,18 @@ import (
 //	}
 type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
 
+// SecurityRequirementsOptions is a list of security requirement objects that apply to all agent interactions.
+// Each object lists security schemes that can be used.
+// Follows the OpenAPI 3.0 Security Requirement Object.
+// This list can be seen as an OR of ANDs. Each object in the list describes one
+// possible set of security requirements that must be present on a request.
+// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
+// SecurityRequirements: a2a.SecurityRequirementsOptions{
+// 	map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+// 		a2a.SecuritySchemeName("apiKey"): {},
+// 		a2a.SecuritySchemeName("oauth2"): {"read"},
+// 	},
+// }
 type SecurityRequirementsOptions []SecurityRequirements
 
 func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {

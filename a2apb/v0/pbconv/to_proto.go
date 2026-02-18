@@ -609,9 +609,9 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	}
 
 	result := &a2apb.AgentCapabilities{
-		PushNotifications:      capabilities.PushNotifications,
-		Streaming:              capabilities.Streaming,
-		Extensions:             extensions,
+		PushNotifications: capabilities.PushNotifications,
+		Streaming:         capabilities.Streaming,
+		Extensions:        extensions,
 	}
 	return result, nil
 }
@@ -764,11 +764,11 @@ func toProtoSecuritySchemes(schemes a2a.NamedSecuritySchemes) (map[string]*a2apb
 	return pSchemes, nil
 }
 
-func toProtoSecurity(securityRequirements []a2a.SecurityRequirement) []*a2apb.Security {
+func toProtoSecurity(securityRequirements a2a.SecurityRequirementsOptions) []*a2apb.Security {
 	pSecurity := make([]*a2apb.Security, len(securityRequirements))
 	for i, sec := range securityRequirements {
 		pSchemes := make(map[string]*a2apb.StringList)
-		for name, scopes := range sec.Scheme {
+		for name, scopes := range sec {
 			pSchemes[string(name)] = &a2apb.StringList{List: scopes}
 		}
 		pSecurity[i] = &a2apb.Security{Schemes: pSchemes}
@@ -787,7 +787,7 @@ func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
 			Examples:    skill.Examples,
 			InputModes:  skill.InputModes,
 			OutputModes: skill.OutputModes,
-			Security:    toProtoSecurity(skill.Security),
+			Security:    toProtoSecurity(skill.SecurityRequirements),
 		}
 	}
 	return pSkills
@@ -831,7 +831,6 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		return nil, fmt.Errorf("failed to convert signatures: %w", err)
 	}
 
-
 	result := &a2apb.AgentCard{
 		Name:                              card.Name,
 		Description:                       card.Description,
@@ -849,20 +848,21 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		Signatures:                        signatures,
 	}
 
-	idx := slices.IndexFunc(card.SupportedInterfaces, func(i a2a.AgentInterface) bool {
+	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i a2a.AgentInterface) bool {
 		return i.ProtocolVersion == a2a.Version
 	})
-	if idx != -1 {
-		result.ProtocolVersion = string(card.SupportedInterfaces[idx].ProtocolVersion)
-		result.Url = card.SupportedInterfaces[idx].URL
-		result.PreferredTransport = string(card.SupportedInterfaces[idx].ProtocolBinding)
+	if agentInterfaceIdx == -1 {
+		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2a.Version)
 	}
+	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
+	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
+	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
 	var additionalInterfaces []a2a.AgentInterface
-	for i, ifc := range card.SupportedInterfaces {
-		if i == idx || ifc.ProtocolVersion != a2a.Version {
+	for i, iface := range card.SupportedInterfaces {
+		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.Version {
 			continue
 		}
-		additionalInterfaces = append(additionalInterfaces, ifc)
+		additionalInterfaces = append(additionalInterfaces, iface)
 	}
 	result.AdditionalInterfaces = toProtoAdditionalInterfaces(additionalInterfaces)
 

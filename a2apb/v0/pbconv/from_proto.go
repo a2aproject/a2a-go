@@ -142,7 +142,7 @@ func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, 
 	}
 	if pConf.GetAuthentication() != nil {
 		result.Auth = &a2a.PushAuthInfo{
-			Scheme:     pConf.GetAuthentication().GetSchemes()[0],
+			Scheme:      pConf.GetAuthentication().GetSchemes()[0],
 			Credentials: pConf.GetAuthentication().GetCredentials(),
 		}
 	}
@@ -679,14 +679,12 @@ func fromProtoSecuritySchemes(pSchemes map[string]*a2apb.SecurityScheme) (a2a.Na
 	return schemes, nil
 }
 
-func fromProtoSecurity(pSecurity []*a2apb.Security) []a2a.SecurityRequirement {
-	security := make([]a2a.SecurityRequirement, len(pSecurity))
+func fromProtoSecurity(pSecurity []*a2apb.Security) a2a.SecurityRequirementsOptions {
+	security := make(a2a.SecurityRequirementsOptions, len(pSecurity))
 	for i, pSec := range pSecurity {
-		schemes := a2a.SecurityRequirement{
-			Scheme: make(map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes),
-		}
+		schemes := make(map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes)
 		for name, scopes := range pSec.Schemes {
-			schemes.Scheme[a2a.SecuritySchemeName(name)] = scopes.GetList()
+			schemes[a2a.SecuritySchemeName(name)] = scopes.GetList()
 		}
 		security[i] = schemes
 	}
@@ -697,14 +695,14 @@ func fromProtoSkills(pSkills []*a2apb.AgentSkill) []a2a.AgentSkill {
 	skills := make([]a2a.AgentSkill, len(pSkills))
 	for i, pSkill := range pSkills {
 		skills[i] = a2a.AgentSkill{
-			ID:          pSkill.GetId(),
-			Name:        pSkill.GetName(),
-			Description: pSkill.GetDescription(),
-			Tags:        pSkill.GetTags(),
-			Examples:    pSkill.GetExamples(),
-			InputModes:  pSkill.GetInputModes(),
-			OutputModes: pSkill.GetOutputModes(),
-			Security:    fromProtoSecurity(pSkill.GetSecurity()),
+			ID:                   pSkill.GetId(),
+			Name:                 pSkill.GetName(),
+			Description:          pSkill.GetDescription(),
+			Tags:                 pSkill.GetTags(),
+			Examples:             pSkill.GetExamples(),
+			InputModes:           pSkill.GetInputModes(),
+			OutputModes:          pSkill.GetOutputModes(),
+			SecurityRequirements: fromProtoSecurity(pSkill.GetSecurity()),
 		}
 	}
 	return skills
@@ -741,20 +739,20 @@ func FromProtoAgentCard(pCard *a2apb.AgentCard) (*a2a.AgentCard, error) {
 	}
 
 	result := &a2a.AgentCard{
-		Name:                              pCard.GetName(),
-		Description:                       pCard.GetDescription(),
-		Version:                           pCard.GetVersion(),
-		DocumentationURL:                  pCard.GetDocumentationUrl(),
-		Capabilities:                      capabilities,
-		DefaultInputModes:                 pCard.GetDefaultInputModes(),
-		DefaultOutputModes:                pCard.GetDefaultOutputModes(),
-		SecuritySchemes:                   schemes,
-		Provider:                          fromProtoAgentProvider(pCard.GetProvider()),
-		SupportedInterfaces:               fromProtoAdditionalInterfaces(pCard),
-		SecurityRequirements:              fromProtoSecurity(pCard.GetSecurity()),
-		Skills:                            fromProtoSkills(pCard.GetSkills()),
-		IconURL:                           pCard.GetIconUrl(),
-		Signatures:                        fromProtoAgentCardSignatures(pCard.GetSignatures()),
+		Name:                 pCard.GetName(),
+		Description:          pCard.GetDescription(),
+		Version:              pCard.GetVersion(),
+		DocumentationURL:     pCard.GetDocumentationUrl(),
+		Capabilities:         capabilities,
+		DefaultInputModes:    pCard.GetDefaultInputModes(),
+		DefaultOutputModes:   pCard.GetDefaultOutputModes(),
+		SecuritySchemes:      schemes,
+		Provider:             fromProtoAgentProvider(pCard.GetProvider()),
+		SupportedInterfaces:  fromProtoAdditionalInterfaces(pCard),
+		SecurityRequirements: fromProtoSecurity(pCard.GetSecurity()),
+		Skills:               fromProtoSkills(pCard.GetSkills()),
+		IconURL:              pCard.GetIconUrl(),
+		Signatures:           fromProtoAgentCardSignatures(pCard.GetSignatures()),
 	}
 
 	return result, nil

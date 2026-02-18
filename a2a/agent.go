@@ -74,16 +74,6 @@ type AgentCard struct {
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
 	// SecurityRequirements is a list of security requirement objects that apply to all agent interactions.
-	// Each object lists security schemes that can be used.
-	// Follows the OpenAPI 3.0 Security Requirement Object.
-	// This list can be seen as an OR of ANDs. Each object in the list describes one
-	// possible set of security requirements that must be present on a request.
-	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
-	//
-	// SecurityRequirements: []SecurityRequirements{
-	//		{"oauth2": SecuritySchemeScopes{"read"}},
-	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
-	// }
 	SecurityRequirements SecurityRequirementsOptions `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
@@ -184,7 +174,7 @@ type AgentSkill struct {
 	// As in the overall AgentCard.security, this list represents a logical OR of
 	// security requirement objects.
 	// Each object is a set of security schemes that must be used together (a logical AND).
-	Security SecurityRequirementsOptions `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	SecurityRequirements SecurityRequirementsOptions `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// Tags is a set of keywords describing the skill's capabilities.
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`

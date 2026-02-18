@@ -822,7 +822,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
-				Security: a2a.SecurityRequirementsOptions{
+				SecurityRequirements: a2a.SecurityRequirementsOptions{
 					map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
 						a2a.SecuritySchemeName("apiKey"): {},
 					},
