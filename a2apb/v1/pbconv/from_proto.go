@@ -858,7 +858,7 @@ func fromProtoSkills(pSkills []*a2apb.AgentSkill) ([]a2a.AgentSkill, error) {
 			Examples:    pSkill.GetExamples(),
 			InputModes:  pSkill.GetInputModes(),
 			OutputModes: pSkill.GetOutputModes(),
-			Security:    fromProtoSecurity(pSkill.GetSecurityRequirements()),
+			SecurityRequirements: fromProtoSecurity(pSkill.GetSecurityRequirements()),
 		}
 	}
 	return skills, nil

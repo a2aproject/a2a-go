@@ -52,7 +52,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 				TaskID:         "test-task",
 				Role:           a2a.MessageRoleUser,
 				ReferenceTasks: []a2a.TaskID{"task-123"},
-				Parts:          []a2a.Part{a2a.TextPart{Text: "hello"}},
+				Parts:          a2a.ContentParts{a2a.NewTextPart("hello")},
 				Metadata:       a2aMeta,
 			},
 			want: &a2apb.Message{
@@ -166,23 +166,19 @@ func TestToProto_toProtoPart(t *testing.T) {
 	}{
 		{
 			name: "text",
-			p:    a2a.TextPart{Text: "hello"},
+			p:    *a2a.NewTextPart("hello"),
 			want: &a2apb.Part{Part: &a2apb.Part_Text{Text: "hello"}},
 		},
 		{
 			name: "data",
-			p:    a2a.DataPart{Data: map[string]any{"key": "value"}},
+			p:    *a2a.NewDataPart(map[string]any{"key": "value"}),
 			want: &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
 		},
 		{
 			name: "file with bytes",
-			p: a2a.FilePart{
-				File: a2a.FileBytes{
-					FileMeta: a2a.FileMeta{
-						MimeType: "text/plain",
-					},
-					Bytes: "content",
-				},
+			p: a2a.Part{
+				Content:   a2a.Raw([]byte("content")),
+				MediaType: "text/plain",
 			},
 			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
@@ -191,14 +187,10 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "file with uri",
-			p: a2a.FilePart{
-				File: a2a.FileURI{
-					FileMeta: a2a.FileMeta{
-						Name:     "example",
-						MimeType: "text/plain",
-					},
-					URI: "http://example.com/file",
-				},
+			p: a2a.Part{
+				Content:   a2a.URL("http://example.com/file"),
+				MediaType: "text/plain",
+				Filename:  "example",
 			},
 			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
@@ -208,19 +200,19 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name:    "unsupported",
-			p:       (a2a.Part)(nil), // Use a nil a2a.Part to represent an unsupported type
+			p:       a2a.Part{Content: nil}, // Use a nil Content to represent an unsupported type
 			wantErr: true,
 		},
 		{
 			name: "bad data",
-			p: a2a.DataPart{
-				Data: map[string]any{"bad": func() {}},
+			p: a2a.Part{
+				Content: a2a.Data(map[string]any{"bad": func() {}}),
 			},
 			wantErr: true,
 		},
 		{
 			name: "text with meta",
-			p:    a2a.TextPart{Text: "hello", Metadata: map[string]any{"hello": "world"}},
+			p:    a2a.Part{Content: a2a.Text("hello"), Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part:     &a2apb.Part_Text{Text: "hello"},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
@@ -228,7 +220,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "data with meta",
-			p:    a2a.DataPart{Data: map[string]any{"key": "value"}, Metadata: map[string]any{"hello": "world"}},
+			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
@@ -236,10 +228,9 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "file with meta",
-			p: a2a.FilePart{
-				File:     a2a.FileBytes{Bytes: "content"},
-				Metadata: map[string]any{"hello": "world"},
-			},
+			p: a2a.Part{
+				Content:  a2a.Raw([]byte("content")),
+				Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part: &a2apb.Part_File{File: &a2apb.FilePart{
 					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
@@ -457,7 +448,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 					URL:   "http://a.com",
 					Token: "tok",
 					Auth: &a2a.PushAuthInfo{
-						Schemes:     []string{"Bearer"},
+						Scheme:      "Bearer",
 						Credentials: "cred",
 					},
 				},
@@ -521,7 +512,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestToProto_toProtoListTaskPushConfig(t *testing.T) {
+func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 	configs := []*a2a.TaskPushConfig{
 		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
 		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
@@ -531,42 +522,49 @@ func TestToProto_toProtoListTaskPushConfig(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		configs []*a2a.TaskPushConfig
+		resp    *a2a.ListTaskPushConfigResponse
 		want    *a2apb.ListTaskPushNotificationConfigResponse
 		wantErr bool
 	}{
 		{
-			name:    "success",
-			configs: configs,
+			name: "success",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{
+					*configs[0],
+					*configs[1],
+				},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{pConf1, pConf2},
 			},
 		},
 		{
-			name:    "empty slice",
-			configs: []*a2a.TaskPushConfig{},
+			name: "empty slice",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
 			},
 		},
 		{
-			name:    "conversion error",
-			configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+			name: "conversion error",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+			},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ToProtoListTaskPushConfig(tt.configs)
+			got, err := ToProtoListTaskPushConfigResponse(tt.resp)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("toProtoListTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ToProtoListTaskPushConfigResponse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoListTaskPushConfig() got = %v, want %v", got, tt.want)
-				}
+			if !tt.wantErr && !proto.Equal(got, tt.want) {
+				t.Errorf("ToProtoListTaskPushConfigResponse() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -583,14 +581,14 @@ func TestToProto_toProtoTask(t *testing.T) {
 	pMeta, _ := structpb.NewStruct(a2aMeta)
 
 	a2aHistory := []*a2a.Message{
-		{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: []a2a.Part{a2a.TextPart{Text: "history"}}},
+		{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("history")}},
 	}
 	pHistory := []*a2apb.Message{
 		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
 	}
 
 	a2aArtifacts := []*a2a.Artifact{
-		{ID: a2aArtifactID, Name: "artifact1", Parts: []a2a.Part{a2a.TextPart{Text: "artifact content"}}},
+		{ID: a2aArtifactID, Name: "artifact1", Parts: a2a.ContentParts{a2a.NewTextPart("artifact content")}},
 	}
 	pArtifacts := []*a2apb.Artifact{
 		{ArtifactId: string(a2aArtifactID), Name: "artifact1", Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "artifact content"}}}},
@@ -774,13 +772,11 @@ func TestToProto_toProtoListTasksResponse(t *testing.T) {
 
 func TestToProto_toProtoAgentCard(t *testing.T) {
 	a2aCard := &a2a.AgentCard{
-		ProtocolVersion:    "1.0",
-		Name:               "Test Agent",
-		Description:        "An agent for testing.",
-		URL:                "https://example.com/agent",
-		PreferredTransport: a2a.TransportProtocolGRPC,
-		AdditionalInterfaces: []a2a.AgentInterface{
-			{Transport: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc"},
+		Name:        "Test Agent",
+		Description: "An agent for testing.",
+		SupportedInterfaces: []a2a.AgentInterface{
+			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2a.Version},
+			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2a.Version},
 		},
 		Provider: &a2a.AgentProvider{
 			Org: "Test Org",
@@ -789,9 +785,9 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationURL: "https://example.com/docs",
 		Capabilities: a2a.AgentCapabilities{
-			Streaming:              true,
-			PushNotifications:      true,
-			StateTransitionHistory: true,
+			Streaming:         true,
+			PushNotifications: true,
+			ExtendedAgentCard: true,
 			Extensions: []a2a.AgentExtension{
 				{URI: "ext-uri", Description: "ext-desc", Required: true, Params: map[string]any{"key": "val"}},
 			},
@@ -799,23 +795,24 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		SecuritySchemes: a2a.NamedSecuritySchemes{
 			"apiKey": a2a.APIKeySecurityScheme{
 				Name:        "X-API-KEY",
-				In:          a2a.APIKeySecuritySchemeInHeader,
+				Location:    a2a.APIKeySecuritySchemeLocationHeader,
 				Description: "API Key",
 			},
 			"oauth2": a2a.OAuth2SecurityScheme{
-				Description: "OAuth2",
-				Flows: a2a.OAuthFlows{
-					AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://example.com/auth",
-						TokenURL:         "https://example.com/token",
-						Scopes:           map[string]string{"read": "read scope"},
-					},
+				Description:       "OAuth2",
+				Oauth2MetadataURL: "https://example.com/oauth2/metadata",
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://example.com/auth",
+					TokenURL:         "https://example.com/token",
+					Scopes:           map[string]string{"read": "read scope"},
 				},
 			},
 		},
-		Security: []a2a.SecurityRequirements{
-			{"apiKey": {}},
-			{"oauth2": {"read"}},
+		SecurityRequirements: a2a.SecurityRequirementsOptions{
+			map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+				a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
+				a2a.SecuritySchemeName("oauth2"): a2a.SecuritySchemeScopes{"read"},
+			},
 		},
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"text/plain"},
@@ -828,21 +825,22 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
-				Security: []a2a.SecurityRequirements{
-					{"apiKey": {}},
+				SecurityRequirements: a2a.SecurityRequirementsOptions{
+					map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+						a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
+					},
 				},
 			},
 		},
 		Signatures: []a2a.AgentCardSignature{
 			{Protected: "abc", Signature: "def", Header: map[string]any{"version": "1"}},
 		},
-		IconURL:                           "https://icons.com/icon.png",
-		SupportsAuthenticatedExtendedCard: true,
+		IconURL: "https://icons.com/icon.png",
 	}
 
 	extParams, _ := structpb.NewStruct(map[string]any{"key": "val"})
 	pCard := &a2apb.AgentCard{
-		ProtocolVersion:    "1.0",
+		ProtocolVersion:    string(a2a.Version),
 		Name:               "Test Agent",
 		Description:        "An agent for testing.",
 		Url:                "https://example.com/agent",
@@ -857,9 +855,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Version:          "0.1.0",
 		DocumentationUrl: "https://example.com/docs",
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:              true,
-			PushNotifications:      true,
-			StateTransitionHistory: true,
+			Streaming:         true,
+			PushNotifications: true,
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -869,7 +866,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
 					ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
 						Name:        "X-API-KEY",
-						Location:    string(a2a.APIKeySecuritySchemeInHeader),
+						Location:    string(a2a.APIKeySecuritySchemeLocationHeader),
 						Description: "API Key",
 					},
 				},
@@ -877,7 +874,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			"oauth2": {
 				Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
 					Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
-						Description: "OAuth2",
+						Description:       "OAuth2",
+						Oauth2MetadataUrl: "https://example.com/oauth2/metadata",
 						Flows: &a2apb.OAuthFlows{
 							Flow: &a2apb.OAuthFlows_AuthorizationCode{
 								AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
@@ -892,8 +890,10 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			},
 		},
 		Security: []*a2apb.Security{
-			{Schemes: map[string]*a2apb.StringList{"apiKey": {List: []string{}}}},
-			{Schemes: map[string]*a2apb.StringList{"oauth2": {List: []string{"read"}}}},
+			{Schemes: map[string]*a2apb.StringList{
+				"apiKey": {List: []string{}},
+				"oauth2": {List: []string{"read"}},
+			}},
 		},
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"text/plain"},
@@ -980,13 +980,11 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 	}{
 		{
 			name: "authorization code flow",
-			flows: a2a.OAuthFlows{
-				AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
-					AuthorizationURL: "https://auth.com/auth",
-					TokenURL:         "https://auth.com/token",
-					RefreshURL:       "https://auth.com/refresh",
-					Scopes:           map[string]string{"read": "read data"},
-				},
+			flows: &a2a.AuthorizationCodeOAuthFlow{
+				AuthorizationURL: "https://auth.com/auth",
+				TokenURL:         "https://auth.com/token",
+				RefreshURL:       "https://auth.com/refresh",
+				Scopes:           map[string]string{"read": "read data"},
 			},
 			want: &a2apb.OAuthFlows{
 				Flow: &a2apb.OAuthFlows_AuthorizationCode{
@@ -1001,12 +999,10 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "client credentials flow",
-			flows: a2a.OAuthFlows{
-				ClientCredentials: &a2a.ClientCredentialsOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"write": "write data"},
-				},
+			flows: &a2a.ClientCredentialsOAuthFlow{
+				TokenURL:   "https://auth.com/token",
+				RefreshURL: "https://auth.com/refresh",
+				Scopes:     map[string]string{"write": "write data"},
 			},
 			want: &a2apb.OAuthFlows{
 				Flow: &a2apb.OAuthFlows_ClientCredentials{
@@ -1020,12 +1016,10 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "implicit flow",
-			flows: a2a.OAuthFlows{
-				Implicit: &a2a.ImplicitOAuthFlow{
-					AuthorizationURL: "https://auth.com/auth",
-					RefreshURL:       "https://auth.com/refresh",
-					Scopes:           map[string]string{"profile": "read profile"},
-				},
+			flows: &a2a.ImplicitOAuthFlow{
+				AuthorizationURL: "https://auth.com/auth",
+				RefreshURL:       "https://auth.com/refresh",
+				Scopes:           map[string]string{"profile": "read profile"},
 			},
 			want: &a2apb.OAuthFlows{
 				Flow: &a2apb.OAuthFlows_Implicit{
@@ -1039,12 +1033,10 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "password flow",
-			flows: a2a.OAuthFlows{
-				Password: &a2a.PasswordOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"user": "user info"},
-				},
+			flows: &a2a.PasswordOAuthFlow{
+				TokenURL:   "https://auth.com/token",
+				RefreshURL: "https://auth.com/refresh",
+				Scopes:     map[string]string{"user": "user info"},
 			},
 			want: &a2apb.OAuthFlows{
 				Flow: &a2apb.OAuthFlows_Password{
@@ -1058,23 +1050,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name:    "no flows specified",
-			flows:   a2a.OAuthFlows{},
-			wantErr: true,
-		},
-		{
-			name: "multiple flows specified",
-			flows: a2a.OAuthFlows{
-				ClientCredentials: &a2a.ClientCredentialsOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"write": "write data"},
-				},
-				Password: &a2a.PasswordOAuthFlow{
-					TokenURL:   "https://auth.com/token",
-					RefreshURL: "https://auth.com/refresh",
-					Scopes:     map[string]string{"user": "user info"},
-				},
-			},
+			flows:   nil,
 			wantErr: true,
 		},
 	}
@@ -1106,14 +1082,14 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 			name: "api key scheme",
 			scheme: a2a.APIKeySecurityScheme{
 				Name:        "X-API-KEY",
-				In:          a2a.APIKeySecuritySchemeInHeader,
+				Location:    a2a.APIKeySecuritySchemeLocationHeader,
 				Description: "API Key",
 			},
 			want: &a2apb.SecurityScheme{
 				Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
 					ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
 						Name:        "X-API-KEY",
-						Location:    string(a2a.APIKeySecuritySchemeInHeader),
+						Location:    string(a2a.APIKeySecuritySchemeLocationHeader),
 						Description: "API Key",
 					},
 				},
@@ -1164,12 +1140,10 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 			name: "oauth2 scheme",
 			scheme: a2a.OAuth2SecurityScheme{
 				Description: "OAuth2",
-				Flows: a2a.OAuthFlows{
-					AuthorizationCode: &a2a.AuthorizationCodeOAuthFlow{
-						AuthorizationURL: "https://auth.com/auth",
-						TokenURL:         "https://auth.com/token",
-						Scopes:           map[string]string{"read": "read data"},
-					},
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://auth.com/auth",
+					TokenURL:         "https://auth.com/token",
+					Scopes:           map[string]string{"read": "read data"},
 				},
 			},
 			want: &a2apb.SecurityScheme{
@@ -1209,11 +1183,9 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 
 func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 	a2aMsg := &a2a.Message{
-		ID:   "test-message",
-		Role: a2a.MessageRoleAgent,
-		Parts: []a2a.Part{
-			a2a.TextPart{Text: "response"},
-		},
+		ID:    "test-message",
+		Role:  a2a.MessageRoleAgent,
+		Parts: a2a.ContentParts{a2a.NewTextPart("response")},
 	}
 	pMsg := &a2apb.Message{
 		MessageId: "test-message",
@@ -1296,7 +1268,6 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 	a2aStatusEvent := &a2a.TaskStatusUpdateEvent{
 		TaskID:    "test-task",
 		ContextID: "test-ctx",
-		Final:     true,
 		Status: a2a.TaskStatus{
 			State:     a2a.TaskStateCompleted,
 			Timestamp: &now,
@@ -1306,7 +1277,6 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 		StatusUpdate: &a2apb.TaskStatusUpdateEvent{
 			TaskId:    "test-task",
 			ContextId: "test-ctx",
-			Final:     true,
 			Status: &a2apb.TaskStatus{
 				State:     a2apb.TaskState_TASK_STATE_COMPLETED,
 				Timestamp: pNow,

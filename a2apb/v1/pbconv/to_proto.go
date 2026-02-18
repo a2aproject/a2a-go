@@ -728,6 +728,8 @@ func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 		result = append(result, toProtoPasswordOAuthFlows(f))
 	case *a2a.DeviceCodeOAuthFlow:
 		result = append(result, toProtoDeviceCodeOAuthFlow(f))
+	default:
+		return nil, fmt.Errorf("unsupported OAuthFlows type: %T", f)
 	}
 
 	if len(result) == 0 {
@@ -839,7 +841,7 @@ func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
 			Examples:             skill.Examples,
 			InputModes:           skill.InputModes,
 			OutputModes:          skill.OutputModes,
-			SecurityRequirements: toProtoSecurity(skill.Security),
+			SecurityRequirements: toProtoSecurity(skill.SecurityRequirements),
 		}
 	}
 	return pSkills
