@@ -23,7 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-func MakeTasksListPath() string {
+func MakeListTasksPath() string {
 	return "/tasks"
 }
 

@@ -129,8 +129,8 @@ func TestTripleHopPropagation(t *testing.T) {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
 			}
 
-			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
+			resp, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")),
 				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
@@ -233,8 +233,8 @@ func TestDefaultPropagation(t *testing.T) {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
 			}
 
-			resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{
-				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Hi!"}),
+			resp, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")),
 				Metadata: tc.clientSvcParams,
 			})
 			if err != nil {
@@ -260,7 +260,7 @@ func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2as
 	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
 	t.Cleanup(server.Close)
-	return a2a.AgentInterface{URL: server.URL, Transport: a2a.TransportProtocolJSONRPC}
+	return a2a.AgentInterface{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC}
 }
 
 func newAgentCard(endpoint a2a.AgentInterface, extensionURIs []string) *a2a.AgentCard {
@@ -269,10 +269,9 @@ func newAgentCard(endpoint a2a.AgentInterface, extensionURIs []string) *a2a.Agen
 		extensions[i] = a2a.AgentExtension{URI: uri}
 	}
 	return &a2a.AgentCard{
-		URL:                endpoint.URL,
-		PreferredTransport: endpoint.Transport,
-		Capabilities: a2a.AgentCapabilities{
-			Extensions: extensions,
+		Capabilities: a2a.AgentCapabilities{Extensions: extensions},
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: endpoint.URL, ProtocolBinding: endpoint.ProtocolBinding},
 		},
 	}
 }
@@ -300,7 +299,7 @@ func newProxyExecutor(interceptor a2aclient.CallInterceptor, target proxyTarget)
 				yield(nil, err)
 				return
 			}
-			result, err := client.SendMessage(ctx, &a2a.MessageSendParams{
+			result, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
 				Message: a2a.NewMessage(a2a.MessageRoleUser, execCtx.Message.Parts...),
 			})
 			if err != nil {
