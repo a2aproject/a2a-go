@@ -130,19 +130,20 @@ func ToProtoTaskSubscriptionRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.Tas
 	return &a2apb.TaskSubscriptionRequest{Name: MakeTaskName(req.ID)}, nil
 }
 
-func ToProtoCreateTaskPushConfigRequest(config *a2a.TaskPushConfig) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
-	if config == nil {
+func ToProtoCreateTaskPushConfigRequest(req *a2a.CreateTaskPushConfigRequest) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 
-	pnc, err := toProtoPushConfig(&config.Config)
+	pnc, err := toProtoPushConfig(&req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
 	return &a2apb.CreateTaskPushNotificationConfigRequest{
-		Parent: MakeTaskName(config.TaskID),
-		Config: &a2apb.TaskPushNotificationConfig{PushNotificationConfig: pnc},
+		Parent:   MakeTaskName(req.TaskID),
+		ConfigId: req.Config.ID,
+		Config:   &a2apb.TaskPushNotificationConfig{PushNotificationConfig: pnc},
 	}, nil
 }
 
@@ -545,10 +546,13 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 	}, nil
 }
 
-func ToProtoListTaskPushConfig(configs []*a2a.TaskPushConfig) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
-	pConfigs := make([]*a2apb.TaskPushNotificationConfig, len(configs))
-	for i, config := range configs {
-		pConfig, err := ToProtoTaskPushConfig(config)
+func ToProtoListTaskPushConfigResponse(resp *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+	if resp == nil {
+		return nil, nil
+	}
+	pConfigs := make([]*a2apb.TaskPushNotificationConfig, len(resp.Configs))
+	for i, config := range resp.Configs {
+		pConfig, err := ToProtoTaskPushConfig(&config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
@@ -556,7 +560,7 @@ func ToProtoListTaskPushConfig(configs []*a2a.TaskPushConfig) (*a2apb.ListTaskPu
 	}
 	return &a2apb.ListTaskPushNotificationConfigResponse{
 		Configs:       pConfigs,
-		NextPageToken: "", // todo: add pagination
+		NextPageToken: resp.NextPageToken,
 	}, nil
 }
 
@@ -564,7 +568,11 @@ func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2ap
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.ListTaskPushNotificationConfigRequest{Parent: MakeTaskName(req.TaskID)}, nil
+	return &a2apb.ListTaskPushNotificationConfigRequest{
+		Parent:    MakeTaskName(req.TaskID),
+		PageSize:  int32(req.PageSize),
+		PageToken: req.PageToken,
+	}, nil
 }
 
 func toProtoAdditionalInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentInterface {

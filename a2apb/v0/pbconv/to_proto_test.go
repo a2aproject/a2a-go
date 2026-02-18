@@ -512,7 +512,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestToProto_toProtoListTaskPushConfig(t *testing.T) {
+func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 	configs := []*a2a.TaskPushConfig{
 		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
 		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
@@ -522,42 +522,49 @@ func TestToProto_toProtoListTaskPushConfig(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		configs []*a2a.TaskPushConfig
+		resp    *a2a.ListTaskPushConfigResponse
 		want    *a2apb.ListTaskPushNotificationConfigResponse
 		wantErr bool
 	}{
 		{
-			name:    "success",
-			configs: configs,
+			name: "success",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{
+					*configs[0],
+					*configs[1],
+				},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{pConf1, pConf2},
 			},
 		},
 		{
-			name:    "empty slice",
-			configs: []*a2a.TaskPushConfig{},
+			name: "empty slice",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
 			},
 		},
 		{
-			name:    "conversion error",
-			configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+			name: "conversion error",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+			},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ToProtoListTaskPushConfig(tt.configs)
+			got, err := ToProtoListTaskPushConfigResponse(tt.resp)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("toProtoListTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ToProtoListTaskPushConfigResponse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoListTaskPushConfig() got = %v, want %v", got, tt.want)
-				}
+			if !tt.wantErr && !proto.Equal(got, tt.want) {
+				t.Errorf("ToProtoListTaskPushConfigResponse() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
