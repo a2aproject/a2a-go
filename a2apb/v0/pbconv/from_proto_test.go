@@ -38,26 +38,22 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		{
 			name: "text",
 			p:    &a2apb.Part{Part: &a2apb.Part_Text{Text: "hello"}},
-			want: a2a.TextPart{Text: "hello"},
+			want: a2a.Part{Content: a2a.Text("hello")},
 		},
 		{
 			name: "data",
 			p:    &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
-			want: a2a.DataPart{Data: map[string]any{"key": "value"}},
-		},
+			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"})},
+		},	
 		{
 			name: "file with bytes",
 			p: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
 				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
 			}}},
-			want: a2a.FilePart{
-				File: a2a.FileBytes{
-					FileMeta: a2a.FileMeta{
-						MimeType: "text/plain",
-					},
-					Bytes: "content",
-				},
+			want: a2a.Part{
+				Content:   a2a.Raw([]byte("content")),
+				MediaType: "text/plain",
 			},
 		},
 		{
@@ -67,14 +63,10 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Name:     "example",
 				File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
 			}}},
-			want: a2a.FilePart{
-				File: a2a.FileURI{
-					FileMeta: a2a.FileMeta{
-						Name:     "example",
-						MimeType: "text/plain",
-					},
-					URI: "http://example.com/file",
-				},
+			want: a2a.Part{
+				Content:   a2a.URL("http://example.com/file"),
+				Filename:  "example",
+				MediaType: "text/plain",
 			},
 		},
 		{
@@ -88,7 +80,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Part:     &a2apb.Part_Text{Text: "hello"},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
-			want: a2a.TextPart{Text: "hello", Metadata: map[string]any{"hello": "world"}},
+			want: a2a.Part{Content: a2a.Text("hello"), Metadata: map[string]any{"hello": "world"}},
 		},
 		{
 			name: "data with meta",
@@ -96,7 +88,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
-			want: a2a.DataPart{Data: map[string]any{"key": "value"}, Metadata: map[string]any{"hello": "world"}},
+			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
 		},
 		{
 			name: "file with meta",
@@ -106,9 +98,9 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
-			want: a2a.FilePart{
-				File:     a2a.FileBytes{Bytes: "content"},
-				Metadata: map[string]any{"hello": "world"},
+			want: a2a.Part{
+				Content:   a2a.Raw([]byte("content")),
+				Metadata:  map[string]any{"hello": "world"},
 			},
 		},
 	}
@@ -170,7 +162,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      *a2apb.SendMessageConfiguration
-		want    *a2a.MessageSendConfig
+		want    *a2a.SendMessageConfig
 		wantErr bool
 	}{
 		{
@@ -189,7 +181,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 					},
 				},
 			},
-			want: &a2a.MessageSendConfig{
+			want: &a2a.SendMessageConfig{
 				AcceptedOutputModes: []string{"text/plain"},
 				Blocking:            proto.Bool(true),
 				HistoryLength:       &a2aHistoryLen,
@@ -198,7 +190,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 					URL:   "http://example.com/hook",
 					Token: "secret",
 					Auth: &a2a.PushAuthInfo{
-						Schemes:     []string{"Bearer"},
+						Scheme:     "Bearer",
 						Credentials: "token",
 					},
 				},
@@ -209,14 +201,14 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			in: &a2apb.SendMessageConfiguration{
 				HistoryLength: 0,
 			},
-			want: &a2a.MessageSendConfig{Blocking: proto.Bool(false)},
+			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false)},
 		},
 		{
 			name: "config with no push notification",
 			in: &a2apb.SendMessageConfiguration{
 				PushNotification: nil,
 			},
-			want: &a2a.MessageSendConfig{Blocking: proto.Bool(false)},
+			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false)},
 		},
 		{
 			name: "nil config",
@@ -250,7 +242,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 		ID:     "test-msg",
 		TaskID: "test-task",
 		Role:   a2a.MessageRoleUser,
-		Parts:  []a2a.Part{a2a.TextPart{Text: "hello"}},
+		Parts:  a2a.ContentParts{a2a.NewTextPart("hello")},
 	}
 	historyLen := int32(10)
 	a2aHistoryLen := int(historyLen)
@@ -264,7 +256,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			Token: "secret",
 		},
 	}
-	a2aConf := &a2a.MessageSendConfig{
+	a2aConf := &a2a.SendMessageConfig{
 		Blocking:      proto.Bool(true),
 		HistoryLength: &a2aHistoryLen,
 		PushConfig: &a2a.PushConfig{
@@ -280,7 +272,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.SendMessageRequest
-		want    *a2a.MessageSendParams
+		want    *a2a.SendMessageRequest
 		wantErr bool
 	}{
 		{
@@ -290,7 +282,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 				Configuration: pConf,
 				Metadata:      pMeta,
 			},
-			want: &a2a.MessageSendParams{
+			want: &a2a.SendMessageRequest{
 				Message:  &a2aMsg,
 				Config:   a2aConf,
 				Metadata: a2aMeta,
@@ -299,17 +291,17 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 		{
 			name: "missing metadata",
 			req:  &a2apb.SendMessageRequest{Request: pMsg, Configuration: pConf},
-			want: &a2a.MessageSendParams{Message: &a2aMsg, Config: a2aConf},
+			want: &a2a.SendMessageRequest{Message: &a2aMsg, Config: a2aConf},
 		},
 		{
 			name: "missing config",
 			req:  &a2apb.SendMessageRequest{Request: pMsg, Metadata: pMeta},
-			want: &a2a.MessageSendParams{Message: &a2aMsg, Metadata: a2aMeta},
+			want: &a2a.SendMessageRequest{Message: &a2aMsg, Metadata: a2aMeta},
 		},
 		{
 			name: "nil request message",
 			req:  &a2apb.SendMessageRequest{},
-			want: &a2a.MessageSendParams{},
+			want: &a2a.SendMessageRequest{},
 		},
 		{
 			name: "nil part in message",
@@ -328,9 +320,9 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 					PushNotification: &a2apb.PushNotificationConfig{},
 				},
 			},
-			want: &a2a.MessageSendParams{
+			want: &a2a.SendMessageRequest{
 				Message: &a2aMsg,
-				Config:  &a2a.MessageSendConfig{PushConfig: &a2a.PushConfig{}, Blocking: proto.Bool(false)},
+				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{}, Blocking: proto.Bool(false)},
 			},
 		},
 	}
@@ -367,18 +359,18 @@ func TestFromProto_fromProtoGetTaskRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.GetTaskRequest
-		want    *a2a.TaskQueryParams
+		want    *a2a.GetTaskRequest
 		wantErr bool
 	}{
 		{
 			name: "with history",
 			req:  &a2apb.GetTaskRequest{Name: "tasks/test", HistoryLength: 10},
-			want: &a2a.TaskQueryParams{ID: "test", HistoryLength: &historyLen},
+			want: &a2a.GetTaskRequest{ID: "test", HistoryLength: &historyLen},
 		},
 		{
 			name: "without history",
 			req:  &a2apb.GetTaskRequest{Name: "tasks/test"},
-			want: &a2a.TaskQueryParams{ID: "test"},
+			want: &a2a.GetTaskRequest{ID: "test"},
 		},
 		{
 			name:    "invalid name",
@@ -425,7 +417,7 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		{
 			name: "with lastUpdatedAfter",
 			req:  &a2apb.ListTasksRequest{LastUpdatedTime: timestamppb.New(cutOffTime)},
-			want: &a2a.ListTasksRequest{LastUpdatedAfter: &cutOffTime},
+			want: &a2a.ListTasksRequest{StatusTimestampAfter: &cutOffTime},
 		},
 		{
 			name: "with includeArtifacts",
@@ -435,7 +427,7 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		{
 			name: "with all filters",
 			req:  &a2apb.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, LastUpdatedTime: timestamppb.New(cutOffTime)},
-			want: &a2a.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, LastUpdatedAfter: &cutOffTime},
+			want: &a2a.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, StatusTimestampAfter: &cutOffTime},
 		},
 		{
 			name: "without filters",
@@ -582,7 +574,7 @@ func TestFromProto_fromProtoGetTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.GetTaskPushNotificationConfigRequest
-		want    *a2a.GetTaskPushConfigParams
+		want    *a2a.GetTaskPushConfigRequest
 		wantErr bool
 	}{
 		{
@@ -590,9 +582,9 @@ func TestFromProto_fromProtoGetTaskPushConfigRequest(t *testing.T) {
 			req: &a2apb.GetTaskPushNotificationConfigRequest{
 				Name: "tasks/test-task/pushNotificationConfigs/test-config",
 			},
-			want: &a2a.GetTaskPushConfigParams{
-				TaskID:   "test-task",
-				ConfigID: "test-config",
+			want: &a2a.GetTaskPushConfigRequest{
+				TaskID: "test-task",
+				ID:     "test-config",
 			},
 		},
 		{
@@ -628,7 +620,7 @@ func TestFromProto_fromProtoDeleteTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.DeleteTaskPushNotificationConfigRequest
-		want    *a2a.DeleteTaskPushConfigParams
+		want    *a2a.DeleteTaskPushConfigRequest
 		wantErr bool
 	}{
 		{
@@ -636,9 +628,9 @@ func TestFromProto_fromProtoDeleteTaskPushConfigRequest(t *testing.T) {
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
 				Name: "tasks/test-task/pushNotificationConfigs/test-config",
 			},
-			want: &a2a.DeleteTaskPushConfigParams{
-				TaskID:   "test-task",
-				ConfigID: "test-config",
+			want: &a2a.DeleteTaskPushConfigRequest{
+				TaskID: "test-task",
+				ID:     "test-config",
 			},
 		},
 		{

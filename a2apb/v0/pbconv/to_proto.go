@@ -16,6 +16,7 @@ package pbconv
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
@@ -34,32 +35,31 @@ func toProtoMap(meta map[string]any) (*structpb.Struct, error) {
 	return s, nil
 }
 
-func ToProtoSendMessageRequest(params *a2a.MessageSendParams) (*a2apb.SendMessageRequest, error) {
-	if params == nil {
+func ToProtoSendMessageRequest(req *a2a.SendMessageRequest) (*a2apb.SendMessageRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 
-	pMsg, err := toProtoMessage(params.Message)
+	pMsg, err := toProtoMessage(req.Message)
 	if err != nil {
 		return nil, err
 	}
 
-	pConf, err := toProtoSendMessageConfig(params.Config)
+	pConf, err := toProtoSendMessageConfig(req.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	pMeta, err := toProtoMap(params.Metadata)
+	pMeta, err := toProtoMap(req.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
 	}
 
-	req := &a2apb.SendMessageRequest{
+	return &a2apb.SendMessageRequest{
 		Request:       pMsg,
 		Configuration: pConf,
 		Metadata:      pMeta,
-	}
-	return req, nil
+	}, nil
 }
 
 func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, error) {
@@ -74,14 +74,14 @@ func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, e
 	}
 	if config.Auth != nil {
 		pConf.Authentication = &a2apb.AuthenticationInfo{
-			Schemes:     config.Auth.Schemes,
+			Schemes:     []string{config.Auth.Scheme},
 			Credentials: config.Auth.Credentials,
 		}
 	}
 	return pConf, nil
 }
 
-func toProtoSendMessageConfig(config *a2a.MessageSendConfig) (*a2apb.SendMessageConfiguration, error) {
+func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessageConfiguration, error) {
 	if config == nil {
 		return nil, nil
 	}
@@ -104,30 +104,30 @@ func toProtoSendMessageConfig(config *a2a.MessageSendConfig) (*a2apb.SendMessage
 	return pConf, nil
 }
 
-func ToProtoGetTaskRequest(params *a2a.TaskQueryParams) (*a2apb.GetTaskRequest, error) {
-	if params == nil {
+func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 
-	req := &a2apb.GetTaskRequest{Name: MakeTaskName(params.ID)}
-	if params.HistoryLength != nil {
-		req.HistoryLength = int32(*params.HistoryLength)
+	pReq := &a2apb.GetTaskRequest{Name: MakeTaskName(req.ID)}
+	if req.HistoryLength != nil {
+		pReq.HistoryLength = int32(*req.HistoryLength)
 	}
-	return req, nil
+	return pReq, nil
 }
 
-func ToProtoCancelTaskRequest(params *a2a.TaskIDParams) (*a2apb.CancelTaskRequest, error) {
-	if params == nil {
+func ToProtoCancelTaskRequest(req *a2a.CancelTaskRequest) (*a2apb.CancelTaskRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.CancelTaskRequest{Name: MakeTaskName(params.ID)}, nil
+	return &a2apb.CancelTaskRequest{Name: MakeTaskName(req.ID)}, nil
 }
 
-func ToProtoTaskSubscriptionRequest(params *a2a.TaskIDParams) (*a2apb.TaskSubscriptionRequest, error) {
-	if params == nil {
+func ToProtoTaskSubscriptionRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.TaskSubscriptionRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.TaskSubscriptionRequest{Name: MakeTaskName(params.ID)}, nil
+	return &a2apb.TaskSubscriptionRequest{Name: MakeTaskName(req.ID)}, nil
 }
 
 func ToProtoCreateTaskPushConfigRequest(config *a2a.TaskPushConfig) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
@@ -146,21 +146,21 @@ func ToProtoCreateTaskPushConfigRequest(config *a2a.TaskPushConfig) (*a2apb.Crea
 	}, nil
 }
 
-func ToProtoGetTaskPushConfigRequest(params *a2a.GetTaskPushConfigParams) (*a2apb.GetTaskPushNotificationConfigRequest, error) {
-	if params == nil {
+func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.GetTaskPushNotificationConfigRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 	return &a2apb.GetTaskPushNotificationConfigRequest{
-		Name: MakeConfigName(params.TaskID, params.ConfigID),
+		Name: MakeConfigName(req.TaskID, req.ID),
 	}, nil
 }
 
-func ToProtoDeleteTaskPushConfigRequest(params *a2a.DeleteTaskPushConfigParams) (*a2apb.DeleteTaskPushNotificationConfigRequest, error) {
-	if params == nil {
+func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*a2apb.DeleteTaskPushNotificationConfigRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 	return &a2apb.DeleteTaskPushNotificationConfigRequest{
-		Name: MakeConfigName(params.TaskID, params.ConfigID),
+		Name: MakeConfigName(req.TaskID, req.ID),
 	}, nil
 }
 
@@ -211,7 +211,6 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		}
 		resp.Payload = &a2apb.StreamResponse_StatusUpdate{StatusUpdate: &a2apb.TaskStatusUpdateEvent{
 			ContextId: e.ContextID,
-			Final:     e.Final,
 			Status:    pStatus,
 			TaskId:    string(e.TaskID),
 			Metadata:  metadata,
@@ -286,27 +285,27 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 	return pMsgs, nil
 }
 
-func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
+func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
 	meta, err := toProtoMap(part.Metadata)
 	if err != nil {
 		return nil, err
 	}
-	switch fc := part.File.(type) {
-	case a2a.FileBytes:
+	switch fc := part.Content.(type) {
+	case a2a.Raw:
 		return &a2apb.Part{
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
-				MimeType: fc.MimeType,
-				Name:     fc.Name,
-				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(fc.Bytes)},
+				MimeType: part.MediaType,
+				Name:     part.Filename,
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: fc},
 			}},
 			Metadata: meta,
 		}, nil
-	case a2a.FileURI:
+	case a2a.URL:
 		return &a2apb.Part{
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
-				MimeType: fc.MimeType,
-				Name:     fc.Name,
-				File:     &a2apb.FilePart_FileWithUri{FileWithUri: fc.URI},
+				MimeType: part.MediaType,
+				Name:     part.Filename,
+				File:     &a2apb.FilePart_FileWithUri{FileWithUri: string(fc)},
 			}},
 			Metadata: meta,
 		}, nil
@@ -315,8 +314,8 @@ func toProtoFilePart(part a2a.FilePart) (*a2apb.Part, error) {
 	}
 }
 
-func toProtoDataPart(part a2a.DataPart) (*a2apb.Part, error) {
-	s, err := toProtoMap(part.Data)
+func toProtoDataPart(part *a2a.Part) (*a2apb.Part, error) {
+	s, err := toProtoMap(part.Content.(a2a.Data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
@@ -331,26 +330,26 @@ func toProtoDataPart(part a2a.DataPart) (*a2apb.Part, error) {
 }
 
 func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
-	switch p := part.(type) {
-	case a2a.TextPart:
-		meta, err := toProtoMap(p.Metadata)
+	switch content := part.Content.(type) {
+	case a2a.Text:
+		meta, err := toProtoMap(part.Metadata)
 		if err != nil {
 			return nil, err
 		}
-		return &a2apb.Part{Part: &a2apb.Part_Text{Text: p.Text}, Metadata: meta}, nil
-	case a2a.DataPart:
-		return toProtoDataPart(p)
-	case a2a.FilePart:
-		return toProtoFilePart(p)
+		return &a2apb.Part{Part: &a2apb.Part_Text{Text: string(content)}, Metadata: meta}, nil
+	case a2a.Data:
+		return toProtoDataPart(&part)
+	case a2a.Raw, a2a.URL:
+		return toProtoFilePart(&part)
 	default:
-		return nil, fmt.Errorf("unsupported part type: %T", p)
+		return nil, fmt.Errorf("unsupported part type: %T", content)
 	}
 }
 
-func toProtoParts(parts []a2a.Part) ([]*a2apb.Part, error) {
+func toProtoParts(parts []*a2a.Part) ([]*a2apb.Part, error) {
 	pParts := make([]*a2apb.Part, len(parts))
 	for i, part := range parts {
-		pPart, err := toProtoPart(part)
+		pPart, err := toProtoPart(*part)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert part: %w", err)
 		}
@@ -491,8 +490,8 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 	}
 
 	var lastUpdatedAfter *timestamppb.Timestamp
-	if request.LastUpdatedAfter != nil {
-		lastUpdatedAfter = timestamppb.New(*request.LastUpdatedAfter)
+	if request.StatusTimestampAfter != nil {
+		lastUpdatedAfter = timestamppb.New(*request.StatusTimestampAfter)
 	}
 	return &a2apb.ListTasksRequest{
 		ContextId:        request.ContextID,
@@ -561,7 +560,7 @@ func ToProtoListTaskPushConfig(configs []*a2a.TaskPushConfig) (*a2apb.ListTaskPu
 	}, nil
 }
 
-func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigParams) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
+func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -572,7 +571,7 @@ func toProtoAdditionalInterfaces(interfaces []a2a.AgentInterface) []*a2apb.Agent
 	pInterfaces := make([]*a2apb.AgentInterface, len(interfaces))
 	for i, iface := range interfaces {
 		pInterfaces[i] = &a2apb.AgentInterface{
-			Transport: string(iface.Transport),
+			Transport: string(iface.ProtocolBinding),
 			Url:       iface.URL,
 		}
 	}
@@ -612,7 +611,6 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	result := &a2apb.AgentCapabilities{
 		PushNotifications:      capabilities.PushNotifications,
 		Streaming:              capabilities.Streaming,
-		StateTransitionHistory: capabilities.StateTransitionHistory,
 		Extensions:             extensions,
 	}
 	return result, nil
@@ -670,17 +668,17 @@ func toProtoPasswordOAuthFlows(f *a2a.PasswordOAuthFlow) *a2apb.OAuthFlows {
 func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 	var result []*a2apb.OAuthFlows
 
-	if flows.AuthorizationCode != nil {
-		result = append(result, toProtoAuthzOAuthCodeFlow(flows.AuthorizationCode))
-	}
-	if flows.ClientCredentials != nil {
-		result = append(result, toProtoCredentialsOAuthFlow(flows.ClientCredentials))
-	}
-	if flows.Implicit != nil {
-		result = append(result, toProtoImplicitOAuthFlow(flows.Implicit))
-	}
-	if flows.Password != nil {
-		result = append(result, toProtoPasswordOAuthFlows(flows.Password))
+	switch f := flows.(type) {
+	case *a2a.AuthorizationCodeOAuthFlow:
+		result = append(result, toProtoAuthzOAuthCodeFlow(f))
+	case *a2a.ClientCredentialsOAuthFlow:
+		result = append(result, toProtoCredentialsOAuthFlow(f))
+	case *a2a.ImplicitOAuthFlow:
+		result = append(result, toProtoImplicitOAuthFlow(f))
+	case *a2a.PasswordOAuthFlow:
+		result = append(result, toProtoPasswordOAuthFlows(f))
+	default:
+		return nil, fmt.Errorf("unknown OAuthFlow type: %T", f)
 	}
 
 	if len(result) == 0 {
@@ -701,7 +699,7 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 			Scheme: &a2apb.SecurityScheme_ApiKeySecurityScheme{
 				ApiKeySecurityScheme: &a2apb.APIKeySecurityScheme{
 					Name:        s.Name,
-					Location:    string(s.In),
+					Location:    string(s.Location),
 					Description: s.Description,
 				},
 			},
@@ -766,11 +764,11 @@ func toProtoSecuritySchemes(schemes a2a.NamedSecuritySchemes) (map[string]*a2apb
 	return pSchemes, nil
 }
 
-func toProtoSecurity(security []a2a.SecurityRequirements) []*a2apb.Security {
-	pSecurity := make([]*a2apb.Security, len(security))
-	for i, sec := range security {
+func toProtoSecurity(securityRequirements []a2a.SecurityRequirement) []*a2apb.Security {
+	pSecurity := make([]*a2apb.Security, len(securityRequirements))
+	for i, sec := range securityRequirements {
 		pSchemes := make(map[string]*a2apb.StringList)
-		for name, scopes := range sec {
+		for name, scopes := range sec.Scheme {
 			pSchemes[string(name)] = &a2apb.StringList{List: scopes}
 		}
 		pSecurity[i] = &a2apb.Security{Schemes: pSchemes}
@@ -818,7 +816,6 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	if card == nil {
 		return nil, nil
 	}
-
 	capabilities, err := toProtoCapabilities(card.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert agent capabilities: %w", err)
@@ -834,26 +831,40 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		return nil, fmt.Errorf("failed to convert signatures: %w", err)
 	}
 
+
 	result := &a2apb.AgentCard{
-		ProtocolVersion:                   card.ProtocolVersion,
 		Name:                              card.Name,
 		Description:                       card.Description,
-		Url:                               card.URL,
-		PreferredTransport:                string(card.PreferredTransport),
 		Version:                           card.Version,
 		DocumentationUrl:                  card.DocumentationURL,
 		Capabilities:                      capabilities,
 		DefaultInputModes:                 card.DefaultInputModes,
 		DefaultOutputModes:                card.DefaultOutputModes,
-		SupportsAuthenticatedExtendedCard: card.SupportsAuthenticatedExtendedCard,
+		SupportsAuthenticatedExtendedCard: card.Capabilities.ExtendedAgentCard,
 		SecuritySchemes:                   schemes,
 		Provider:                          toProtoAgentProvider(card.Provider),
-		AdditionalInterfaces:              toProtoAdditionalInterfaces(card.AdditionalInterfaces),
-		Security:                          toProtoSecurity(card.Security),
+		Security:                          toProtoSecurity(card.SecurityRequirements),
 		Skills:                            toProtoSkills(card.Skills),
 		IconUrl:                           card.IconURL,
 		Signatures:                        signatures,
 	}
+
+	idx := slices.IndexFunc(card.SupportedInterfaces, func(i a2a.AgentInterface) bool {
+		return i.ProtocolVersion == a2a.Version
+	})
+	if idx != -1 {
+		result.ProtocolVersion = string(card.SupportedInterfaces[idx].ProtocolVersion)
+		result.Url = card.SupportedInterfaces[idx].URL
+		result.PreferredTransport = string(card.SupportedInterfaces[idx].ProtocolBinding)
+	}
+	var additionalInterfaces []a2a.AgentInterface
+	for i, ifc := range card.SupportedInterfaces {
+		if i == idx || ifc.ProtocolVersion != a2a.Version {
+			continue
+		}
+		additionalInterfaces = append(additionalInterfaces, ifc)
+	}
+	result.AdditionalInterfaces = toProtoAdditionalInterfaces(additionalInterfaces)
 
 	return result, nil
 }
