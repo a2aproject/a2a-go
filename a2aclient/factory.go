@@ -27,17 +27,24 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-type transportKey struct {
-	version  a2a.ProtocolVersion
-	protocol a2a.TransportProtocol
-}
-
 // Factory provides an API for creating a [Client] compatible with requested transports.
 // Factory is immutable, but the configuration can be extended using [WithAdditionalOptions] call.
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
 	transports   map[transportKey]TransportFactory
+}
+
+type transportKey struct {
+	protocol       a2a.TransportProtocol
+	protocolSemver a2a.ProtocolVersion // must start with v
+}
+
+func makeTransportKey(version a2a.ProtocolVersion, protocol a2a.TransportProtocol) transportKey {
+	if !strings.HasPrefix(string(version), "v") {
+		version = a2a.ProtocolVersion("v" + string(version))
+	}
+	return transportKey{protocol, version}
 }
 
 // transportCandidate represents an Agent endpoint with the protocol supported by the Client
@@ -164,7 +171,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 	candidates := make([]transportCandidate, 0, len(available))
 
 	for _, opt := range available {
-		key := transportKey{a2a.ProtocolVersion(opt.ProtocolVersion), a2a.TransportProtocol(opt.ProtocolBinding)}
+		key := makeTransportKey(opt.ProtocolVersion, opt.ProtocolBinding)
 		if tf, ok := f.transports[key]; ok {
 			priority := len(f.config.PreferredTransports)
 			for j, clientPref := range f.config.PreferredTransports {
@@ -173,11 +180,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 					break
 				}
 			}
-			ver := string(opt.ProtocolVersion)
-			if !strings.HasPrefix(ver, "v") {
-				ver = "v" + ver
-			}
-			candidates = append(candidates, transportCandidate{tf, opt, priority, ver})
+			candidates = append(candidates, transportCandidate{tf, opt, priority, string(key.protocolSemver)})
 		}
 	}
 
@@ -221,15 +224,13 @@ func WithConfig(c Config) FactoryOption {
 
 // WithTransport uses the provided factory during connection establishment for the specified transport binding.
 func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
-	return factoryOptionFn(func(f *Factory) {
-		f.transports[transportKey{a2a.Version, protocol}] = factory
-	})
+	return WithCompatTransport(a2a.Version, protocol, factory)
 }
 
 // WithCompatTransport uses the provided factory during connection establishment for the specified transport binding and protocol version.
 func WithCompatTransport(version a2a.ProtocolVersion, protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
-		f.transports[transportKey{version, protocol}] = factory
+		f.transports[makeTransportKey(version, protocol)] = factory
 	})
 }
 
@@ -286,7 +287,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithCallInterceptors(f.interceptors...),
 	}
 	for k, v := range f.transports {
-		options = append(options, WithCompatTransport(k.version, k.protocol, v))
+		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))
 	}
 	return NewFactory(append(options, opts...)...)
 }
