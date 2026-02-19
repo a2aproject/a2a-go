@@ -288,7 +288,11 @@ func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage)
 	if err := json.Unmarshal(raw, &message); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
-	compatResult, err := h.handler.SendMessage(ctx, toCoreSendMessageRequest(&message))
+	req, err := toCoreSendMessageRequest(&message)
+	if err != nil {
+		return nil, handleUnmarshalError(err)
+	}
+	compatResult, err := h.handler.SendMessage(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +325,12 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 			yield(nil, handleUnmarshalError(err))
 			return
 		}
-		for event, err := range h.handler.SendStreamingMessage(ctx, toCoreSendMessageRequest(&message)) {
+		req, err := toCoreSendMessageRequest(&message)
+		if err != nil {
+			yield(nil, handleUnmarshalError(err))
+			return
+		}
+		for event, err := range h.handler.SendStreamingMessage(ctx, req) {
 			if !yield(event, err) {
 				return
 			}

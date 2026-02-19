@@ -1,4 +1,4 @@
-// Copyright 20\d\d The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -250,7 +250,11 @@ func toCompatTaskPushConfig(c *a2a.TaskPushConfig) (*taskPushConfig, error) {
 func toCompatTaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*taskPushConfig, error) {
 	var res []*taskPushConfig
 	for _, c := range cs {
-		if comp, err := toCompatTaskPushConfig(c); err == nil && comp != nil {
+		comp, err := toCompatTaskPushConfig(c)
+		if err != nil {
+			return nil, err
+		}
+		if comp != nil {
 			res = append(res, comp)
 		}
 	}
@@ -359,9 +363,13 @@ func toCoreCancelTaskRequest(q *taskIDParams) *a2a.CancelTaskRequest {
 	}
 }
 
-func toCoreSendMessageRequest(p *messageSendParams) *a2a.SendMessageRequest {
+func toCoreSendMessageRequest(p *messageSendParams) (*a2a.SendMessageRequest, error) {
+	msg, err := toCoreMessage(p.Message)
+	if err != nil {
+		return nil, err
+	}
 	req := &a2a.SendMessageRequest{
-		Message:  toCoreMessage(p.Message),
+		Message:  msg,
 		Metadata: p.Metadata,
 	}
 	if p.Config != nil {
@@ -374,7 +382,7 @@ func toCoreSendMessageRequest(p *messageSendParams) *a2a.SendMessageRequest {
 			req.Config.PushConfig = toCorePushConfig(*p.Config.PushConfig)
 		}
 	}
-	return req
+	return req, nil
 }
 
 func toCoreSubscribeToTaskRequest(q *taskIDParams) *a2a.SubscribeToTaskRequest {
@@ -429,25 +437,29 @@ func toCorePushConfig(c pushConfig) *a2a.PushConfig {
 	return res
 }
 
-func toCoreMessage(m *message) *a2a.Message {
+func toCoreMessage(m *message) (*a2a.Message, error) {
 	if m == nil {
-		return nil
+		return nil, nil
+	}
+	parts, err := toCoreParts(m.Parts)
+	if err != nil {
+		return nil, err
 	}
 	return &a2a.Message{
 		ID:             m.ID,
 		ContextID:      m.ContextID,
 		Extensions:     m.Extensions,
 		Metadata:       m.Metadata,
-		Parts:          toCoreParts(m.Parts),
+		Parts:          parts,
 		ReferenceTasks: m.ReferenceTasks,
 		Role:           m.Role,
 		TaskID:         m.TaskID,
-	}
+	}, nil
 }
 
-func toCoreParts(parts ContentParts) a2a.ContentParts {
+func toCoreParts(parts ContentParts) (a2a.ContentParts, error) {
 	if len(parts) == 0 {
-		return nil
+		return nil, nil
 	}
 	res := make(a2a.ContentParts, len(parts))
 	for i, p := range parts {
@@ -465,7 +477,10 @@ func toCoreParts(parts ContentParts) a2a.ContentParts {
 		case filePart:
 			switch f := c.File.(type) {
 			case fileBytes:
-				bytes, _ := base64.StdEncoding.DecodeString(f.Bytes)
+				bytes, err := base64.StdEncoding.DecodeString(f.Bytes)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode base64 content: %w", err)
+				}
 				res[i] = &a2a.Part{
 					Content:   a2a.Raw(bytes),
 					Metadata:  c.Metadata,
@@ -482,7 +497,7 @@ func toCoreParts(parts ContentParts) a2a.ContentParts {
 			}
 		}
 	}
-	return res
+	return res, nil
 }
 
 func fromCompatEvent(comp event) (a2a.Event, error) {
@@ -491,7 +506,7 @@ func fromCompatEvent(comp event) (a2a.Event, error) {
 	}
 	switch v := comp.(type) {
 	case *message:
-		return toCoreMessage(v), nil
+		return toCoreMessage(v)
 	case *task:
 		return fromCompatTask(v)
 	case *taskStatusUpdateEvent:
@@ -507,12 +522,20 @@ func fromCompatTask(t *task) (*a2a.Task, error) {
 	if t == nil {
 		return nil, nil
 	}
+	var msg *a2a.Message
+	if t.Status.Message != nil {
+		var err error
+		msg, err = toCoreMessage(t.Status.Message)
+		if err != nil {
+			return nil, err
+		}
+	}
 	res := &a2a.Task{
 		ID:        t.ID,
 		ContextID: t.ContextID,
 		Metadata:  t.Metadata,
 		Status: a2a.TaskStatus{
-			Message:   toCoreMessage(t.Status.Message),
+			Message:   msg,
 			State:     fromCompatTaskState(t.Status.State),
 			Timestamp: t.Status.Timestamp,
 		},
@@ -520,21 +543,33 @@ func fromCompatTask(t *task) (*a2a.Task, error) {
 	if len(t.Artifacts) > 0 {
 		res.Artifacts = make([]*a2a.Artifact, len(t.Artifacts))
 		for i, a := range t.Artifacts {
-			res.Artifacts[i] = fromCompatArtifact(a)
+			var err error
+			res.Artifacts[i], err = fromCompatArtifact(a)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if len(t.History) > 0 {
 		res.History = make([]*a2a.Message, len(t.History))
 		for i, m := range t.History {
-			res.History[i] = toCoreMessage(m)
+			var err error
+			res.History[i], err = toCoreMessage(m)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return res, nil
 }
 
-func fromCompatArtifact(a *artifact) *a2a.Artifact {
+func fromCompatArtifact(a *artifact) (*a2a.Artifact, error) {
 	if a == nil {
-		return nil
+		return nil, nil
+	}
+	parts, err := toCoreParts(a.Parts)
+	if err != nil {
+		return nil, err
 	}
 	return &a2a.Artifact{
 		ID:          a.ID,
@@ -542,18 +577,22 @@ func fromCompatArtifact(a *artifact) *a2a.Artifact {
 		Extensions:  a.Extensions,
 		Metadata:    a.Metadata,
 		Name:        a.Name,
-		Parts:       toCoreParts(a.Parts),
-	}
+		Parts:       parts,
+	}, nil
 }
 
 func fromCompatTaskStatusUpdateEvent(e *taskStatusUpdateEvent) (*a2a.TaskStatusUpdateEvent, error) {
 	if e == nil {
 		return nil, nil
 	}
+	msg, err := toCoreMessage(e.Status.Message)
+	if err != nil {
+		return nil, err
+	}
 	return &a2a.TaskStatusUpdateEvent{
 		ContextID: e.ContextID,
 		Status: a2a.TaskStatus{
-			Message:   toCoreMessage(e.Status.Message),
+			Message:   msg,
 			State:     fromCompatTaskState(e.Status.State),
 			Timestamp: e.Status.Timestamp,
 		},
@@ -566,9 +605,13 @@ func fromCompatTaskArtifactUpdateEvent(e *taskArtifactUpdateEvent) (*a2a.TaskArt
 	if e == nil {
 		return nil, nil
 	}
+	artifact, err := fromCompatArtifact(e.Artifact)
+	if err != nil {
+		return nil, err
+	}
 	return &a2a.TaskArtifactUpdateEvent{
 		Append:    e.Append,
-		Artifact:  fromCompatArtifact(e.Artifact),
+		Artifact:  artifact,
 		ContextID: e.ContextID,
 		LastChunk: e.LastChunk,
 		TaskID:    e.TaskID,

@@ -214,7 +214,7 @@ func mapToCompatSecuritySchemes(schemes a2a.NamedSecuritySchemes) namedSecurityS
 			}
 		case a2a.MutualTLSSecurityScheme:
 			result[k] = mutualTLSSecurityScheme{
-				Type:        "mutualTlS",
+				Type:        "mutualTLS",
 				Description: v.Description,
 				MutualTLS:   &v,
 			}

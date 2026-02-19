@@ -18,4 +18,4 @@ package a2av0
 import "github.com/a2aproject/a2a-go/a2a"
 
 // Version is the protocol version which SDK implements.
-const Version ProtocolVersion = "0.3"
+const Version a2a.ProtocolVersion = "0.3"
