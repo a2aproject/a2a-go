@@ -41,13 +41,27 @@ const defaultAgentCardPath = "/.well-known/agent-card.json"
 
 var defaultClient = &http.Client{Timeout: 30 * time.Second}
 
+// Parser is used to parse the agent card from the response body.
+type Parser func([]byte) (*a2a.AgentCard, error)
+
+// DefaultCardParser is a default [Parser].
+var DefaultCardParser Parser = func(body []byte) (*a2a.AgentCard, error) {
+	var card a2a.AgentCard
+	if err := json.Unmarshal(body, &card); err != nil {
+		return nil, err
+	}
+	return &card, nil
+}
+
 // DefaultResolver is configured with an [http.Client] with a 30-second timeout.
-var DefaultResolver = &Resolver{Client: defaultClient}
+var DefaultResolver = &Resolver{Client: defaultClient, CardParser: DefaultCardParser}
 
 // Resolver is used to fetch an [a2a.AgentCard].
 type Resolver struct {
 	// Client can be used to configure appropriate timeout, retry policy, and connection pooling
 	Client *http.Client
+	// CardParser can be used to configure AgentCard parsing.
+	CardParser Parser
 }
 
 // NewResolver is a [Resolver] constructor function.
@@ -108,12 +122,16 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 		return nil, fmt.Errorf("failed to read card response: %w", err)
 	}
 
-	var card a2a.AgentCard
-	if err := json.Unmarshal(body, &card); err != nil {
+	parseFn := r.CardParser
+	if parseFn == nil {
+		parseFn = DefaultCardParser
+	}
+	card, err := parseFn(body)
+	if err != nil {
 		return nil, fmt.Errorf("card parsing failed: %w", err)
 	}
 
-	return &card, nil
+	return card, nil
 }
 
 // WithPath makes Resolve fetch from the provided path relative to base URL.

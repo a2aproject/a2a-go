@@ -33,6 +33,12 @@ type AgentCardProducer interface {
 	Card(ctx context.Context) (*a2a.AgentCard, error)
 }
 
+// AgentCardJSONProducer creates an AgentCard instances used for agent discovery and capability negotiation as raw json.
+type AgentCardJSONProducer interface {
+	// CardJSON returns an [a2a.AgentCard] as raw json.
+	CardJSON(ctx context.Context) ([]byte, error)
+}
+
 // AgentCardProducerFn is a function type which implements [AgentCardProducer].
 type AgentCardProducerFn func(ctx context.Context) (*a2a.AgentCard, error)
 
@@ -94,6 +100,18 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+
+		if producer, ok := producer.(AgentCardJSONProducer); ok {
+			cardBytes, err := producer.CardJSON(ctx)
+			if err != nil {
+				log.Error(ctx, "agent card producer failed", err)
+				rw.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			writeAgentCardBytes(ctx, rw, req, cardBytes)
+			return
+		}
+
 		card, err := producer.Card(ctx)
 		if err != nil {
 			log.Error(ctx, "agent card producer failed", err)
