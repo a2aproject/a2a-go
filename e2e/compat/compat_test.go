@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -33,99 +34,14 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
-type testAgentExecutor struct {
-	t *testing.T
-}
+var compatTestBinPath string
 
-func (e *testAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		for _, p := range execCtx.Message.Parts {
-			if text, ok := p.Content.(a2a.Text); ok {
-				if string(text) == "ping" {
-					response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("pong"))
-					yield(response, nil)
-					return
-				}
-			}
-		}
-		yield(nil, fmt.Errorf("expected ping message"))
-	}
-}
-
-func (e *testAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {}
-}
-
-func buildCompatTestBinary(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	binPath := filepath.Join(dir, "compat-test-bin")
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	cmd.Dir = filepath.Join(dir, "v0_3")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Failed to build compat-test binary: %v\n%s", err, out)
-	}
-
-	t.Cleanup(func() {
-		_ = os.Remove(binPath)
-	})
-
-	return binPath
-}
-
-func startNewServer(t *testing.T) (port int, stop func()) {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-
-	port = listener.Addr().(*net.TCPAddr).Port
-
-	card := &a2a.AgentCard{
-		Name:        "Compat Test Agent",
-		Description: "Agent for compatibility tests",
-		SupportedInterfaces: []*a2a.AgentInterface{
-			{
-				URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
-				ProtocolBinding: a2a.TransportProtocolJSONRPC,
-				ProtocolVersion: a2av0.Version,
-			},
-		},
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
-		Capabilities:       a2a.AgentCapabilities{Streaming: false},
-	}
-	cardProducer := a2av0.NewStaticAgentCardProducer(card)
-
-	executor := &testAgentExecutor{t: t}
-	requestHandler := a2asrv.NewHandler(executor)
-	jsonRpcHandler := a2av0.NewJSONRPCHandler(requestHandler, a2av0.JSONRPCHandlerConfig{})
-
-	mux := http.NewServeMux()
-	mux.Handle("/invoke", jsonRpcHandler)
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
-
-	srv := &http.Server{Handler: mux}
-
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			t.Errorf("server error: %v", err)
-		}
-	}()
-
-	return port, func() {
-		_ = srv.Shutdown(context.Background())
-	}
+func TestMain(m *testing.M) {
+	os.Exit(compileSUTAndRun(m))
 }
 
 func TestCompat_OldClientNewServer(t *testing.T) {
-	binPath := buildCompatTestBinary(t)
+	binPath := compatTestBinPath
 
 	port, stop := startNewServer(t)
 	defer stop()
@@ -140,7 +56,7 @@ func TestCompat_OldClientNewServer(t *testing.T) {
 }
 
 func TestCompat_NewClientOldServer(t *testing.T) {
-	binPath := buildCompatTestBinary(t)
+	binPath := compatTestBinPath
 
 	cmd := exec.Command(binPath, "server")
 
@@ -196,13 +112,103 @@ func TestCompat_NewClientOldServer(t *testing.T) {
 		t.Fatalf("expected Message response, got: %T", resp)
 	}
 
-	for _, p := range respMsg.Parts {
-		if text, ok := p.Content.(a2a.Text); ok {
-			if string(text) == "pong" {
-				return // Success
-			}
-		}
+	gotPong := slices.ContainsFunc(respMsg.Parts, func(p *a2a.Part) bool { return p.Text() == "pong" })
+	if !gotPong {
+		t.Fatalf("unexpected response message parts: %+v", respMsg.Parts)
+	}
+}
+
+func compileSUTAndRun(m *testing.M) int {
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "a2a-compat-test-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(tmpDir)
+
+	compatTestBinPath = filepath.Join(tmpDir, "compat-test-bin")
+
+	wd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get working directory: %v\n", err)
+		return 1
 	}
 
-	t.Fatalf("unexpected response message parts: %+v", respMsg.Parts)
+	cmd := exec.Command("go", "build", "-o", compatTestBinPath, ".")
+	cmd.Dir = filepath.Join(wd, "v0_3")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build compat-test binary: %v\n%s\n", err, out)
+		return 1
+	}
+	return m.Run()
+}
+
+type testAgentExecutor struct {
+	t *testing.T
+}
+
+func (e *testAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		for _, p := range execCtx.Message.Parts {
+			if text, ok := p.Content.(a2a.Text); ok {
+				if string(text) == "ping" {
+					response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("pong"))
+					yield(response, nil)
+					return
+				}
+			}
+		}
+		yield(nil, fmt.Errorf("expected ping message"))
+	}
+}
+
+func (e *testAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {}
+}
+
+func startNewServer(t *testing.T) (port int, stop func()) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+
+	port = listener.Addr().(*net.TCPAddr).Port
+
+	card := &a2a.AgentCard{
+		Name:        "Compat Test Agent",
+		Description: "Agent for compatibility tests",
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+				ProtocolVersion: a2av0.Version,
+			},
+		},
+		DefaultInputModes:  []string{"text"},
+		DefaultOutputModes: []string{"text"},
+		Capabilities:       a2a.AgentCapabilities{Streaming: false},
+	}
+	cardProducer := a2av0.NewStaticAgentCardProducer(card)
+
+	executor := &testAgentExecutor{t: t}
+	requestHandler := a2asrv.NewHandler(executor)
+	jsonRpcHandler := a2av0.NewJSONRPCHandler(requestHandler, a2av0.JSONRPCHandlerConfig{})
+
+	mux := http.NewServeMux()
+	mux.Handle("/invoke", jsonRpcHandler)
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
+
+	srv := &http.Server{Handler: mux}
+
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			t.Errorf("server error: %v", err)
+		}
+	}()
+
+	return port, func() {
+		_ = srv.Shutdown(context.Background())
+	}
 }
