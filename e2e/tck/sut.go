@@ -72,8 +72,8 @@ func main() {
 	agentCard := &a2a.AgentCard{
 		Name:        "TCK Core Agent",
 		Description: "A complete A2A agent implementation designed specifically for testing with the A2A Technology Compatibility Kit (TCK)",
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: cardUrl, ProtocolBinding: preferredTransport},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(cardUrl, preferredTransport),
 		},
 		Version:            "1.0.0",
 		DefaultInputModes:  []string{"text"},

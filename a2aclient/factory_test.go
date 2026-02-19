@@ -32,10 +32,10 @@ func makeProtocols(in []string) []a2a.TransportProtocol {
 	return out
 }
 
-func makeEndpoints(protocols []string) []a2a.AgentInterface {
-	out := make([]a2a.AgentInterface, len(protocols))
+func makeEndpoints(protocols []string) []*a2a.AgentInterface {
+	out := make([]*a2a.AgentInterface, len(protocols))
 	for i, protocol := range protocols {
-		out[i] = a2a.AgentInterface{ProtocolBinding: a2a.TransportProtocol(protocol), URL: "https://agent.com"}
+		out[i] = a2a.NewAgentInterface("https://agent.com", a2a.TransportProtocol(protocol))
 	}
 	return out
 }

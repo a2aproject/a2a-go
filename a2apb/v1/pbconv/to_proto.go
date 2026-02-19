@@ -598,7 +598,7 @@ func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2ap
 	}, nil
 }
 
-func toProtoSupportedInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentInterface {
+func toProtoSupportedInterfaces(interfaces []*a2a.AgentInterface) []*a2apb.AgentInterface {
 	// TODO: add validation
 	pInterfaces := make([]*a2apb.AgentInterface, len(interfaces))
 	for i, iface := range interfaces {

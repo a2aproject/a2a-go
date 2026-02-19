@@ -23,21 +23,28 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/log"
+
+	"golang.org/x/mod/semver"
 )
+
+type transportKey struct {
+	version  a2a.ProtocolVersion
+	protocol a2a.TransportProtocol
+}
 
 // Factory provides an API for creating a [Client] compatible with requested transports.
 // Factory is immutable, but the configuration can be extended using [WithAdditionalOptions] call.
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
-	transports   map[a2a.TransportProtocol]TransportFactory
+	transports   map[transportKey]TransportFactory
 }
 
 // transportCandidate represents an Agent endpoint with the protocol supported by the Client
 // and is used during the best compatible transport selection.
 type transportCandidate struct {
 	factory  TransportFactory
-	endpoint a2a.AgentInterface
+	endpoint *a2a.AgentInterface
 	// priority if determined by the index of endpoint.Transport in Config.PreferredTransports
 	// or is set to len(Config.PreferredTransports) if Transport is not present in the config
 	priority int
@@ -55,7 +62,7 @@ func NewFromCard(ctx context.Context, card *a2a.AgentCard, opts ...FactoryOption
 
 // NewFromEndpoints is a [Client] constructor method which takes known [a2a.AgentInterface] descriptions as input.
 // It is equivalent to [Factory].CreateFromEndpoints method.
-func NewFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
+func NewFromEndpoints(ctx context.Context, endpoints []*a2a.AgentInterface, opts ...FactoryOption) (*Client, error) {
 	return NewFactory(opts...).CreateFromEndpoints(ctx, endpoints)
 }
 
@@ -72,7 +79,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		return nil, fmt.Errorf("agent card has no supported interfaces")
 	}
 
-	serverPrefs := make([]a2a.AgentInterface, len(card.SupportedInterfaces))
+	serverPrefs := make([]*a2a.AgentInterface, len(card.SupportedInterfaces))
 	copy(serverPrefs, card.SupportedInterfaces)
 
 	candidates, err := f.selectTransport(serverPrefs)
@@ -101,7 +108,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 // If PreferredTransports were not provided, we attempt to establish a connection using the provided endpoint order.
 //
 // The method fails if we couldn't establish a compatible transport.
-func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []a2a.AgentInterface) (*Client, error) {
+func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.AgentInterface) (*Client, error) {
 	candidates, err := f.selectTransport(endpoints)
 	if err != nil {
 		return nil, err
@@ -151,11 +158,12 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 // selectTransport filters the list of available endpoints leaving only those with
 // compatible transport protocols. If config.PreferredTransports is set the result is ordered
 // based on the provided client preferences.
-func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCandidate, error) {
+func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportCandidate, error) {
 	candidates := make([]transportCandidate, 0, len(available))
 
 	for _, opt := range available {
-		if tf, ok := f.transports[a2a.TransportProtocol(opt.ProtocolBinding)]; ok {
+		key := transportKey{a2a.ProtocolVersion(opt.ProtocolVersion), a2a.TransportProtocol(opt.ProtocolBinding)}
+		if tf, ok := f.transports[key]; ok {
 			priority := len(f.config.PreferredTransports)
 			for i, clientPref := range f.config.PreferredTransports {
 				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
@@ -170,13 +178,16 @@ func (f *Factory) selectTransport(available []a2a.AgentInterface) ([]transportCa
 	if len(candidates) == 0 {
 		protocols := make([]string, len(available))
 		for i, a := range available {
-			protocols[i] = string(a.ProtocolBinding)
+			protocols[i] = string(a.ProtocolBinding) + "_" + string(a.ProtocolVersion)
 		}
 		return nil, fmt.Errorf("no compatible transports found: available transports - [%s]", strings.Join(protocols, ","))
 	}
 
 	if len(f.config.PreferredTransports) > 0 {
 		slices.SortFunc(candidates, func(c1, c2 transportCandidate) int {
+			if c1.priority == c2.priority {
+				return semver.Compare(string(c2.endpoint.ProtocolVersion), string(c1.endpoint.ProtocolVersion))
+			}
 			return c1.priority - c2.priority
 		})
 	}
@@ -202,10 +213,17 @@ func WithConfig(c Config) FactoryOption {
 	})
 }
 
-// WithTransport uses the provided factory during connection establishment for the specified protocol.
+// WithTransport uses the provided factory during connection establishment for the specified transport binding.
 func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
-		f.transports[protocol] = factory
+		f.transports[transportKey{a2a.Version, protocol}] = factory
+	})
+}
+
+// WithCompatTransport uses the provided factory during connection establishment for the specified transport binding and protocol version.
+func WithCompatTransport(version a2a.ProtocolVersion, protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
+	return factoryOptionFn(func(f *Factory) {
+		f.transports[transportKey{version, protocol}] = factory
 	})
 }
 
@@ -229,7 +247,7 @@ func WithDefaultsDisabled() FactoryOption {
 // NewFactory creates a new Factory applying the provided configurations.
 func NewFactory(options ...FactoryOption) *Factory {
 	f := &Factory{
-		transports:   make(map[a2a.TransportProtocol]TransportFactory),
+		transports:   make(map[transportKey]TransportFactory),
 		interceptors: make([]CallInterceptor, 0),
 	}
 
@@ -262,7 +280,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithCallInterceptors(f.interceptors...),
 	}
 	for k, v := range f.transports {
-		options = append(options, WithTransport(k, v))
+		options = append(options, WithCompatTransport(k.version, k.protocol, v))
 	}
 	return NewFactory(append(options, opts...)...)
 }

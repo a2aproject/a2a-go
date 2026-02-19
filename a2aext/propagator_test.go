@@ -122,7 +122,7 @@ func TestTripleHopPropagation(t *testing.T) {
 			reqHeaderInjector := a2aclient.NewServiceParamsInjector(tc.clientReqHeaders)
 			client, err := a2aclient.NewFromEndpoints(
 				ctx,
-				[]a2a.AgentInterface{forwardProxy},
+				[]*a2a.AgentInterface{forwardProxy},
 				a2aclient.WithCallInterceptors(reqHeaderInjector),
 			)
 			if err != nil {
@@ -256,29 +256,29 @@ func TestDefaultPropagation(t *testing.T) {
 	}
 }
 
-func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2asrv.AgentExecutor) a2a.AgentInterface {
+func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2asrv.AgentExecutor) *a2a.AgentInterface {
 	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))
 	t.Cleanup(server.Close)
-	return a2a.AgentInterface{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC}
+	return a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC)
 }
 
-func newAgentCard(endpoint a2a.AgentInterface, extensionURIs []string) *a2a.AgentCard {
+func newAgentCard(endpoint *a2a.AgentInterface, extensionURIs []string) *a2a.AgentCard {
 	extensions := make([]a2a.AgentExtension, len(extensionURIs))
 	for i, uri := range extensionURIs {
 		extensions[i] = a2a.AgentExtension{URI: uri}
 	}
 	return &a2a.AgentCard{
 		Capabilities: a2a.AgentCapabilities{Extensions: extensions},
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: endpoint.URL, ProtocolBinding: endpoint.ProtocolBinding},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(endpoint.URL, endpoint.ProtocolBinding),
 		},
 	}
 }
 
 type proxyTarget struct {
 	ac *a2a.AgentCard
-	ai a2a.AgentInterface
+	ai *a2a.AgentInterface
 }
 
 func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallInterceptor) (*a2aclient.Client, error) {
@@ -286,7 +286,7 @@ func (pt proxyTarget) newClient(ctx context.Context, interceptor a2aclient.CallI
 		return a2aclient.NewFromCard(ctx, pt.ac, a2aclient.WithCallInterceptors(interceptor))
 	}
 	if pt.ai.URL != "" {
-		return a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{pt.ai}, a2aclient.WithCallInterceptors(interceptor))
+		return a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{pt.ai}, a2aclient.WithCallInterceptors(interceptor))
 	}
 	return nil, fmt.Errorf("neither card nor agent interface provided")
 }

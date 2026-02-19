@@ -772,7 +772,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 	a2aCard := &a2a.AgentCard{
 		Name:        "Test Agent",
 		Description: "An agent for testing.",
-		SupportedInterfaces: []a2a.AgentInterface{
+		SupportedInterfaces: []*a2a.AgentInterface{
 			{ProtocolBinding: "http+json", URL: "https://example.com/agent/http+json", ProtocolVersion: "1.0"},
 			{ProtocolBinding: "grpc", URL: "https://example.com/agent/grpc", ProtocolVersion: "1.0"},
 		},
