@@ -41,7 +41,6 @@ func (c *SUTAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executor
 		}
 		time.Sleep(1 * time.Second)
 		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
-		event.Final = true
 		yield(event, nil)
 	}
 }
@@ -55,7 +54,6 @@ func (c *SUTAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorC
 		}
 
 		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil)
-		event.Final = true
 		yield(event, nil)
 	}
 }

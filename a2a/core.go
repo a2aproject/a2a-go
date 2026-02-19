@@ -15,9 +15,11 @@
 package a2a
 
 import (
+	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,46 +84,65 @@ func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
-// UnmarshalEventJSON unmarshals JSON data into the appropriate Event type based on the 'kind' field.
-// The kind field is used as a discriminator to determine which concrete type to unmarshal into.
-func UnmarshalEventJSON(data []byte) (Event, error) {
-	type typedEvent struct {
-		Kind string `json:"kind"`
-	}
+// StreamResponse is a wrapper around Event that can be sent over a streaming connection.
+// It implements event JSON codec where the serialized representation is a JSON object
+// with a single field matching the event type name.
+type StreamResponse struct {
+	// Event is the event to be sent over the streaming connection.
+	Event
+}
 
-	var te typedEvent
-	if err := json.Unmarshal(data, &te); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
-	}
-
-	switch te.Kind {
-	case "message":
-		var msg Message
-		if err := json.Unmarshal(data, &msg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Message event: %w", err)
-		}
-		return &msg, nil
-	case "task":
-		var task Task
-		if err := json.Unmarshal(data, &task); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Task event: %w", err)
-		}
-		return &task, nil
-	case "status-update":
-		var statusUpdate TaskStatusUpdateEvent
-		if err := json.Unmarshal(data, &statusUpdate); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
-		}
-		return &statusUpdate, nil
-	case "artifact-update":
-		var artifactUpdate TaskArtifactUpdateEvent
-		if err := json.Unmarshal(data, &artifactUpdate); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
-		}
-		return &artifactUpdate, nil
+func (sr StreamResponse) MarshalJSON() ([]byte, error) {
+	m := make(map[string]any)
+	switch v := sr.Event.(type) {
+	case *Message:
+		m["message"] = v
+	case *Task:
+		m["task"] = v
+	case *TaskStatusUpdateEvent:
+		m["statusUpdate"] = v
+	case *TaskArtifactUpdateEvent:
+		m["artifactUpdate"] = v
 	default:
-		return nil, fmt.Errorf("unknown event kind: %s", te.Kind)
+		return nil, fmt.Errorf("unknown event type: %T", v)
 	}
+	return json.Marshal(m)
+}
+
+func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+
+	if v, ok := raw["message"]; ok {
+		var msg Message
+		if err := json.Unmarshal(v, &msg); err != nil {
+			return fmt.Errorf("failed to unmarshal Message event: %w", err)
+		}
+		sr.Event = &msg
+	} else if v, ok := raw["task"]; ok {
+		var task Task
+		if err := json.Unmarshal(v, &task); err != nil {
+			return fmt.Errorf("failed to unmarshal Task event: %w", err)
+		}
+		sr.Event = &task
+	} else if v, ok := raw["statusUpdate"]; ok {
+		var statusUpdate TaskStatusUpdateEvent
+		if err := json.Unmarshal(v, &statusUpdate); err != nil {
+			return fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
+		}
+		sr.Event = &statusUpdate
+	} else if v, ok := raw["artifactUpdate"]; ok {
+		var artifactUpdate TaskArtifactUpdateEvent
+		if err := json.Unmarshal(v, &artifactUpdate); err != nil {
+			return fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
+		}
+		sr.Event = &artifactUpdate
+	} else {
+		return fmt.Errorf("unknown event type: %v", raw)
+	}
+	return nil
 }
 
 // MessageRole represents a set of possible values that identify the message sender.
@@ -171,17 +192,8 @@ type Message struct {
 	TaskID TaskID `json:"taskId,omitempty" yaml:"taskId,omitempty" mapstructure:"taskId,omitempty"`
 }
 
-func (m Message) MarshalJSON() ([]byte, error) {
-	type wrapped Message
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "message", wrapped: wrapped(m)})
-}
-
 // NewMessage creates a new message with a random identifier.
-func NewMessage(role MessageRole, parts ...Part) *Message {
+func NewMessage(role MessageRole, parts ...*Part) *Message {
 	return &Message{
 		ID:    NewMessageID(),
 		Role:  role,
@@ -190,7 +202,7 @@ func NewMessage(role MessageRole, parts ...Part) *Message {
 }
 
 // NewMessageForTask creates a new message with a random identifier that references the provided Task.
-func NewMessageForTask(role MessageRole, infoProvider TaskInfoProvider, parts ...Part) *Message {
+func NewMessageForTask(role MessageRole, infoProvider TaskInfoProvider, parts ...*Part) *Message {
 	taskInfo := infoProvider.TaskInfo()
 	return &Message{
 		ID:        NewMessageID(),
@@ -233,23 +245,23 @@ const (
 	// TaskStateUnspecified represents a missing TaskState value.
 	TaskStateUnspecified TaskState = ""
 	// TaskStateAuthRequired means the task requires authentication to proceed.
-	TaskStateAuthRequired TaskState = "auth-required"
+	TaskStateAuthRequired TaskState = "AUTH_REQUIRED"
 	// TaskStateCanceled means the task has been canceled by the user.
-	TaskStateCanceled TaskState = "canceled"
+	TaskStateCanceled TaskState = "CANCELED"
 	// TaskStateCompleted means the task has been successfully completed.
-	TaskStateCompleted TaskState = "completed"
+	TaskStateCompleted TaskState = "COMPLETED"
 	// TaskStateFailed means the task failed due to an error during execution.
-	TaskStateFailed TaskState = "failed"
+	TaskStateFailed TaskState = "FAILED"
 	// TaskStateInputRequired means the task is paused and waiting for input from the user.
-	TaskStateInputRequired TaskState = "input-required"
+	TaskStateInputRequired TaskState = "INPUT_REQUIRED"
 	// TaskStateRejected means the task was rejected by the agent and was not started.
-	TaskStateRejected TaskState = "rejected"
+	TaskStateRejected TaskState = "REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
-	TaskStateSubmitted TaskState = "submitted"
+	TaskStateSubmitted TaskState = "SUBMITTED"
 	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "unknown"
+	TaskStateUnknown TaskState = "UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
-	TaskStateWorking TaskState = "working"
+	TaskStateWorking TaskState = "WORKING"
 )
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
@@ -303,15 +315,6 @@ func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *T
 		Status:    TaskStatus{State: TaskStateSubmitted},
 		History:   []*Message{initialMessage},
 	}
-}
-
-func (t Task) MarshalJSON() ([]byte, error) {
-	type wrapped Task
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "task", wrapped: wrapped(t)})
 }
 
 // TaskStatus represents the status of a task at a specific point in time.
@@ -400,15 +403,6 @@ type TaskArtifactUpdateEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (e TaskArtifactUpdateEvent) MarshalJSON() ([]byte, error) {
-	type wrapped TaskArtifactUpdateEvent
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "artifact-update", wrapped: wrapped(e)})
-}
-
 func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
@@ -422,7 +416,7 @@ func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
 }
 
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
-func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...*Part) *TaskArtifactUpdateEvent {
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskArtifactUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -435,7 +429,7 @@ func NewArtifactEvent(infoProvider TaskInfoProvider, parts ...Part) *TaskArtifac
 }
 
 // NewArtifactUpdateEvent creates a TaskArtifactUpdateEvent that represents an update of the artifact with the provided ID.
-func NewArtifactUpdateEvent(infoProvider TaskInfoProvider, id ArtifactID, parts ...Part) *TaskArtifactUpdateEvent {
+func NewArtifactUpdateEvent(infoProvider TaskInfoProvider, id ArtifactID, parts ...*Part) *TaskArtifactUpdateEvent {
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskArtifactUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -456,9 +450,6 @@ type TaskStatusUpdateEvent struct {
 	// ContextID is the context ID associated with the task. Required to be non-empty.
 	ContextID string `json:"contextId" yaml:"contextId" mapstructure:"contextId"`
 
-	// Final indicates if this is the final event in the stream for this interaction.
-	Final bool `json:"final" yaml:"final" mapstructure:"final"`
-
 	// Status is the new status of the task.
 	Status TaskStatus `json:"status" yaml:"status" mapstructure:"status"`
 
@@ -467,15 +458,6 @@ type TaskStatusUpdateEvent struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (e TaskStatusUpdateEvent) MarshalJSON() ([]byte, error) {
-	type wrapped TaskStatusUpdateEvent
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "status-update", wrapped: wrapped(e)})
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
@@ -506,264 +488,199 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 }
 
 // ContentParts is an array of content parts that form the message body or an artifact.
-type ContentParts []Part
+type ContentParts []*Part
 
 func (j ContentParts) MarshalJSON() ([]byte, error) {
-	if j == nil {
-		return []byte("[]"), nil
-	}
-	return json.Marshal([]Part(j))
+	return json.Marshal([]*Part(j))
 }
 
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
-	type typedPart struct {
-		Kind string `json:"kind"`
-	}
-
-	var arr []json.RawMessage
-	if err := json.Unmarshal(b, &arr); err != nil {
+	var parts []*Part
+	if err := json.Unmarshal(b, &parts); err != nil {
 		return err
 	}
-
-	result := make([]Part, len(arr))
-	for i, rawMsg := range arr {
-		var tp typedPart
-		if err := json.Unmarshal(rawMsg, &tp); err != nil {
-			return err
-		}
-		switch tp.Kind {
-		case "text":
-			var part TextPart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		case "data":
-			var part DataPart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		case "file":
-			var part FilePart
-			if err := json.Unmarshal(rawMsg, &part); err != nil {
-				return err
-			}
-			result[i] = part
-		default:
-			return fmt.Errorf("unknown part kind %s", tp.Kind)
-		}
-	}
-
-	*j = result
+	*j = ContentParts(parts)
 	return nil
 }
 
 // Part is a discriminated union representing a part of a message or artifact, which can
 // be text, a file, or structured data.
-type Part interface {
-	isPart()
+type Part struct {
+	// Types that are valid to be assigned to Content are [Text], [Raw], [Data], [URL].
+	Content PartContent `json:"content" yaml:"content" mapstructure:"content"`
 
-	Meta() map[string]any
-}
+	// Filename is an optional name for the file (e.g., "document.pdf").
+	Filename string `json:"filename,omitempty" yaml:"filename,omitempty" mapstructure:"filename,omitempty"`
 
-func (TextPart) isPart() {}
-func (FilePart) isPart() {}
-func (DataPart) isPart() {}
+	// MediaType is the media type of the part content (e.g. "text/plain", "image/png", "application/json").
+	// This field is available for all part types.
+	MediaType string `json:"mediaType,omitempty" yaml:"mediaType,omitempty" mapstructure:"mediaType,omitempty"`
 
-func init() {
-	gob.Register(TextPart{})
-	gob.Register(FilePart{})
-	gob.Register(DataPart{})
-}
-
-// TextPart represents a text segment within a message or artifact.
-type TextPart struct {
-	// Text is the string content of the text part.
-	Text string `json:"text" yaml:"text" mapstructure:"text"`
-
-	// Metadata is an optional metadata associated with the part.
+	// Metadata is the optional metadata associated with this part.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (p TextPart) Meta() map[string]any {
-	return p.Metadata
+// NewTextPart creates a Part that contains text.
+func NewTextPart(text string) *Part {
+	return &Part{Content: Text(text)}
 }
 
-func (p *TextPart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
+// NewRawPart creates a Part that contains raw bytes.
+func NewRawPart(raw []byte) *Part {
+	return &Part{Content: Raw(raw)}
 }
 
-func (p TextPart) MarshalJSON() ([]byte, error) {
-	type wrapped TextPart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
+// NewFileURLPart creates a Part that contains a URL.
+func NewFileURLPart(url URL, mimeType string) *Part {
+	return &Part{Content: URL(url), MediaType: mimeType}
+}
+
+// NewDataPart creates a Part that contains structured data.
+func NewDataPart(data map[string]any) *Part {
+	return &Part{Content: Data(data)}
+}
+
+// Text is a helper that returns the text content of the part if it is a Text part.
+func (p *Part) Text() string {
+	if v, ok := p.Content.(Text); ok {
+		return string(v)
 	}
-	return json.Marshal(withKind{Kind: "text", wrapped: wrapped(p)})
+	return ""
 }
 
-// DataPart represents a structured data segment (e.g., JSON) within a message or artifact.
-type DataPart struct {
-	// Data is the structured data content.
-	Data map[string]any `json:"data" yaml:"data" mapstructure:"data"`
-
-	// Metadata is an optional metadata associated with the part.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p DataPart) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *DataPart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-func (p DataPart) MarshalJSON() ([]byte, error) {
-	type wrapped DataPart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
+// Raw is a helper that returns the raw content of the part if it is a Raw part.
+func (p *Part) Raw() []byte {
+	if v, ok := p.Content.(Raw); ok {
+		return []byte(v)
 	}
-	return json.Marshal(withKind{Kind: "data", wrapped: wrapped(p)})
-}
-
-// FilePart represents a file segment within a message or artifact. The file content can be
-// provided either directly as bytes or as a URI.
-type FilePart struct {
-	// File the file content, represented as either a URI or as base64-encoded bytes.
-	File FilePartContent `json:"file" yaml:"file" mapstructure:"file"`
-
-	// Metadata is an optional metadata associated with the part.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p FilePart) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *FilePart) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-func (p FilePart) MarshalJSON() ([]byte, error) {
-	type wrapped FilePart
-	type withKind struct {
-		Kind string `json:"kind"`
-		wrapped
-	}
-	return json.Marshal(withKind{Kind: "file", wrapped: wrapped(p)})
-}
-
-func (p *FilePart) UnmarshalJSON(b []byte) error {
-	type filePartContentUnion struct {
-		FileMeta
-		URI   string `json:"uri"`
-		Bytes string `json:"bytes"`
-	}
-	type partJSON struct {
-		File     filePartContentUnion `json:"file"`
-		Metadata map[string]any       `json:"metadata"`
-	}
-	var decoded partJSON
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		return err
-	}
-
-	if len(decoded.File.Bytes) == 0 && len(decoded.File.URI) == 0 {
-		return fmt.Errorf("invalid file part: either Bytes or URI must be set")
-	}
-	if len(decoded.File.Bytes) > 0 && len(decoded.File.URI) > 0 {
-		return fmt.Errorf("invalid file part: Bytes and URI cannot be set at the same time")
-	}
-
-	res := FilePart{Metadata: decoded.Metadata}
-	if len(decoded.File.Bytes) > 0 {
-		res.File = FileBytes{Bytes: decoded.File.Bytes, FileMeta: decoded.File.FileMeta}
-	} else {
-		res.File = FileURI{URI: decoded.File.URI, FileMeta: decoded.File.FileMeta}
-	}
-
-	*p = res
 	return nil
 }
 
-// FilePartContent is a discriminated union of possible file part payloads.
-type FilePartContent interface{ isFilePartContent() }
+// Data is a helper that returns the data content of the part if it is a Data part.
+func (p *Part) Data() map[string]any {
+	if v, ok := p.Content.(Data); ok {
+		return map[string]any(v)
+	}
+	return nil
+}
 
-func (FileBytes) isFilePartContent() {}
-func (FileURI) isFilePartContent()   {}
+// URL is a helper that returns the URL content of the part if it is a URL part.
+func (p *Part) URL() URL {
+	if v, ok := p.Content.(URL); ok {
+		return v
+	}
+	return ""
+}
+
+type PartContent interface {
+	isPartContent()
+}
+
+func (Text) isPartContent() {}
+func (Raw) isPartContent()  {}
+func (Data) isPartContent() {}
+func (URL) isPartContent()  {}
 
 func init() {
-	gob.Register(FileBytes{})
-	gob.Register(FileURI{})
+	gob.Register(Text(""))
+	gob.Register(Raw{})
+	gob.Register(Data{})
+	gob.Register(URL(""))
 }
 
-// FileMeta represents file metadata of a file part.
-type FileMeta struct {
-	// MimeType is an optinal MIME type of the file (e.g., "application/pdf").
-	MimeType string `json:"mimeType,omitempty" yaml:"mimeType,omitempty" mapstructure:"mimeType,omitempty"`
+// Text represents content of a Part carrying text.
+type Text string
 
-	// Name is an optional name for the file (e.g., "document.pdf").
-	Name string `json:"name,omitempty" yaml:"name,omitempty" mapstructure:"name,omitempty"`
+// Raw represents content of a Part carrying raw bytes.
+type Raw []byte
+
+// URL represents content of a Part carrying a URL.
+type URL string
+
+// Data represents content of a Part carrying structured data.
+type Data map[string]any
+
+func (p Part) MarshalJSON() ([]byte, error) {
+	m := make(map[string]any)
+
+	switch v := p.Content.(type) {
+	case Text:
+		m["text"] = string(v)
+	case Raw:
+		m["raw"] = []byte(v)
+	case Data:
+		m["data"] = map[string]any(v)
+	case URL:
+		m["url"] = string(v)
+	}
+
+	if p.Filename != "" {
+		m["filename"] = p.Filename
+	}
+	if p.MediaType != "" {
+		m["mediaType"] = p.MediaType
+	}
+
+	maps.Copy(m, p.Metadata)
+
+	return json.Marshal(m)
 }
 
-// FileBytes represents a file with its content provided directly as a base64-encoded string.
-type FileBytes struct {
-	FileMeta
-	// Bytes is the base64-encoded content of the file.
-	Bytes string `json:"bytes" yaml:"bytes" mapstructure:"bytes"`
+func (p *Part) UnmarshalJSON(b []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	if v, ok := raw["text"].(string); ok {
+		p.Content = Text(v)
+		delete(raw, "text")
+	} else if v, ok := raw["raw"].(string); ok {
+		b, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return err
+		}
+		p.Content = Raw(b)
+		delete(raw, "raw")
+	} else if v, ok := raw["data"]; ok {
+		data, ok := v.(map[string]any)
+		if !ok {
+			return fmt.Errorf("part 'data' field must be a JSON object, got %T", v)
+		}
+		p.Content = Data(data)
+		delete(raw, "data")
+	} else if v, ok := raw["url"].(string); ok {
+		p.Content = URL(v)
+		delete(raw, "url")
+	}
+
+	if filename, ok := raw["filename"].(string); ok {
+		p.Filename = filename
+		delete(raw, "filename")
+	}
+	if mediaType, ok := raw["mediaType"].(string); ok {
+		p.MediaType = mediaType
+		delete(raw, "mediaType")
+	}
+	if len(raw) > 0 {
+		p.Metadata = make(map[string]any)
+		for k, v := range raw {
+			p.Metadata[k] = v
+		}
+	}
+	return nil
 }
 
-// FileURI represents a file with its content located at a specific URI.
-type FileURI struct {
-	FileMeta
-	// URI is a URI pointing to the file's content.
-	URI string `json:"uri" yaml:"uri" mapstructure:"uri"`
-}
-
-// Requests
-
-// TaskIDParams defines parameters containing a task ID, used for simple task operations.
-type TaskIDParams struct {
-	// TaskID is the unique identifier of the task.
-	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Metadata is an optional metadata associated with the request.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *TaskIDParams) Meta() map[string]any {
+func (p Part) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *TaskIDParams) SetMeta(k string, v any) {
+func (p *Part) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
 
-// TaskQueryParams defines parameters for querying a task, with an option to limit history length.
-type TaskQueryParams struct {
-	// HistoryLength is the number of most recent messages from the task's history to retrieve.
-	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
-
-	// ID is the unique identifier of the task.
-	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-
-	// Metadata is an optional metadata associated with the request.
-	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
-}
-
-func (p *TaskQueryParams) Meta() map[string]any {
-	return p.Metadata
-}
-
-func (p *TaskQueryParams) SetMeta(k string, v any) {
-	setMeta(&p.Metadata, k, v)
-}
-
-// MessageSendConfig defines configuration options for a `message/send` or `message/stream` request.
-type MessageSendConfig struct {
+// SendMessageConfig defines configuration options for a `message/send` or `message/stream` request.
+type SendMessageConfig struct {
 	// AcceptedOutputModes is a list of output MIME types the client is prepared to accept in the response.
 	AcceptedOutputModes []string `json:"acceptedOutputModes,omitempty" yaml:"acceptedOutputModes,omitempty" mapstructure:"acceptedOutputModes,omitempty"`
 
@@ -778,11 +695,14 @@ type MessageSendConfig struct {
 	PushConfig *PushConfig `json:"pushNotificationConfig,omitempty" yaml:"pushNotificationConfig,omitempty" mapstructure:"pushNotificationConfig,omitempty"`
 }
 
-// MessageSendParams defines the parameters for a request to send a message to an agent. This can be used
+// SendMessageRequest defines the request to send a message to an agent. This can be used
 // to create a new task, continue an existing one, or restart a task.
-type MessageSendParams struct {
+type SendMessageRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
 	// Config is an optional configuration for the send request.
-	Config *MessageSendConfig `json:"configuration,omitempty" yaml:"configuration,omitempty" mapstructure:"configuration,omitempty"`
+	Config *SendMessageConfig `json:"configuration,omitempty" yaml:"configuration,omitempty" mapstructure:"configuration,omitempty"`
 
 	// Message is the message object being sent to the agent.
 	Message *Message `json:"message" yaml:"message" mapstructure:"message"`
@@ -791,11 +711,11 @@ type MessageSendParams struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
-func (p *MessageSendParams) Meta() map[string]any {
+func (p *SendMessageRequest) Meta() map[string]any {
 	return p.Metadata
 }
 
-func (p *MessageSendParams) SetMeta(k string, v any) {
+func (p *SendMessageRequest) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
 
@@ -811,8 +731,23 @@ func newUUIDString() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
+// GetTaskRequest defines the parameters for a request to get a task.
+type GetTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to get.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+
+	// HistoryLength is the number of most recent messages from the task's history to retrieve.
+	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
+}
+
 // ListTasksRequest defines the parameters for a request to list tasks.
 type ListTasksRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
 	// ContextID is the ID of the context to list tasks for.
 	ContextID string `json:"contextId,omitempty" yaml:"contextId,omitempty" mapstructure:"contextId,omitempty"`
 
@@ -829,8 +764,8 @@ type ListTasksRequest struct {
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
-	// LastUpdatedAfter is the time to list tasks updated after.
-	LastUpdatedAfter *time.Time `json:"lastUpdatedAfter,omitempty" yaml:"lastUpdatedAfter,omitempty" mapstructure:"lastUpdatedAfter,omitempty"`
+	// StatusTimestampAfter is the time to list tasks updated after.
+	StatusTimestampAfter *time.Time `json:"statusTimestampAfter,omitempty" yaml:"statusTimestampAfter,omitempty" mapstructure:"statusTimestampAfter,omitempty"`
 
 	// IncludeArtifacts is whether to include artifacts in the response.
 	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
@@ -839,15 +774,38 @@ type ListTasksRequest struct {
 // ListTasksResponse defines the response for a request to tasks/list.
 type ListTasksResponse struct {
 	// Tasks is the list of tasks matching the specified criteria.
-	Tasks []*Task `json:"tasks,omitempty" yaml:"tasks,omitempty" mapstructure:"tasks,omitempty"`
+	Tasks []*Task `json:"tasks" yaml:"tasks" mapstructure:"tasks"`
 
 	// TotalSize is the total number of tasks available (before pagination).
-	TotalSize int `json:"totalSize,omitempty" yaml:"totalSize,omitempty" mapstructure:"totalSize,omitempty"`
+	TotalSize int `json:"totalSize" yaml:"totalSize" mapstructure:"totalSize"`
 
 	// PageSize is the maximum number of tasks returned in the response.
-	PageSize int `json:"pageSize,omitempty" yaml:"pageSize,omitempty" mapstructure:"pageSize,omitempty"`
+	PageSize int `json:"pageSize" yaml:"pageSize" mapstructure:"pageSize"`
 
 	// NextPageToken is the token for retrieving the next page of results.
 	// Empty string if no more results.
-	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`
+	NextPageToken string `json:"nextPageToken" yaml:"nextPageToken" mapstructure:"nextPageToken"`
+}
+
+// CancelTaskRequest represents a request to cancel a task.
+type CancelTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to cancel.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+// SubscribeToTaskRequest represents a request to subscribe to task events.
+type SubscribeToTaskRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
+
+	// ID is the ID of the task to subscribe to.
+	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+type GetExtendedAgentCardRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 }

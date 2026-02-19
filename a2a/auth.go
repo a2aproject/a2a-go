@@ -20,6 +20,58 @@ import (
 	"fmt"
 )
 
+// SecurityRequirements describes a set of security requirements that must be present on a request.
+// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
+// following requirements object needs to be created:
+//
+//	map[SecuritySchemeName]SecuritySchemeScopes{
+//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
+//		SecuritySchemeName("mTLS"): {}
+//	}
+type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
+
+// SecurityRequirementsOptions is a list of security requirement objects that apply to all agent interactions.
+// Each object lists security schemes that can be used.
+// Follows the OpenAPI 3.0 Security Requirement Object.
+// This list can be seen as an OR of ANDs. Each object in the list describes one
+// possible set of security requirements that must be present on a request.
+// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
+//
+//	SecurityRequirements: a2a.SecurityRequirementsOptions{
+//		map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
+//			a2a.SecuritySchemeName("apiKey"): {},
+//			a2a.SecuritySchemeName("oauth2"): {"read"},
+//		},
+//	}
+type SecurityRequirementsOptions []SecurityRequirements
+
+func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {
+	type wrapper struct {
+		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
+	}
+	var out []wrapper
+	for _, req := range rs {
+		out = append(out, wrapper{Schemes: req})
+	}
+	return json.Marshal(out)
+}
+
+func (rs *SecurityRequirementsOptions) UnmarshalJSON(b []byte) error {
+	type wrapper struct {
+		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
+	}
+	var wrapped []wrapper
+	if err := json.Unmarshal(b, &wrapped); err != nil {
+		return err
+	}
+	result := make(SecurityRequirementsOptions, 0, len(wrapped))
+	for _, w := range wrapped {
+		result = append(result, w.Schemes)
+	}
+	*rs = result
+	return nil
+}
+
 // SecuritySchemeName is a string used to describe a security scheme in AgentCard.SecuritySchemes
 // and reference it the AgentCard.Security requirements.
 type SecuritySchemeName string
@@ -31,6 +83,29 @@ type SecuritySchemeScopes []string
 // The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
 type NamedSecuritySchemes map[SecuritySchemeName]SecurityScheme
 
+func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
+	out := make(map[SecuritySchemeName]any)
+	for name, scheme := range s {
+		var wrapped any
+		switch v := scheme.(type) {
+		case APIKeySecurityScheme:
+			wrapped = map[string]any{"apiKey": v}
+		case HTTPAuthSecurityScheme:
+			wrapped = map[string]any{"http": v}
+		case OpenIDConnectSecurityScheme:
+			wrapped = map[string]any{"openIdConnect": v}
+		case MutualTLSSecurityScheme:
+			wrapped = map[string]any{"mutualTLS": v}
+		case OAuth2SecurityScheme:
+			wrapped = map[string]any{"oauth2": v}
+		default:
+			return nil, fmt.Errorf("unknown security scheme type %T", v)
+		}
+		out[name] = wrapped
+	}
+	return json.Marshal(out)
+}
+
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
@@ -38,48 +113,48 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	}
 
 	result := make(map[SecuritySchemeName]SecurityScheme, len(schemes))
-	for k, v := range schemes {
-		type typedScheme struct {
-			Type string `json:"type"`
-		}
-		var ts typedScheme
-		if err := json.Unmarshal(v, &ts); err != nil {
+	for name, rawMessage := range schemes {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rawMessage, &raw); err != nil {
 			return err
 		}
 
-		switch ts.Type {
-		case "apiKey":
+		if v, ok := raw["apiKey"]; ok {
 			var scheme APIKeySecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "http":
+			result[name] = scheme
+		} else if v, ok := raw["http"]; ok {
 			var scheme HTTPAuthSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "mutualTLS":
+			result[name] = scheme
+		} else if v, ok := raw["mutualTLS"]; ok {
 			var scheme MutualTLSSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "oauth2":
+			result[name] = scheme
+		} else if v, ok := raw["oauth2"]; ok {
 			var scheme OAuth2SecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		case "openIdConnect":
+			result[name] = scheme
+		} else if v, ok := raw["openIdConnect"]; ok {
 			var scheme OpenIDConnectSecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err
 			}
-			result[k] = scheme
-		default:
-			return fmt.Errorf("unknown security scheme type %s", ts.Type)
+			result[name] = scheme
+		} else {
+			keys := make([]string, 0, len(raw))
+			for k := range raw {
+				keys = append(keys, k)
+			}
+			return fmt.Errorf("unknown security scheme type for %q: found keys %v", name, keys)
 		}
 	}
 
@@ -111,30 +186,175 @@ type APIKeySecurityScheme struct {
 	// An optional description for the security scheme.
 	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
 
-	// The location of the API key.
-	In APIKeySecuritySchemeIn `json:"in" yaml:"in" mapstructure:"in"`
+	// The location of the API key. Valid values are "query", "header", or "cookie".
+	Location APIKeySecuritySchemeLocation `json:"location" yaml:"location" mapstructure:"location"`
 
 	// The name of the header, query, or cookie parameter to be used.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 }
 
-func (s APIKeySecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped APIKeySecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "apiKey", wrapped: wrapped(s)})
-}
-
-// APIKeySecuritySchemeIn defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
-type APIKeySecuritySchemeIn string
+// APIKeySecuritySchemeLocation defines a set of permitted values for the expected API key location in APIKeySecurityScheme.
+type APIKeySecuritySchemeLocation string
 
 const (
-	APIKeySecuritySchemeInCookie APIKeySecuritySchemeIn = "cookie"
-	APIKeySecuritySchemeInHeader APIKeySecuritySchemeIn = "header"
-	APIKeySecuritySchemeInQuery  APIKeySecuritySchemeIn = "query"
+	APIKeySecuritySchemeLocationCookie APIKeySecuritySchemeLocation = "cookie"
+	APIKeySecuritySchemeLocationHeader APIKeySecuritySchemeLocation = "header"
+	APIKeySecuritySchemeLocationQuery  APIKeySecuritySchemeLocation = "query"
 )
+
+// HTTPAuthSecurityScheme defines a security scheme using HTTP authentication.
+type HTTPAuthSecurityScheme struct {
+	// BearerFormat is an optional hint to the client to identify how the bearer token is formatted (e.g.,
+	// "JWT"). This is primarily for documentation purposes.
+	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty" mapstructure:"bearerFormat,omitempty"`
+
+	// Description is an optional description for the security scheme.
+	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
+	// Scheme is the name of the HTTP Authentication scheme to be used in the Authorization
+	// header, as defined in RFC7235 (e.g., "Bearer").
+	// This value should be registered in the IANA Authentication Scheme registry.
+	Scheme string `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
+}
+
+// OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.
+type OpenIDConnectSecurityScheme struct {
+	// Description is an optional description for the security scheme.
+	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
+	// OpenIDConnectURL is the OpenID Connect Discovery URL for the OIDC provider's metadata.
+	OpenIDConnectURL string `json:"openIdConnectUrl" yaml:"openIdConnectUrl" mapstructure:"openIdConnectUrl"`
+}
+
+// MutualTLSSecurityScheme defines a security scheme using mTLS authentication.
+type MutualTLSSecurityScheme struct {
+	// Description is an optional description for the security scheme.
+	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+}
+
+// OAuth2SecurityScheme defines a security scheme using OAuth 2.0.
+type OAuth2SecurityScheme struct {
+	// Description is an optional description for the security scheme.
+	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
+
+	// Flows is an object containing configuration information for the supported OAuth 2.0 flows.
+	Flows OAuthFlows `json:"flows" yaml:"flows" mapstructure:"flows"`
+
+	// Oauth2MetadataURL is an optional URL to the oauth2 authorization server metadata
+	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
+	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
+}
+
+type OAuthFlowName string
+
+const (
+	AuthorizationCodeOAuthFlowName OAuthFlowName = "authorizationCode"
+	ClientCredentialsOAuthFlowName OAuthFlowName = "clientCredentials"
+	ImplicitOAuthFlowName          OAuthFlowName = "implicit"
+	PasswordOAuthFlowName          OAuthFlowName = "password"
+	DeviceCodeOAuthFlowName        OAuthFlowName = "deviceCode"
+)
+
+func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
+	type wrapper struct {
+		Description       string                `json:"description,omitempty"`
+		Oauth2MetadataURL string                `json:"oauth2MetadataUrl,omitempty"`
+		Flows             map[OAuthFlowName]any `json:"flows,omitempty"`
+	}
+	wrapped := wrapper{Description: s.Description, Oauth2MetadataURL: s.Oauth2MetadataURL}
+	switch v := s.Flows.(type) {
+	case AuthorizationCodeOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"authorizationCode": v}
+	case ClientCredentialsOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"clientCredentials": v}
+	case ImplicitOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"implicit": v}
+	case PasswordOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"password": v}
+	case DeviceCodeOAuthFlow:
+		wrapped.Flows = map[OAuthFlowName]any{"deviceCode": v}
+	default:
+		return nil, fmt.Errorf("unknown OAuth flow type %T", v)
+	}
+	return json.Marshal(wrapped)
+}
+
+func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
+	type wrapper struct {
+		Description       string                            `json:"description,omitempty"`
+		Oauth2MetadataURL string                            `json:"oauth2MetadataUrl,omitempty"`
+		Flows             map[OAuthFlowName]json.RawMessage `json:"flows,omitempty"`
+	}
+	var scheme wrapper
+	if err := json.Unmarshal(b, &scheme); err != nil {
+		return err
+	}
+
+	if len(scheme.Flows) != 1 {
+		return fmt.Errorf("expected exactly one OAuth flow, got %d", len(scheme.Flows))
+	}
+
+	for name, rawMessage := range scheme.Flows {
+		switch name {
+		case "authorizationCode":
+			var flow AuthorizationCodeOAuthFlow
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
+				return err
+			}
+			s.Flows = flow
+		case "clientCredentials":
+			var flow ClientCredentialsOAuthFlow
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
+				return err
+			}
+			s.Flows = flow
+		case "implicit":
+			var flow ImplicitOAuthFlow
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
+				return err
+			}
+			s.Flows = flow
+		case "password":
+			var flow PasswordOAuthFlow
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
+				return err
+			}
+			s.Flows = flow
+		case "deviceCode":
+			var flow DeviceCodeOAuthFlow
+			if err := json.Unmarshal(rawMessage, &flow); err != nil {
+				return err
+			}
+			s.Flows = flow
+		default:
+			keys := make([]string, 0, len(scheme.Flows))
+			for k := range scheme.Flows {
+				keys = append(keys, string(k))
+			}
+			return fmt.Errorf("unknown OAuth flow type: %s, available: %v", name, keys)
+		}
+	}
+	return nil
+}
+
+// OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
+type OAuthFlows interface {
+	isOAuthFlow()
+}
+
+func (AuthorizationCodeOAuthFlow) isOAuthFlow() {}
+func (ClientCredentialsOAuthFlow) isOAuthFlow() {}
+func (ImplicitOAuthFlow) isOAuthFlow()          {}
+func (PasswordOAuthFlow) isOAuthFlow()          {}
+func (DeviceCodeOAuthFlow) isOAuthFlow()        {}
+
+func init() {
+	gob.Register(AuthorizationCodeOAuthFlow{})
+	gob.Register(ClientCredentialsOAuthFlow{})
+	gob.Register(ImplicitOAuthFlow{})
+	gob.Register(PasswordOAuthFlow{})
+	gob.Register(DeviceCodeOAuthFlow{})
+}
 
 // AuthorizationCodeOAuthFlow defines configuration details for the OAuth 2.0 Authorization Code flow.
 type AuthorizationCodeOAuthFlow struct {
@@ -152,6 +372,10 @@ type AuthorizationCodeOAuthFlow struct {
 
 	// TokenURL is the URL to be used for this flow. This MUST be a URL and use TLS.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
+
+	// PKCERequired is an optional boolean indicating whether PKCE is required for this flow.
+	// PKCE should always be used for public clients and is recommended for all clients.
+	PKCERequired bool `json:"pkceRequired,omitempty" yaml:"pkceRequired,omitempty" mapstructure:"pkceRequired,omitempty"`
 }
 
 // ClientCredentialsOAuthFlow defines configuration details for the OAuth 2.0 Client Credentials flow.
@@ -167,30 +391,6 @@ type ClientCredentialsOAuthFlow struct {
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 }
 
-// HTTPAuthSecurityScheme defines a security scheme using HTTP authentication.
-type HTTPAuthSecurityScheme struct {
-	// BearerFormat is an optional hint to the client to identify how the bearer token is formatted (e.g.,
-	// "JWT"). This is primarily for documentation purposes.
-	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty" mapstructure:"bearerFormat,omitempty"`
-
-	// Description is an optional description for the security scheme.
-	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
-
-	// Scheme is the name of the HTTP Authentication scheme to be used in the Authorization
-	// header, as defined in RFC7235 (e.g., "Bearer").
-	// This value should be registered in the IANA Authentication Scheme registry.
-	Scheme string `json:"scheme" yaml:"scheme" mapstructure:"scheme"`
-}
-
-func (s HTTPAuthSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped HTTPAuthSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "http", wrapped: wrapped(s)})
-}
-
 // ImplicitOAuthFlow defines configuration details for the OAuth 2.0 Implicit flow.
 type ImplicitOAuthFlow struct {
 	// AuthorizationURL is the authorization URL to be used for this flow. This MUST be a URL.
@@ -204,84 +404,27 @@ type ImplicitOAuthFlow struct {
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 }
 
-// MutualTLSSecurityScheme defines a security scheme using mTLS authentication.
-type MutualTLSSecurityScheme struct {
-	// Description is an optional description for the security scheme.
-	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
-}
-
-func (s MutualTLSSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped MutualTLSSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "mutualTLS", wrapped: wrapped(s)})
-}
-
-// OAuth2SecurityScheme defines a security scheme using OAuth 2.0.
-type OAuth2SecurityScheme struct {
-	// Description is an optional description for the security scheme.
-	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
-
-	// Flows is an object containing configuration information for the supported OAuth 2.0 flows.
-	Flows OAuthFlows `json:"flows" yaml:"flows" mapstructure:"flows"`
-
-	// Oauth2MetadataURL is an optional URL to the oauth2 authorization server metadata
-	// [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
-	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
-}
-
-func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped OAuth2SecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "oauth2", wrapped: wrapped(s)})
-}
-
-// OAuthFlows defines the configuration for the supported OAuth 2.0 flows.
-type OAuthFlows struct {
-	// AuthorizationCode is a configuration for the OAuth Authorization Code flow.
-	// Previously called accessCode in OpenAPI 2.0.
-	AuthorizationCode *AuthorizationCodeOAuthFlow `json:"authorizationCode,omitempty" yaml:"authorizationCode,omitempty" mapstructure:"authorizationCode,omitempty"`
-
-	// ClientCredentials is a configuration for the OAuth Client Credentials flow. Previously called
-	// application in OpenAPI 2.0.
-	ClientCredentials *ClientCredentialsOAuthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty" mapstructure:"clientCredentials,omitempty"`
-
-	// Implicit is a configuration for the OAuth Implicit flow.
-	Implicit *ImplicitOAuthFlow `json:"implicit,omitempty" yaml:"implicit,omitempty" mapstructure:"implicit,omitempty"`
-
-	// Password is a configuration for the OAuth Resource Owner Password flow.
-	Password *PasswordOAuthFlow `json:"password,omitempty" yaml:"password,omitempty" mapstructure:"password,omitempty"`
-}
-
-// OpenIDConnectSecurityScheme defines a security scheme using OpenID Connect.
-type OpenIDConnectSecurityScheme struct {
-	// Description is an optional description for the security scheme.
-	Description string `json:"description,omitempty" yaml:"description,omitempty" mapstructure:"description,omitempty"`
-
-	// OpenIDConnectURL is the OpenID Connect Discovery URL for the OIDC provider's metadata.
-	OpenIDConnectURL string `json:"openIdConnectUrl" yaml:"openIdConnectUrl" mapstructure:"openIdConnectUrl"`
-}
-
-func (s OpenIDConnectSecurityScheme) MarshalJSON() ([]byte, error) {
-	type wrapped OpenIDConnectSecurityScheme
-	type withType struct {
-		Type string `json:"type"`
-		wrapped
-	}
-	return json.Marshal(withType{Type: "openIdConnect", wrapped: wrapped(s)})
-}
-
 // PasswordOAuthFlow defines configuration details for the OAuth 2.0 Resource Owner Password flow.
 type PasswordOAuthFlow struct {
 	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// Scopes are еру available scopes for the OAuth2 security scheme. A map between the scope
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
+	// name and a short description for it.
+	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
+
+	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
+	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
+}
+
+type DeviceCodeOAuthFlow struct {
+	// DeviceAuthorizationURL is the device authorization URL to be used for this flow. This MUST be a URL.
+	DeviceAuthorizationURL string `json:"deviceAuthorizationUrl" yaml:"deviceAuthorizationUrl" mapstructure:"deviceAuthorizationUrl"`
+
+	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
+	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
+
+	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
 	// name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 

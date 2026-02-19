@@ -72,30 +72,30 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 
 // A2A protocol methods
 
-func (c *Client) GetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	return doCall(ctx, c, "GetTask", query, c.transport.GetTask)
+func (c *Client) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	return doCall(ctx, c, "GetTask", req, c.transport.GetTask)
 }
 
-func (c *Client) ListTasks(ctx context.Context, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	return doCall(ctx, c, "ListTasks", request, c.transport.ListTasks)
+func (c *Client) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	return doCall(ctx, c, "ListTasks", req, c.transport.ListTasks)
 }
 
-func (c *Client) CancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	return doCall(ctx, c, "CancelTask", id, c.transport.CancelTask)
+func (c *Client) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	return doCall(ctx, c, "CancelTask", req, c.transport.CancelTask)
 }
 
-func (c *Client) SendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	message = c.withDefaultSendConfig(message, blocking(!c.config.Polling))
-	return doCall(ctx, c, "SendMessage", message, c.transport.SendMessage)
+func (c *Client) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	req = c.withDefaultSendConfig(req, blocking(!c.config.Polling))
+	return doCall(ctx, c, "SendMessage", req, c.transport.SendMessage)
 }
 
-func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SendStreamingMessage"
 
-		message = c.withDefaultSendConfig(message, blocking(true))
+		req = c.withDefaultSendConfig(req, blocking(true))
 
-		ctx, res := interceptBefore[*a2a.MessageSendParams, a2a.SendMessageResult](ctx, c, method, message)
+		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return
@@ -136,11 +136,11 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 	}
 }
 
-func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
+func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		method := "ResubscribeToTask"
+		method := "SubscribeToTask"
 
-		ctx, res := interceptBefore[*a2a.TaskIDParams, a2a.SendMessageResult](ctx, c, method, id)
+		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return
@@ -151,7 +151,7 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 			return
 		}
 
-		for resp, err := range c.transport.ResubscribeToTask(ctx, res.params, res.reqOverride) {
+		for resp, err := range c.transport.SubscribeToTask(ctx, res.params, res.reqOverride) {
 			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
@@ -170,22 +170,22 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 	}
 }
 
-func (c *Client) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	return doCall(ctx, c, "GetTaskPushConfig", params, c.transport.GetTaskPushConfig)
+func (c *Client) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	return doCall(ctx, c, "GetTaskPushConfig", req, c.transport.GetTaskPushConfig)
 }
 
-func (c *Client) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	return doCall(ctx, c, "ListTaskPushConfig", params, c.transport.ListTaskPushConfig)
+func (c *Client) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	return doCall(ctx, c, "ListTaskPushConfig", req, c.transport.ListTaskPushConfig)
 }
 
-func (c *Client) SetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	return doCall(ctx, c, "SetTaskPushConfig", params, c.transport.SetTaskPushConfig)
+func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	return doCall(ctx, c, "CreateTaskPushConfig", req, c.transport.CreateTaskPushConfig)
 }
 
-func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
+func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	method := "DeleteTaskPushConfig"
 
-	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigParams, struct{}](ctx, c, method, params)
+	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, c, method, req)
 	if res.earlyErr != nil {
 		return res.earlyErr
 	}
@@ -199,8 +199,8 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTas
 	return errOverride
 }
 
-func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	if card := c.card.Load(); card != nil && !card.SupportsAuthenticatedExtendedCard {
+func (c *Client) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+	if card := c.card.Load(); card != nil && !card.Capabilities.ExtendedAgentCard {
 		return card, nil
 	}
 
@@ -214,7 +214,7 @@ func (c *Client) GetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 		return *res.earlyResponse, nil
 	}
 
-	resp, err := c.transport.GetAgentCard(ctx, res.params)
+	resp, err := c.transport.GetExtendedAgentCard(ctx, res.params)
 	interceptedResponse, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
 	if errOverride != nil {
 		return nil, errOverride
@@ -233,13 +233,13 @@ func (c *Client) Destroy() error {
 
 type blocking bool
 
-func (c *Client) withDefaultSendConfig(message *a2a.MessageSendParams, blocking blocking) *a2a.MessageSendParams {
+func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest, blocking blocking) *a2a.SendMessageRequest {
 	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil && blocking {
 		return message
 	}
 	result := *message
 	if result.Config == nil {
-		result.Config = &a2a.MessageSendConfig{}
+		result.Config = &a2a.SendMessageConfig{}
 	} else {
 		configCopy := *result.Config
 		result.Config = &configCopy

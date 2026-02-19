@@ -35,7 +35,7 @@ var _ a2asrv.AgentExecutor = (*agentExecutor)(nil)
 
 func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: "Hello, world!"})
+		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello, world!"))
 		yield(response, nil)
 	}
 }
@@ -44,16 +44,18 @@ func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContex
 	return func(yield func(a2a.Event, error) bool) {}
 }
 
-var port = flag.Int("port", 9001, "Port for a gGRPC A2A server to listen on.")
+var port = flag.Int("port", 9001, "Port for a JSONRPC A2A server to listen on.")
 
 func main() {
 	flag.Parse()
 
+	addr := fmt.Sprintf("http://127.0.0.1:%d/invoke", *port)
 	agentCard := &a2a.AgentCard{
-		Name:               "Hello World Agent",
-		Description:        "Just a hello world agent",
-		URL:                fmt.Sprintf("http://127.0.0.1:%d/invoke", *port),
-		PreferredTransport: a2a.TransportProtocolJSONRPC,
+		Name:        "Hello World Agent",
+		Description: "Just a hello world agent",
+		SupportedInterfaces: []a2a.AgentInterface{
+			{URL: addr, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: true},

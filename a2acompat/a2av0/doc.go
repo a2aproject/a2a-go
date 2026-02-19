@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/*
-Package a2agrpc provides an A2A gRPC service implementation which can be registered with [grpc.Server].
-The implementation performs protobuf translation and delegates the actual method handling to
-a transport-agnostic [a2asrv.RequestHandler].
+// Package a2av0 contains 0.3-compatible agent card type definition.
+package a2av0
 
-	grpcHandler := a2agrpc.NewHandler(requestHandler)
+// ProtocolVersion is a string constant which represents a version of the protocol.
+type ProtocolVersion string
 
-	s := grpc.NewServer()
-	grpcHandler.RegisterWith(s)
-	if err := s.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-		log.Fatalf("Server exited with error: %v", err)
-	}
-*/
-package a2agrpc
+// Version is the protocol version which SDK implements.
+const Version ProtocolVersion = "0.3.0"

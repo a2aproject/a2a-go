@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/a2apb/v1"
 	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
@@ -31,14 +31,18 @@ func fromProtoMap(meta *structpb.Struct) map[string]any {
 	return meta.AsMap()
 }
 
-func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.MessageSendParams, error) {
+func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.SendMessageRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
-	msg, err := FromProtoMessage(req.GetRequest())
+	msg, err := FromProtoMessage(req.GetMessage())
 	if err != nil {
 		return nil, err
+	}
+
+	if msg == nil {
+		return nil, fmt.Errorf("message cannot be nil")
 	}
 
 	config, err := fromProtoSendMessageConfig(req.GetConfiguration())
@@ -46,7 +50,8 @@ func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.MessageSen
 		return nil, err
 	}
 
-	params := &a2a.MessageSendParams{
+	params := &a2a.SendMessageRequest{
+		Tenant:   req.GetTenant(),
 		Message:  msg,
 		Config:   config,
 		Metadata: fromProtoMap(req.GetMetadata()),
@@ -58,17 +63,22 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	if pMsg == nil {
 		return nil, nil
 	}
-
-	parts, err := fromProtoParts(pMsg.GetParts())
+	contentParts, err := fromProtoParts(pMsg.GetParts())
 	if err != nil {
 		return nil, err
+	}
+	if pMsg.GetMessageId() == "" {
+		return nil, fmt.Errorf("message id cannot be empty")
+	}
+	if pMsg.GetRole() == a2apb.Role_ROLE_UNSPECIFIED {
+		return nil, fmt.Errorf("message role cannot be unspecified")
 	}
 
 	msg := &a2a.Message{
 		ID:         pMsg.GetMessageId(),
 		ContextID:  pMsg.GetContextId(),
 		Extensions: pMsg.GetExtensions(),
-		Parts:      parts,
+		Parts:      contentParts,
 		TaskID:     a2a.TaskID(pMsg.GetTaskId()),
 		Role:       fromProtoRole(pMsg.GetRole()),
 		Metadata:   fromProtoMap(pMsg.GetMetadata()),
@@ -85,41 +95,29 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	return msg, nil
 }
 
-func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.FilePart, error) {
-	switch f := pPart.GetFile().(type) {
-	case *a2apb.FilePart_FileWithBytes:
-		return a2a.FilePart{
-			File: a2a.FileBytes{
-				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType(), Name: pPart.GetName()},
-				Bytes:    string(f.FileWithBytes),
-			},
-			Metadata: meta,
-		}, nil
-	case *a2apb.FilePart_FileWithUri:
-		return a2a.FilePart{
-			File: a2a.FileURI{
-				FileMeta: a2a.FileMeta{MimeType: pPart.GetMimeType(), Name: pPart.GetName()},
-				URI:      f.FileWithUri,
-			},
-			Metadata: meta,
-		}, nil
-	default:
-		return a2a.FilePart{}, fmt.Errorf("unsupported FilePart type: %T", f)
-	}
-}
-
 func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
-	meta := fromProtoMap(p.Metadata)
-	switch part := p.GetPart().(type) {
-	case *a2apb.Part_Text:
-		return a2a.TextPart{Text: part.Text, Metadata: meta}, nil
-	case *a2apb.Part_Data:
-		return a2a.DataPart{Data: part.Data.GetData().AsMap(), Metadata: meta}, nil
-	case *a2apb.Part_File:
-		return fromProtoFilePart(part.File, meta)
-	default:
-		return nil, fmt.Errorf("unsupported part type: %T", part)
+	if p == nil {
+		return a2a.Part{}, fmt.Errorf("part cannot be nil")
 	}
+	meta := fromProtoMap(p.Metadata)
+	part := a2a.Part{
+		Filename:  p.GetFilename(),
+		MediaType: p.GetMediaType(),
+		Metadata:  meta,
+	}
+	switch content := p.GetContent().(type) {
+	case *a2apb.Part_Text:
+		part.Content = a2a.Text(content.Text)
+	case *a2apb.Part_Raw:
+		part.Content = a2a.Raw(content.Raw)
+	case *a2apb.Part_Data:
+		part.Content = a2a.Data(content.Data.GetStructValue().AsMap())
+	case *a2apb.Part_Url:
+		part.Content = a2a.URL(content.Url)
+	default:
+		return a2a.Part{}, fmt.Errorf("unsupported part type: %T", content)
+	}
+	return part, nil
 }
 
 func fromProtoRole(role a2apb.Role) a2a.MessageRole {
@@ -138,61 +136,117 @@ func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, 
 		return nil, nil
 	}
 
+	auth, err := fromProtoAuthenticationInfo(pConf.GetAuthentication())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert authentication info: %w", err)
+	}
+	url := pConf.GetUrl()
+	if url == "" {
+		return nil, fmt.Errorf("url cannot be empty")
+	}
+
 	result := &a2a.PushConfig{
 		ID:    pConf.GetId(),
-		URL:   pConf.GetUrl(),
+		URL:   url,
 		Token: pConf.GetToken(),
+		Auth:  auth,
 	}
-	if pConf.GetAuthentication() != nil {
-		result.Auth = &a2a.PushAuthInfo{
-			Schemes:     pConf.GetAuthentication().GetSchemes(),
-			Credentials: pConf.GetAuthentication().GetCredentials(),
-		}
-	}
+
 	return result, nil
 }
 
-func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.MessageSendConfig, error) {
+func fromProtoAuthenticationInfo(pAuth *a2apb.AuthenticationInfo) (*a2a.PushAuthInfo, error) {
+	if pAuth == nil {
+		return nil, nil
+	}
+	scheme := pAuth.GetScheme()
+	if scheme == "" {
+		return nil, fmt.Errorf("authentication scheme cannot be empty")
+	}
+	return &a2a.PushAuthInfo{
+		Scheme:      scheme,
+		Credentials: pAuth.GetCredentials(),
+	}, nil
+}
+
+func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.SendMessageConfig, error) {
 	if conf == nil {
 		return nil, nil
 	}
 
-	pConf, err := fromProtoPushConfig(conf.GetPushNotification())
+	pConf, err := fromProtoPushConfig(conf.GetPushNotificationConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
-	result := &a2a.MessageSendConfig{
+	result := &a2a.SendMessageConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
 		Blocking:            proto.Bool(conf.GetBlocking()),
 		PushConfig:          pConf,
 	}
 
 	// TODO: consider the approach after resolving https://github.com/a2aproject/A2A/issues/1072
-	if conf.HistoryLength > 0 {
-		hl := int(conf.HistoryLength)
+	if conf.HistoryLength != nil && *conf.HistoryLength >= 0 {
+		hl := int(*conf.HistoryLength)
 		result.HistoryLength = &hl
 	}
 	return result, nil
 }
 
-func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.TaskQueryParams, error) {
+func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.GetTaskRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
 	// TODO: consider throwing an error when the path - req.GetName() is unexpected, e.g. tasks/taskID/someExtraText
-	taskID, err := ExtractTaskID(req.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	taskID := a2a.TaskID(req.GetId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
 	}
 
-	params := &a2a.TaskQueryParams{ID: taskID}
-	if req.GetHistoryLength() > 0 {
-		historyLength := int(req.GetHistoryLength())
-		params.HistoryLength = &historyLength
+	request := &a2a.GetTaskRequest{
+		Tenant: req.GetTenant(),
+		ID:     taskID,
 	}
-	return params, nil
+	if req.HistoryLength != nil && *req.HistoryLength >= 0 {
+		historyLength := int(*req.HistoryLength)
+		request.HistoryLength = &historyLength
+	}
+	return request, nil
+}
+
+func FromProtoCancelTaskRequest(req *a2apb.CancelTaskRequest) (*a2a.CancelTaskRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	taskID := a2a.TaskID(req.GetId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+
+	request := &a2a.CancelTaskRequest{
+		Tenant: req.GetTenant(),
+		ID:     taskID,
+	}
+	return request, nil
+}
+
+func FromProtoSubscribeToTaskRequest(req *a2apb.SubscribeToTaskRequest) (*a2a.SubscribeToTaskRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	taskID := a2a.TaskID(req.GetId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+
+	request := &a2a.SubscribeToTaskRequest{
+		Tenant: req.GetTenant(),
+		ID:     taskID,
+	}
+	return request, nil
 }
 
 func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksRequest, error) {
@@ -201,8 +255,8 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 	}
 
 	var lastUpdatedAfter *time.Time
-	if req.GetLastUpdatedTime() != nil {
-		t := req.GetLastUpdatedTime().AsTime()
+	if req.GetStatusTimestampAfter() != nil {
+		t := req.GetStatusTimestampAfter().AsTime()
 		lastUpdatedAfter = &t
 	}
 
@@ -211,15 +265,22 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		status = a2a.TaskState(req.GetStatus().String())
 	}
 
-	return &a2a.ListTasksRequest{
-		ContextID:        req.GetContextId(),
-		Status:           status,
-		PageSize:         int(req.GetPageSize()),
-		PageToken:        req.GetPageToken(),
-		HistoryLength:    int(req.GetHistoryLength()),
-		LastUpdatedAfter: lastUpdatedAfter,
-		IncludeArtifacts: req.GetIncludeArtifacts(),
-	}, nil
+	listTasksRequest := a2a.ListTasksRequest{
+		Tenant:               req.GetTenant(),
+		ContextID:            req.GetContextId(),
+		Status:               status,
+		PageSize:             int(req.GetPageSize()),
+		PageToken:            req.GetPageToken(),
+		StatusTimestampAfter: lastUpdatedAfter,
+		IncludeArtifacts:     req.GetIncludeArtifacts(),
+	}
+
+	if req.HistoryLength != nil && *req.HistoryLength >= 0 {
+		hl := int(*req.HistoryLength)
+		listTasksRequest.HistoryLength = hl
+	}
+
+	return &listTasksRequest, nil
 }
 
 func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksResponse, error) {
@@ -235,72 +296,80 @@ func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksRe
 		}
 		tasks = append(tasks, t)
 	}
-
 	return &a2a.ListTasksResponse{
 		Tasks:         tasks,
 		TotalSize:     int(resp.GetTotalSize()),
-		PageSize:      len(tasks),
+		PageSize:      int(resp.GetPageSize()),
 		NextPageToken: resp.GetNextPageToken(),
 	}, nil
 }
 
-func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.TaskPushConfig, error) {
+func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.CreateTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
 	config := req.GetConfig()
-	if config.GetPushNotificationConfig() == nil {
-		return nil, fmt.Errorf("invalid config")
+	if config == nil {
+		return nil, fmt.Errorf("config is required")
 	}
 
-	pConf, err := fromProtoPushConfig(config.GetPushNotificationConfig())
+	pConf, err := fromProtoPushConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
-
-	taskID, err := ExtractTaskID(req.GetParent())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	taskID := a2a.TaskID(req.GetTaskId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
 	}
 
-	return &a2a.TaskPushConfig{TaskID: taskID, Config: *pConf}, nil
+	return &a2a.CreateTaskPushConfigRequest{
+		Tenant: req.GetTenant(),
+		TaskID: taskID,
+		Config: *pConf,
+	}, nil
 }
 
-func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (*a2a.GetTaskPushConfigParams, error) {
+func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (*a2a.GetTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
-	taskID, err := ExtractTaskID(req.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	taskID := a2a.TaskID(req.GetTaskId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+	id := req.GetId()
+	if id == "" {
+		return nil, fmt.Errorf("config id cannot be empty")
 	}
 
-	configID, err := ExtractConfigID(req.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract config id: %w", err)
-	}
-
-	return &a2a.GetTaskPushConfigParams{TaskID: taskID, ConfigID: configID}, nil
+	return &a2a.GetTaskPushConfigRequest{
+		Tenant: req.GetTenant(),
+		TaskID: taskID,
+		ID:     id,
+	}, nil
 }
 
-func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (*a2a.DeleteTaskPushConfigParams, error) {
+func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (*a2a.DeleteTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
-	taskID, err := ExtractTaskID(req.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	taskID := a2a.TaskID(req.GetTaskId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+	id := req.GetId()
+	if id == "" {
+		return nil, fmt.Errorf("config id cannot be empty")
 	}
 
-	configID, err := ExtractConfigID(req.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract config id: %w", err)
-	}
-
-	return &a2a.DeleteTaskPushConfigParams{TaskID: taskID, ConfigID: configID}, nil
+	return &a2a.DeleteTaskPushConfigRequest{
+		Tenant: req.GetTenant(),
+		TaskID: taskID,
+		ID:     id,
+	}, nil
 }
 
 func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMessageResult, error) {
@@ -309,8 +378,8 @@ func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMess
 	}
 
 	switch p := resp.Payload.(type) {
-	case *a2apb.SendMessageResponse_Msg:
-		return FromProtoMessage(p.Msg)
+	case *a2apb.SendMessageResponse_Message:
+		return FromProtoMessage(p.Message)
 	case *a2apb.SendMessageResponse_Task:
 		return FromProtoTask(p.Task)
 	default:
@@ -324,20 +393,28 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 	}
 
 	switch p := resp.Payload.(type) {
-	case *a2apb.StreamResponse_Msg:
-		return FromProtoMessage(p.Msg)
+	case *a2apb.StreamResponse_Message:
+		msg, err := FromProtoMessage(p.Message)
+		if err != nil {
+			return nil, err
+		}
+		return msg, nil
 	case *a2apb.StreamResponse_Task:
-		return FromProtoTask(p.Task)
+		task, err := FromProtoTask(p.Task)
+		if err != nil {
+			return nil, err
+		}
+		return task, nil
 	case *a2apb.StreamResponse_StatusUpdate:
 		status, err := fromProtoTaskStatus(p.StatusUpdate.GetStatus())
 		if err != nil {
 			return nil, err
 		}
+		taskID := a2a.TaskID(p.StatusUpdate.GetTaskId())
 		return &a2a.TaskStatusUpdateEvent{
 			ContextID: p.StatusUpdate.GetContextId(),
-			Final:     p.StatusUpdate.GetFinal(),
 			Status:    status,
-			TaskID:    a2a.TaskID(p.StatusUpdate.GetTaskId()),
+			TaskID:    taskID,
 			Metadata:  fromProtoMap(p.StatusUpdate.GetMetadata()),
 		}, nil
 	case *a2apb.StreamResponse_ArtifactUpdate:
@@ -345,12 +422,13 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 		if err != nil {
 			return nil, err
 		}
+		taskID := a2a.TaskID(p.ArtifactUpdate.GetTaskId())
 		return &a2a.TaskArtifactUpdateEvent{
 			Append:    p.ArtifactUpdate.GetAppend(),
 			Artifact:  artifact,
 			ContextID: p.ArtifactUpdate.GetContextId(),
 			LastChunk: p.ArtifactUpdate.GetLastChunk(),
-			TaskID:    a2a.TaskID(p.ArtifactUpdate.GetTaskId()),
+			TaskID:    taskID,
 			Metadata:  fromProtoMap(p.ArtifactUpdate.GetMetadata()),
 		}, nil
 	default:
@@ -370,23 +448,23 @@ func fromProtoMessages(pMsgs []*a2apb.Message) ([]*a2a.Message, error) {
 	return msgs, nil
 }
 
-func fromProtoParts(pParts []*a2apb.Part) ([]a2a.Part, error) {
-	parts := make([]a2a.Part, len(pParts))
+func fromProtoParts(pParts []*a2apb.Part) (a2a.ContentParts, error) {
+	contentParts := make([]*a2a.Part, len(pParts))
 	for i, pPart := range pParts {
 		part, err := fromProtoPart(pPart)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert part: %w", err)
 		}
-		parts[i] = part
+		contentParts[i] = &part
 	}
-	return parts, nil
+	return contentParts, nil
 }
 
 func fromProtoTaskState(state a2apb.TaskState) a2a.TaskState {
 	switch state {
 	case a2apb.TaskState_TASK_STATE_AUTH_REQUIRED:
 		return a2a.TaskStateAuthRequired
-	case a2apb.TaskState_TASK_STATE_CANCELLED:
+	case a2apb.TaskState_TASK_STATE_CANCELED:
 		return a2a.TaskStateCanceled
 	case a2apb.TaskState_TASK_STATE_COMPLETED:
 		return a2a.TaskStateCompleted
@@ -410,7 +488,7 @@ func fromProtoTaskStatus(pStatus *a2apb.TaskStatus) (a2a.TaskStatus, error) {
 		return a2a.TaskStatus{}, fmt.Errorf("invalid status")
 	}
 
-	message, err := FromProtoMessage(pStatus.GetUpdate())
+	message, err := FromProtoMessage(pStatus.GetMessage())
 	if err != nil {
 		return a2a.TaskStatus{}, fmt.Errorf("failed to convert message for task status: %w", err)
 	}
@@ -433,16 +511,20 @@ func fromProtoArtifact(pArtifact *a2apb.Artifact) (*a2a.Artifact, error) {
 		return nil, nil
 	}
 
-	parts, err := fromProtoParts(pArtifact.GetParts())
+	contentParts, err := fromProtoParts(pArtifact.GetParts())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert from proto parts: %w", err)
 	}
+	id := a2a.ArtifactID(pArtifact.GetArtifactId())
+	if id == "" {
+		return nil, fmt.Errorf("artifact id cannot be empty")
+	}
 
 	return &a2a.Artifact{
-		ID:          a2a.ArtifactID(pArtifact.GetArtifactId()),
+		ID:          id,
 		Name:        pArtifact.GetName(),
 		Description: pArtifact.GetDescription(),
-		Parts:       parts,
+		Parts:       contentParts,
 		Extensions:  pArtifact.GetExtensions(),
 		Metadata:    fromProtoMap(pArtifact.GetMetadata()),
 	}, nil
@@ -464,7 +546,14 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	if pTask == nil {
 		return nil, nil
 	}
-
+	id := a2a.TaskID(pTask.GetId())
+	if id == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+	contextID := pTask.GetContextId()
+	if contextID == "" {
+		return nil, fmt.Errorf("context id cannot be empty")
+	}
 	status, err := fromProtoTaskStatus(pTask.Status)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert status: %w", err)
@@ -481,8 +570,8 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	}
 
 	result := &a2a.Task{
-		ID:        a2a.TaskID(pTask.GetId()),
-		ContextID: pTask.GetContextId(),
+		ID:        id,
+		ContextID: contextID,
 		Status:    status,
 		Artifacts: artifacts,
 		History:   history,
@@ -497,23 +586,22 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 		return nil, nil
 	}
 
-	taskID, err := ExtractTaskID(pTaskConfig.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract task id: %w", err)
+	taskID := a2a.TaskID(pTaskConfig.GetTaskId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
 	}
-
-	configID, err := ExtractConfigID(pTaskConfig.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract config id: %w", err)
+	id := pTaskConfig.GetId()
+	if id == "" {
+		return nil, fmt.Errorf("config id cannot be empty")
 	}
 
 	pConf := pTaskConfig.GetPushNotificationConfig()
 	if pConf == nil {
-		return nil, fmt.Errorf("push notification config is nil")
+		return nil, fmt.Errorf("push notification config cannot be empty")
 	}
 
-	if pConf.GetId() != configID {
-		return nil, fmt.Errorf("config id mismatch: %q != %q", pConf.GetId(), configID)
+	if pConf.GetId() != id {
+		return nil, fmt.Errorf("config id mismatch: %q != %q", pConf.GetId(), id)
 	}
 
 	config, err := fromProtoPushConfig(pConf)
@@ -521,41 +609,82 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
-	return &a2a.TaskPushConfig{TaskID: taskID, Config: *config}, nil
+	return &a2a.TaskPushConfig{
+		Tenant: pTaskConfig.GetTenant(),
+		Config: *config,
+		TaskID: taskID,
+		ID:     id,
+	}, nil
 }
 
-func FromProtoListTaskPushConfig(resp *a2apb.ListTaskPushNotificationConfigResponse) ([]*a2a.TaskPushConfig, error) {
-	if resp == nil {
-		return nil, fmt.Errorf("response is nil")
-	}
-
-	configs := make([]*a2a.TaskPushConfig, len(resp.GetConfigs()))
+func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigResponse) (*a2a.ListTaskPushConfigResponse, error) {
+	configs := make([]a2a.TaskPushConfig, len(resp.GetConfigs()))
 	for i, pConfig := range resp.GetConfigs() {
 		config, err := FromProtoTaskPushConfig(pConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
-		configs[i] = config
+		configs[i] = *config
 	}
-	return configs, nil
+	return &a2a.ListTaskPushConfigResponse{
+		Configs:       configs,
+		NextPageToken: resp.GetNextPageToken(),
+	}, nil
 }
 
-func fromProtoAdditionalInterfaces(pInterfaces []*a2apb.AgentInterface) []a2a.AgentInterface {
+func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+	taskID := a2a.TaskID(req.GetTaskId())
+	if taskID == "" {
+		return nil, fmt.Errorf("task id cannot be empty")
+	}
+	return &a2a.ListTaskPushConfigRequest{
+		Tenant:    req.GetTenant(),
+		TaskID:    taskID,
+		PageSize:  int(req.GetPageSize()),
+		PageToken: req.GetPageToken(),
+	}, nil
+}
+
+func fromProtoSupportedInterfaces(pInterfaces []*a2apb.AgentInterface) ([]a2a.AgentInterface, error) {
+	if pInterfaces == nil {
+		return nil, nil
+	}
 	interfaces := make([]a2a.AgentInterface, len(pInterfaces))
 	for i, pIface := range pInterfaces {
+		url := pIface.GetUrl()
+		if url == "" {
+			return nil, fmt.Errorf("url cannot be empty")
+		}
+		pb := pIface.GetProtocolBinding()
+		if pb == "" {
+			return nil, fmt.Errorf("protocol binding cannot be empty")
+		}
 		interfaces[i] = a2a.AgentInterface{
-			Transport: a2a.TransportProtocol(pIface.GetTransport()),
-			URL:       pIface.GetUrl(),
+			URL:             url,
+			ProtocolBinding: a2a.TransportProtocol(pb),
+			Tenant:          pIface.GetTenant(),
+			ProtocolVersion: a2a.ProtocolVersion(pIface.GetProtocolVersion()),
 		}
 	}
-	return interfaces
+	return interfaces, nil
 }
 
-func fromProtoAgentProvider(pProvider *a2apb.AgentProvider) *a2a.AgentProvider {
+func fromProtoAgentProvider(pProvider *a2apb.AgentProvider) (*a2a.AgentProvider, error) {
 	if pProvider == nil {
-		return nil
+		return nil, nil
 	}
-	return &a2a.AgentProvider{Org: pProvider.GetOrganization(), URL: pProvider.GetUrl()}
+	org := pProvider.GetOrganization()
+	if org == "" {
+		return nil, fmt.Errorf("organization cannot be empty")
+	}
+	url := pProvider.GetUrl()
+	if url == "" {
+		return nil, fmt.Errorf("url cannot be empty")
+	}
+	return &a2a.AgentProvider{Org: org, URL: url}, nil
 }
 
 func fromProtoAgentExtensions(pExtensions []*a2apb.AgentExtension) ([]a2a.AgentExtension, error) {
@@ -572,55 +701,64 @@ func fromProtoAgentExtensions(pExtensions []*a2apb.AgentExtension) ([]a2a.AgentE
 }
 
 func fromProtoCapabilities(pCapabilities *a2apb.AgentCapabilities) (a2a.AgentCapabilities, error) {
+	if pCapabilities == nil {
+		return a2a.AgentCapabilities{}, fmt.Errorf("capabilities is nil")
+	}
 	extensions, err := fromProtoAgentExtensions(pCapabilities.GetExtensions())
 	if err != nil {
 		return a2a.AgentCapabilities{}, fmt.Errorf("failed to convert extensions: %w", err)
 	}
 
 	result := a2a.AgentCapabilities{
-		PushNotifications:      pCapabilities.GetPushNotifications(),
-		Streaming:              pCapabilities.GetStreaming(),
-		StateTransitionHistory: pCapabilities.GetStateTransitionHistory(),
-		Extensions:             extensions,
+		PushNotifications: pCapabilities.GetPushNotifications(),
+		Streaming:         pCapabilities.GetStreaming(),
+		Extensions:        extensions,
+		ExtendedAgentCard: pCapabilities.GetExtendedAgentCard(),
 	}
 	return result, nil
 }
 
 func fromProtoOAuthFlows(pFlows *a2apb.OAuthFlows) (a2a.OAuthFlows, error) {
-	flows := a2a.OAuthFlows{}
 	if pFlows == nil {
-		return flows, fmt.Errorf("oauth flows is nil")
+		return nil, fmt.Errorf("oauth flows is nil")
 	}
 	switch f := pFlows.Flow.(type) {
 	case *a2apb.OAuthFlows_AuthorizationCode:
-		flows.AuthorizationCode = &a2a.AuthorizationCodeOAuthFlow{
+		return &a2a.AuthorizationCodeOAuthFlow{
 			AuthorizationURL: f.AuthorizationCode.GetAuthorizationUrl(),
 			TokenURL:         f.AuthorizationCode.GetTokenUrl(),
 			RefreshURL:       f.AuthorizationCode.GetRefreshUrl(),
 			Scopes:           f.AuthorizationCode.GetScopes(),
-		}
+			PKCERequired:     f.AuthorizationCode.GetPkceRequired(),
+		}, nil
 	case *a2apb.OAuthFlows_ClientCredentials:
-		flows.ClientCredentials = &a2a.ClientCredentialsOAuthFlow{
+		return &a2a.ClientCredentialsOAuthFlow{
 			TokenURL:   f.ClientCredentials.GetTokenUrl(),
 			RefreshURL: f.ClientCredentials.GetRefreshUrl(),
 			Scopes:     f.ClientCredentials.GetScopes(),
-		}
+		}, nil
 	case *a2apb.OAuthFlows_Implicit:
-		flows.Implicit = &a2a.ImplicitOAuthFlow{
+		return &a2a.ImplicitOAuthFlow{
 			AuthorizationURL: f.Implicit.GetAuthorizationUrl(),
 			RefreshURL:       f.Implicit.GetRefreshUrl(),
 			Scopes:           f.Implicit.GetScopes(),
-		}
+		}, nil
 	case *a2apb.OAuthFlows_Password:
-		flows.Password = &a2a.PasswordOAuthFlow{
+		return &a2a.PasswordOAuthFlow{
 			TokenURL:   f.Password.GetTokenUrl(),
 			RefreshURL: f.Password.GetRefreshUrl(),
 			Scopes:     f.Password.GetScopes(),
-		}
+		}, nil
+	case *a2apb.OAuthFlows_DeviceCode:
+		return &a2a.DeviceCodeOAuthFlow{
+			DeviceAuthorizationURL: f.DeviceCode.GetDeviceAuthorizationUrl(),
+			TokenURL:               f.DeviceCode.GetTokenUrl(),
+			RefreshURL:             f.DeviceCode.GetRefreshUrl(),
+			Scopes:                 f.DeviceCode.GetScopes(),
+		}, nil
 	default:
-		return flows, fmt.Errorf("unsupported oauth flow type: %T", f)
+		return nil, fmt.Errorf("unsupported oauth flow type: %T", f)
 	}
-	return flows, nil
 }
 
 func fromProtoSecurityScheme(pScheme *a2apb.SecurityScheme) (a2a.SecurityScheme, error) {
@@ -632,7 +770,7 @@ func fromProtoSecurityScheme(pScheme *a2apb.SecurityScheme) (a2a.SecurityScheme,
 	case *a2apb.SecurityScheme_ApiKeySecurityScheme:
 		return a2a.APIKeySecurityScheme{
 			Name:        s.ApiKeySecurityScheme.GetName(),
-			In:          a2a.APIKeySecuritySchemeIn(s.ApiKeySecurityScheme.GetLocation()),
+			Location:    a2a.APIKeySecuritySchemeLocation(s.ApiKeySecurityScheme.GetLocation()),
 			Description: s.ApiKeySecurityScheme.GetDescription(),
 		}, nil
 	case *a2apb.SecurityScheme_HttpAuthSecurityScheme:
@@ -653,7 +791,7 @@ func fromProtoSecurityScheme(pScheme *a2apb.SecurityScheme) (a2a.SecurityScheme,
 		}
 		return a2a.OAuth2SecurityScheme{
 			Flows:             flows,
-			Oauth2MetadataURL: s.Oauth2SecurityScheme.Oauth2MetadataUrl,
+			Oauth2MetadataURL: s.Oauth2SecurityScheme.GetOauth2MetadataUrl(),
 			Description:       s.Oauth2SecurityScheme.GetDescription(),
 		}, nil
 	case *a2apb.SecurityScheme_MtlsSecurityScheme:
@@ -677,10 +815,10 @@ func fromProtoSecuritySchemes(pSchemes map[string]*a2apb.SecurityScheme) (a2a.Na
 	return schemes, nil
 }
 
-func fromProtoSecurity(pSecurity []*a2apb.Security) []a2a.SecurityRequirements {
-	security := make([]a2a.SecurityRequirements, len(pSecurity))
+func fromProtoSecurity(pSecurity []*a2apb.SecurityRequirement) a2a.SecurityRequirementsOptions {
+	security := make(a2a.SecurityRequirementsOptions, len(pSecurity))
 	for i, pSec := range pSecurity {
-		schemes := make(a2a.SecurityRequirements)
+		schemes := make(map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes)
 		for name, scopes := range pSec.Schemes {
 			schemes[a2a.SecuritySchemeName(name)] = scopes.GetList()
 		}
@@ -689,73 +827,147 @@ func fromProtoSecurity(pSecurity []*a2apb.Security) []a2a.SecurityRequirements {
 	return security
 }
 
-func fromProtoSkills(pSkills []*a2apb.AgentSkill) []a2a.AgentSkill {
+func fromProtoSkills(pSkills []*a2apb.AgentSkill) ([]a2a.AgentSkill, error) {
+	if pSkills == nil {
+		return nil, nil
+	}
 	skills := make([]a2a.AgentSkill, len(pSkills))
 	for i, pSkill := range pSkills {
+		id := pSkill.GetId()
+		if id == "" {
+			return nil, fmt.Errorf("skill ID cannot be empty")
+		}
+		name := pSkill.GetName()
+		if name == "" {
+			return nil, fmt.Errorf("skill name cannot be empty")
+		}
+		description := pSkill.GetDescription()
+		if description == "" {
+			return nil, fmt.Errorf("skill description cannot be empty")
+		}
+		tags := pSkill.GetTags()
+		if tags == nil {
+			return nil, fmt.Errorf("skill tags cannot be empty")
+		}
+
 		skills[i] = a2a.AgentSkill{
-			ID:          pSkill.GetId(),
-			Name:        pSkill.GetName(),
-			Description: pSkill.GetDescription(),
-			Tags:        pSkill.GetTags(),
-			Examples:    pSkill.GetExamples(),
-			InputModes:  pSkill.GetInputModes(),
-			OutputModes: pSkill.GetOutputModes(),
-			Security:    fromProtoSecurity(pSkill.GetSecurity()),
+			ID:                   id,
+			Name:                 name,
+			Description:          description,
+			Tags:                 tags,
+			Examples:             pSkill.GetExamples(),
+			InputModes:           pSkill.GetInputModes(),
+			OutputModes:          pSkill.GetOutputModes(),
+			SecurityRequirements: fromProtoSecurity(pSkill.GetSecurityRequirements()),
 		}
 	}
-	return skills
+	return skills, nil
 }
 
-func fromProtoAgentCardSignatures(in []*a2apb.AgentCardSignature) []a2a.AgentCardSignature {
+func fromProtoAgentCardSignatures(in []*a2apb.AgentCardSignature) ([]a2a.AgentCardSignature, error) {
 	if in == nil {
-		return nil
+		return nil, nil
 	}
 	out := make([]a2a.AgentCardSignature, len(in))
 	for i, v := range in {
+		protected := v.GetProtected()
+		if protected == "" {
+			return nil, fmt.Errorf("signature protected cannot be empty")
+		}
+		signature := v.GetSignature()
+		if signature == "" {
+			return nil, fmt.Errorf("signature cannot be empty")
+		}
 		out[i] = a2a.AgentCardSignature{
-			Protected: v.GetProtected(),
-			Signature: v.GetSignature(),
+			Protected: protected,
+			Signature: signature,
 			Header:    fromProtoMap(v.GetHeader()),
 		}
 	}
-	return out
+	return out, nil
 }
 
 func FromProtoAgentCard(pCard *a2apb.AgentCard) (*a2a.AgentCard, error) {
 	if pCard == nil {
 		return nil, nil
 	}
-
+	name := pCard.GetName()
+	if name == "" {
+		return nil, fmt.Errorf("agent card name cannot be empty")
+	}
+	description := pCard.GetDescription()
+	if description == "" {
+		return nil, fmt.Errorf("agent card description cannot be empty")
+	}
+	interfaces, err := fromProtoSupportedInterfaces(pCard.GetSupportedInterfaces())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert supported interfaces: %w", err)
+	}
+	if interfaces == nil {
+		return nil, fmt.Errorf("supported interfaces cannot be empty")
+	}
+	provider, err := fromProtoAgentProvider(pCard.GetProvider())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert agent provider: %w", err)
+	}
+	version := pCard.GetVersion()
+	if version == "" {
+		return nil, fmt.Errorf("agent card version cannot be empty")
+	}
 	capabilities, err := fromProtoCapabilities(pCard.GetCapabilities())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert agent capabilities: %w", err)
 	}
-
+	defaultInputModes := pCard.GetDefaultInputModes()
+	if defaultInputModes == nil {
+		return nil, fmt.Errorf("default input modes cannot be empty")
+	}
+	defaultOutputModes := pCard.GetDefaultOutputModes()
+	if defaultOutputModes == nil {
+		return nil, fmt.Errorf("default output modes cannot be empty")
+	}
 	schemes, err := fromProtoSecuritySchemes(pCard.GetSecuritySchemes())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert security schemes: %w", err)
 	}
+	skills, err := fromProtoSkills(pCard.GetSkills())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert skills: %w", err)
+	}
+	if skills == nil {
+		return nil, fmt.Errorf("skills cannot be empty")
+	}
+	signatures, err := fromProtoAgentCardSignatures(pCard.GetSignatures())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert signatures: %w", err)
+	}
 
 	result := &a2a.AgentCard{
-		ProtocolVersion:                   pCard.GetProtocolVersion(),
-		Name:                              pCard.GetName(),
-		Description:                       pCard.GetDescription(),
-		URL:                               pCard.GetUrl(),
-		PreferredTransport:                a2a.TransportProtocol(pCard.GetPreferredTransport()),
-		Version:                           pCard.GetVersion(),
-		DocumentationURL:                  pCard.GetDocumentationUrl(),
-		Capabilities:                      capabilities,
-		DefaultInputModes:                 pCard.GetDefaultInputModes(),
-		DefaultOutputModes:                pCard.GetDefaultOutputModes(),
-		SupportsAuthenticatedExtendedCard: pCard.GetSupportsAuthenticatedExtendedCard(),
-		SecuritySchemes:                   schemes,
-		Provider:                          fromProtoAgentProvider(pCard.GetProvider()),
-		AdditionalInterfaces:              fromProtoAdditionalInterfaces(pCard.GetAdditionalInterfaces()),
-		Security:                          fromProtoSecurity(pCard.GetSecurity()),
-		Skills:                            fromProtoSkills(pCard.GetSkills()),
-		IconURL:                           pCard.GetIconUrl(),
-		Signatures:                        fromProtoAgentCardSignatures(pCard.GetSignatures()),
+		Name:                 name,
+		Description:          description,
+		SupportedInterfaces:  interfaces,
+		Version:              version,
+		DocumentationURL:     pCard.GetDocumentationUrl(),
+		Capabilities:         capabilities,
+		DefaultInputModes:    defaultInputModes,
+		DefaultOutputModes:   defaultOutputModes,
+		SecuritySchemes:      schemes,
+		Provider:             provider,
+		SecurityRequirements: fromProtoSecurity(pCard.GetSecurityRequirements()),
+		Skills:               skills,
+		IconURL:              pCard.GetIconUrl(),
+		Signatures:           signatures,
 	}
 
 	return result, nil
+}
+
+func FromProtoGetExtendedAgentCardRequest(req *a2apb.GetExtendedAgentCardRequest) (*a2a.GetExtendedAgentCardRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+
+	return &a2a.GetExtendedAgentCardRequest{
+		Tenant: req.GetTenant(),
+	}, nil
 }

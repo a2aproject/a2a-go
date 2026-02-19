@@ -13,5 +13,5 @@
 // limitations under the License.
 
 // Package a2apb contains types and interfaces generated from published
-// official A2A .proto specification.
+// official A2A .proto v1.0 specification.
 package a2apb

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2a
+package a2av0
 
 // AgentCapabilities define optional capabilities supported by an agent.
 type AgentCapabilities struct {
@@ -22,12 +22,22 @@ type AgentCapabilities struct {
 	// PushNotifications indicates if the agent supports sending push notifications for asynchronous task updates.
 	PushNotifications bool `json:"pushNotifications,omitempty" yaml:"pushNotifications,omitempty" mapstructure:"pushNotifications,omitempty"`
 
+	// StateTransitionHistory indicates if the agent provides a history of state transitions for a task.
+	StateTransitionHistory bool `json:"stateTransitionHistory,omitempty" yaml:"stateTransitionHistory,omitempty" mapstructure:"stateTransitionHistory,omitempty"`
+
 	// Streaming indicates if the agent supports streaming responses.
 	Streaming bool `json:"streaming,omitempty" yaml:"streaming,omitempty" mapstructure:"streaming,omitempty"`
-
-	// ExtendedAgentCard indicates if the agent supports providing an extended agent card when authenticated.
-	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty" yaml:"extendedAgentCard,omitempty" mapstructure:"extendedAgentCard,omitempty"`
 }
+
+// SecurityRequirements describes a set of security requirements that must be present on a request.
+// For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
+// following requirements object needs to be created:
+//
+//	SecurityRequirements{
+//		SecuritySchemeName("oauth2"): SecuritySchemeScopes{"read", "write"},
+//		SecuritySchemeName("mTLS"): {}
+//	}
+type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
 
 // AgentCard is a self-describing manifest for an agent. It provides essential
 // metadata including the agent's identity, capabilities, skills, supported
@@ -38,13 +48,14 @@ type AgentCard struct {
 	// URLs.
 	//
 	// Best practices:
-	// - MUST include all supported transports for completeness
-	// - MUST accurately declare the transport available at each URL
+	// - SHOULD include all supported transports for completeness
+	// - SHOULD include an entry matching the main 'url' and 'preferredTransport'
 	// - MAY reuse URLs if multiple transports are available at the same endpoint
+	// - MUST accurately declare the transport available at each URL
 	//
 	// Clients can select any interface from this list based on their transport capabilities
 	// and preferences. This enables transport negotiation and fallback scenarios.
-	SupportedInterfaces []AgentInterface `json:"supportedInterfaces" yaml:"supportedInterfaces" mapstructure:"supportedInterfaces"`
+	AdditionalInterfaces []AgentInterface `json:"additionalInterfaces,omitempty" yaml:"additionalInterfaces,omitempty" mapstructure:"additionalInterfaces,omitempty"`
 
 	// Capabilities is a declaration of optional capabilities supported by the agent.
 	Capabilities AgentCapabilities `json:"capabilities" yaml:"capabilities" mapstructure:"capabilities"`
@@ -70,11 +81,32 @@ type AgentCard struct {
 	// Name is a human-readable name for the agent.
 	Name string `json:"name" yaml:"name" mapstructure:"name"`
 
+	// PreferredTransport is the transport protocol for the preferred endpoint (the main 'url' field).
+	// If not specified, defaults to 'JSONRPC'.
+	//
+	// IMPORTANT: The transport specified here MUST be available at the main 'url'.
+	// This creates a binding between the main URL and its supported transport protocol.
+	// Clients should prefer this transport and URL combination when both are supported.
+	PreferredTransport TransportProtocol `json:"preferredTransport,omitempty" yaml:"preferredTransport,omitempty" mapstructure:"preferredTransport,omitempty"`
+
+	// ProtocolVersion is the version of the A2A protocol this agent supports.
+	ProtocolVersion string `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
+
 	// Provider contains information about the agent's service provider.
 	Provider *AgentProvider `json:"provider,omitempty" yaml:"provider,omitempty" mapstructure:"provider,omitempty"`
 
-	// SecurityRequirements is a list of security requirement objects that apply to all agent interactions.
-	SecurityRequirements SecurityRequirementsOptions `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
+	// Security is a list of security requirement objects that apply to all agent interactions.
+	// Each object lists security schemes that can be used.
+	// Follows the OpenAPI 3.0 Security Requirement Object.
+	// This list can be seen as an OR of ANDs. Each object in the list describes one
+	// possible set of security requirements that must be present on a request.
+	// This allows specifying, for example, "callers must either use OAuth OR an API Key AND mTLS.":
+	//
+	// Security: []SecurityRequirements{
+	//		{"oauth2": SecuritySchemeScopes{"read"}},
+	// 		{"mTLS": SecuritySchemeScopes{}, "apiKey": SecuritySchemeScopes{"read"}}
+	// }
+	Security []SecurityRequirements `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// SecuritySchemes is a declaration of the security schemes available to authorize requests. The key
 	// is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
@@ -85,6 +117,14 @@ type AgentCard struct {
 
 	// Skills is the set of skills, or distinct capabilities, that the agent can perform.
 	Skills []AgentSkill `json:"skills" yaml:"skills" mapstructure:"skills"`
+
+	// SupportsAuthenticatedExtendedCard indicates if the agent can provide an extended agent card with additional details
+	// to authenticated users. Defaults to false.
+	SupportsAuthenticatedExtendedCard bool `json:"supportsAuthenticatedExtendedCard,omitempty" yaml:"supportsAuthenticatedExtendedCard,omitempty" mapstructure:"supportsAuthenticatedExtendedCard,omitempty"`
+
+	// URL is the preferred endpoint URL for interacting with the agent.
+	// This URL MUST support the transport specified by 'preferredTransport'.
+	URL string `json:"url" yaml:"url" mapstructure:"url"`
 
 	// Version is the agent's own version number. The format is defined by the provider.
 	Version string `json:"version" yaml:"version" mapstructure:"version"`
@@ -117,26 +157,19 @@ type AgentExtension struct {
 	Required bool `json:"required,omitempty" yaml:"required,omitempty" mapstructure:"required,omitempty"`
 
 	// URI is the unique URI identifying the extension.
-	URI string `json:"uri,omitempty" yaml:"uri,omitempty" mapstructure:"uri,omitempty"`
+	URI string `json:"uri" yaml:"uri" mapstructure:"uri"`
 }
 
 // AgentInterface declares a combination of a target URL and a transport protocol for interacting
 // with the agent.
 // This allows agents to expose the same functionality over multiple transport mechanisms.
 type AgentInterface struct {
+	// Transport is the transport protocol supported at this URL.
+	Transport TransportProtocol `json:"transport" yaml:"transport" mapstructure:"transport"`
+
 	// URL is the URL where this interface is available.
 	// Must be a valid absolute HTTPS URL in production.
 	URL string `json:"url" yaml:"url" mapstructure:"url"`
-
-	// ProtocolBinding is the protocol binding supported at this URL.
-	// This is an open form string, to be easily extended for other protocol bindings.
-	ProtocolBinding TransportProtocol `json:"protocolBinding" yaml:"protocolBinding" mapstructure:"protocolBinding"`
-
-	// Tenant is an optional ID of the agent owner.
-	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
-
-	// ProtocolVersion is the version of the A2A protocol this interface exposes.
-	ProtocolVersion ProtocolVersion `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
 }
 
 // AgentProvider represents the service provider of an agent.
@@ -174,7 +207,7 @@ type AgentSkill struct {
 	// As in the overall AgentCard.security, this list represents a logical OR of
 	// security requirement objects.
 	// Each object is a set of security schemes that must be used together (a logical AND).
-	SecurityRequirements SecurityRequirementsOptions `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	Security []SecurityRequirements `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
 
 	// Tags is a set of keywords describing the skill's capabilities.
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`

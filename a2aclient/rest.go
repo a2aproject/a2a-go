@@ -145,11 +145,12 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, p
 				return
 			}
 
-			event, err := a2a.UnmarshalEventJSON(data)
-			if err != nil {
+			var sr a2a.StreamResponse
+			if err := json.Unmarshal(data, &sr); err != nil {
 				yield(nil, err)
 				return
 			}
+			event := sr.Event
 
 			if !yield(event, nil) {
 				return
@@ -159,11 +160,11 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, method string, p
 }
 
 // GetTask retrieves the current state of a task.
-func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	path := "/v1/tasks/" + string(query.ID)
+func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	path := rest.MakeGetTaskPath(string(req.ID))
 	q := url.Values{}
-	if query.HistoryLength != nil {
-		q.Add("historyLength", strconv.Itoa(*query.HistoryLength))
+	if req.HistoryLength != nil {
+		q.Add("historyLength", strconv.Itoa(*req.HistoryLength))
 	}
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
@@ -177,29 +178,29 @@ func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, query
 }
 
 // ListTasks retrieves a list of tasks.
-func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	path := "/v1/tasks"
+func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	path := rest.MakeListTasksPath()
 
 	query := url.Values{}
-	if request.ContextID != "" {
-		query.Add("contextId", string(request.ContextID))
+	if req.ContextID != "" {
+		query.Add("contextId", string(req.ContextID))
 	}
-	if request.Status != "" {
-		query.Add("status", string(request.Status))
+	if req.Status != "" {
+		query.Add("status", string(req.Status))
 	}
-	if request.PageSize != 0 {
-		query.Add("pageSize", strconv.Itoa(request.PageSize))
+	if req.PageSize != 0 {
+		query.Add("pageSize", strconv.Itoa(req.PageSize))
 	}
-	if request.PageToken != "" {
-		query.Add("pageToken", string(request.PageToken))
+	if req.PageToken != "" {
+		query.Add("pageToken", string(req.PageToken))
 	}
-	if request.HistoryLength != 0 {
-		query.Add("historyLength", strconv.Itoa(request.HistoryLength))
+	if req.HistoryLength != 0 {
+		query.Add("historyLength", strconv.Itoa(req.HistoryLength))
 	}
-	if request.LastUpdatedAfter != nil {
-		query.Add("lastUpdatedAfter", request.LastUpdatedAfter.Format(time.RFC3339))
+	if req.StatusTimestampAfter != nil {
+		query.Add("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))
 	}
-	if request.IncludeArtifacts {
+	if req.IncludeArtifacts {
 		query.Add("includeArtifacts", "true")
 	}
 
@@ -216,8 +217,8 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 }
 
 // CancelTask requests cancellation of a task.
-func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	path := "/v1/tasks/" + string(id.ID) + ":cancel"
+func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	path := rest.MakeCancelTaskPath(string(req.ID))
 	var result a2a.Task
 
 	if err := t.doRequest(ctx, "POST", params, path, nil, &result); err != nil {
@@ -227,19 +228,19 @@ func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, id
 }
 
 // SendMessage sends a non-streaming message to the agent.
-func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	path := "/v1/message:send"
+func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	path := rest.MakeSendMessagePath()
 
 	var result json.RawMessage
-	if err := t.doRequest(ctx, "POST", params, path, message, &result); err != nil {
+	if err := t.doRequest(ctx, "POST", params, path, req, &result); err != nil {
 		return nil, err
 	}
 
-	// Use a2a.UnmarshalEventJSON to determine the type based on the 'kind' field
-	event, err := a2a.UnmarshalEventJSON(result)
-	if err != nil {
+	var sr a2a.StreamResponse
+	if err := json.Unmarshal(result, &sr); err != nil {
 		return nil, fmt.Errorf("result violates A2A spec - could not determine type: %w; data: %s", err, string(result))
 	}
+	event := sr.Event
 
 	// SendMessage can return either a Task or a Message
 	switch e := event.(type) {
@@ -252,21 +253,21 @@ func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, m
 	}
 }
 
-// ResubscribeToTask reconnects to an SSE stream for an ongoing task.
-func (t *RESTTransport) ResubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	path := "/v1/tasks/" + string(id.ID) + ":subscribe"
+// SubscribeToTask reconnects to an SSE stream for an ongoing task.
+func (t *RESTTransport) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	path := rest.MakeSubscribeTaskPath(string(req.ID))
 	return t.doStreamingRequest(ctx, "POST", params, path, nil)
 }
 
 // SendStreamingMessage sends a streaming message to the agent and returns an SSE stream.
-func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	path := "/v1/message:stream"
-	return t.doStreamingRequest(ctx, "POST", params, path, message)
+func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+	path := rest.MakeStreamMessagePath()
+	return t.doStreamingRequest(ctx, "POST", params, path, req)
 }
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
-func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	path := "/v1/tasks/" + string(req.TaskID) + "/pushNotificationConfigs/" + string(req.ConfigID)
+func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	path := rest.MakeGetPushConfigPath(string(req.TaskID), string(req.ID))
 	var config a2a.TaskPushConfig
 
 	if err := t.doRequest(ctx, "GET", params, path, nil, &config); err != nil {
@@ -276,8 +277,8 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 }
 
 // ListTaskPushConfig lists all push notification configurations for a task.
-func (t *RESTTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	path := "/v1/tasks/" + string(req.TaskID) + "/pushNotificationConfigs"
+func (t *RESTTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	path := rest.MakeListPushConfigsPath(string(req.TaskID))
 	var configs []*a2a.TaskPushConfig
 
 	if err := t.doRequest(ctx, "GET", params, path, nil, &configs); err != nil {
@@ -286,9 +287,9 @@ func (t *RESTTransport) ListTaskPushConfig(ctx context.Context, params ServicePa
 	return configs, nil
 }
 
-// SetTaskPushConfig sets or updates the push notification configuration for a task.
-func (t *RESTTransport) SetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	path := "/v1/tasks/" + string(req.TaskID) + "/pushNotificationConfigs"
+// CreateTaskPushConfig sets or updates the push notification configuration for a task.
+func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	path := rest.MakeCreatePushConfigPath(string(req.TaskID))
 	var config a2a.TaskPushConfig
 
 	if err := t.doRequest(ctx, "POST", params, path, req, &config); err != nil {
@@ -298,14 +299,14 @@ func (t *RESTTransport) SetTaskPushConfig(ctx context.Context, params ServicePar
 }
 
 // DeleteTaskPushConfig deletes a specific push notification configuration for a task.
-func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigParams) error {
-	path := "/v1/tasks/" + string(req.TaskID) + "/pushNotificationConfigs/" + string(req.ConfigID)
+func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
+	path := rest.MakeDeletePushConfigPath(string(req.TaskID), string(req.ID))
 	return t.doRequest(ctx, "DELETE", params, path, nil, nil)
 }
 
-// GetAgentCard retrieves the agent's A2A Agent Card.
-func (t *RESTTransport) GetAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
-	path := "/v1/card"
+// GetExtendedAgentCard retrieves the agent's A2A Agent Card.
+func (t *RESTTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+	path := rest.MakeGetExtendedAgentCardPath()
 	var card a2a.AgentCard
 
 	if err := t.doRequest(ctx, "GET", params, path, nil, &card); err != nil {

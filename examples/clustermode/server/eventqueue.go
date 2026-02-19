@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -130,14 +131,14 @@ func newDBEventQueue(db *sql.DB, taskID a2a.TaskID, pollFromID string) *dbEventQ
 						closeSQLRows(ctx, rows)
 						continue
 					}
-					event, err := a2a.UnmarshalEventJSON([]byte(eventJSON))
-					if err != nil {
+					var sr a2a.StreamResponse
+					if err := json.Unmarshal([]byte(eventJSON), &sr); err != nil {
 						log.Error(ctx, "failed to unmarshal event", err)
 						continue
 					}
 					select {
 					case queue.eventsCh <- &versionedEvent{
-						event:   event,
+						event:   sr.Event,
 						version: taskstore.TaskVersion(version),
 					}:
 					case <-queue.closeSignal:

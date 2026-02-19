@@ -9,8 +9,8 @@ version: v2
 inputs:
   - git_repo: https://github.com/a2aproject/A2A.git
     # Update to point to the desired git tag or commit
-    ref: e7cf203ecdd7003c0f1740bb712248d2b5252bf1
-    subdir: specification/grpc
+    ref: d22ee06d3681df43cdbdf538b6299e160d280cf1
+    subdir: specification
 
 managed:  
   enabled: true
@@ -20,12 +20,12 @@ managed:
       value: github.com/a2aproject/a2a-go/a2apb
 
 plugins:
-  - remote: buf.build/protocolbuffers/go
-    out: a2apb
+  - local: protoc-gen-go
+    out: a2apb/v1
     opt:
       - paths=source_relative
   
-  - remote: buf.build/grpc/go
-    out: a2apb
+  - local: protoc-gen-go-grpc
+    out: a2apb/v1
     opt:
       - paths=source_relative

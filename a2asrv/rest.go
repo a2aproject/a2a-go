@@ -32,16 +32,17 @@ import (
 func NewRESTHandler(handler RequestHandler) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("POST /v1/message:send", handleSendMessage(handler))
-	mux.HandleFunc("POST /v1/message:stream", handleStreamMessage(handler))
-	mux.HandleFunc("GET /v1/tasks/{id}", handleGetTask(handler))
-	mux.HandleFunc("GET /v1/tasks", handleListTasks(handler))
-	mux.HandleFunc("POST /v1/tasks/{idAndAction}", handlePOSTTasks(handler))
-	mux.HandleFunc("POST /v1/tasks/{id}/pushNotificationConfigs", handleSetTaskPushConfig(handler))
-	mux.HandleFunc("GET /v1/tasks/{id}/pushNotificationConfigs/{configId}", handleGetTaskPushConfig(handler))
-	mux.HandleFunc("GET /v1/tasks/{id}/pushNotificationConfigs", handleListTaskPushConfig(handler))
-	mux.HandleFunc("DELETE /v1/tasks/{id}/pushNotificationConfigs/{configId}", handleDeleteTaskPushConfig(handler))
-	mux.HandleFunc("GET /v1/card", handleGetExtendedAgentCard(handler))
+	// TODO: handle tenant
+	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), handleSendMessage(handler))
+	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), handleStreamMessage(handler))
+	mux.HandleFunc("GET "+rest.MakeGetTaskPath("{id}"), handleGetTask(handler))
+	mux.HandleFunc("GET "+rest.MakeListTasksPath(), handleListTasks(handler))
+	mux.HandleFunc("POST /tasks/{idAndAction}", handlePOSTTasks(handler))
+	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), handleCreateTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), handleGetTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), handleListTaskPushConfig(handler))
+	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), handleDeleteTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), handleGetExtendedAgentCard(handler))
 
 	return mux
 }
@@ -49,20 +50,20 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		var message a2a.MessageSendParams
+		var message a2a.SendMessageRequest
 		if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 			writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 			return
 		}
 
-		result, err := handler.OnSendMessage(ctx, &message)
+		result, err := handler.SendMessage(ctx, &message)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
 		}
 
-		if err := json.NewEncoder(rw).Encode(result); err != nil {
+		if err := json.NewEncoder(rw).Encode(a2a.StreamResponse{Event: result}); err != nil {
 			log.Error(ctx, "failed to encode response", err)
 		}
 	}
@@ -71,12 +72,12 @@ func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		var message a2a.MessageSendParams
+		var message a2a.SendMessageRequest
 		if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 			writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 			return
 		}
-		handleStreamingRequest(handler.OnSendMessageStream(ctx, &message), rw, req)
+		handleStreamingRequest(handler.SendStreamingMessage(ctx, &message), rw, req)
 	}
 }
 
@@ -98,12 +99,12 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return
 		}
-		params := &a2a.TaskQueryParams{
+		params := &a2a.GetTaskRequest{
 			ID:            a2a.TaskID(taskID),
 			HistoryLength: historyLength,
 		}
 
-		result, err := handler.OnGetTask(ctx, params)
+		result, err := handler.GetTask(ctx, params)
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
 			return
@@ -146,13 +147,13 @@ func handleListTasks(handler RequestHandler) http.HandlerFunc {
 		parse("pageSize", &request.PageSize)
 		parse("pageToken", &request.PageToken)
 		parse("historyLength", &request.HistoryLength)
-		parse("lastUpdatedAfter", &request.LastUpdatedAfter)
+		parse("statusTimestampAfter", &request.StatusTimestampAfter)
 		parse("includeArtifacts", &request.IncludeArtifacts)
 		if err != nil {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return
 		}
-		result, err := handler.OnListTasks(ctx, request)
+		result, err := handler.ListTasks(ctx, request)
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
@@ -172,12 +173,12 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 
-		if strings.HasSuffix(idAndAction, ":cancel") {
-			taskID := strings.TrimSuffix(idAndAction, ":cancel")
+		if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok {
+			taskID := before
 			handleCancelTask(handler, taskID, rw, req)
-		} else if strings.HasSuffix(idAndAction, ":subscribe") {
-			taskID := strings.TrimSuffix(idAndAction, ":subscribe")
-			handleStreamingRequest(handler.OnResubscribeToTask(ctx, &a2a.TaskIDParams{ID: a2a.TaskID(taskID)}), rw, req)
+		} else if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+			taskID := before
+			handleStreamingRequest(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}), rw, req)
 		} else {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return
@@ -188,11 +189,11 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 func handleCancelTask(handler RequestHandler, taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	id := &a2a.TaskIDParams{
+	id := &a2a.CancelTaskRequest{
 		ID: a2a.TaskID(taskID),
 	}
 
-	result, err := handler.OnCancelTask(ctx, id)
+	result, err := handler.CancelTask(ctx, id)
 
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -218,6 +219,7 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// TODO: handle panic and sse keep-alives similar to jsonrpc
 	go func() {
 		defer close(sseChan)
 		events := eventSequence
@@ -228,7 +230,7 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 				return
 			}
 
-			b, jbErr := json.Marshal(event)
+			b, jbErr := json.Marshal(a2a.StreamResponse{Event: event})
 			if jbErr != nil {
 				errObj := map[string]string{"error": jbErr.Error()}
 				if eb, err := json.Marshal(errObj); err == nil {
@@ -268,7 +270,7 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 	}
 }
 
-func handleSetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
+func handleCreateTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -283,12 +285,12 @@ func handleSetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 
-		params := &a2a.TaskPushConfig{
+		params := &a2a.CreateTaskPushConfigRequest{
 			TaskID: a2a.TaskID(taskID),
 			Config: *config,
 		}
 
-		result, err := handler.OnSetTaskPushConfig(ctx, params)
+		result, err := handler.CreateTaskPushConfig(ctx, params)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -312,12 +314,12 @@ func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 
-		params := &a2a.GetTaskPushConfigParams{
-			TaskID:   a2a.TaskID(taskID),
-			ConfigID: configID,
+		params := &a2a.GetTaskPushConfigRequest{
+			TaskID: a2a.TaskID(taskID),
+			ID:     configID,
 		}
 
-		result, err := handler.OnGetTaskPushConfig(ctx, params)
+		result, err := handler.GetTaskPushConfig(ctx, params)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -340,11 +342,11 @@ func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 
-		params := &a2a.ListTaskPushConfigParams{
+		params := &a2a.ListTaskPushConfigRequest{
 			TaskID: a2a.TaskID(taskID),
 		}
 
-		result, err := handler.OnListTaskPushConfig(ctx, params)
+		result, err := handler.ListTaskPushConfig(ctx, params)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -367,12 +369,12 @@ func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 
-		params := &a2a.DeleteTaskPushConfigParams{
-			TaskID:   a2a.TaskID(taskID),
-			ConfigID: configID,
+		params := &a2a.DeleteTaskPushConfigRequest{
+			TaskID: a2a.TaskID(taskID),
+			ID:     configID,
 		}
 
-		err := handler.OnDeleteTaskPushConfig(ctx, params)
+		err := handler.DeleteTaskPushConfig(ctx, params)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -384,7 +386,7 @@ func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 func handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		result, err := handler.OnGetExtendedAgentCard(ctx)
+		result, err := handler.GetExtendedAgentCard(ctx)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
