@@ -119,16 +119,16 @@ func TestTripleHopPropagation(t *testing.T) {
 			reverseProxy := startServer(t, serverInterceptor, newProxyExecutor(clientInterceptor, proxyTarget{ai: server}))
 			forwardProxy := startServer(t, serverInterceptor, newProxyExecutor(clientInterceptor, proxyTarget{ai: reverseProxy}))
 
-			reqHeaderInjector := a2aclient.NewServiceParamsInjector(tc.clientReqHeaders)
 			client, err := a2aclient.NewFromEndpoints(
 				ctx,
 				[]a2a.AgentInterface{forwardProxy},
-				a2aclient.WithCallInterceptors(reqHeaderInjector),
+				a2aclient.WithCallInterceptors(clientInterceptor),
 			)
 			if err != nil {
 				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
 			}
 
+			ctx = a2aclient.AttachServiceParams(ctx, tc.clientReqHeaders)
 			resp, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")),
 				Metadata: tc.clientSvcParams,

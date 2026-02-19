@@ -96,21 +96,25 @@ type CallInterceptor interface {
 	After(ctx context.Context, resp *Response) error
 }
 
-// NewServiceParamsInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
-func NewServiceParamsInjector(params ServiceParams) CallInterceptor {
-	return &serviceParamsInjector{inject: params}
-}
+type serviceParamsKeyType struct{}
 
-type serviceParamsInjector struct {
-	PassthroughInterceptor
-	inject ServiceParams
-}
-
-func (mi *serviceParamsInjector) Before(ctx context.Context, req *Request) (context.Context, any, error) {
-	for k, values := range mi.inject {
-		req.ServiceParams.Append(k, values...)
+func AttachServiceParams(ctx context.Context, params ServiceParams) context.Context {
+	existing, ok := ctx.Value(serviceParamsKeyType{}).(ServiceParams)
+	if !ok {
+		existing = make(ServiceParams)
 	}
-	return ctx, nil, nil
+	for k, values := range params {
+		existing.Append(k, values...)
+	}
+	return context.WithValue(ctx, serviceParamsKeyType{}, existing)
+}
+
+func serviceParamsFrom(ctx context.Context) ServiceParams {
+	params, ok := ctx.Value(serviceParamsKeyType{}).(ServiceParams)
+	if !ok {
+		return make(ServiceParams)
+	}
+	return params
 }
 
 // PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
