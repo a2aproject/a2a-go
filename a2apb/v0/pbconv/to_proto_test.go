@@ -529,9 +529,9 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		{
 			name: "success",
 			resp: &a2a.ListTaskPushConfigResponse{
-				Configs: []a2a.TaskPushConfig{
-					*configs[0],
-					*configs[1],
+				Configs: []*a2a.TaskPushConfig{
+					configs[0],
+					configs[1],
 				},
 			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
@@ -541,7 +541,7 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		{
 			name: "empty slice",
 			resp: &a2a.ListTaskPushConfigResponse{
-				Configs: []a2a.TaskPushConfig{},
+				Configs: []*a2a.TaskPushConfig{},
 			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
@@ -550,7 +550,7 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		{
 			name: "conversion error",
 			resp: &a2a.ListTaskPushConfigResponse{
-				Configs: []a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+				Configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
 			},
 			wantErr: true,
 		},

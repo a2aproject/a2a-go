@@ -618,13 +618,13 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 }
 
 func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigResponse) (*a2a.ListTaskPushConfigResponse, error) {
-	configs := make([]a2a.TaskPushConfig, len(resp.GetConfigs()))
+	configs := make([]*a2a.TaskPushConfig, len(resp.GetConfigs()))
 	for i, pConfig := range resp.GetConfigs() {
 		config, err := FromProtoTaskPushConfig(pConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
-		configs[i] = *config
+		configs[i] = config
 	}
 	return &a2a.ListTaskPushConfigResponse{
 		Configs:       configs,
@@ -851,13 +851,13 @@ func fromProtoSkills(pSkills []*a2apb.AgentSkill) ([]a2a.AgentSkill, error) {
 		}
 
 		skills[i] = a2a.AgentSkill{
-			ID:          id,
-			Name:        name,
-			Description: description,
-			Tags:        tags,
-			Examples:    pSkill.GetExamples(),
-			InputModes:  pSkill.GetInputModes(),
-			OutputModes: pSkill.GetOutputModes(),
+			ID:                   id,
+			Name:                 name,
+			Description:          description,
+			Tags:                 tags,
+			Examples:             pSkill.GetExamples(),
+			InputModes:           pSkill.GetInputModes(),
+			OutputModes:          pSkill.GetOutputModes(),
 			SecurityRequirements: fromProtoSecurity(pSkill.GetSecurityRequirements()),
 		}
 	}

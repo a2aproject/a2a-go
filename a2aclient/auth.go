@@ -71,7 +71,7 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 	}
 
 	for _, requirement := range req.Card.SecurityRequirements {
-		for schemeName, _ := range requirement.Scheme {
+		for schemeName := range requirement {
 			credential, err := ai.Service.Get(ctx, sessionID, schemeName)
 			if errors.Is(err, ErrCredentialNotFound) {
 				continue

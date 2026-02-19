@@ -26,8 +26,8 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/pbconv"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
+	"github.com/a2aproject/a2a-go/a2apb/v1"
+	"github.com/a2aproject/a2a-go/a2apb/v1/pbconv"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -39,45 +39,45 @@ import (
 )
 
 var defaultMockHandler = &mockRequestHandler{
-	OnSendMessageFunc: func(ctx context.Context, params *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-		if params.Message.ID == "handler-error" {
+	SendMessageFunc: func(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+		if req.Message.ID == "handler-error" {
 			return nil, errors.New("handler error")
 		}
-		taskID := params.Message.TaskID
+		taskID := req.Message.TaskID
 		if taskID == "" {
 			taskID = a2a.NewTaskID()
 		}
 		return &a2a.Message{
-			ID:     fmt.Sprintf("%s-response", params.Message.ID),
+			ID:     fmt.Sprintf("%s-response", req.Message.ID),
 			TaskID: taskID,
 			Role:   a2a.MessageRoleAgent,
-			Parts:  params.Message.Parts, // Echo back the parts
+			Parts:  req.Message.Parts,
 		}, nil
 	},
 
-	OnSendMessageStreamFunc: func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-		if params.Message.ID == "handler-error" {
+	SendMessageStreamFunc: func(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+		if req.Message.ID == "handler-error" {
 			return func(yield func(a2a.Event, error) bool) {
 				yield(nil, errors.New("handler stream error"))
 			}
 		}
 
-		taskID := params.Message.TaskID
+		taskID := req.Message.TaskID
 		if taskID == "" {
 			taskID = a2a.NewTaskID()
 		}
 
 		task := &a2a.Task{
 			ID:        taskID,
-			ContextID: params.Message.ContextID,
+			ContextID: req.Message.ContextID,
 			Status:    a2a.TaskStatus{State: a2a.TaskStateSubmitted},
 		}
 		statusUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil)
 		finalMessage := &a2a.Message{
-			ID:     fmt.Sprintf("%s-response", params.Message.ID),
+			ID:     fmt.Sprintf("%s-response", req.Message.ID),
 			TaskID: taskID,
 			Role:   a2a.MessageRoleAgent,
-			Parts:  params.Message.Parts, // Echo back the parts
+			Parts:  req.Message.Parts,
 		}
 		events := []a2a.Event{task, statusUpdate, finalMessage}
 
@@ -90,19 +90,18 @@ var defaultMockHandler = &mockRequestHandler{
 		}
 	},
 
-	OnResubscribeToTaskFunc: func(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-		if id.ID == "handler-error" {
+	SubscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+		if req.ID == "handler-error" {
 			return func(yield func(a2a.Event, error) bool) {
 				yield(nil, errors.New("handler resubscribe error"))
 			}
 		}
 		task := &a2a.Task{
-			ID:        id.ID,
+			ID:        req.ID,
 			ContextID: "resubscribe-context",
 			Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
 		}
 		statusUpdate := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil)
-		statusUpdate.Final = true
 		events := []a2a.Event{task, statusUpdate}
 
 		return func(yield func(a2a.Event, error) bool) {
@@ -121,41 +120,41 @@ type mockRequestHandler struct {
 	pushConfigs map[a2a.TaskID]map[string]*a2a.TaskPushConfig
 
 	// Fields to capture call parameters
-	capturedGetTaskQuery               *a2a.TaskQueryParams
-	capturedListTasksRequest           *a2a.ListTasksRequest
-	capturedCancelTaskIDParams         *a2a.TaskIDParams
-	capturedSendMessageParams          *a2a.MessageSendParams
-	capturedSendMessageStreamParams    *a2a.MessageSendParams
-	capturedResubscribeToTaskIDParams  *a2a.TaskIDParams
-	capturedSetTaskPushConfig          *a2a.TaskPushConfig
-	capturedGetTaskPushConfigParams    *a2a.GetTaskPushConfigParams
-	capturedListTaskPushConfigParams   *a2a.ListTaskPushConfigParams
-	capturedDeleteTaskPushConfigParams *a2a.DeleteTaskPushConfigParams
+	capturedGetTaskRequest              *a2a.GetTaskRequest
+	capturedListTasksRequest            *a2a.ListTasksRequest
+	capturedCancelTaskRequest           *a2a.CancelTaskRequest
+	capturedSendMessageRequest          *a2a.SendMessageRequest
+	capturedSendMessageStreamRequest    *a2a.SendMessageRequest
+	capturedSubscribeToTaskRequest      *a2a.SubscribeToTaskRequest
+	capturedCreateTaskPushConfigRequest *a2a.CreateTaskPushConfigRequest
+	capturedGetTaskPushConfigRequest    *a2a.GetTaskPushConfigRequest
+	capturedListTaskPushConfigRequest   *a2a.ListTaskPushConfigRequest
+	capturedDeleteTaskPushConfigRequest *a2a.DeleteTaskPushConfigRequest
 
 	// Override specific methods
 	a2asrv.RequestHandler
-	OnSendMessageFunc       func(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error)
-	OnSendMessageStreamFunc func(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error]
-	OnResubscribeToTaskFunc func(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error]
+	SendMessageFunc       func(ctx context.Context, message *a2a.SendMessageRequest) (a2a.SendMessageResult, error)
+	SendMessageStreamFunc func(ctx context.Context, params *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
+	SubscribeToTaskFunc   func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
 var _ a2asrv.RequestHandler = (*mockRequestHandler)(nil)
 
-func (m *mockRequestHandler) OnGetTask(ctx context.Context, query *a2a.TaskQueryParams) (*a2a.Task, error) {
-	m.capturedGetTaskQuery = query
-	if task, ok := m.tasks[query.ID]; ok {
-		if query.HistoryLength != nil && *query.HistoryLength > 0 {
-			if len(task.History) > int(*query.HistoryLength) {
-				task.History = task.History[len(task.History)-int(*query.HistoryLength):]
+func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	m.capturedGetTaskRequest = req
+	if task, ok := m.tasks[req.ID]; ok {
+		if req.HistoryLength != nil && *req.HistoryLength > 0 {
+			if len(task.History) > int(*req.HistoryLength) {
+				task.History = task.History[len(task.History)-int(*req.HistoryLength):]
 			}
 		}
 		return task, nil
 	}
 
-	return nil, fmt.Errorf("task not found, taskID: %s", query.ID)
+	return nil, fmt.Errorf("task not found, taskID: %s", req.ID)
 }
 
-func (m *mockRequestHandler) OnListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	m.capturedListTasksRequest = req
 
 	var tasks []*a2a.Task
@@ -177,75 +176,80 @@ func (m *mockRequestHandler) OnListTasks(ctx context.Context, req *a2a.ListTasks
 	}, nil
 }
 
-func (m *mockRequestHandler) OnCancelTask(ctx context.Context, id *a2a.TaskIDParams) (*a2a.Task, error) {
-	m.capturedCancelTaskIDParams = id
-	if task, ok := m.tasks[id.ID]; ok {
+func (m *mockRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	m.capturedCancelTaskRequest = req
+	if task, ok := m.tasks[req.ID]; ok {
 		task.Status = a2a.TaskStatus{
 			State: a2a.TaskStateCanceled,
 		}
-		m.tasks[id.ID] = task
+		m.tasks[req.ID] = task
 		return task, nil
 	}
-	return nil, fmt.Errorf("task not found, taskID: %s", id.ID)
+	return nil, fmt.Errorf("task not found, taskID: %s", req.ID)
 }
 
-func (m *mockRequestHandler) OnSendMessage(ctx context.Context, message *a2a.MessageSendParams) (a2a.SendMessageResult, error) {
-	m.capturedSendMessageParams = message
-	if m.OnSendMessageFunc != nil {
-		return m.OnSendMessageFunc(ctx, message)
+func (m *mockRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	m.capturedSendMessageRequest = req
+	if m.SendMessageFunc != nil {
+		return m.SendMessageFunc(ctx, req)
 	}
-	return nil, errors.New("OnSendMessage not implemented")
+	return nil, errors.New("SendMessage not implemented")
 }
 
-func (m *mockRequestHandler) OnSendMessageStream(ctx context.Context, params *a2a.MessageSendParams) iter.Seq2[a2a.Event, error] {
-	m.capturedSendMessageStreamParams = params
-	if m.OnSendMessageStreamFunc != nil {
-		return m.OnSendMessageStreamFunc(ctx, params)
+func (m *mockRequestHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+	m.capturedSendMessageStreamRequest = req
+	if m.SendMessageStreamFunc != nil {
+		return m.SendMessageStreamFunc(ctx, req)
 	}
 	return func(yield func(a2a.Event, error) bool) {
 		yield(nil, errors.New("OnSendMessageStream not implemented"))
 	}
 }
 
-func (m *mockRequestHandler) OnResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) iter.Seq2[a2a.Event, error] {
-	m.capturedResubscribeToTaskIDParams = id
-	if m.OnResubscribeToTaskFunc != nil {
-		return m.OnResubscribeToTaskFunc(ctx, id)
+func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	m.capturedSubscribeToTaskRequest = req
+	if m.SubscribeToTaskFunc != nil {
+		return m.SubscribeToTaskFunc(ctx, req)
 	}
 	return func(yield func(a2a.Event, error) bool) {
 		yield(nil, errors.New("OnResubscribeToTask not implemented"))
 	}
 }
 
-func (m *mockRequestHandler) OnSetTaskPushConfig(ctx context.Context, params *a2a.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	m.capturedSetTaskPushConfig = params
-	if _, ok := m.tasks[params.TaskID]; ok {
-		if _, ok := m.pushConfigs[params.TaskID]; !ok {
-			m.pushConfigs[params.TaskID] = make(map[string]*a2a.TaskPushConfig)
+func (m *mockRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	m.capturedCreateTaskPushConfigRequest = req
+	if _, ok := m.tasks[req.TaskID]; ok {
+		if _, ok := m.pushConfigs[req.TaskID]; !ok {
+			m.pushConfigs[req.TaskID] = make(map[string]*a2a.TaskPushConfig)
 		}
-		m.pushConfigs[params.TaskID][params.Config.ID] = params
-		return params, nil
+		taskPushConfig := &a2a.TaskPushConfig{
+			TaskID: req.TaskID,
+			ID:     req.Config.ID,
+			Config: req.Config,
+		}
+		m.pushConfigs[req.TaskID][req.Config.ID] = taskPushConfig
+		return taskPushConfig, nil
 	}
 
-	return nil, fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
+	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) OnGetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigParams) (*a2a.TaskPushConfig, error) {
-	m.capturedGetTaskPushConfigParams = params
-	if _, ok := m.tasks[params.TaskID]; ok {
-		if pushConfigs, ok := m.pushConfigs[params.TaskID]; ok {
-			return pushConfigs[params.ConfigID], nil
+func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	m.capturedGetTaskPushConfigRequest = req
+	if _, ok := m.tasks[req.TaskID]; ok {
+		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
+			return pushConfigs[req.ID], nil
 		}
-		return nil, fmt.Errorf("push config not found, taskID: %s, configID: %s", params.TaskID, params.ConfigID)
+		return nil, fmt.Errorf("push config not found, taskID: %s, configID: %s", req.TaskID, req.ID)
 	}
 
-	return nil, fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
+	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigParams) ([]*a2a.TaskPushConfig, error) {
-	m.capturedListTaskPushConfigParams = params
-	if _, ok := m.tasks[params.TaskID]; ok {
-		if pushConfigs, ok := m.pushConfigs[params.TaskID]; ok {
+func (m *mockRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	m.capturedListTaskPushConfigRequest = req
+	if _, ok := m.tasks[req.TaskID]; ok {
+		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
 			var result []*a2a.TaskPushConfig
 			for _, v := range pushConfigs {
 				result = append(result, v)
@@ -255,22 +259,22 @@ func (m *mockRequestHandler) OnListTaskPushConfig(ctx context.Context, params *a
 		return []*a2a.TaskPushConfig{}, nil // no configs for task id
 	}
 
-	return []*a2a.TaskPushConfig{}, fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
+	return []*a2a.TaskPushConfig{}, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) OnDeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigParams) error {
-	m.capturedDeleteTaskPushConfigParams = params
-	if _, ok := m.tasks[params.TaskID]; ok {
-		if pushConfigs, ok := m.pushConfigs[params.TaskID]; ok {
-			if _, ok := pushConfigs[params.ConfigID]; ok {
-				delete(pushConfigs, params.ConfigID)
+func (m *mockRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
+	m.capturedDeleteTaskPushConfigRequest = req
+	if _, ok := m.tasks[req.TaskID]; ok {
+		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
+			if _, ok := pushConfigs[req.ID]; ok {
+				delete(pushConfigs, req.ID)
 				return nil
 			}
 		}
 		return nil
 	}
 
-	return fmt.Errorf("task for push config not found, taskID: %s", params.TaskID)
+	return fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
 func startTestServer(t *testing.T, handler a2asrv.RequestHandler) a2apb.A2AServiceClient {
@@ -321,44 +325,39 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 		name      string
 		req       *a2apb.GetTaskRequest
 		want      *a2apb.Task
-		wantQuery *a2a.TaskQueryParams
+		wantQuery *a2a.GetTaskRequest
 		wantErr   codes.Code
 	}{
 		{
 			name: "success",
-			req:  &a2apb.GetTaskRequest{Name: fmt.Sprintf("tasks/%s", taskID)},
+			req:  &a2apb.GetTaskRequest{Id: string(taskID)},
 			want: &a2apb.Task{
 				Id:        string(taskID),
 				ContextId: "test-context",
 				Status:    &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_SUBMITTED},
 			},
-			wantQuery: &a2a.TaskQueryParams{ID: taskID},
+			wantQuery: &a2a.GetTaskRequest{ID: taskID},
 		},
 		{
 			name: "success with history",
-			req:  &a2apb.GetTaskRequest{Name: fmt.Sprintf("tasks/%s", taskID), HistoryLength: 10},
+			req:  &a2apb.GetTaskRequest{Id: string(taskID), HistoryLength: proto.Int32(10)},
 			want: &a2apb.Task{
 				Id:        string(taskID),
 				ContextId: "test-context",
 				Status:    &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_SUBMITTED},
 			},
-			wantQuery: &a2a.TaskQueryParams{ID: taskID, HistoryLength: &historyLen},
-		},
-		{
-			name:    "invalid name",
-			req:     &a2apb.GetTaskRequest{Name: "invalid/name"},
-			wantErr: codes.InvalidArgument,
+			wantQuery: &a2a.GetTaskRequest{ID: taskID, HistoryLength: &historyLen},
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.GetTaskRequest{Name: "tasks/handler-error"},
+			req:     &a2apb.GetTaskRequest{Id: "handler-error"},
 			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedGetTaskQuery = nil
+			mockHandler.capturedGetTaskRequest = nil
 			resp, err := client.GetTask(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -378,8 +377,8 @@ func TestGrpcHandler_GetTask(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("GetTask() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantQuery != nil && !reflect.DeepEqual(mockHandler.capturedGetTaskQuery, tt.wantQuery) {
-					t.Errorf("OnGetTask() query got = %v, want %v", mockHandler.capturedGetTaskQuery, tt.wantQuery)
+				if tt.wantQuery != nil && !reflect.DeepEqual(mockHandler.capturedGetTaskRequest, tt.wantQuery) {
+					t.Errorf("OnGetTask() query got = %v, want %v", mockHandler.capturedGetTaskRequest, tt.wantQuery)
 				}
 			}
 		})
@@ -485,30 +484,25 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 		name       string
 		req        *a2apb.CancelTaskRequest
 		want       *a2apb.Task
-		wantParams *a2a.TaskIDParams
+		wantParams *a2a.CancelTaskRequest
 		wantErr    codes.Code
 	}{
 		{
 			name:       "success",
-			req:        &a2apb.CancelTaskRequest{Name: fmt.Sprintf("tasks/%s", taskID)},
-			want:       &a2apb.Task{Id: string(taskID), ContextId: "test-context", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_CANCELLED}},
-			wantParams: &a2a.TaskIDParams{ID: taskID},
-		},
-		{
-			name:    "invalid name",
-			req:     &a2apb.CancelTaskRequest{Name: "invalid/name"},
-			wantErr: codes.InvalidArgument,
+			req:        &a2apb.CancelTaskRequest{Id: string(taskID)},
+			want:       &a2apb.Task{Id: string(taskID), ContextId: "test-context", Status: &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_CANCELED}},
+			wantParams: &a2a.CancelTaskRequest{ID: taskID},
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.CancelTaskRequest{Name: "tasks/handler-error"},
+			req:     &a2apb.CancelTaskRequest{Id: "handler-error"},
 			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedCancelTaskIDParams = nil
+			mockHandler.capturedCancelTaskRequest = nil
 			resp, err := client.CancelTask(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -528,8 +522,8 @@ func TestGrpcHandler_CancelTask(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("CancelTask() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedCancelTaskIDParams, tt.wantParams) {
-					t.Errorf("OnCancelTask() params got = %v, want %v", mockHandler.capturedCancelTaskIDParams, tt.wantParams)
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedCancelTaskRequest, tt.wantParams) {
+					t.Errorf("OnCancelTask() params got = %v, want %v", mockHandler.capturedCancelTaskRequest, tt.wantParams)
 				}
 			}
 		})
@@ -545,43 +539,43 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		name       string
 		req        *a2apb.SendMessageRequest
 		want       *a2apb.SendMessageResponse
-		wantParams *a2a.MessageSendParams
+		wantParams *a2a.SendMessageRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "message sent successfully without config",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{
+				Message: &a2apb.Message{
 					MessageId: "req-msg-123",
 					TaskId:    "test-task-123",
 					Role:      a2apb.Role_ROLE_USER,
 					Parts: []*a2apb.Part{
 						{
-							Part: &a2apb.Part_Text{Text: "Hello Agent"},
+							Content: &a2apb.Part_Text{Text: "Hello Agent"},
 						},
 					},
 				},
 			},
 			want: &a2apb.SendMessageResponse{
-				Payload: &a2apb.SendMessageResponse_Msg{
-					Msg: &a2apb.Message{
+				Payload: &a2apb.SendMessageResponse_Message{
+					Message: &a2apb.Message{
 						MessageId: "req-msg-123-response",
 						TaskId:    "test-task-123",
 						Role:      a2apb.Role_ROLE_AGENT,
 						Parts: []*a2apb.Part{
 							{
-								Part: &a2apb.Part_Text{Text: "Hello Agent"},
+								Content: &a2apb.Part_Text{Text: "Hello Agent"},
 							},
 						},
 					},
 				},
 			},
-			wantParams: &a2a.MessageSendParams{
+			wantParams: &a2a.SendMessageRequest{
 				Message: &a2a.Message{
 					ID:     "req-msg-123",
 					TaskID: "test-task-123",
 					Role:   a2a.MessageRoleUser,
-					Parts:  []a2a.Part{a2a.TextPart{Text: "Hello Agent"}},
+					Parts:  a2a.ContentParts{a2a.NewTextPart("Hello Agent")},
 				},
 			},
 		},
@@ -593,8 +587,8 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		{
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{
-					Parts: []*a2apb.Part{{Part: nil}},
+				Message: &a2apb.Message{
+					Parts: []*a2apb.Part{{Content: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
@@ -602,7 +596,15 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 		{
 			name: "handler error",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{MessageId: "handler-error"},
+				Message: &a2apb.Message{
+					MessageId: "handler-error",
+					Role:      a2apb.Role_ROLE_USER,
+					Parts: []*a2apb.Part{
+						{
+							Content: &a2apb.Part_Text{Text: "Hello Agent"},
+						},
+					},
+				},
 			},
 			wantErr: codes.Internal,
 		},
@@ -610,7 +612,7 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedSendMessageParams = nil
+			mockHandler.capturedSendMessageRequest = nil
 			resp, err := client.SendMessage(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -630,8 +632,8 @@ func TestGrpcHandler_SendMessage(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("SendMessage() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSendMessageParams, tt.wantParams) {
-					t.Errorf("OnSendMessage() params got = %+v, want %+v", mockHandler.capturedSendMessageParams, tt.wantParams)
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSendMessageRequest, tt.wantParams) {
+					t.Errorf("OnSendMessage() params got = %+v, want %+v", mockHandler.capturedSendMessageRequest, tt.wantParams)
 				}
 			}
 		})
@@ -647,20 +649,20 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 	msgID := "stream-req-1"
 	contextID := "stream-context-abc"
 	parts := []*a2apb.Part{
-		{Part: &a2apb.Part_Text{Text: "streaming hello"}},
+		{Content: &a2apb.Part_Text{Text: "streaming hello"}},
 	}
 
 	tests := []struct {
 		name       string
 		req        *a2apb.SendMessageRequest
 		want       []*a2apb.StreamResponse
-		wantParams *a2a.MessageSendParams
+		wantParams *a2a.SendMessageRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{
+				Message: &a2apb.Message{
 					MessageId: msgID,
 					TaskId:    string(taskID),
 					ContextId: contextID,
@@ -688,8 +690,8 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					},
 				},
 				{
-					Payload: &a2apb.StreamResponse_Msg{
-						Msg: &a2apb.Message{
+					Payload: &a2apb.StreamResponse_Message{
+						Message: &a2apb.Message{
 							MessageId: fmt.Sprintf("%s-response", msgID),
 							TaskId:    string(taskID),
 							Role:      a2apb.Role_ROLE_AGENT,
@@ -698,13 +700,13 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 					},
 				},
 			},
-			wantParams: &a2a.MessageSendParams{
+			wantParams: &a2a.SendMessageRequest{
 				Message: &a2a.Message{
 					ID:        msgID,
 					TaskID:    taskID,
 					ContextID: contextID,
 					Role:      a2a.MessageRoleUser,
-					Parts:     []a2a.Part{a2a.TextPart{Text: "streaming hello"}},
+					Parts:     a2a.ContentParts{a2a.NewTextPart("streaming hello")},
 				},
 			},
 		},
@@ -716,8 +718,8 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 		{
 			name: "invalid request",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{
-					Parts: []*a2apb.Part{{Part: nil}},
+				Message: &a2apb.Message{
+					Parts: []*a2apb.Part{{Content: nil}},
 				},
 			},
 			wantErr: codes.InvalidArgument,
@@ -725,7 +727,11 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 		{
 			name: "handler error",
 			req: &a2apb.SendMessageRequest{
-				Request: &a2apb.Message{MessageId: "handler-error"},
+				Message: &a2apb.Message{
+					MessageId: "handler-error",
+					Role:      a2apb.Role_ROLE_USER,
+					Parts:     parts,
+				},
 			},
 			wantErr: codes.Internal,
 		},
@@ -733,7 +739,7 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedSendMessageStreamParams = nil
+			mockHandler.capturedSendMessageRequest = nil
 			stream, err := client.SendStreamingMessage(ctx, tt.req)
 			if err != nil {
 				t.Fatalf("SendStreamingMessage() got unexpected error on client setup: %v", err)
@@ -770,8 +776,8 @@ func TestGrpcHandler_SendStreamingMessage(t *testing.T) {
 				t.Fatalf("SendStreamingMessage() received %d events, want %d", len(received), len(tt.want))
 			}
 
-			if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSendMessageStreamParams, tt.wantParams) {
-				t.Errorf("OnSendMessageStream() params got = %+v, want %+v", mockHandler.capturedSendMessageStreamParams, tt.wantParams)
+			if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSendMessageStreamRequest, tt.wantParams) {
+				t.Errorf("SendStreamingMessage() params got = %+v, want %+v", mockHandler.capturedSendMessageStreamRequest, tt.wantParams)
 			}
 
 			for i, wantResp := range tt.want {
@@ -796,14 +802,14 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 	taskID := a2a.TaskID("resub-task-456")
 	tests := []struct {
 		name       string
-		req        *a2apb.TaskSubscriptionRequest
+		req        *a2apb.SubscribeToTaskRequest
 		want       []*a2apb.StreamResponse
-		wantParams *a2a.TaskIDParams
+		wantParams *a2a.SubscribeToTaskRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
-			req:  &a2apb.TaskSubscriptionRequest{Name: fmt.Sprintf("tasks/%s", taskID)},
+			req:  &a2apb.SubscribeToTaskRequest{Id: string(taskID)},
 			want: []*a2apb.StreamResponse{
 				{
 					Payload: &a2apb.StreamResponse_Task{
@@ -819,32 +825,26 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 						StatusUpdate: &a2apb.TaskStatusUpdateEvent{
 							TaskId:    string(taskID),
 							ContextId: "resubscribe-context",
-							Final:     true,
 							Status:    &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_COMPLETED},
 						},
 					},
 				},
 			},
-			wantParams: &a2a.TaskIDParams{ID: taskID},
-		},
-		{
-			name:    "invalid name",
-			req:     &a2apb.TaskSubscriptionRequest{Name: "invalid/name"},
-			wantErr: codes.InvalidArgument,
+			wantParams: &a2a.SubscribeToTaskRequest{ID: taskID},
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.TaskSubscriptionRequest{Name: "tasks/handler-error"},
+			req:     &a2apb.SubscribeToTaskRequest{Id: "handler-error"},
 			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedResubscribeToTaskIDParams = nil
-			stream, err := client.TaskSubscription(ctx, tt.req)
+			mockHandler.capturedSubscribeToTaskRequest = nil
+			stream, err := client.SubscribeToTask(ctx, tt.req)
 			if err != nil {
-				t.Fatalf("TaskSubscription() got unexpected error on client setup: %v", err)
+				t.Fatalf("SubscribeToTask() got unexpected error on client setup: %v", err)
 			}
 
 			var received []*a2apb.StreamResponse
@@ -878,8 +878,8 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 				t.Fatalf("TaskSubscription() received %d events, want %d", len(received), len(tt.want))
 			}
 
-			if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedResubscribeToTaskIDParams, tt.wantParams) {
-				t.Errorf("OnResubscribeToTask() params got = %v, want %v", mockHandler.capturedResubscribeToTaskIDParams, tt.wantParams)
+			if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSubscribeToTaskRequest, tt.wantParams) {
+				t.Errorf("OnResubscribeToTask() params got = %v, want %v", mockHandler.capturedSubscribeToTaskRequest, tt.wantParams)
 			}
 
 			for i, wantResp := range tt.want {
@@ -909,41 +909,36 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
-		name       string
-		req        *a2apb.CreateTaskPushNotificationConfigRequest
-		want       *a2apb.TaskPushNotificationConfig
-		wantParams *a2a.TaskPushConfig
-		wantErr    codes.Code
+		name        string
+		req         *a2apb.CreateTaskPushNotificationConfigRequest
+		want        *a2apb.TaskPushNotificationConfig
+		wantRequest *a2a.CreateTaskPushConfigRequest
+		wantErr     codes.Code
 	}{
 		{
 			name: "success",
 			req: &a2apb.CreateTaskPushNotificationConfigRequest{
-				Parent: fmt.Sprintf("tasks/%s", taskID),
-				Config: &a2apb.TaskPushNotificationConfig{
-					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
+				TaskId: string(taskID),
+				Config: &a2apb.PushNotificationConfig{
+					Id:  "test-config",
+					Url: "https://example.com",
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/test-config", taskID),
-				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
+				Id:                     "test-config",
+				TaskId:                 string(taskID),
+				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config", Url: "https://example.com"},
 			},
-			wantParams: &a2a.TaskPushConfig{
+			wantRequest: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "test-config"},
+				Config: a2a.PushConfig{ID: "test-config", URL: "https://example.com"},
 			},
-		},
-		{
-			name:    "invalid request",
-			req:     &a2apb.CreateTaskPushNotificationConfigRequest{Parent: "invalid/parent"},
-			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
 			req: &a2apb.CreateTaskPushNotificationConfigRequest{
-				Parent: "tasks/handler-error",
-				Config: &a2apb.TaskPushNotificationConfig{
-					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
-				},
+				TaskId: "handler-error",
+				Config: &a2apb.PushNotificationConfig{Id: "test-config", Url: "https://example.com"},
 			},
 			wantErr: codes.Internal,
 		},
@@ -951,7 +946,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedSetTaskPushConfig = nil
+			mockHandler.capturedCreateTaskPushConfigRequest = nil
 			resp, err := client.CreateTaskPushNotificationConfig(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -971,8 +966,8 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("CreateTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedSetTaskPushConfig, tt.wantParams) {
-					t.Errorf("OnSetTaskPushConfig() params got = %v, want %v", mockHandler.capturedSetTaskPushConfig, tt.wantParams)
+				if tt.wantRequest != nil && !reflect.DeepEqual(mockHandler.capturedCreateTaskPushConfigRequest, tt.wantRequest) {
+					t.Errorf("OnCreateTaskPushNotificationConfig() request got = %v, want %v", mockHandler.capturedCreateTaskPushConfigRequest, tt.wantRequest)
 				}
 			}
 		})
@@ -999,38 +994,34 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 		name       string
 		req        *a2apb.GetTaskPushNotificationConfigRequest
 		want       *a2apb.TaskPushNotificationConfig
-		wantParams *a2a.GetTaskPushConfigParams
+		wantParams *a2a.GetTaskPushConfigRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
 			req: &a2apb.GetTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
+				TaskId: string(taskID),
+				Id:     configID,
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
+				TaskId:                 string(taskID),
 				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: configID},
 			},
-			wantParams: &a2a.GetTaskPushConfigParams{
-				TaskID:   taskID,
-				ConfigID: configID,
+			wantParams: &a2a.GetTaskPushConfigRequest{
+				TaskID: taskID,
+				ID:     configID,
 			},
-		},
-		{
-			name:    "invalid request",
-			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/test-task/invalid/test-config"},
-			wantErr: codes.InvalidArgument,
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.GetTaskPushNotificationConfigRequest{Name: "tasks/handler-error/pushNotificationConfigs/test-config"},
+			req:     &a2apb.GetTaskPushNotificationConfigRequest{TaskId: "handler-error", Id: configID},
 			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedGetTaskPushConfigParams = nil
+			mockHandler.capturedGetTaskPushConfigRequest = nil
 			resp, err := client.GetTaskPushNotificationConfig(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -1050,8 +1041,8 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("GetTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedGetTaskPushConfigParams, tt.wantParams) {
-					t.Errorf("OnGetTaskPushConfig() params got = %v, want %v", mockHandler.capturedGetTaskPushConfigParams, tt.wantParams)
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedGetTaskPushConfigRequest, tt.wantParams) {
+					t.Errorf("OnGetTaskPushConfig() request got = %v, want %v", mockHandler.capturedGetTaskPushConfigRequest, tt.wantParams)
 				}
 			}
 		})
@@ -1079,41 +1070,36 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 		name       string
 		req        *a2apb.ListTaskPushNotificationConfigRequest
 		want       *a2apb.ListTaskPushNotificationConfigResponse
-		wantParams *a2a.ListTaskPushConfigParams
+		wantParams *a2a.ListTaskPushConfigRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
-			req:  &a2apb.ListTaskPushNotificationConfigRequest{Parent: fmt.Sprintf("tasks/%s", taskID)},
+			req:  &a2apb.ListTaskPushNotificationConfigRequest{TaskId: string(taskID)},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{
 					{
-						Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s-1", taskID, configID),
+						TaskId:                 string(taskID),
 						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-1", configID)},
 					},
 					{
-						Name:                   fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s-2", taskID, configID),
+						TaskId:                 string(taskID),
 						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-2", configID)},
 					},
 				},
 			},
-			wantParams: &a2a.ListTaskPushConfigParams{TaskID: taskID},
-		},
-		{
-			name:    "invalid parent",
-			req:     &a2apb.ListTaskPushNotificationConfigRequest{Parent: "invalid/parent"},
-			wantErr: codes.InvalidArgument,
+			wantParams: &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.ListTaskPushNotificationConfigRequest{Parent: "tasks/handler-error"},
+			req:     &a2apb.ListTaskPushNotificationConfigRequest{TaskId: "handler-error"},
 			wantErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedListTaskPushConfigParams = nil
+			mockHandler.capturedListTaskPushConfigRequest = nil
 			resp, err := client.ListTaskPushNotificationConfig(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -1131,16 +1117,16 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 					t.Fatalf("ListTaskPushNotificationConfig() got unexpected error: %v", err)
 				}
 				sort.Slice(resp.Configs, func(i, j int) bool {
-					return resp.Configs[i].Name < resp.Configs[j].Name
+					return resp.Configs[i].PushNotificationConfig.Id < resp.Configs[j].PushNotificationConfig.Id
 				})
 				sort.Slice(tt.want.Configs, func(i, j int) bool {
-					return tt.want.Configs[i].Name < tt.want.Configs[j].Name
+					return tt.want.Configs[i].PushNotificationConfig.Id < tt.want.Configs[j].PushNotificationConfig.Id
 				})
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("ListTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedListTaskPushConfigParams, tt.wantParams) {
-					t.Errorf("OnListTaskPushConfig() params got = %v, want %v", mockHandler.capturedListTaskPushConfigParams, tt.wantParams)
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedListTaskPushConfigRequest, tt.wantParams) {
+					t.Errorf("OnListTaskPushConfig() request got = %v, want %v", mockHandler.capturedListTaskPushConfigRequest, tt.wantParams)
 				}
 			}
 		})
@@ -1167,31 +1153,26 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 		name       string
 		req        *a2apb.DeleteTaskPushNotificationConfigRequest
 		want       *emptypb.Empty
-		wantParams *a2a.DeleteTaskPushConfigParams
+		wantParams *a2a.DeleteTaskPushConfigRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/%s/pushNotificationConfigs/%s", taskID, configID),
+				TaskId: string(taskID),
+				Id:     configID,
 			},
 			want: &emptypb.Empty{},
-			wantParams: &a2a.DeleteTaskPushConfigParams{
-				TaskID:   taskID,
-				ConfigID: configID,
+			wantParams: &a2a.DeleteTaskPushConfigRequest{
+				TaskID: taskID,
+				ID:     configID,
 			},
-		},
-		{
-			name: "invalid request",
-			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/%s/invalid/%s", taskID, configID),
-			},
-			wantErr: codes.InvalidArgument,
 		},
 		{
 			name: "handler error",
 			req: &a2apb.DeleteTaskPushNotificationConfigRequest{
-				Name: fmt.Sprintf("tasks/handler-error/pushNotificationConfigs/%s", configID),
+				TaskId: "handler-error",
+				Id:     configID,
 			},
 			wantErr: codes.Internal,
 		},
@@ -1199,7 +1180,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockHandler.capturedDeleteTaskPushConfigParams = nil
+			mockHandler.capturedDeleteTaskPushConfigRequest = nil
 			resp, err := client.DeleteTaskPushNotificationConfig(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -1219,8 +1200,8 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("DeleteTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
-				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedDeleteTaskPushConfigParams, tt.wantParams) {
-					t.Errorf("OnDeleteTaskPushConfig() params got = %v, want %v", mockHandler.capturedDeleteTaskPushConfigParams, tt.wantParams)
+				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedDeleteTaskPushConfigRequest, tt.wantParams) {
+					t.Errorf("OnDeleteTaskPushConfig() request got = %v, want %v", mockHandler.capturedDeleteTaskPushConfigRequest, tt.wantParams)
 				}
 			}
 		})
@@ -1230,7 +1211,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{ProtocolVersion: "1.0", Name: "Test Agent"}
+	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
@@ -1280,24 +1261,24 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
 			client := startTestServer(t, handler)
-			resp, err := client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
+			resp, err := client.GetExtendedAgentCard(ctx, &a2apb.GetExtendedAgentCardRequest{})
 			if tt.wantErr != codes.OK {
 				if err == nil {
-					t.Fatal("GetAgentCard() expected error, got nil")
+					t.Fatal("GetExtendedAgentCard() expected error, got nil")
 				}
 				st, ok := status.FromError(err)
 				if !ok {
-					t.Fatalf("GetAgentCard() error is not a gRPC status error: %v", err)
+					t.Fatalf("GetExtendedAgentCard() error is not a gRPC status error: %v", err)
 				}
 				if st.Code() != tt.wantErr {
-					t.Errorf("GetAgentCard() got error code %v, want %v", st.Code(), tt.wantErr)
+					t.Errorf("GetExtendedAgentCard() got error code %v, want %v", st.Code(), tt.wantErr)
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("GetAgentCard() got unexpected error: %v", err)
+					t.Fatalf("GetExtendedAgentCard() got unexpected error: %v", err)
 				}
 				if !proto.Equal(resp, tt.want) {
-					t.Fatalf("GetAgentCard() got = %v, want %v", resp, tt.want)
+					t.Fatalf("GetExtendedAgentCard() got = %v, want %v", resp, tt.want)
 				}
 			}
 		})

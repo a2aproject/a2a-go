@@ -219,7 +219,7 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// TODO: handle panic and sse keep-alives similar to jsonrpc 
+	// TODO: handle panic and sse keep-alives similar to jsonrpc
 	go func() {
 		defer close(sseChan)
 		events := eventSequence

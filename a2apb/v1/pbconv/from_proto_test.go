@@ -47,22 +47,22 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		},
 		{
 			name: "file with bytes",
-			p: &a2apb.Part{Content: &a2apb.Part_Raw{Raw: []byte("content")}, MediaType: "text/plain", Filename: "Test File"},
+			p:    &a2apb.Part{Content: &a2apb.Part_Raw{Raw: []byte("content")}, MediaType: "text/plain", Filename: "Test File"},
 			want: a2a.Part{
-				Content: a2a.Raw([]byte("content")),
-				Filename: "Test File",
+				Content:   a2a.Raw([]byte("content")),
+				Filename:  "Test File",
 				MediaType: "text/plain",
 			},
 		},
 		{
 			name: "file with uri",
 			p: &a2apb.Part{Content: &a2apb.Part_Url{Url: "http://example.com/file"},
-				Filename: "example",
+				Filename:  "example",
 				MediaType: "text/plain",
 			},
 			want: a2a.Part{
-				Content: a2a.URL("http://example.com/file"),
-				Filename: "example",
+				Content:   a2a.URL("http://example.com/file"),
+				Filename:  "example",
 				MediaType: "text/plain",
 			},
 		},
@@ -74,7 +74,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		{
 			name: "text with meta",
 			p: &a2apb.Part{
-				Content: &a2apb.Part_Text{Text: "hello"},
+				Content:  &a2apb.Part_Text{Text: "hello"},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 			want: a2a.Part{Content: a2a.Text("hello"), Metadata: map[string]any{"hello": "world"}},
@@ -82,7 +82,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		{
 			name: "data with meta",
 			p: &a2apb.Part{
-				Content: &a2apb.Part_Data{Data: pData},
+				Content:  &a2apb.Part_Data{Data: pData},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
@@ -90,10 +90,10 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		{
 			name: "file with meta",
 			p: &a2apb.Part{
-				Content: &a2apb.Part_Raw{Raw: []byte("content")},
-				Filename: "Test File",
+				Content:   &a2apb.Part_Raw{Raw: []byte("content")},
+				Filename:  "Test File",
 				MediaType: "text/plain",
-				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+				Metadata:  mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 			want: a2a.Part{Content: a2a.Raw([]byte("content")), Filename: "Test File", MediaType: "text/plain", Metadata: map[string]any{"hello": "world"}},
 		},
@@ -172,7 +172,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 					Url:   "http://example.com/hook",
 					Token: "secret",
 					Authentication: &a2apb.AuthenticationInfo{
-						Scheme:     "Bearer",
+						Scheme:      "Bearer",
 						Credentials: "token",
 					},
 				},
@@ -186,7 +186,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 					URL:   "http://example.com/hook",
 					Token: "secret",
 					Auth: &a2a.PushAuthInfo{
-						Scheme:     "Bearer",
+						Scheme:      "Bearer",
 						Credentials: "token",
 					},
 				},
@@ -194,8 +194,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 		},
 		{
 			name: "config with unlimited history only",
-			in: &a2apb.SendMessageConfiguration{
-			},
+			in:   &a2apb.SendMessageConfiguration{},
 			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false), HistoryLength: nil},
 		},
 		{

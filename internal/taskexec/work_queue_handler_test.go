@@ -42,8 +42,8 @@ func TestClusterBackend(t *testing.T) {
 		{
 			name: "successful execution",
 			payload: &workqueue.Payload{
-				Type:          workqueue.PayloadTypeExecute,
-				TaskID:        tid,
+				Type:           workqueue.PayloadTypeExecute,
+				TaskID:         tid,
 				ExecuteRequest: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))},
 			},
 			executor: &testExecutor{
@@ -199,8 +199,8 @@ func TestClusterBackend_Heartbeater(t *testing.T) {
 
 	ctx := workqueue.WithHeartbeater(t.Context(), heartbeater)
 	gotResult, gotErr := wq.HandlerFn(ctx, &workqueue.Payload{
-		Type:          workqueue.PayloadTypeExecute,
-		TaskID:        executor.emitTask.ID,
+		Type:           workqueue.PayloadTypeExecute,
+		TaskID:         executor.emitTask.ID,
 		ExecuteRequest: &a2a.SendMessageRequest{},
 	})
 	if gotErr != nil {

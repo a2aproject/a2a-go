@@ -573,7 +573,7 @@ func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2
 	}
 	configs := make([]*a2apb.TaskPushNotificationConfig, len(req.Configs))
 	for i, config := range req.Configs {
-		configProto, err := ToProtoTaskPushConfig(&config)
+		configProto, err := ToProtoTaskPushConfig(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}

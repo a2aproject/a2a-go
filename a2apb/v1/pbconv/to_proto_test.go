@@ -515,14 +515,14 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 
 func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 	configs := &a2a.ListTaskPushConfigResponse{
-		Configs: []a2a.TaskPushConfig{
+		Configs: []*a2a.TaskPushConfig{
 			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
 			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 		},
 		NextPageToken: "next",
 	}
-	pConf1, _ := ToProtoTaskPushConfig(&configs.Configs[0])
-	pConf2, _ := ToProtoTaskPushConfig(&configs.Configs[1])
+	pConf1, _ := ToProtoTaskPushConfig(configs.Configs[0])
+	pConf2, _ := ToProtoTaskPushConfig(configs.Configs[1])
 
 	tests := []struct {
 		name    string
@@ -547,7 +547,7 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		},
 		{
 			name:    "conversion error",
-			configs: &a2a.ListTaskPushConfigResponse{Configs: []a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}}},
+			configs: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}}},
 			wantErr: true,
 		},
 	}
