@@ -1,3 +1,17 @@
+// Copyright 2026 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -74,14 +88,6 @@ func checkFile(fset *token.FileSet, filename string, file *ast.File) {
 			}
 			checkDoc(fset, filename, d.Name.Name, d.Doc, "func")
 		case *ast.GenDecl:
-			// We only care about exported specs in GenDecl
-			if d.Doc != nil {
-				// Sometimes a GenDecl has a doc for the block (e.g. const ( ... ))
-				// But individual specs might be exported.
-				// If the block has a doc, it might cover all.
-				// However, usually exported groups should be documented individually if they differ.
-				// Let's check individual specs if the block doc is missing, or if block doc is present examine specs.
-			}
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
 				case *ast.TypeSpec:
