@@ -30,10 +30,10 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 	return callCtx, ok
 }
 
-// WithCallContext can be called by a transport implementation to provide request metadata to [RequestHandler]
+// AttachServiceParams can be called by a transport implementation to provide request metadata to [RequestHandler]
 // or to have access to the list of activated extensions after the call ends.
 // If context already had a [CallContext] attached, the old context will be shadowed.
-func WithCallContext(ctx context.Context, params *ServiceParams) (context.Context, *CallContext) {
+func AttachServiceParams(ctx context.Context, params *ServiceParams) (context.Context, *CallContext) {
 	callCtx := &CallContext{User: &User{Authenticated: false}, svcParams: params}
 	return context.WithValue(ctx, callContextKeyType{}, callCtx), callCtx
 }

@@ -54,7 +54,7 @@ func TestLogAddSource(t *testing.T) {
 			var buf bytes.Buffer
 			handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{AddSource: true})
 
-			tc.call(WithLogger(t.Context(), slog.New(handler)))
+			tc.call(AttachLogger(t.Context(), slog.New(handler)))
 
 			var written map[string]any
 			if err := json.Unmarshal(buf.Bytes(), &written); err != nil {

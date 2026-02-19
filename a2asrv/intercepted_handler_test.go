@@ -549,7 +549,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			key := ExtensionsMetaKey
 			wantVal := "test"
 			meta := map[string][]string{key: {wantVal}}
-			ctx, callCtx := WithCallContext(ctx, NewServiceParams(meta))
+			ctx, callCtx := AttachServiceParams(ctx, NewServiceParams(meta))
 			_, _ = tc.call(ctx, handler)
 
 			if beforeCallCtx != afterCallCtx {

@@ -66,7 +66,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 		panic(err.Error())
 	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		ctx := withRequestContext(req)
+		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
@@ -84,7 +84,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 // The information contained in this card can be queried from any origin.
 func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		ctx := withRequestContext(req)
+		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
@@ -110,14 +110,14 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	})
 }
 
-func withRequestContext(req *http.Request) context.Context {
+func attachLogger(req *http.Request) context.Context {
 	logger := log.LoggerFrom(req.Context())
 	withAttrs := logger.With(
 		"method", req.Method,
 		"host", req.Host,
 		"remote_addr", req.RemoteAddr,
 	)
-	return log.WithLogger(req.Context(), withAttrs)
+	return log.AttachLogger(req.Context(), withAttrs)
 }
 
 func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {

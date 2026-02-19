@@ -47,7 +47,7 @@ type interceptBeforeResult[Req any, Resp any] struct {
 var _ RequestHandler = (*InterceptedHandler)(nil)
 
 func (h *InterceptedHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetTask")
+	ctx, callCtx := attachMethodCallContext(ctx, "GetTask")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 	}
@@ -55,7 +55,7 @@ func (h *InterceptedHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 }
 
 func (h *InterceptedHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "ListTasks")
+	ctx, callCtx := attachMethodCallContext(ctx, "ListTasks")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx)
 	}
@@ -63,7 +63,7 @@ func (h *InterceptedHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRe
 }
 
 func (h *InterceptedHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "CancelTask")
+	ctx, callCtx := attachMethodCallContext(ctx, "CancelTask")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 	}
@@ -71,7 +71,7 @@ func (h *InterceptedHandler) CancelTask(ctx context.Context, req *a2a.CancelTask
 }
 
 func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "SendMessage")
+	ctx, callCtx := attachMethodCallContext(ctx, "SendMessage")
 	if req != nil && req.Message != nil {
 		msg := req.Message
 		ctx = h.withLoggerContext(
@@ -88,7 +88,7 @@ func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessa
 
 func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx, callCtx := withMethodCallContext(ctx, "SendStreamingMessage")
+		ctx, callCtx := attachMethodCallContext(ctx, "SendStreamingMessage")
 		if req != nil && req.Message != nil {
 			msg := req.Message
 			ctx = h.withLoggerContext(
@@ -124,7 +124,7 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 
 func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx, callCtx := withMethodCallContext(ctx, "SubscribeToTask")
+		ctx, callCtx := attachMethodCallContext(ctx, "SubscribeToTask")
 		if req != nil {
 			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 		}
@@ -151,7 +151,7 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 }
 
 func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "GetTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
@@ -159,7 +159,7 @@ func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 }
 
 func (h *InterceptedHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "ListTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "ListTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
@@ -167,7 +167,7 @@ func (h *InterceptedHandler) ListTaskPushConfig(ctx context.Context, req *a2a.Li
 }
 
 func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "CreateTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "CreateTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
@@ -175,7 +175,7 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	ctx, callCtx := withMethodCallContext(ctx, "DeleteTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
@@ -193,7 +193,7 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetExtendedAgentCard")
+	ctx, callCtx := attachMethodCallContext(ctx, "GetExtendedAgentCard")
 	ctx = h.withLoggerContext(ctx)
 
 	var req *struct{}
@@ -284,15 +284,15 @@ func (h *InterceptedHandler) withLoggerContext(ctx context.Context, attrs ...any
 	}
 	requestID := uuid.NewString()
 	withAttrs := logger.WithGroup("a2a").With(attrs...).With(slog.String("request_id", requestID))
-	return log.WithLogger(ctx, withAttrs)
+	return log.AttachLogger(ctx, withAttrs)
 }
 
-// withMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
+// attachMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
 // was passed by a transport implementation or initializes a new CallContext with the provided method.
-func withMethodCallContext(ctx context.Context, method string) (context.Context, *CallContext) {
+func attachMethodCallContext(ctx context.Context, method string) (context.Context, *CallContext) {
 	callCtx, ok := CallContextFrom(ctx)
 	if !ok {
-		ctx, callCtx = WithCallContext(ctx, nil)
+		ctx, callCtx = AttachServiceParams(ctx, nil)
 	}
 	callCtx.method = method
 	return ctx, callCtx
