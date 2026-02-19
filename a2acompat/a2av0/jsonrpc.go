@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package a2av0 contains 0.3-compatible agent card type definition.
 package a2av0
 
-import "github.com/a2aproject/a2a-go/a2a"
-
-// Version is the protocol version which SDK implements.
-const Version ProtocolVersion = "0.3"
+const (
+	methodMessageSend          = "message/send"
+	methodMessageStream        = "message/stream"
+	methodTasksGet             = "tasks/get"
+	methodTasksCancel          = "tasks/cancel"
+	methodTasksResubscribe     = "tasks/resubscribe"
+	methodPushConfigGet        = "tasks/pushNotificationConfig/get"
+	methodPushConfigSet        = "tasks/pushNotificationConfig/set"
+	methodPushConfigList       = "tasks/pushNotificationConfig/list"
+	methodPushConfigDelete     = "tasks/pushNotificationConfig/delete"
+	methodGetExtendedAgentCard = "agent/getAuthenticatedExtendedCard"
+)
