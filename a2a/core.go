@@ -152,9 +152,12 @@ type MessageRole string
 
 // MessageRole constants.
 const (
+	// MessageRoleUnspecified is an unspecified message role.
 	MessageRoleUnspecified MessageRole = ""
-	MessageRoleAgent       MessageRole = "agent"
-	MessageRoleUser        MessageRole = "user"
+	// MessageRoleAgent is an agent message role.
+	MessageRoleAgent MessageRole = "agent"
+	// MessageRoleUser is a user message role.
+	MessageRoleUser MessageRole = "user"
 )
 
 // NewMessageID generates a new random message identifier.
