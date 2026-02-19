@@ -19,10 +19,18 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
+
+func parseProtocol(in string) (a2a.TransportProtocol, a2a.ProtocolVersion) {
+	if prefix, suffix, ok := strings.Cut(in, ":"); ok {
+		return a2a.TransportProtocol(prefix), a2a.ProtocolVersion(suffix)
+	}
+	return a2a.TransportProtocol(in), a2a.Version
+}
 
 func makeProtocols(in []string) []a2a.TransportProtocol {
 	out := make([]a2a.TransportProtocol, len(in))
@@ -34,8 +42,10 @@ func makeProtocols(in []string) []a2a.TransportProtocol {
 
 func makeEndpoints(protocols []string) []*a2a.AgentInterface {
 	out := make([]*a2a.AgentInterface, len(protocols))
-	for i, protocol := range protocols {
-		out[i] = a2a.NewAgentInterface("https://agent.com", a2a.TransportProtocol(protocol))
+	for i, p := range protocols {
+		protocol, version := parseProtocol(p)
+		out[i] = a2a.NewAgentInterface("https://agent.com", protocol)
+		out[i].ProtocolVersion = version
 	}
 	return out
 }
@@ -131,6 +141,26 @@ func TestFactory_TransportSelection(t *testing.T) {
 			wantErr:        true,
 		},
 		{
+			name:           "negotiates highest common protocol version",
+			serverSupports: []string{"jsonrpc:1.0", "jsonrpc:2.0"},
+			clientSupports: []string{"jsonrpc:1.0", "jsonrpc:2.0"},
+			clientPrefers:  []string{"jsonrpc"},
+			want:           "jsonrpc:2.0",
+		},
+		{
+			name:           "client preference only applies within same version",
+			serverSupports: []string{"jsonrpc:1.0", "grpc:0.3"},
+			clientSupports: []string{"jsonrpc:1.0", "grpc:0.3"},
+			clientPrefers:  []string{"grpc"},
+			want:           "jsonrpc:1.0",
+		},
+		{
+			name:           "newer protocol version is preferred",
+			serverSupports: []string{"grpc:0.3", "jsonrpc:1.0"},
+			clientSupports: []string{"grpc:0.3", "jsonrpc:1.0"},
+			want:           "jsonrpc:1.0",
+		},
+		{
 			name:           "client transports not configured",
 			serverSupports: []string{"grpc"},
 			wantErr:        true,
@@ -148,12 +178,13 @@ func TestFactory_TransportSelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			selectedProtocol := ""
 			options := make([]FactoryOption, len(tc.clientSupports))
-			for i, protocol := range tc.clientSupports {
-				options[i] = WithTransport(a2a.TransportProtocol(protocol), TransportFactoryFn(func(context.Context, string, *a2a.AgentCard) (Transport, error) {
-					if slices.Contains(tc.connectFails, protocol) {
+			for i, p := range tc.clientSupports {
+				protocol, version := parseProtocol(p)
+				options[i] = WithCompatTransport(version, protocol, TransportFactoryFn(func(context.Context, string, *a2a.AgentCard) (Transport, error) {
+					if slices.Contains(tc.connectFails, p) {
 						return nil, fmt.Errorf("connection failed")
 					}
-					selectedProtocol = protocol
+					selectedProtocol = p
 					return unimplementedTransport{}, nil
 				}))
 			}

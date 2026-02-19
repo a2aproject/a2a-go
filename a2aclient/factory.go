@@ -48,6 +48,8 @@ type transportCandidate struct {
 	// priority if determined by the index of endpoint.Transport in Config.PreferredTransports
 	// or is set to len(Config.PreferredTransports) if Transport is not present in the config
 	priority int
+	// semver is the version of the protocol with a 'v' prefix.
+	semver string
 }
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
@@ -165,13 +167,17 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 		key := transportKey{a2a.ProtocolVersion(opt.ProtocolVersion), a2a.TransportProtocol(opt.ProtocolBinding)}
 		if tf, ok := f.transports[key]; ok {
 			priority := len(f.config.PreferredTransports)
-			for i, clientPref := range f.config.PreferredTransports {
+			for j, clientPref := range f.config.PreferredTransports {
 				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
-					priority = i
+					priority = j
 					break
 				}
 			}
-			candidates = append(candidates, transportCandidate{tf, opt, priority})
+			ver := string(opt.ProtocolVersion)
+			if !strings.HasPrefix(ver, "v") {
+				ver = "v" + ver
+			}
+			candidates = append(candidates, transportCandidate{tf, opt, priority, ver})
 		}
 	}
 
@@ -183,14 +189,14 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 		return nil, fmt.Errorf("no compatible transports found: available transports - [%s]", strings.Join(protocols, ","))
 	}
 
-	if len(f.config.PreferredTransports) > 0 {
-		slices.SortFunc(candidates, func(c1, c2 transportCandidate) int {
-			if c1.priority == c2.priority {
-				return semver.Compare(string(c2.endpoint.ProtocolVersion), string(c1.endpoint.ProtocolVersion))
-			}
-			return c1.priority - c2.priority
-		})
-	}
+	slices.SortStableFunc(candidates, func(c1, c2 transportCandidate) int {
+		// Newest protocol version first.
+		if cmp := semver.Compare(c2.semver, c1.semver); cmp != 0 {
+			return cmp
+		}
+		// Client preference first.
+		return c1.priority - c2.priority
+	})
 
 	return candidates, nil
 }
