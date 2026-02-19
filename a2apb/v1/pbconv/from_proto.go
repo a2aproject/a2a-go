@@ -851,13 +851,13 @@ func fromProtoSkills(pSkills []*a2apb.AgentSkill) ([]a2a.AgentSkill, error) {
 		}
 
 		skills[i] = a2a.AgentSkill{
-			ID:          id,
-			Name:        name,
-			Description: description,
-			Tags:        tags,
-			Examples:    pSkill.GetExamples(),
-			InputModes:  pSkill.GetInputModes(),
-			OutputModes: pSkill.GetOutputModes(),
+			ID:                   id,
+			Name:                 name,
+			Description:          description,
+			Tags:                 tags,
+			Examples:             pSkill.GetExamples(),
+			InputModes:           pSkill.GetInputModes(),
+			OutputModes:          pSkill.GetOutputModes(),
 			SecurityRequirements: fromProtoSecurity(pSkill.GetSecurityRequirements()),
 		}
 	}

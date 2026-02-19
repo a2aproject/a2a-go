@@ -109,8 +109,8 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	}
 
 	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
-		Type:          workqueue.PayloadTypeExecute,
-		TaskID:        taskID,
+		Type:           workqueue.PayloadTypeExecute,
+		TaskID:         taskID,
 		ExecuteRequest: req,
 	})
 	if err != nil {
@@ -144,8 +144,8 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	}
 
 	if _, err := m.workQueue.Write(ctx, &workqueue.Payload{
-		Type:         workqueue.PayloadTypeCancel,
-		TaskID:       req.ID,
+		Type:          workqueue.PayloadTypeCancel,
+		TaskID:        req.ID,
 		CancelRequest: req,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)

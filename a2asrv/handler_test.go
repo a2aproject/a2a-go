@@ -1563,9 +1563,8 @@ func TestRequestHandler_SetTaskPushConfig(t *testing.T) {
 		{
 			name: "invalid config - empty URL",
 			params: &a2a.CreateTaskPushConfigRequest{
-				TaskID:   taskID,
-				ConfigID: "config-invalid",
-				Config:   a2a.PushConfig{ID: "config-invalid"},
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-invalid"},
 			},
 			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 		},
