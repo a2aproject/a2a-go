@@ -16,13 +16,17 @@ package taskupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/a2aproject/a2a-go/log"
 )
+
+const maxCancelationAttempts = 10
 
 type VersionedTask struct {
 	Task    *a2a.Task
@@ -31,6 +35,7 @@ type VersionedTask struct {
 
 // Saver is used for saving the [a2a.Task] after updating its state.
 type Saver interface {
+	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
 	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error)
 }
 
@@ -140,27 +145,55 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 	if err != nil {
 		return nil, err
 	}
+	version := mgr.lastSaved.Version
 
-	if task.Status.Message != nil {
-		task.History = append(task.History, task.Status.Message)
+	for range maxCancelationAttempts {
+		if task.Status.Message != nil {
+			task.History = append(task.History, task.Status.Message)
+		}
+		if event.Metadata != nil {
+			if task.Metadata == nil {
+				task.Metadata = make(map[string]any)
+			}
+			maps.Copy(task.Metadata, event.Metadata)
+		}
+		task.Status = event.Status
+
+		vt, err := mgr.saveVerstionedTask(ctx, task, event, version)
+		if err == nil {
+			return vt, nil
+		}
+
+		if !errors.Is(err, a2a.ErrConcurrentTaskModification) || event.Status.State != a2a.TaskStateCanceled {
+			return nil, err
+		}
+
+		latestTask, latestVersion, getErr := mgr.saver.Get(ctx, event.TaskID)
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get task: %w", getErr)
+		}
+
+		if latestTask.Status.State == a2a.TaskStateCanceled {
+			mgr.lastSaved = &VersionedTask{Task: latestTask, Version: latestVersion}
+			return mgr.lastSaved, nil
+		}
+
+		if latestTask.Status.State.Terminal() {
+			return nil, fmt.Errorf("task moved to %q before it could be cancelled", latestTask.Status.State)
+		}
+
+		task, version = latestTask, latestVersion
 	}
 
-	if event.Metadata != nil {
-		if task.Metadata == nil {
-			task.Metadata = make(map[string]any)
-		}
-		for k, v := range event.Metadata {
-			task.Metadata[k] = v
-		}
-	}
-
-	task.Status = event.Status
-
-	return mgr.saveTask(ctx, task, event)
+	return nil, fmt.Errorf("max task cancelation attempts reached")
 }
 
 func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*VersionedTask, error) {
-	version, err := mgr.saver.Save(ctx, task, event, mgr.lastSaved.Version)
+	return mgr.saveVerstionedTask(ctx, task, event, mgr.lastSaved.Version)
+}
+
+func (mgr *Manager) saveVerstionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (*VersionedTask, error) {
+	version, err := mgr.saver.Save(ctx, task, event, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}

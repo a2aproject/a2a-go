@@ -18,10 +18,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/internal/taskstore"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -30,10 +32,6 @@ func newTestTask() *VersionedTask {
 		Task:    &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()},
 		Version: a2a.TaskVersionMissing,
 	}
-}
-
-func newStatusUpdate(task *a2a.Task) *a2a.TaskStatusUpdateEvent {
-	return &a2a.TaskStatusUpdateEvent{TaskID: task.ID, ContextID: task.ContextID}
 }
 
 func getText(m *a2a.Message) string {
@@ -45,23 +43,34 @@ type testSaver struct {
 	version    a2a.TaskVersion
 	versionSet bool
 	fail       error
+	failOnce   error
 }
 
 var _ Saver = (*testSaver)(nil)
 
+func (s *testSaver) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
+	return s.saved, s.version, nil
+}
+
 func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
+	if s.failOnce != nil {
+		err := s.failOnce
+		s.failOnce = nil
+		return a2a.TaskVersionMissing, err
+	}
 	if s.fail != nil {
 		return a2a.TaskVersionMissing, s.fail
 	}
 	if s.versionSet {
 		if prev != a2a.TaskVersionMissing && prev != s.version {
-			return a2a.TaskVersionMissing, fmt.Errorf("")
+			return a2a.TaskVersionMissing, fmt.Errorf("version mismatch: prev=%v, current=%v", prev, s.version)
 		}
 	}
 	s.version = s.version + 1
 	s.saved = task
 	return s.version, nil
 }
+
 func makeTextParts(texts ...string) a2a.ContentParts {
 	result := make(a2a.ContentParts, len(texts))
 	for i, text := range texts {
@@ -115,8 +124,7 @@ func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 
 	states := []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateCompleted}
 	for _, state := range states {
-		event := newStatusUpdate(m.lastSaved.Task)
-		event.Status.State = state
+		event := a2a.NewStatusUpdateEvent(m.lastSaved.Task, state, nil)
 
 		versioned, err := m.Process(t.Context(), event)
 		if err != nil {
@@ -135,9 +143,7 @@ func TestManager_StatusUpdate_CurrentStatusBecomesHistory(t *testing.T) {
 	var lastResult *VersionedTask
 	messages := []string{"hello", "world", "foo", "bar"}
 	for i, msg := range messages {
-		event := newStatusUpdate(m.lastSaved.Task)
-		textPart := a2a.TextPart{Text: msg}
-		event.Status.Message = a2a.NewMessage(a2a.MessageRoleAgent, textPart)
+		event := a2a.NewStatusUpdateEvent(m.lastSaved.Task, a2a.TaskStateWorking, a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: msg}))
 
 		versioned, err := m.Process(t.Context(), event)
 		if err != nil {
@@ -172,7 +178,7 @@ func TestManager_StatusUpdate_MetadataUpdated(t *testing.T) {
 
 	var lastResult *a2a.Task
 	for i, metadata := range updates {
-		event := newStatusUpdate(m.lastSaved.Task)
+		event := a2a.NewStatusUpdateEvent(m.lastSaved.Task, a2a.TaskStateWorking, nil)
 		event.Metadata = metadata
 
 		result, err := m.Process(t.Context(), event)
@@ -500,6 +506,128 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 			}
 			if versioned.Task.Status.State != a2a.TaskStateFailed {
 				t.Errorf("task.Status.State = %q, want %q", versioned.Task.Status.State, a2a.TaskStateFailed)
+			}
+		})
+	}
+}
+
+func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing.T) {
+	testCases := []struct {
+		name           string
+		initialState   VersionedTask
+		updateMetadata map[string]any
+		firstUpdateErr error
+		getResult      *a2a.Task
+		wantResult     *VersionedTask
+		wantErrContain string
+	}{
+		{
+			name: "concurrent update and task is non-terminal - retry succeeds",
+			initialState: VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+				Version: 1,
+			},
+			updateMetadata: map[string]any{"hello": "world"},
+			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			getResult: &a2a.Task{
+				Status:   a2a.TaskStatus{State: a2a.TaskStateWorking},
+				Metadata: map[string]any{"foo": "bar"},
+			},
+			wantResult: &VersionedTask{
+				Task: &a2a.Task{
+					Status:   a2a.TaskStatus{State: a2a.TaskStateCanceled},
+					Metadata: map[string]any{"foo": "bar", "hello": "world"},
+				},
+				Version: 3,
+			},
+		},
+		{
+			name: "not concurrent update error - cancel fails",
+			initialState: VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+				Version: 1,
+			},
+			firstUpdateErr: errors.New("db error"),
+			getResult: &a2a.Task{
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking},
+			},
+			wantErrContain: "db error",
+		},
+		{
+			name: "concurrent update and task is canceled - task returned as result",
+			initialState: VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+				Version: 1,
+			},
+			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			getResult: &a2a.Task{
+				Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},
+			},
+			wantResult: &VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+				Version: 2,
+			},
+		},
+		{
+			name: "concurrent update and task in terminal state - fail",
+			initialState: VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+				Version: 1,
+			},
+			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			getResult: &a2a.Task{
+				Status: a2a.TaskStatus{State: a2a.TaskStateCompleted},
+			},
+			wantErrContain: fmt.Sprintf("task moved to %q before it could be cancelled", a2a.TaskStateCompleted),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			saver := &testSaver{}
+			base := newTestTask()
+
+			task := &VersionedTask{Task: base.Task, Version: tc.initialState.Version}
+			task.Task.Status = tc.initialState.Task.Status
+
+			saver.saved = task.Task
+			saver.version = task.Version
+			saver.versionSet = true
+			saver.failOnce = tc.firstUpdateErr
+
+			m := NewManager(saver, task)
+
+			if tc.getResult != nil {
+				updated, _ := utils.DeepCopy(task.Task)
+				updated.Status = tc.getResult.Status
+				saver.saved = updated
+				saver.version = 2
+			}
+
+			event := a2a.NewStatusUpdateEvent(m.lastSaved.Task, a2a.TaskStateCanceled, nil)
+			event.Metadata = tc.updateMetadata
+
+			versioned, err := m.Process(t.Context(), event)
+			if tc.wantErrContain != "" {
+				if err == nil {
+					t.Fatalf("m.Process() expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrContain) {
+					t.Fatalf("got error %q, want contain %q", err.Error(), tc.wantErrContain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("m.Process() unexpected error: %v", err)
+			}
+
+			if tc.wantResult != nil {
+				if versioned.Version != tc.wantResult.Version {
+					t.Errorf("got version %d, want %d", versioned.Version, tc.wantResult.Version)
+				}
+				if versioned.Task.Status.State != tc.wantResult.Task.Status.State {
+					t.Errorf("got state %q, want %q", versioned.Task.Status.State, tc.wantResult.Task.Status.State)
+				}
 			}
 		})
 	}

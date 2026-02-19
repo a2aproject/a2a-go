@@ -450,7 +450,7 @@ func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 	_ = mustSaveVersioned(t, store, task, v1)
 
 	task.ContextID = "id3"
-	if _, err := store.Save(t.Context(), task, task, v1); err == nil {
+	if _, err := store.Save(t.Context(), task, task, v1); !errors.Is(err, a2a.ErrConcurrentTaskModification) {
 		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }

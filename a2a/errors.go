@@ -65,6 +65,9 @@ var (
 
 	// ErrUnauthorized indicates that the caller does not have permission to execute the specified operation.
 	ErrUnauthorized = errors.New("permission denied")
+
+	// ErrConcurrentTaskModification indicates that optimistic concurrency control failed during task update attempt.
+	ErrConcurrentTaskModification = errors.New("concurrent task modification")
 )
 
 // Error provides control over the message and details returned to clients.
