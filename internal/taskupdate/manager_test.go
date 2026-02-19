@@ -512,10 +512,12 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 }
 
 func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing.T) {
+	tid, ctxID := a2a.NewTaskID(), a2a.NewContextID()
+	taskInfo := a2a.TaskInfo{TaskID: tid, ContextID: ctxID}
 	testCases := []struct {
 		name           string
 		initialState   VersionedTask
-		updateMetadata map[string]any
+		statusUpdate   *a2a.TaskStatusUpdateEvent
 		firstUpdateErr error
 		getResult      *a2a.Task
 		wantResult     *VersionedTask
@@ -527,7 +529,11 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
 			},
-			updateMetadata: map[string]any{"hello": "world"},
+			statusUpdate: &a2a.TaskStatusUpdateEvent{
+				TaskID: tid, ContextID: ctxID,
+				Status:   a2a.TaskStatus{State: a2a.TaskStateCanceled},
+				Metadata: map[string]any{"hello": "world"},
+			},
 			firstUpdateErr: a2a.ErrConcurrentTaskModification,
 			getResult: &a2a.Task{
 				Status:   a2a.TaskStatus{State: a2a.TaskStateWorking},
@@ -542,7 +548,8 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 			},
 		},
 		{
-			name: "not concurrent update error - cancel fails",
+			name:         "not concurrent update error - cancel fails",
+			statusUpdate: a2a.NewStatusUpdateEvent(taskInfo, a2a.TaskStateCanceled, nil),
 			initialState: VersionedTask{
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
@@ -554,7 +561,18 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 			wantErrContain: "db error",
 		},
 		{
-			name: "concurrent update and task is canceled - task returned as result",
+			name:         "not cancelation - update fails",
+			statusUpdate: a2a.NewStatusUpdateEvent(taskInfo, a2a.TaskStateWorking, nil),
+			initialState: VersionedTask{
+				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
+				Version: 1,
+			},
+			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			wantErrContain: a2a.ErrConcurrentTaskModification.Error(),
+		},
+		{
+			name:         "concurrent update and task is canceled - task returned as result",
+			statusUpdate: a2a.NewStatusUpdateEvent(taskInfo, a2a.TaskStateCanceled, nil),
 			initialState: VersionedTask{
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
@@ -569,7 +587,8 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 			},
 		},
 		{
-			name: "concurrent update and task in terminal state - fail",
+			name:         "concurrent update and task in terminal state - fail",
+			statusUpdate: a2a.NewStatusUpdateEvent(taskInfo, a2a.TaskStateCanceled, nil),
 			initialState: VersionedTask{
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
@@ -585,9 +604,8 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			saver := &testSaver{}
-			base := newTestTask()
 
-			task := &VersionedTask{Task: base.Task, Version: tc.initialState.Version}
+			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version}
 			task.Task.Status = tc.initialState.Task.Status
 
 			saver.saved = task.Task
@@ -604,10 +622,7 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 				saver.version = 2
 			}
 
-			event := a2a.NewStatusUpdateEvent(m.lastSaved.Task, a2a.TaskStateCanceled, nil)
-			event.Metadata = tc.updateMetadata
-
-			versioned, err := m.Process(t.Context(), event)
+			versioned, err := m.Process(t.Context(), tc.statusUpdate)
 			if tc.wantErrContain != "" {
 				if err == nil {
 					t.Fatalf("m.Process() expected error, got nil")
