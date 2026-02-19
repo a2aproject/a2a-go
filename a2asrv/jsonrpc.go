@@ -30,23 +30,6 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// jsonrpcRequest represents a JSON-RPC 2.0 request.
-type jsonrpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	// ID can be a number, a string or nil.
-	ID any `json:"id"`
-}
-
-// jsonrpcResponse represents a JSON-RPC 2.0 response.
-type jsonrpcResponse struct {
-	JSONRPC string         `json:"jsonrpc"`
-	ID      any            `json:"id"`
-	Result  any            `json:"result,omitempty"`
-	Error   *jsonrpc.Error `json:"error,omitempty"`
-}
-
 type jsonrpcHandler struct {
 	handler           RequestHandler
 	keepAliveInterval time.Duration
@@ -97,13 +80,13 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
-	var payload jsonrpcRequest
+	var payload jsonrpc.ServerRequest
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
 		return
 	}
 
-	if !isValidID(payload.ID) {
+	if !jsonrpc.IsValidID(payload.ID) {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
@@ -120,19 +103,7 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func isValidID(id any) bool {
-	if id == nil {
-		return true
-	}
-	switch id.(type) {
-	case string, float64:
-		return true
-	default:
-		return false
-	}
-}
-
-func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpcRequest) {
+func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
 	defer func() {
 		if r := recover(); r != nil {
 			if h.panicHandler == nil {
@@ -183,14 +154,14 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	}
 
 	if result != nil {
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
+		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
 		if err := json.NewEncoder(rw).Encode(resp); err != nil {
 			log.Error(ctx, "failed to encode response", err)
 		}
 	}
 }
 
-func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpcRequest) {
+func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
 		h.writeJSONRPCError(ctx, rw, err, req.ID)
@@ -266,7 +237,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	}
 }
 
-func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan chan []byte, events iter.Seq2[a2a.Event, error]) {
+func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpc.ServerRequest, sseChan chan []byte, events iter.Seq2[a2a.Event, error]) {
 	handleError := func(err error) {
 		bytes, ok := marshalJSONRPCError(req, err)
 		if !ok {
@@ -286,7 +257,7 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpcRequest, sseChan c
 			return
 		}
 
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: a2a.StreamResponse{Event: event}}
+		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: a2a.StreamResponse{Event: event}}
 		bytes, err := json.Marshal(resp)
 		if err != nil {
 			handleError(err)
@@ -400,9 +371,9 @@ func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, er
 	return h.handler.GetExtendedAgentCard(ctx)
 }
 
-func marshalJSONRPCError(req *jsonrpcRequest, err error) ([]byte, bool) {
+func marshalJSONRPCError(req *jsonrpc.ServerRequest, err error) ([]byte, bool) {
 	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
-	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Error: jsonrpcErr}
+	resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Error: jsonrpcErr}
 	bytes, err := json.Marshal(resp)
 	if err != nil {
 		return nil, false
@@ -420,7 +391,7 @@ func handleUnmarshalError(err error) error {
 
 func (h *jsonrpcHandler) writeJSONRPCError(ctx context.Context, rw http.ResponseWriter, err error, reqID any) {
 	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
-	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr, ID: reqID}
+	resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr, ID: reqID}
 	if err := json.NewEncoder(rw).Encode(resp); err != nil {
 		log.Error(ctx, "failed to send error response", err)
 	}

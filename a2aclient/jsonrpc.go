@@ -31,22 +31,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// jsonrpcRequest represents a JSON-RPC 2.0 request.
-type jsonrpcRequest struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  any    `json:"params,omitempty"`
-	ID      string `json:"id"`
-}
-
-// jsonrpcResponse represents a JSON-RPC 2.0 response.
-type jsonrpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      string          `json:"id"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonrpc.Error  `json:"error,omitempty"`
-}
-
 // JSONRPCOption configures optional parameters for the JSONRPC transport.
 // Options are applied during NewJSONRPCTransport initialization.
 type JSONRPCOption func(*jsonrpcTransport)
@@ -94,7 +78,7 @@ type jsonrpcTransport struct {
 var _ Transport = (*jsonrpcTransport)(nil)
 
 func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params ServiceParams, payload any) (*http.Request, error) {
-	req := jsonrpcRequest{
+	req := jsonrpc.ClientRequest{
 		JSONRPC: jsonrpc.Version,
 		Method:  method,
 		Params:  payload,
@@ -143,7 +127,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
-	var resp jsonrpcResponse
+	var resp jsonrpc.ClientResponse
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -186,7 +170,7 @@ func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 				yield(nil, err)
 				return
 			}
-			var resp jsonrpcResponse
+			var resp jsonrpc.ClientResponse
 			if err := json.Unmarshal(data, &resp); err != nil {
 				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
 				return

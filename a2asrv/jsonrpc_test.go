@@ -165,85 +165,85 @@ func TestJSONRPC_Validations(t *testing.T) {
 		{
 			name:    "success",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}),
 			want:    want,
 		},
 		{
 			name:    "success with number ID",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: 123}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: 123}),
 			want:    want,
 		},
 		{
 			name:    "success with nil ID",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: nil}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: nil}),
 			want:    want,
 		},
 		{
 			name:    "success tasks/list",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 3}`), ID: "123"}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 3}`), ID: "123"}),
 			want:    listTasksWant,
 		},
 		{
 			name:    "tasks/list with invalid page size",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 125}`), ID: "123"}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksList, Params: json.RawMessage(`{"pageSize": 125}`), ID: "123"}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "invalid ID",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: false}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: false}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "http get",
 			method:  "GET",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "http delete",
 			method:  "DELETE",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "http put",
 			method:  "PUT",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "http patch",
 			method:  "PATCH",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "wrong version",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "99", Method: jsonrpc.MethodTasksGet, Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "99", Method: jsonrpc.MethodTasksGet, Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "invalid method",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: "calculate", Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: "calculate", Params: query}),
 			wantErr: a2a.ErrMethodNotFound,
 		},
 		{
 			name:    "no method in jsonrpcRequest",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Params: query}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Params: query}),
 			wantErr: a2a.ErrInvalidRequest,
 		},
 		{
 			name:    "invalid params error",
 			method:  "POST",
-			request: mustMarshal(t, jsonrpcRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: json.RawMessage("[]")}),
+			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: json.RawMessage("[]")}),
 			wantErr: a2a.ErrInvalidParams,
 		},
 	}
@@ -269,7 +269,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 			if resp.StatusCode != 200 {
 				t.Errorf("resp.StatusCode = %d, want 200", resp.StatusCode)
 			}
-			var payload jsonrpcResponse
+			var payload jsonrpc.ServerResponse
 			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 				t.Errorf("decoder.Decode() error = %v", err)
 			}
@@ -342,7 +342,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 			server := httptest.NewServer(NewJSONRPCHandler(reqHandler, opts...))
 			defer server.Close()
 
-			request := jsonrpcRequest{
+			request := jsonrpc.ServerRequest{
 				JSONRPC: "2.0",
 				Method:  jsonrpc.MethodMessageStream,
 				Params: mustMarshal(t, &a2a.SendMessageRequest{
