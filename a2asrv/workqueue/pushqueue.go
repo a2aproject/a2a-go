@@ -31,8 +31,8 @@ type pushQueue struct {
 	handlerFn         HandlerFn
 }
 
-// NewPushQueue creates a Queue implementation through which SDK submits work to the queue backend.
-// The returned handler function is expected to be invoked in a separate goroutine by the caller when
+// NewPushQueue creates a [Queue] implementation through which SDK submits work to the queue backend.
+// The returned [HandlerFn] is expected to be invoked in a separate goroutine by the caller when
 // work is assigned to the node.
 func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 	queue := &pushQueue{Writer: writer}
@@ -43,6 +43,7 @@ func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 	return queue, handler
 }
 
+// RegisterHandler implements [Queue].
 func (q *pushQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn HandlerFn) {
 	q.concurrencyConfig = cfg
 	q.handlerFn = handlerFn

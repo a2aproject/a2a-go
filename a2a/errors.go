@@ -60,7 +60,7 @@ var (
 	// Extended Card configured.
 	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
 
-	// ErrExtensionSupportRequied indicates that the Client requested use of an extension marked as
+	// ErrExtensionSupportRequired indicates that the Client requested use of an extension marked as
 	// required: true in the Agent Card but the client did not declare support for it in the request.
 	ErrExtensionSupportRequired = errors.New("extension support required")
 

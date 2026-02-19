@@ -72,23 +72,28 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 
 // A2A protocol methods
 
+// GetTask implements the 'GetTask' protocol method.
 func (c *Client) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	return doCall(ctx, c, "GetTask", req, c.transport.GetTask)
 }
 
+// ListTasks implements the 'ListTasks' protocol method.
 func (c *Client) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	return doCall(ctx, c, "ListTasks", req, c.transport.ListTasks)
 }
 
+// CancelTask implements the 'CancelTask' protocol method.
 func (c *Client) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	return doCall(ctx, c, "CancelTask", req, c.transport.CancelTask)
 }
 
+// SendMessage implements the 'SendMessage' protocol method (non-streaming).
 func (c *Client) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	req = c.withDefaultSendConfig(req, blocking(!c.config.Polling))
 	return doCall(ctx, c, "SendMessage", req, c.transport.SendMessage)
 }
 
+// SendStreamingMessage implements the 'SendStreamingMessage' protocol method (streaming).
 func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SendStreamingMessage"
@@ -136,6 +141,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 	}
 }
 
+// SubscribeToTask implements the `SubscribeToTask` protocol method.
 func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SubscribeToTask"
@@ -170,18 +176,22 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 	}
 }
 
+// GetTaskPushConfig implements the `GetTaskPushNotificationConfig` protocol method.
 func (c *Client) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "GetTaskPushConfig", req, c.transport.GetTaskPushConfig)
 }
 
+// ListTaskPushConfig implements the `ListTaskPushNotificationConfig` protocol method.
 func (c *Client) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "ListTaskPushConfig", req, c.transport.ListTaskPushConfig)
 }
 
+// CreateTaskPushConfig implements the `CreateTaskPushNotificationConfig` protocol method.
 func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "CreateTaskPushConfig", req, c.transport.CreateTaskPushConfig)
 }
 
+// DeleteTaskPushConfig implements the `DeleteTaskPushNotificationConfig` protocol method.
 func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	method := "DeleteTaskPushConfig"
 
@@ -199,12 +209,13 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPu
 	return errOverride
 }
 
+// GetExtendedAgentCard implements the `GetExtendedAgentCard` protocol method.
 func (c *Client) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
 	if card := c.card.Load(); card != nil && !card.Capabilities.ExtendedAgentCard {
 		return card, nil
 	}
 
-	method := "GetAgentCard"
+	method := "GetExtendedAgentCard"
 	var req *struct{}
 	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, c, method, req)
 	if res.earlyErr != nil {
@@ -227,6 +238,7 @@ func (c *Client) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, erro
 	return interceptedResponse, nil
 }
 
+// Destroy cleans up resources associated with the client.
 func (c *Client) Destroy() error {
 	return c.transport.Destroy()
 }

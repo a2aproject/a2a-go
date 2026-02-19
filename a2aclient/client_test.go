@@ -402,10 +402,10 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 	client.card.Store(want)
 	got, err := client.GetExtendedAgentCard(ctx)
 	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want nil", err)
 	}
 	if interceptor.lastReq == nil {
-		t.Fatal("lastReq = nil, want GertAgentCard")
+		t.Fatal("lastReq = nil, want GetExtendedAgentCard")
 	}
 	if diff := cmp.Diff(extendedCard, got); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)

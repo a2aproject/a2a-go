@@ -30,10 +30,10 @@ func CallContextFrom(ctx context.Context) (*CallContext, bool) {
 	return callCtx, ok
 }
 
-// AttachServiceParams can be called by a transport implementation to provide request metadata to [RequestHandler]
-// or to have access to the list of activated extensions after the call ends.
+// NewCallContext can be called by a transport implementations to provide request metadata to [RequestHandler]
+// or to have access to the list of activated extensions via the returned CallContext after the call ends.
 // If context already had a [CallContext] attached, the old context will be shadowed.
-func AttachServiceParams(ctx context.Context, params *ServiceParams) (context.Context, *CallContext) {
+func NewCallContext(ctx context.Context, params *ServiceParams) (context.Context, *CallContext) {
 	callCtx := &CallContext{User: &User{Authenticated: false}, svcParams: params}
 	return context.WithValue(ctx, callContextKeyType{}, callCtx), callCtx
 }
@@ -84,12 +84,13 @@ type Response struct {
 //   - After will be executed in the reverse order sequentially.
 type CallInterceptor interface {
 	// Before allows to observe, modify or reject a Request.
-	// A new context.Context can be returned to pass information to one of the extension points.
+	// A new context.Context can be returned to pass information down the call stack.
 	// If either the result (2nd return value) or the error (3rd return value) is non nil,
 	// the actual handler will not be called and the value will be returned to the client.
 	Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 
 	// After allows to observe, modify or reject a Response.
+	// Context passed to this method will be the same as returned from [CallInterceptor.Before].
 	After(ctx context.Context, callCtx *CallContext, resp *Response) error
 }
 
@@ -103,21 +104,23 @@ func NewTaskStoreAuthenticator() taskstore.Authenticator {
 	}
 }
 
-// WithCallInterceptors adds a CallInterceptor which will be applied to all requests and responses.
+// WithCallInterceptors adds a [CallInterceptor] which will be applied to all requests and responses.
 func WithCallInterceptors(interceptors ...CallInterceptor) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		ih.Interceptors = append(ih.Interceptors, interceptors...)
 	}
 }
 
-// PassthroughInterceptor can be used by [CallInterceptor] implementers who don't need all methods.
+// PassthroughCallInterceptor can be used by [CallInterceptor] implementers who don't need all methods.
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughCallInterceptor struct{}
 
+// Before implements [CallInterceptor.Before].
 func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 	return ctx, nil, nil
 }
 
+// After implements [CallInterceptor.After].
 func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
 	return nil
 }

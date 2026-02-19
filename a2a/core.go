@@ -92,6 +92,7 @@ type StreamResponse struct {
 	Event
 }
 
+// MarshalJSON implements json.Marshaler.
 func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	switch v := sr.Event.(type) {
@@ -109,6 +110,7 @@ func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -148,6 +150,7 @@ func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 // MessageRole represents a set of possible values that identify the message sender.
 type MessageRole string
 
+// MessageRole constants.
 const (
 	MessageRoleUnspecified MessageRole = ""
 	MessageRoleAgent       MessageRole = "agent"
@@ -213,14 +216,17 @@ func NewMessageForTask(role MessageRole, infoProvider TaskInfoProvider, parts ..
 	}
 }
 
+// Meta implements MetadataCarrier.
 func (m *Message) Meta() map[string]any {
 	return m.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (m *Message) SetMeta(k string, v any) {
 	setMeta(&m.Metadata, k, v)
 }
 
+// TaskInfo implements TaskInfoProvider.
 func (m *Message) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
 }
@@ -238,7 +244,7 @@ func NewContextID() string {
 	return newUUIDString()
 }
 
-// TastState defines a set of possible task states.
+// TaskState defines a set of possible task states.
 type TaskState string
 
 const (
@@ -329,14 +335,17 @@ type TaskStatus struct {
 	Timestamp *time.Time `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
 }
 
+// Meta implements MetadataCarrier.
 func (m *Task) Meta() map[string]any {
 	return m.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (m *Task) SetMeta(k string, v any) {
 	setMeta(&m.Metadata, k, v)
 }
 
+// TaskInfo implements TaskInfoProvider.
 func (m *Task) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.ID, ContextID: m.ContextID}
 }
@@ -370,10 +379,12 @@ type Artifact struct {
 	Parts ContentParts `json:"parts" yaml:"parts" mapstructure:"parts"`
 }
 
+// Meta implements MetadataCarrier.
 func (a *Artifact) Meta() map[string]any {
 	return a.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (a *Artifact) SetMeta(k string, v any) {
 	setMeta(&a.Metadata, k, v)
 }
@@ -403,14 +414,17 @@ type TaskArtifactUpdateEvent struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+// Meta implements MetadataCarrier.
 func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (a *TaskArtifactUpdateEvent) SetMeta(k string, v any) {
 	setMeta(&a.Metadata, k, v)
 }
 
+// TaskInfo implements TaskInfoProvider.
 func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
 }
@@ -475,14 +489,17 @@ func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *M
 	}
 }
 
+// Meta implements MetadataCarrier.
 func (a *TaskStatusUpdateEvent) Meta() map[string]any {
 	return a.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (a *TaskStatusUpdateEvent) SetMeta(k string, v any) {
 	setMeta(&a.Metadata, k, v)
 }
 
+// TaskInfo implements TaskInfoProvider.
 func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
 }
@@ -490,10 +507,12 @@ func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
 // ContentParts is an array of content parts that form the message body or an artifact.
 type ContentParts []*Part
 
+// MarshalJSON implements json.Marshaler.
 func (j ContentParts) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]*Part(j))
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (j *ContentParts) UnmarshalJSON(b []byte) error {
 	var parts []*Part
 	if err := json.Unmarshal(b, &parts); err != nil {
@@ -572,6 +591,8 @@ func (p *Part) URL() URL {
 	return ""
 }
 
+// PartContent is a sealed discriminated type union for supported part content types.
+// It exists to specify which types can be assigned to the [Part.Content] field.
 type PartContent interface {
 	isPartContent()
 }
@@ -600,6 +621,7 @@ type URL string
 // Data represents content of a Part carrying structured data.
 type Data map[string]any
 
+// MarshalJSON custom serializer that flattens Content into the Part object.
 func (p Part) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 
@@ -626,6 +648,7 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// UnmarshalJSON custom deserializer that hydrates Content from flattened fields.
 func (p *Part) UnmarshalJSON(b []byte) error {
 	var raw map[string]any
 	if err := json.Unmarshal(b, &raw); err != nil {
@@ -671,10 +694,12 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// Meta implements MetadataCarrier.
 func (p Part) Meta() map[string]any {
 	return p.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (p *Part) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
@@ -711,10 +736,12 @@ type SendMessageRequest struct {
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
 }
 
+// Meta implements MetadataCarrier.
 func (p *SendMessageRequest) Meta() map[string]any {
 	return p.Metadata
 }
 
+// SetMeta implements MetadataCarrier.
 func (p *SendMessageRequest) SetMeta(k string, v any) {
 	setMeta(&p.Metadata, k, v)
 }
@@ -741,6 +768,12 @@ type GetTaskRequest struct {
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
+}
+
+// GetExtendedAgentCardRequest defines the parameters for a request to get an extended agent card.
+type GetExtendedAgentCardRequest struct {
+	// Tenant is an optional ID of the agent owner.
+	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 }
 
 // ListTasksRequest defines the parameters for a request to list tasks.
@@ -803,9 +836,4 @@ type SubscribeToTaskRequest struct {
 
 	// ID is the ID of the task to subscribe to.
 	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
-}
-
-type GetExtendedAgentCardRequest struct {
-	// Tenant is an optional ID of the agent owner.
-	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 }

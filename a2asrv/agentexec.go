@@ -30,74 +30,91 @@ import (
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
-// The provided [ExecutorContext] should be used as a [a2a.TaskInfoProvider] argument for [a2a.Event]-s constructor functions.
-// For streaming responses [a2a.TaskArtifactUpdatEvent]-s should be used.
+// The provided [ExecutorContext] should be used as a [a2a.TaskInfoProvider] argument
+// for [a2a.Event]-s constructor functions, for example:
+//
+//	a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil)
+//	a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil)
+//	a2a.NewArtifactEvent(execCtx, parts...)
+//	a2a.NewArtifactUpdateEvent(execCtx, artifactID, parts...)
+//
+// For streaming responses [a2a.TaskArtifactUpdatEvent]-s should be emitted.
 // A2A server stops processing events after one of these events:
 //   - An [a2a.Message] with any payload.
-//   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] with a [a2a.TaskState] for which Terminal() method returns true or it is TaskStateInputRequired.
+//   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] with a [a2a.TaskState.Terminal] equal to true.
+//   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] in [a2a.TaskStateInputRequired] state.
+//
+// In general, the executor should not emit an error after the first event was emitted,
+// but an [a2a.TaskStatusUpdateEvent] with a failed state.
 //
 // The following code can be used as a streaming implementation template with generateOutputs and toParts missing:
 //
-//	func Execute(ctx context.Context, execCtx *RequestContext, queue eventqueue.Queue) error {
-//		if execCtx.StoredTask == nil {
-//			event := a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil)
-//			if err := queue.Write(ctx, event); err != nil {
-//				return fmt.Errorf("failed to write state submitted: %w", err)
-//			}
-//		}
-//
-//		// perform setup
-//
-//		event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil)
-//		if err := queue.Write(ctx, event); err != nil {
-//			return fmt.Errorf("failed to write state working: %w", err)
-//		}
-//
-//		var artifactID a2a.ArtifactID
-//		for output, err := range generateOutputs() {
-//			if err != nil {
-//				event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, toErrorMessage(err))
-//				if err := queue.Write(ctx, event); err != nil {
-//					return fmt.Errorf("failed to write state failed: %w", err)
+//	func Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+//		return func(yield func(a2a.Event, error) bool) {
+//			if execCtx.StoredTask == nil {
+//				if !yield(a2a.NewSubmittedTask(execCtx, a2a.TaskStateSubmitted, nil), nil) {
+//					return
 //				}
 //			}
 //
-//			parts := toParts(output)
-//			var event *a2a.TaskArtifactUpdateEvent
-//			if artifactID == "" {
-//				event = a2a.NewArtifactEvent(execCtx, parts...)
-//				artifactID = event.Artifact.ID
-//			} else {
-//				event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, parts...)
+//			/* performs the necessary setup */
+//
+//			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+//				return
 //			}
 //
-//			if err := queue.Write(ctx, event); err != nil {
-//				return fmt.Errorf("failed to write artifact update: %w", err)
+//			var artifactID a2a.ArtifactID
+//			for output, err := range generateOutputs() {
+//				if err != nil {
+//					event := a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, toErrorMessage(err))
+//					if !yield(event, nil) {
+//						return
+//					}
+//				}
+//
+//				parts := toParts(output)
+//				var event *a2a.TaskArtifactUpdateEvent
+//				if artifactID == "" {
+//					event = a2a.NewArtifactEvent(execCtx, parts...)
+//					artifactID = event.Artifact.ID
+//				} else {
+//					event = a2a.NewArtifactUpdateEvent(execCtx, artifactID, parts...)
+//				}
+//
+//				if !yield(event, nil) {
+//					return
+//				}
+//			}
+//
+//			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil) {
+//				return
 //			}
 //		}
-//
-//		event = a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil)
-//		if err := queue.Write(ctx, event); err != nil {
-//			return fmt.Errorf("failed to write state working: %w", err)
-//		}
-//
-//		return nil
 //	}
 type AgentExecutor interface {
-	// Execute invokes the agent passing information about the request which triggered execution,
-	// translates agent outputs to A2A events and writes them to the event queue.
+	// Execute invokes the agent passing information about the request which triggered the execution,
+	// translates agent outputs to A2A events and emits them for processing.
 	// Every invocation runs in a dedicated goroutine.
 	//
 	// Failures should generally be reported by writing events carrying the cancelation information
-	// and task state. An error should be returned in special cases like a failure to write an event.
+	// and task state. An error should be returned in special cases or before a task was created.
 	Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 
 	// Cancel is called when a client requests the agent to stop working on a task.
-	// The simplest implementation can write a cancelation event to the queue and let
-	// it be processed by the A2A server. If the events gets applied during an active execution the execution
-	// Context gets canceled.
+	// The simplest implementation can emit an [a2a.TaskStatusUpdateEvent] with [a2a.TaskStateCanceled].
 	//
-	// An an error should be returned if the cancelation request cannot be processed or a queue write failed.
+	// Optimistic concurrent control is used during task store updates to prevent concurrent writes
+	// and propagate cancelation signal in a server cluster when execution and cancelation is handled
+	// by different processes.
+	//
+	// TaskStatusUpdateEvent with a failed state is handled differently in terms
+	// of retries. If a concurrent task modification is detected server stack will re-fetch
+	// the latest state from the task store and retry update request.
+	//
+	// If the event gets applied during an active execution, the next execution update will
+	// fail on OCC and execution will be canceled.
+	//
+	// An error should be returned if the cancelation request cannot be processed.
 	Cancel(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
@@ -111,6 +128,7 @@ type factory struct {
 
 var _ taskexec.Factory = (*factory)(nil)
 
+// CreateExecutor creates a new task executor for the given task ID and request parameters.
 func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.SendMessageRequest) (taskexec.Executor, taskexec.Processor, error) {
 	execCtx, err := f.loadExecutionContext(ctx, tid, params)
 	if err != nil {
@@ -220,6 +238,7 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMess
 	return &executionContext{ctx: execCtx, task: nil}, nil
 }
 
+// CreateCanceler creates a new task canceler for the given cancel request.
 func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Canceler, taskexec.Processor, error) {
 	storedTask, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
@@ -256,6 +275,7 @@ type executor struct {
 
 var _ taskexec.Executor = (*executor)(nil)
 
+// Execute invokes the agent execution logic and writes events to the provided writer.
 func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 	var err error
 	for _, interceptor := range e.interceptors {
@@ -285,6 +305,7 @@ type canceler struct {
 
 var _ taskexec.Canceler = (*canceler)(nil)
 
+// Cancel invokes the agent cancellation logic and writes events to the provided writer.
 func (c *canceler) Cancel(ctx context.Context, q eventpipe.Writer) error {
 	if c.task.Status.State == a2a.TaskStateCanceled {
 		return q.Write(ctx, c.task)

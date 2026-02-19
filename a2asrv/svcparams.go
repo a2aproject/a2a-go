@@ -21,8 +21,8 @@ import (
 	"strings"
 )
 
-// ServiceParams holds the metadata associated with a request, like auth headers and signatures.
-// Custom transport implementations can call WithCallContext to make it accessible during request processing.
+// ServiceParams holds the metadata associated with a request.
+// Custom transport implementations can call [AttachCallContext] to make it accessible during request processing.
 type ServiceParams struct {
 	kv map[string][]string
 }

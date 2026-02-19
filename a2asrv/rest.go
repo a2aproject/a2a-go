@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+// NewRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
 func NewRESTHandler(handler RequestHandler) http.Handler {
 	mux := http.NewServeMux()
 

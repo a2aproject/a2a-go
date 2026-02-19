@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+// WellKnownAgentCardPath is the standard HTTP path for retrieving the agent card as defined in A2A spec.
 const WellKnownAgentCardPath = "/.well-known/agent-card.json"
 
 // AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
@@ -36,6 +37,7 @@ type AgentCardProducer interface {
 // AgentCardProducerFn is a function type which implements [AgentCardProducer].
 type AgentCardProducerFn func(ctx context.Context) (*a2a.AgentCard, error)
 
+// Card implements AgentCardProducer.
 func (fn AgentCardProducerFn) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	return fn(ctx)
 }

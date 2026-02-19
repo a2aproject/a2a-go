@@ -22,8 +22,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// A2AClient defines a transport-agnostic interface for making A2A requests.
-// Transport implementations are a translation layer between a2a core types and wire formats.
+// Transport defines a transport-agnostic interface for making A2A requests.
+// Implementations are a translation layer between a2a core types and wire formats.
 type Transport interface {
 	// GetTask calls the 'GetTask' protocol method.
 	GetTask(context.Context, ServiceParams, *a2a.GetTaskRequest) (*a2a.Task, error)
@@ -55,8 +55,7 @@ type Transport interface {
 	// DeleteTaskPushNotificationConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
 	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 
-	// GetExtendedAgentCard resolves the AgentCard.
-	// If extended card is supported calls the 'GetExtendedAgentCard' protocol method.
+	// GetExtendedAgentCard calls the 'GetExtendedAgentCard' protocol method.
 	GetExtendedAgentCard(context.Context, ServiceParams) (*a2a.AgentCard, error)
 
 	// Clean up resources associated with the transport (eg. close a gRPC channel).
@@ -71,6 +70,7 @@ type TransportFactory interface {
 // TransportFactoryFn implements TransportFactory.
 type TransportFactoryFn func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error)
 
+// Create implements TransportFactory.
 func (fn TransportFactoryFn) Create(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
 	return fn(ctx, url, card)
 }

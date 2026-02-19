@@ -43,7 +43,6 @@ func main() {
 				if strings.HasSuffix(filename, "_test.go") {
 					continue
 				}
-
 				checkFile(fset, filename, file)
 			}
 		}
@@ -54,6 +53,22 @@ func checkFile(fset *token.FileSet, filename string, file *ast.File) {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
+			if d.Recv != nil {
+				// Check if receiver is exported
+				var typeName string
+				types := d.Recv.List[0].Type
+				if star, ok := types.(*ast.StarExpr); ok {
+					if ident, ok := star.X.(*ast.Ident); ok {
+						typeName = ident.Name
+					}
+				} else if ident, ok := types.(*ast.Ident); ok {
+					typeName = ident.Name
+				}
+				if typeName != "" && !ast.IsExported(typeName) {
+					continue
+				}
+			}
+
 			if !d.Name.IsExported() {
 				continue
 			}

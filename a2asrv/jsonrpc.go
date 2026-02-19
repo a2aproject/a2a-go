@@ -73,7 +73,7 @@ func WithPanicHandler(handler func(r any) error) JSONRPCHandlerOption {
 	}
 }
 
-// NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC.
+// NewJSONRPCHandler creates an [http.Handler] which implements JSONRPC A2A protocol binding.
 func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) http.Handler {
 	h := &jsonrpcHandler{handler: handler}
 	for _, option := range options {
@@ -82,9 +82,10 @@ func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) 
 	return h
 }
 
+// ServeHTTP implements http.Handler.
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, _ = AttachServiceParams(ctx, NewServiceParams(req.Header))
+	ctx, _ = NewCallContext(ctx, NewServiceParams(req.Header))
 
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
