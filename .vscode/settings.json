@@ -1,0 +1,7 @@
+{
+  "gopls": {
+    "ui.directoryFilters": [
+      "-e2e/compat/v0_3",
+    ]
+  }
+}
