@@ -159,7 +159,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 		task.Status = event.Status
 
-		vt, err := mgr.saveVerstionedTask(ctx, task, event, version)
+		vt, err := mgr.saveVersionedTask(ctx, task, event, version)
 		if err == nil {
 			return vt, nil
 		}
@@ -189,10 +189,10 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 }
 
 func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*VersionedTask, error) {
-	return mgr.saveVerstionedTask(ctx, task, event, mgr.lastSaved.Version)
+	return mgr.saveVersionedTask(ctx, task, event, mgr.lastSaved.Version)
 }
 
-func (mgr *Manager) saveVerstionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (*VersionedTask, error) {
+func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (*VersionedTask, error) {
 	version, err := mgr.saver.Save(ctx, task, event, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)

@@ -511,7 +511,7 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 	}
 }
 
-func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing.T) {
+func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testing.T) {
 	tid, ctxID := a2a.NewTaskID(), a2a.NewContextID()
 	taskInfo := a2a.TaskInfo{TaskID: tid, ContextID: ctxID}
 	testCases := []struct {
@@ -603,6 +603,7 @@ func TestManager_CancelatioStatusUpdate_RetryOnConcurrentModification(t *testing
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			saver := &testSaver{}
 
 			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version}
