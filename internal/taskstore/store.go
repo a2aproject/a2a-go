@@ -108,7 +108,7 @@ func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVer
 	version := a2a.TaskVersion(1)
 	if stored := s.tasks[task.ID]; stored != nil {
 		if prevVersion != a2a.TaskVersionMissing && stored.version != prevVersion {
-			return a2a.TaskVersionMissing, fmt.Errorf("concurrent task modification failed")
+			return a2a.TaskVersionMissing, a2a.ErrConcurrentTaskModification
 		}
 		version = stored.version + 1
 	}
