@@ -22,8 +22,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
-	// "google.golang.org/grpc"
-	// "google.golang.org/grpc/credentials/insecure"
+	"github.com/a2aproject/a2a-go/a2agrpc/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var cardURL = flag.String("card-url", "http://127.0.0.1:9001", "Base URL of AgentCard server.")
@@ -39,10 +40,10 @@ func main() {
 	}
 
 	// Insecure connection is used for example purposes
-	// withInsecureGRPC := a2aclient.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials()))
+	withInsecureGRPC := a2agrpc.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials()))
 
 	// Create a client connected to one of the interfaces specified in the AgentCard.
-	client, err := a2aclient.NewFromCard(ctx, card)
+	client, err := a2aclient.NewFromCard(ctx, card, withInsecureGRPC)
 	if err != nil {
 		log.Fatalf("Failed to create a client: %v", err)
 	}
