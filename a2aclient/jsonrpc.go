@@ -368,8 +368,8 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params Serv
 }
 
 // GetExtendedAgentCard implements [a2a.Transport].
-func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, params, nil)
+func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, params, req)
 	if err != nil {
 		return nil, err
 	}

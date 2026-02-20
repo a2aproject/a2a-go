@@ -242,8 +242,13 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclie
 	return grpcutil.FromGRPCError(err)
 }
 
-func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams) (*a2a.AgentCard, error) {
-	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), &a2apb.GetExtendedAgentCardRequest{})
+func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	pReq, err := pbconv.ToProtoGetExtendedAgentCardRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), pReq)
 	if err != nil {
 		return nil, grpcutil.FromGRPCError(err)
 	}

@@ -387,7 +387,8 @@ func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 func handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		result, err := handler.GetExtendedAgentCard(ctx)
+		// TODO: extract tenant from path
+		result, err := handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))

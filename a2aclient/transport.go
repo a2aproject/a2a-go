@@ -56,7 +56,7 @@ type Transport interface {
 	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 
 	// GetExtendedAgentCard calls the 'GetExtendedAgentCard' protocol method.
-	GetExtendedAgentCard(context.Context, ServiceParams) (*a2a.AgentCard, error)
+	GetExtendedAgentCard(context.Context, ServiceParams, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 
 	// Clean up resources associated with the transport (eg. close a gRPC channel).
 	Destroy() error
@@ -124,7 +124,7 @@ func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params S
 	return errNotImplemented
 }
 
-func (unimplementedTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+func (unimplementedTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	return nil, errNotImplemented
 }
 

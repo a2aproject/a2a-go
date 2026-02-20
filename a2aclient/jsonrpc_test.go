@@ -410,7 +410,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	got, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{})
+	got, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{}, &a2a.GetExtendedAgentCardRequest{})
 
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)

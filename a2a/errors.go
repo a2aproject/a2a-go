@@ -56,9 +56,9 @@ var (
 	// does not conform to the specification for the current method.
 	ErrInvalidAgentResponse = errors.New("invalid agent response")
 
-	// ErrAuthenticatedExtendedCardNotConfigured indicates that the agent does not have an Authenticated
+	// ErrExtendedCardNotConfigured indicates that the agent does not have an Authenticated
 	// Extended Card configured.
-	ErrAuthenticatedExtendedCardNotConfigured = errors.New("extended card not configured")
+	ErrExtendedCardNotConfigured = errors.New("extended card not configured")
 
 	// ErrExtensionSupportRequired indicates that the Client requested use of an extension marked as
 	// required: true in the Agent Card but the client did not declare support for it in the request.

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
@@ -53,10 +54,11 @@ type Client struct {
 	config          Config
 	transport       Transport
 	protocolVersion a2a.ProtocolVersion
+	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
-	baseURL         string
 
-	card atomic.Pointer[a2a.AgentCard]
+	cardResolver agentcard.Resolver
+	card         atomic.Pointer[a2a.AgentCard]
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -211,32 +213,28 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPu
 }
 
 // GetExtendedAgentCard implements the `GetExtendedAgentCard` protocol method.
-func (c *Client) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	if card := c.card.Load(); card != nil && !card.Capabilities.ExtendedAgentCard {
-		return card, nil
+func (c *Client) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	card := c.card.Load()
+	if card != nil && !card.Capabilities.ExtendedAgentCard {
+		return nil, a2a.ErrExtendedCardNotConfigured
 	}
+	return doCall(ctx, c, "GetExtendedAgentCard", req, c.transport.GetExtendedAgentCard)
+}
 
-	method := "GetExtendedAgentCard"
-	var req *struct{}
-	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, c, method, req)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
+// UpdateCard updates the agent card used by the client.
+func (c *Client) UpdateCard(card *a2a.AgentCard) error {
+	found := false
+	for _, iface := range card.SupportedInterfaces {
+		if *iface == c.endpoint {
+			found = true
+			break
+		}
 	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
+	if !found {
+		return fmt.Errorf("client needs to be recreated, %+v not longer listed as supported", c.endpoint)
 	}
-
-	resp, err := c.transport.GetExtendedAgentCard(ctx, res.params)
-	interceptedResponse, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
-	if errOverride != nil {
-		return nil, errOverride
-	}
-
-	if err == nil {
-		c.card.Store(interceptedResponse)
-	}
-
-	return interceptedResponse, nil
+	c.card.Store(card)
+	return nil
 }
 
 // Destroy cleans up resources associated with the client.
@@ -272,7 +270,7 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 	serviceParams[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
 	req := Request{
 		Method:        method,
-		BaseURL:       c.baseURL,
+		BaseURL:       c.endpoint.URL,
 		ServiceParams: serviceParams,
 		Card:          c.card.Load(),
 		Payload:       payload,
@@ -322,7 +320,7 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 
 func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallInterceptor, method string, params ServiceParams, payload T, err error) (T, error) {
 	resp := Response{
-		BaseURL:       c.baseURL,
+		BaseURL:       c.endpoint.URL,
 		Method:        method,
 		ServiceParams: params,
 		Payload:       payload,

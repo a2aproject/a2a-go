@@ -62,7 +62,7 @@ type RequestHandler interface {
 	DeleteTaskPushConfig(context.Context, *a2a.DeleteTaskPushConfigRequest) error
 
 	// GetAgentCard returns an extended a2a.AgentCard if configured.
-	GetExtendedAgentCard(context.Context) (*a2a.AgentCard, error)
+	GetExtendedAgentCard(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler.
@@ -80,7 +80,7 @@ type defaultRequestHandler struct {
 	workQueue              workqueue.Queue
 	reqContextInterceptors []ExecutorContextInterceptor
 
-	authenticatedCardProducer AgentCardProducer
+	authenticatedCardProducer ExtendedAgentCardProducer
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -402,11 +402,11 @@ func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a
 }
 
 // GetExtendedAgentCard implements RequestHandler.
-func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	if h.authenticatedCardProducer == nil {
-		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
+		return nil, a2a.ErrExtendedCardNotConfigured
 	}
-	return h.authenticatedCardProducer.Card(ctx)
+	return h.authenticatedCardProducer.ExtendedCard(ctx, req)
 }
 
 func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (a2a.TaskID, bool) {

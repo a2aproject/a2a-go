@@ -305,7 +305,7 @@ func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params Service
 }
 
 // GetExtendedAgentCard implements [a2a.Transport].
-func (t *RESTTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+func (t *RESTTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	path := rest.MakeGetExtendedAgentCardPath()
 	var card a2a.AgentCard
 

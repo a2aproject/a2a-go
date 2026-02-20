@@ -203,19 +203,18 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 // GetExtendedAgentCard implements RequestHandler.
-func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	ctx, callCtx := attachMethodCallContext(ctx, "GetExtendedAgentCard")
 	ctx = h.withLoggerContext(ctx)
 
-	var req *struct{}
-	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, h, callCtx, req)
+	ctx, res := interceptBefore[*a2a.GetExtendedAgentCardRequest, *a2a.AgentCard](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
 		return nil, res.earlyErr
 	}
 	if res.earlyResponse != nil {
 		return *res.earlyResponse, nil
 	}
-	response, err := h.Handler.GetExtendedAgentCard(ctx)
+	response, err := h.Handler.GetExtendedAgentCard(ctx, res.reqOverride)
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 

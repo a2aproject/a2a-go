@@ -113,7 +113,7 @@ var errToDetails = map[error]errorDetails{
 		uri:    "https://a2a-protocol.org/errors/invalid-agent-response",
 		title:  "Invalid Agent Response",
 	},
-	a2a.ErrAuthenticatedExtendedCardNotConfigured: {
+	a2a.ErrExtendedCardNotConfigured: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
 		title:  "Extended Agent Card Not Configured",

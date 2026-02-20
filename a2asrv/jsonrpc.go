@@ -171,7 +171,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	case jsonrpc.MethodPushConfigDelete:
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodGetExtendedAgentCard:
-		result, err = h.onGetAgentCard(ctx)
+		result, err = h.onGetExtendedAgentCard(ctx, req.Params)
 	case "":
 		err = a2a.ErrInvalidRequest
 	default:
@@ -397,8 +397,12 @@ func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 	return h.handler.DeleteTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return h.handler.GetExtendedAgentCard(ctx)
+func (h *jsonrpcHandler) onGetExtendedAgentCard(ctx context.Context, raw json.RawMessage) (*a2a.AgentCard, error) {
+	var params a2a.GetExtendedAgentCardRequest
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, handleUnmarshalError(err)
+	}
+	return h.handler.GetExtendedAgentCard(ctx, &params)
 }
 
 func marshalJSONRPCError(req *jsonrpcRequest, err error) ([]byte, bool) {

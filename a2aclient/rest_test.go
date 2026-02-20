@@ -436,7 +436,7 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	card, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{})
+	card, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{}, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
 	}
