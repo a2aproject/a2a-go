@@ -80,52 +80,53 @@ func TestFactory_WithDefaultsDisabled(t *testing.T) {
 func TestFactory_TransportSelection(t *testing.T) {
 	ctx := t.Context()
 	testCases := []struct {
-		name           string
-		serverSupports []string // protocols advertised by the server
-		clientSupports []string // list of registered transport factories
-		clientPrefers  []string // Config.PreferredTransports
-		connectFails   []string // specifies which transports fail to connect, used to test fallback logic
-		want           string
-		wantErr        bool
+		name              string
+		serverSupports    []string // protocols advertised by the server
+		clientSupports    []string // list of registered transport factories
+		clientPrefers     []string // Config.PreferredTransports
+		connectFails      []string // specifies which transports fail to connect, used to test fallback logic
+		wantClientVersion a2a.ProtocolVersion
+		wantInterface     string
+		wantErr           bool
 	}{
 		{
 			name:           "client supports fewer protocols",
 			serverSupports: []string{"jsonrpc", "grpc"},
 			clientSupports: []string{"grpc"},
-			want:           "grpc",
+			wantInterface:  "grpc",
 		},
 		{
 			name:           "server supports fewer protocols",
 			serverSupports: []string{"jsonrpc"},
 			clientSupports: []string{"grpc", "jsonrpc"},
-			want:           "jsonrpc",
+			wantInterface:  "jsonrpc",
 		},
 		{
 			name:           "default to server preference order",
 			serverSupports: []string{"jsonrpc", "grpc"},
 			clientSupports: []string{"jsonrpc", "grpc"},
-			want:           "jsonrpc",
+			wantInterface:  "jsonrpc",
 		},
 		{
 			name:           "client preferences override server preferences",
 			serverSupports: []string{"jsonrpc", "grpc"},
 			clientSupports: []string{"jsonrpc", "grpc"},
 			clientPrefers:  []string{"grpc", "jsonrpc"},
-			want:           "grpc",
+			wantInterface:  "grpc",
 		},
 		{
 			name:           "client preferences as a subset of supported protocols",
 			serverSupports: []string{"grpc", "jsonrpc", "stubby"},
 			clientSupports: []string{"grpc", "stubby", "jsonrpc"},
 			clientPrefers:  []string{"stubby"},
-			want:           "stubby",
+			wantInterface:  "stubby",
 		},
 		{
 			name:           "selects the first working protocol",
 			serverSupports: []string{"grpc", "jsonrpc", "stubby"},
 			clientSupports: []string{"grpc", "stubby", "jsonrpc"},
 			connectFails:   []string{"grpc", "jsonrpc"},
-			want:           "stubby",
+			wantInterface:  "stubby",
 		},
 		{
 			name:           "all transports fail",
@@ -145,25 +146,39 @@ func TestFactory_TransportSelection(t *testing.T) {
 			serverSupports: []string{"jsonrpc:1.0", "jsonrpc:2.0"},
 			clientSupports: []string{"jsonrpc:1.0", "jsonrpc:2.0"},
 			clientPrefers:  []string{"jsonrpc"},
-			want:           "jsonrpc:2.0",
+			wantInterface:  "jsonrpc:2.0",
 		},
 		{
 			name:           "client preference only applies within same version",
 			serverSupports: []string{"jsonrpc:1.0", "grpc:0.3"},
 			clientSupports: []string{"jsonrpc:1.0", "grpc:0.3"},
 			clientPrefers:  []string{"grpc"},
-			want:           "jsonrpc:1.0",
+			wantInterface:  "jsonrpc:1.0",
 		},
 		{
 			name:           "newer protocol version is preferred",
 			serverSupports: []string{"grpc:0.3", "jsonrpc:1.0"},
 			clientSupports: []string{"grpc:0.3", "jsonrpc:1.0"},
-			want:           "jsonrpc:1.0",
+			wantInterface:  "jsonrpc:1.0",
 		},
 		{
 			name:           "client transports not configured",
 			serverSupports: []string{"grpc"},
 			wantErr:        true,
+		},
+		{
+			name:              "compatible same major version (server older)",
+			serverSupports:    []string{"jsonrpc:1.0"},
+			clientSupports:    []string{"jsonrpc:1.5"},
+			wantInterface:     "jsonrpc:1.0",
+			wantClientVersion: "1.5",
+		},
+		{
+			name:              "compatible same major version (server newer)",
+			serverSupports:    []string{"jsonrpc:1.5"},
+			clientSupports:    []string{"jsonrpc:1.0"},
+			wantInterface:     "jsonrpc:1.5",
+			wantClientVersion: "1.0",
 		},
 	}
 
@@ -180,11 +195,15 @@ func TestFactory_TransportSelection(t *testing.T) {
 			options := make([]FactoryOption, len(tc.clientSupports))
 			for i, p := range tc.clientSupports {
 				protocol, version := parseProtocol(p)
-				options[i] = WithCompatTransport(version, protocol, TransportFactoryFn(func(context.Context, string, *a2a.AgentCard) (Transport, error) {
+				options[i] = WithCompatTransport(version, protocol, TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
 					if slices.Contains(tc.connectFails, p) {
 						return nil, fmt.Errorf("connection failed")
 					}
-					selectedProtocol = p
+					if strings.ContainsRune(p, ':') {
+						selectedProtocol = string(iface.ProtocolBinding) + ":" + string(iface.ProtocolVersion)
+					} else {
+						selectedProtocol = string(iface.ProtocolBinding)
+					}
 					return unimplementedTransport{}, nil
 				}))
 			}
@@ -197,28 +216,34 @@ func TestFactory_TransportSelection(t *testing.T) {
 			card := &a2a.AgentCard{
 				SupportedInterfaces: makeEndpoints(tc.serverSupports),
 			}
-			_, err := factory.CreateFromCard(ctx, card)
+			client, err := factory.CreateFromCard(ctx, card)
 			if err != nil && !tc.wantErr {
 				t.Fatalf("CreateFromCard() error = %v, want nil", err)
 			}
 			if err == nil && tc.wantErr {
 				t.Fatalf("CreateFromCard() error = nil, want %v", tc.wantErr)
 			}
-			if selectedProtocol != tc.want {
-				t.Fatalf("CreateFromCard() = %q, want %q", selectedProtocol, tc.want)
+			if selectedProtocol != tc.wantInterface {
+				t.Fatalf("CreateFromCard() = %q, want %q", selectedProtocol, tc.wantInterface)
+			}
+			if tc.wantClientVersion != "" && client.protocolVersion != tc.wantClientVersion {
+				t.Fatalf("CreateFromCard() client.protocolVersion = %q, want %q", client.protocolVersion, tc.wantClientVersion)
 			}
 
 			// CreateFromEndpoints
 			selectedProtocol = ""
-			_, err = factory.CreateFromEndpoints(ctx, makeEndpoints(tc.serverSupports))
+			client, err = factory.CreateFromEndpoints(ctx, makeEndpoints(tc.serverSupports))
 			if err != nil && !tc.wantErr {
-				t.Fatalf("CreateFromURL() error = %v, want nil", err)
+				t.Fatalf("CreateFromEndpoints() error = %v, want nil", err)
 			}
 			if err == nil && tc.wantErr {
-				t.Fatalf("CreateFromURL() error = nil, want %v", tc.wantErr)
+				t.Fatalf("CreateFromEndpoints() error = nil, want %v", tc.wantErr)
 			}
-			if selectedProtocol != tc.want {
-				t.Fatalf("CreateFromURL() = %q, want %q", selectedProtocol, tc.want)
+			if selectedProtocol != tc.wantInterface {
+				t.Fatalf("CreateFromEndpoints() = %q, want %q", selectedProtocol, tc.wantInterface)
+			}
+			if tc.wantClientVersion != "" && client.protocolVersion != tc.wantClientVersion {
+				t.Fatalf("CreateFromEndpoints() client.protocolVersion = %q, want %q", client.protocolVersion, tc.wantClientVersion)
 			}
 		})
 	}

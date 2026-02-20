@@ -12,5 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package pbconv provides conversion functions between A2A protobufs and native Go types.
-package pbconv
+package a2a
+
+// SvcParamVersion is the key for the service parameter that specifies the A2A protocol version
+// that the client is using.
+const SvcParamVersion = "A2A-Version"
+
+// SvcParamExtensions is the key for the service parameter that specifies the A2A extensions
+// that the client wants to use for the request.
+const SvcParamExtensions = "A2A-Extensions"

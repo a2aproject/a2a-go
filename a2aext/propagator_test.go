@@ -143,7 +143,9 @@ func TestTripleHopPropagation(t *testing.T) {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
-				return slices.Contains([]string{"accept-encoding", "content-length", "content-type", "keep-header", "user-agent"}, k)
+				return slices.Contains([]string{
+					"accept-encoding", "content-length", "content-type", "keep-header", "user-agent", "a2a-version",
+				}, k)
 			})
 			if diff := cmp.Diff(tc.wantPropagatedHeaders, gotHeaders, ignoreStdHeaders); diff != "" {
 				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)
@@ -247,7 +249,9 @@ func TestDefaultPropagation(t *testing.T) {
 				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
-				return slices.Contains([]string{"accept-encoding", "content-length", "content-type", "keep-header", "user-agent"}, k)
+				return slices.Contains([]string{
+					"accept-encoding", "content-length", "content-type", "keep-header", "user-agent", "a2a-version",
+				}, k)
 			})
 			if diff := cmp.Diff(tc.wantBReceivedHeaders, gotHeaders, ignoreStdHeaders); diff != "" {
 				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)

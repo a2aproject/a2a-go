@@ -1,4 +1,4 @@
-// Copyright 2026 The A2A Authors
+// Copyright 2025 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,5 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package pbconv provides conversion functions between A2A protobufs and native Go types.
-package pbconv
+// Package a2apb contains types and interfaces generated from published
+// official A2A .proto 0.3 specification.
+package a2apb

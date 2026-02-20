@@ -27,17 +27,24 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-type transportKey struct {
-	version  a2a.ProtocolVersion
-	protocol a2a.TransportProtocol
-}
-
 // Factory provides an API for creating a [Client] compatible with requested transports.
 // Factory is immutable, but the configuration can be extended using [WithAdditionalOptions] call.
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
 	transports   map[transportKey]TransportFactory
+}
+
+type transportKey struct {
+	protocol       a2a.TransportProtocol
+	protocolSemver a2a.ProtocolVersion // must start with v
+}
+
+func makeTransportKey(version a2a.ProtocolVersion, protocol a2a.TransportProtocol) transportKey {
+	if !strings.HasPrefix(string(version), "v") {
+		version = a2a.ProtocolVersion("v" + string(version))
+	}
+	return transportKey{protocol, version}
 }
 
 // transportCandidate represents an Agent endpoint with the protocol supported by the Client
@@ -53,8 +60,8 @@ type transportCandidate struct {
 }
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
-// Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST and then gRPC.
-var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil) /*, WithGRPCTransport()*/}
+// Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST.
+var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil)}
 
 // NewFromCard is a client [Client] constructor method which takes an [a2a.AgentCard] as input.
 // It is equivalent to [Factory].CreateFromCard method.
@@ -95,10 +102,11 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 	}
 
 	client := &Client{
-		config:       f.config,
-		transport:    conn,
-		interceptors: f.interceptors,
-		baseURL:      selected.endpoint.URL,
+		config:          f.config,
+		transport:       conn,
+		interceptors:    f.interceptors,
+		baseURL:         selected.endpoint.URL,
+		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
 	client.card.Store(card)
 	return client, nil
@@ -122,10 +130,11 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 	}
 
 	return &Client{
-		config:       f.config,
-		transport:    conn,
-		interceptors: f.interceptors,
-		baseURL:      selected.endpoint.URL,
+		config:          f.config,
+		transport:       conn,
+		interceptors:    f.interceptors,
+		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		baseURL:         selected.endpoint.URL,
 	}, nil
 }
 
@@ -139,7 +148,7 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 	var selected *transportCandidate
 	var failures []error
 	for _, tc := range candidates {
-		conn, err := tc.factory.Create(ctx, tc.endpoint.URL, card)
+		conn, err := tc.factory.Create(ctx, card, tc.endpoint)
 		if err == nil {
 			transport = conn
 			selected = &tc
@@ -164,8 +173,24 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 	candidates := make([]transportCandidate, 0, len(available))
 
 	for _, opt := range available {
-		key := transportKey{a2a.ProtocolVersion(opt.ProtocolVersion), a2a.TransportProtocol(opt.ProtocolBinding)}
-		if tf, ok := f.transports[key]; ok {
+		key := makeTransportKey(opt.ProtocolVersion, opt.ProtocolBinding)
+
+		candidate, ok := f.transports[key]
+		candidateVersion := key.protocolSemver
+		if !ok { // if no exact version match fallback to compatibility by major version
+			for otherKey, tr := range f.transports {
+				if otherKey.protocol != key.protocol {
+					continue
+				}
+				if semver.Major(string(key.protocolSemver)) == semver.Major(string(otherKey.protocolSemver)) {
+					candidate = tr
+					candidateVersion = otherKey.protocolSemver
+					break
+				}
+			}
+		}
+
+		if candidate != nil {
 			priority := len(f.config.PreferredTransports)
 			for j, clientPref := range f.config.PreferredTransports {
 				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
@@ -173,11 +198,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 					break
 				}
 			}
-			ver := string(opt.ProtocolVersion)
-			if !strings.HasPrefix(ver, "v") {
-				ver = "v" + ver
-			}
-			candidates = append(candidates, transportCandidate{tf, opt, priority, ver})
+			candidates = append(candidates, transportCandidate{candidate, opt, priority, string(candidateVersion)})
 		}
 	}
 
@@ -221,15 +242,13 @@ func WithConfig(c Config) FactoryOption {
 
 // WithTransport uses the provided factory during connection establishment for the specified transport binding.
 func WithTransport(protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
-	return factoryOptionFn(func(f *Factory) {
-		f.transports[transportKey{a2a.Version, protocol}] = factory
-	})
+	return WithCompatTransport(a2a.Version, protocol, factory)
 }
 
 // WithCompatTransport uses the provided factory during connection establishment for the specified transport binding and protocol version.
 func WithCompatTransport(version a2a.ProtocolVersion, protocol a2a.TransportProtocol, factory TransportFactory) FactoryOption {
 	return factoryOptionFn(func(f *Factory) {
-		f.transports[transportKey{version, protocol}] = factory
+		f.transports[makeTransportKey(version, protocol)] = factory
 	})
 }
 
@@ -286,7 +305,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithCallInterceptors(f.interceptors...),
 	}
 	for k, v := range f.transports {
-		options = append(options, WithCompatTransport(k.version, k.protocol, v))
+		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))
 	}
 	return NewFactory(append(options, opts...)...)
 }
