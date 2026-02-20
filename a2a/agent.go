@@ -43,7 +43,7 @@ type AgentCard struct {
 	//
 	// Clients can select any interface from this list based on their transport capabilities
 	// and preferences. This enables transport negotiation and fallback scenarios.
-	SupportedInterfaces []AgentInterface `json:"supportedInterfaces" yaml:"supportedInterfaces" mapstructure:"supportedInterfaces"`
+	SupportedInterfaces []*AgentInterface `json:"supportedInterfaces" yaml:"supportedInterfaces" mapstructure:"supportedInterfaces"`
 
 	// Capabilities is a declaration of optional capabilities supported by the agent.
 	Capabilities AgentCapabilities `json:"capabilities" yaml:"capabilities" mapstructure:"capabilities"`
@@ -136,6 +136,10 @@ type AgentInterface struct {
 	ProtocolVersion ProtocolVersion `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
 }
 
+func NewAgentInterface(url string, protocolBinding TransportProtocol) *AgentInterface {
+	return &AgentInterface{URL: url, ProtocolBinding: protocolBinding, ProtocolVersion: Version}
+}
+
 // AgentProvider represents the service provider of an agent.
 type AgentProvider struct {
 	// Org is the name of the agent provider's organization.
@@ -167,10 +171,11 @@ type AgentSkill struct {
 	// OutputModes is the set of supported output MIME types for this skill, overriding the agent's defaults.
 	OutputModes []string `json:"outputModes,omitempty" yaml:"outputModes,omitempty" mapstructure:"outputModes,omitempty"`
 
-	// Security is a list of security requirements necessary for leveraging this skill.
-	// As in the overall [AgentCard.SecurityRequirements], this list represents a logical OR of security requirement objects.
+	// SecurityRequirements is a map of schemes necessary for the agent to leverage this skill.
+	// As in the overall AgentCard.security, this list represents a logical OR of
+	// security requirement objects.
 	// Each object is a set of security schemes that must be used together (a logical AND).
-	SecurityRequirements SecurityRequirementsOptions `json:"security,omitempty" yaml:"security,omitempty" mapstructure:"security,omitempty"`
+	SecurityRequirements SecurityRequirementsOptions `json:"securityRequirements,omitempty" yaml:"securityRequirements,omitempty" mapstructure:"securityRequirements,omitempty"`
 
 	// Tags is a set of keywords describing the skill's capabilities.
 	Tags []string `json:"tags" yaml:"tags" mapstructure:"tags"`

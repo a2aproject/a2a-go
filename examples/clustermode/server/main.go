@@ -40,8 +40,8 @@ func main() {
 	addr := fmt.Sprintf("http://127.0.0.1:%d/invoke", *port)
 	agentCard := &a2a.AgentCard{
 		Name: "A2A Cluster",
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: addr, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(addr, a2a.TransportProtocolJSONRPC),
 		},
 		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}

@@ -64,15 +64,14 @@ type Transport interface {
 
 // TransportFactory creates an A2A protocol connection to the provided URL.
 type TransportFactory interface {
-	Create(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error)
+	Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 }
 
 // TransportFactoryFn implements TransportFactory.
-type TransportFactoryFn func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error)
+type TransportFactoryFn func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 
-// Create implements TransportFactory.
-func (fn TransportFactoryFn) Create(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-	return fn(ctx, url, card)
+func (fn TransportFactoryFn) Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
+	return fn(ctx, card, iface)
 }
 
 var errNotImplemented = errors.New("not implemented")

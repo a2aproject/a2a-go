@@ -59,8 +59,8 @@ func NewRESTTransport(url string, client *http.Client) Transport {
 func WithRESTTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolHTTPJSON,
-		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewRESTTransport(url, client), nil
+		TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
+			return NewRESTTransport(iface.URL, client), nil
 		}),
 	)
 }

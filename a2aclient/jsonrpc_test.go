@@ -419,7 +419,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 	cardAddr := "http://example.com"
 	want := &a2a.AgentCard{
 		Name: "Test agent",
-		SupportedInterfaces: []a2a.AgentInterface{
+		SupportedInterfaces: []*a2a.AgentInterface{
 			{URL: cardAddr},
 		},
 		Description: "test",

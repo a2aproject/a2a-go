@@ -107,10 +107,9 @@ func TestDurationsExtension(t *testing.T) {
 			handler := a2asrv.NewHandler(agentExecutor, a2asrv.WithCallInterceptors(&durationTracker{}))
 
 			server := httptest.NewServer(a2asrv.NewJSONRPCHandler(handler))
-			serverCard.SupportedInterfaces = []a2a.AgentInterface{{
-				URL:             server.URL,
-				ProtocolBinding: a2a.TransportProtocolJSONRPC,
-			}}
+			serverCard.SupportedInterfaces = []*a2a.AgentInterface{
+				a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
+			}
 			defer server.Close()
 
 			client, err := a2aclient.NewFromCard(ctx, serverCard, a2aclient.WithCallInterceptors(

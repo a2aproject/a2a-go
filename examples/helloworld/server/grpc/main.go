@@ -24,7 +24,7 @@ import (
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	// "github.com/a2aproject/a2a-go/a2agrpc"
+	"github.com/a2aproject/a2a-go/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -54,18 +54,16 @@ func startGRPCServer(port int, card *a2a.AgentCard) error {
 	}
 	log.Printf("Starting a gRPC server on 127.0.0.1:%d", port)
 
-	// TODO: uncomment and fix after pbconv is implemented
-
 	// A transport-agnostic implementation of A2A protocol methods.
 	// The behavior is configurable using option-arguments of form a2asrv.With*(), for example:
 	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
-	// requestHandler := a2asrv.NewHandler(&agentExecutor{}, a2asrv.WithExtendedAgentCard(card))
+	requestHandler := a2asrv.NewHandler(&agentExecutor{}, a2asrv.WithExtendedAgentCard(card))
 
 	// A gRPC-transport implementation for A2A.
-	// grpcHandler := a2agrpc.NewHandler(requestHandler)
+	grpcHandler := a2agrpc.NewHandler(requestHandler)
 
 	s := grpc.NewServer()
-	// grpcHandler.RegisterWith(s)
+	grpcHandler.RegisterWith(s)
 	return s.Serve(listener)
 }
 
@@ -90,12 +88,12 @@ var (
 func main() {
 	flag.Parse()
 
-	addr := fmt.Sprintf("http://127.0.0.1:%d", *grpcPort)
+	addr := fmt.Sprintf("127.0.0.1:%d", *grpcPort)
 	agentCard := &a2a.AgentCard{
 		Name:        "Hello World Agent",
 		Description: "Just a hello world agent",
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: addr, ProtocolBinding: a2a.TransportProtocolGRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(addr, a2a.TransportProtocolGRPC),
 		},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},

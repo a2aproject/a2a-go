@@ -59,7 +59,7 @@ type ListTaskPushConfigRequest struct {
 // ListTaskPushConfigResponse defines the response for a request to list push notification configurations.
 type ListTaskPushConfigResponse struct {
 	// Configs is a list of push notification configurations for the task.
-	Configs []TaskPushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`
+	Configs []*TaskPushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`
 
 	// NextPageToken is the token to use to retrieve the next page of push notification configurations.
 	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`

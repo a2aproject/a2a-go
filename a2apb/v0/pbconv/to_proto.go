@@ -1,4 +1,4 @@
-// Copyright 2026 The A2A Authors
+// Copyright 2025 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@ package pbconv
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v1"
-	"google.golang.org/protobuf/proto"
+	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -36,7 +36,6 @@ func toProtoMap(meta map[string]any) (*structpb.Struct, error) {
 }
 
 func ToProtoSendMessageRequest(req *a2a.SendMessageRequest) (*a2apb.SendMessageRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
@@ -57,43 +56,29 @@ func ToProtoSendMessageRequest(req *a2a.SendMessageRequest) (*a2apb.SendMessageR
 	}
 
 	return &a2apb.SendMessageRequest{
-		Tenant:        req.Tenant,
-		Message:       pMsg,
+		Request:       pMsg,
 		Configuration: pConf,
 		Metadata:      pMeta,
 	}, nil
 }
 
 func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, error) {
-	// TODO: add validation
 	if config == nil {
 		return nil, nil
 	}
 
-	auth, err := toProtoAuthenticationInfo(config.Auth)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert authentication info: %w", err)
-	}
-
 	pConf := &a2apb.PushNotificationConfig{
-		Id:             config.ID,
-		Url:            config.URL,
-		Token:          config.Token,
-		Authentication: auth,
+		Id:    config.ID,
+		Url:   config.URL,
+		Token: config.Token,
 	}
-
+	if config.Auth != nil {
+		pConf.Authentication = &a2apb.AuthenticationInfo{
+			Schemes:     []string{config.Auth.Scheme},
+			Credentials: config.Auth.Credentials,
+		}
+	}
 	return pConf, nil
-}
-
-func toProtoAuthenticationInfo(auth *a2a.PushAuthInfo) (*a2apb.AuthenticationInfo, error) {
-	// TODO: add validation
-	if auth == nil {
-		return nil, nil
-	}
-	return &a2apb.AuthenticationInfo{
-		Scheme:      auth.Scheme,
-		Credentials: auth.Credentials,
-	}, nil
 }
 
 func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessageConfiguration, error) {
@@ -107,92 +92,76 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 	}
 
 	pConf := &a2apb.SendMessageConfiguration{
-		AcceptedOutputModes:    config.AcceptedOutputModes,
-		PushNotificationConfig: pushConf,
+		AcceptedOutputModes: config.AcceptedOutputModes,
+		PushNotification:    pushConf,
 	}
 	if config.Blocking != nil {
 		pConf.Blocking = *config.Blocking
 	}
 	if config.HistoryLength != nil {
-		pConf.HistoryLength = proto.Int32(int32(*config.HistoryLength))
+		pConf.HistoryLength = int32(*config.HistoryLength)
 	}
 	return pConf, nil
 }
 
 func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
 
-	return &a2apb.GetTaskRequest{
-		Tenant:        req.Tenant,
-		Id:            string(req.ID),
-		HistoryLength: proto.Int32(int32(*req.HistoryLength)),
-	}, nil
+	pReq := &a2apb.GetTaskRequest{Name: MakeTaskName(req.ID)}
+	if req.HistoryLength != nil {
+		pReq.HistoryLength = int32(*req.HistoryLength)
+	}
+	return pReq, nil
 }
 
 func ToProtoCancelTaskRequest(req *a2a.CancelTaskRequest) (*a2apb.CancelTaskRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.CancelTaskRequest{
-		Tenant: req.Tenant,
-		Id:     string(req.ID),
-	}, nil
+	return &a2apb.CancelTaskRequest{Name: MakeTaskName(req.ID)}, nil
 }
 
-func ToProtoSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.SubscribeToTaskRequest, error) {
-	// TODO: add validation
+func ToProtoTaskSubscriptionRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.TaskSubscriptionRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.SubscribeToTaskRequest{
-		Tenant: req.Tenant,
-		Id:     string(req.ID),
-	}, nil
+	return &a2apb.TaskSubscriptionRequest{Name: MakeTaskName(req.ID)}, nil
 }
 
-func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
-	// TODO: add validation
-	if config == nil {
+func ToProtoCreateTaskPushConfigRequest(req *a2a.CreateTaskPushConfigRequest) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
+	if req == nil {
 		return nil, nil
 	}
 
-	pConfig, err := toProtoPushConfig(&config.Config)
+	pnc, err := toProtoPushConfig(&req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
 	return &a2apb.CreateTaskPushNotificationConfigRequest{
-		Tenant: config.Tenant,
-		TaskId: string(config.TaskID),
-		Config: pConfig,
+		Parent:   MakeTaskName(req.TaskID),
+		ConfigId: req.Config.ID,
+		Config:   &a2apb.TaskPushNotificationConfig{PushNotificationConfig: pnc},
 	}, nil
 }
 
 func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.GetTaskPushNotificationConfigRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
 	return &a2apb.GetTaskPushNotificationConfigRequest{
-		Tenant: req.Tenant,
-		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Name: MakeConfigName(req.TaskID, req.ID),
 	}, nil
 }
 
 func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*a2apb.DeleteTaskPushNotificationConfigRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
 	return &a2apb.DeleteTaskPushNotificationConfigRequest{
-		Tenant: req.Tenant,
-		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Name: MakeConfigName(req.TaskID, req.ID),
 	}, nil
 }
 
@@ -204,7 +173,7 @@ func ToProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessag
 		if err != nil {
 			return nil, err
 		}
-		resp.Payload = &a2apb.SendMessageResponse_Message{Message: pMsg}
+		resp.Payload = &a2apb.SendMessageResponse_Msg{Msg: pMsg}
 	case *a2a.Task:
 		pTask, err := ToProtoTask(r)
 		if err != nil {
@@ -225,7 +194,7 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		resp.Payload = &a2apb.StreamResponse_Message{Message: pMsg}
+		resp.Payload = &a2apb.StreamResponse_Msg{Msg: pMsg}
 	case *a2a.Task:
 		pTask, err := ToProtoTask(e)
 		if err != nil {
@@ -272,7 +241,6 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 }
 
 func toProtoMessage(msg *a2a.Message) (*a2apb.Message, error) {
-	// TODO: add validation
 	if msg == nil {
 		return nil, nil
 	}
@@ -318,46 +286,68 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 	return pMsgs, nil
 }
 
-func toProtoDataPart(part a2a.Data) (*a2apb.Part_Data, error) {
-	s, err := toProtoMap(part)
+func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
+	meta, err := toProtoMap(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	switch fc := part.Content.(type) {
+	case a2a.Raw:
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: part.MediaType,
+				Name:     part.Filename,
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: fc},
+			}},
+			Metadata: meta,
+		}, nil
+	case a2a.URL:
+		return &a2apb.Part{
+			Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: part.MediaType,
+				Name:     part.Filename,
+				File:     &a2apb.FilePart_FileWithUri{FileWithUri: string(fc)},
+			}},
+			Metadata: meta,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported FilePartContent type: %T", fc)
+	}
+}
+
+func toProtoDataPart(part *a2a.Part) (*a2apb.Part, error) {
+	s, err := toProtoMap(part.Content.(a2a.Data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
-	return &a2apb.Part_Data{Data: structpb.NewStructValue(s)}, nil
+	meta, err := toProtoMap(part.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	return &a2apb.Part{
+		Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: s}},
+		Metadata: meta,
+	}, nil
 }
 
 func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
-	// TODO: add validation
-	meta, err := toProtoMap(part.Metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert metadata to proto struct: %w", err)
-	}
-
-	pPart := &a2apb.Part{
-		Metadata:  meta,
-		Filename:  part.Filename,
-		MediaType: part.MediaType,
-	}
-
 	switch content := part.Content.(type) {
 	case a2a.Text:
-		pPart.Content = &a2apb.Part_Text{Text: string(content)}
-	case a2a.Raw:
-		pPart.Content = &a2apb.Part_Raw{Raw: content}
-	case a2a.Data:
-		pPart.Content, err = toProtoDataPart(content)
+		meta, err := toProtoMap(part.Metadata)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
+			return nil, err
 		}
-	case a2a.URL:
-		pPart.Content = &a2apb.Part_Url{Url: string(content)}
+		return &a2apb.Part{Part: &a2apb.Part_Text{Text: string(content)}, Metadata: meta}, nil
+	case a2a.Data:
+		return toProtoDataPart(&part)
+	case a2a.Raw, a2a.URL:
+		return toProtoFilePart(&part)
 	default:
 		return nil, fmt.Errorf("unsupported part type: %T", content)
 	}
-	return pPart, nil
 }
 
-func toProtoParts(parts a2a.ContentParts) ([]*a2apb.Part, error) {
+func toProtoParts(parts []*a2a.Part) ([]*a2apb.Part, error) {
 	pParts := make([]*a2apb.Part, len(parts))
 	for i, part := range parts {
 		pPart, err := toProtoPart(*part)
@@ -385,7 +375,7 @@ func toProtoTaskState(state a2a.TaskState) a2apb.TaskState {
 	case a2a.TaskStateAuthRequired:
 		return a2apb.TaskState_TASK_STATE_AUTH_REQUIRED
 	case a2a.TaskStateCanceled:
-		return a2apb.TaskState_TASK_STATE_CANCELED
+		return a2apb.TaskState_TASK_STATE_CANCELLED
 	case a2a.TaskStateCompleted:
 		return a2apb.TaskState_TASK_STATE_COMPLETED
 	case a2a.TaskStateFailed:
@@ -410,8 +400,8 @@ func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
 	}
 
 	pStatus := &a2apb.TaskStatus{
-		State:   toProtoTaskState(status.State),
-		Message: message,
+		State:  toProtoTaskState(status.State),
+		Update: message,
 	}
 	if status.Timestamp != nil {
 		pStatus.Timestamp = timestamppb.New(*status.Timestamp)
@@ -421,7 +411,6 @@ func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {
 }
 
 func toProtoArtifact(artifact *a2a.Artifact) (*a2apb.Artifact, error) {
-	// TODO: add validation
 	if artifact == nil {
 		return nil, nil
 	}
@@ -461,7 +450,6 @@ func toProtoArtifacts(artifacts []*a2a.Artifact) ([]*a2apb.Artifact, error) {
 }
 
 func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
-	// TODO: add validation
 	if task == nil {
 		return nil, nil
 	}
@@ -506,23 +494,18 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 	if request.StatusTimestampAfter != nil {
 		lastUpdatedAfter = timestamppb.New(*request.StatusTimestampAfter)
 	}
-	pageSize := int32(request.PageSize)
-	historyLength := proto.Int32(int32(request.HistoryLength))
-
 	return &a2apb.ListTasksRequest{
-		Tenant:               request.Tenant,
-		ContextId:            request.ContextID,
-		Status:               toProtoTaskState(request.Status),
-		PageSize:             &pageSize,
-		PageToken:            request.PageToken,
-		HistoryLength:        historyLength,
-		StatusTimestampAfter: lastUpdatedAfter,
-		IncludeArtifacts:     proto.Bool(request.IncludeArtifacts),
+		ContextId:        request.ContextID,
+		Status:           toProtoTaskState(request.Status),
+		PageSize:         int32(request.PageSize),
+		PageToken:        request.PageToken,
+		HistoryLength:    int32(request.HistoryLength),
+		LastUpdatedTime:  lastUpdatedAfter,
+		IncludeArtifacts: request.IncludeArtifacts,
 	}, nil
 }
 
 func ToProtoListTasksResponse(response *a2a.ListTasksResponse) (*a2apb.ListTasksResponse, error) {
-	// TODO: add validation
 	if response == nil {
 		return nil, nil
 	}
@@ -538,14 +521,12 @@ func ToProtoListTasksResponse(response *a2a.ListTasksResponse) (*a2apb.ListTasks
 	result := &a2apb.ListTasksResponse{
 		Tasks:         tasks,
 		TotalSize:     int32(response.TotalSize),
-		PageSize:      int32(response.PageSize),
 		NextPageToken: response.NextPageToken,
 	}
 	return result, nil
 }
 
 func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
-	// TODO: add validation
 	if config == nil {
 		return nil, nil
 	}
@@ -560,60 +541,52 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 	}
 
 	return &a2apb.TaskPushNotificationConfig{
-		Tenant:                 config.Tenant,
-		Id:                     string(config.ID),
-		TaskId:                 string(config.TaskID),
+		Name:                   MakeConfigName(config.TaskID, pConfig.GetId()),
 		PushNotificationConfig: pConfig,
 	}, nil
 }
 
-func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
-	if req == nil {
+func ToProtoListTaskPushConfigResponse(resp *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+	if resp == nil {
 		return nil, nil
 	}
-	configs := make([]*a2apb.TaskPushNotificationConfig, len(req.Configs))
-	for i, config := range req.Configs {
-		configProto, err := ToProtoTaskPushConfig(config)
+	pConfigs := make([]*a2apb.TaskPushNotificationConfig, len(resp.Configs))
+	for i, config := range resp.Configs {
+		pConfig, err := ToProtoTaskPushConfig(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
-		configs[i] = configProto
+		pConfigs[i] = pConfig
 	}
 	return &a2apb.ListTaskPushNotificationConfigResponse{
-		Configs:       configs,
-		NextPageToken: req.NextPageToken,
+		Configs:       pConfigs,
+		NextPageToken: resp.NextPageToken,
 	}, nil
 }
 
 func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
-	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
 	return &a2apb.ListTaskPushNotificationConfigRequest{
-		Tenant:    req.Tenant,
-		TaskId:    string(req.TaskID),
+		Parent:    MakeTaskName(req.TaskID),
 		PageSize:  int32(req.PageSize),
 		PageToken: req.PageToken,
 	}, nil
 }
 
-func toProtoSupportedInterfaces(interfaces []*a2a.AgentInterface) []*a2apb.AgentInterface {
-	// TODO: add validation
+func toProtoAdditionalInterfaces(interfaces []*a2a.AgentInterface) []*a2apb.AgentInterface {
 	pInterfaces := make([]*a2apb.AgentInterface, len(interfaces))
 	for i, iface := range interfaces {
 		pInterfaces[i] = &a2apb.AgentInterface{
-			Url:             iface.URL,
-			ProtocolBinding: string(iface.ProtocolBinding),
-			Tenant:          iface.Tenant,
-			ProtocolVersion: string(iface.ProtocolVersion),
+			Transport: string(iface.ProtocolBinding),
+			Url:       iface.URL,
 		}
 	}
 	return pInterfaces
 }
 
 func toProtoAgentProvider(provider *a2a.AgentProvider) *a2apb.AgentProvider {
-	// TODO: add validation
 	if provider == nil {
 		return nil
 	}
@@ -638,17 +611,15 @@ func toProtoAgentExtensions(extensions []a2a.AgentExtension) ([]*a2apb.AgentExte
 }
 
 func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabilities, error) {
-	// TODO: add validation
 	extensions, err := toProtoAgentExtensions(capabilities.Extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert extensions: %w", err)
 	}
 
 	result := &a2apb.AgentCapabilities{
-		Streaming:         proto.Bool(capabilities.Streaming),
-		PushNotifications: proto.Bool(capabilities.PushNotifications),
+		PushNotifications: capabilities.PushNotifications,
+		Streaming:         capabilities.Streaming,
 		Extensions:        extensions,
-		ExtendedAgentCard: proto.Bool(capabilities.ExtendedAgentCard),
 	}
 	return result, nil
 }
@@ -702,21 +673,9 @@ func toProtoPasswordOAuthFlows(f *a2a.PasswordOAuthFlow) *a2apb.OAuthFlows {
 	}
 }
 
-func toProtoDeviceCodeOAuthFlow(f *a2a.DeviceCodeOAuthFlow) *a2apb.OAuthFlows {
-	return &a2apb.OAuthFlows{
-		Flow: &a2apb.OAuthFlows_DeviceCode{
-			DeviceCode: &a2apb.DeviceCodeOAuthFlow{
-				DeviceAuthorizationUrl: f.DeviceAuthorizationURL,
-				TokenUrl:               f.TokenURL,
-				RefreshUrl:             f.RefreshURL,
-				Scopes:                 f.Scopes,
-			},
-		},
-	}
-}
-
 func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 	var result []*a2apb.OAuthFlows
+
 	switch f := flows.(type) {
 	case *a2a.AuthorizationCodeOAuthFlow:
 		result = append(result, toProtoAuthzOAuthCodeFlow(f))
@@ -726,10 +685,8 @@ func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 		result = append(result, toProtoImplicitOAuthFlow(f))
 	case *a2a.PasswordOAuthFlow:
 		result = append(result, toProtoPasswordOAuthFlows(f))
-	case *a2a.DeviceCodeOAuthFlow:
-		result = append(result, toProtoDeviceCodeOAuthFlow(f))
 	default:
-		return nil, fmt.Errorf("unsupported OAuthFlows type: %T", f)
+		return nil, fmt.Errorf("unknown OAuthFlow type: %T", f)
 	}
 
 	if len(result) == 0 {
@@ -783,17 +740,15 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 			},
 		}, nil
 	case a2a.OAuth2SecurityScheme:
-		var pFlows *a2apb.OAuthFlows
-		var err error
-		pFlows, err = toProtoOAuthFlows(s.Flows)
+		flows, err := toProtoOAuthFlows(s.Flows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert OAuth flows: %w", err)
+			return nil, fmt.Errorf("failed to convert OAuthFlows: %w", err)
 		}
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
 				Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
+					Flows:             flows,
 					Description:       s.Description,
-					Flows:             pFlows,
 					Oauth2MetadataUrl: s.Oauth2MetadataURL,
 				},
 			},
@@ -817,38 +772,36 @@ func toProtoSecuritySchemes(schemes a2a.NamedSecuritySchemes) (map[string]*a2apb
 	return pSchemes, nil
 }
 
-func toProtoSecurity(security a2a.SecurityRequirementsOptions) []*a2apb.SecurityRequirement {
-	pSecurity := make([]*a2apb.SecurityRequirement, len(security))
-	for i, sec := range security {
+func toProtoSecurity(securityRequirements a2a.SecurityRequirementsOptions) []*a2apb.Security {
+	pSecurity := make([]*a2apb.Security, len(securityRequirements))
+	for i, sec := range securityRequirements {
 		pSchemes := make(map[string]*a2apb.StringList)
 		for name, scopes := range sec {
 			pSchemes[string(name)] = &a2apb.StringList{List: scopes}
 		}
-		pSecurity[i] = &a2apb.SecurityRequirement{Schemes: pSchemes}
+		pSecurity[i] = &a2apb.Security{Schemes: pSchemes}
 	}
 	return pSecurity
 }
 
 func toProtoSkills(skills []a2a.AgentSkill) []*a2apb.AgentSkill {
-	// TODO: add validation
 	pSkills := make([]*a2apb.AgentSkill, len(skills))
 	for i, skill := range skills {
 		pSkills[i] = &a2apb.AgentSkill{
-			Id:                   skill.ID,
-			Name:                 skill.Name,
-			Description:          skill.Description,
-			Tags:                 skill.Tags,
-			Examples:             skill.Examples,
-			InputModes:           skill.InputModes,
-			OutputModes:          skill.OutputModes,
-			SecurityRequirements: toProtoSecurity(skill.SecurityRequirements),
+			Id:          skill.ID,
+			Name:        skill.Name,
+			Description: skill.Description,
+			Tags:        skill.Tags,
+			Examples:    skill.Examples,
+			InputModes:  skill.InputModes,
+			OutputModes: skill.OutputModes,
+			Security:    toProtoSecurity(skill.SecurityRequirements),
 		}
 	}
 	return pSkills
 }
 
 func toProtoAgentCardSignatures(in []a2a.AgentCardSignature) ([]*a2apb.AgentCardSignature, error) {
-	// TODO: add validation
 	if in == nil {
 		return nil, nil
 	}
@@ -868,11 +821,9 @@ func toProtoAgentCardSignatures(in []a2a.AgentCardSignature) ([]*a2apb.AgentCard
 }
 
 func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
-	// TODO: add validation
 	if card == nil {
 		return nil, nil
 	}
-
 	capabilities, err := toProtoCapabilities(card.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert agent capabilities: %w", err)
@@ -889,31 +840,39 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	}
 
 	result := &a2apb.AgentCard{
-		Name:                 card.Name,
-		Description:          card.Description,
-		SupportedInterfaces:  toProtoSupportedInterfaces(card.SupportedInterfaces),
-		Provider:             toProtoAgentProvider(card.Provider),
-		Version:              card.Version,
-		DocumentationUrl:     &card.DocumentationURL,
-		Capabilities:         capabilities,
-		SecuritySchemes:      schemes,
-		SecurityRequirements: toProtoSecurity(card.SecurityRequirements),
-		DefaultInputModes:    card.DefaultInputModes,
-		DefaultOutputModes:   card.DefaultOutputModes,
-		Skills:               toProtoSkills(card.Skills),
-		Signatures:           signatures,
-		IconUrl:              &card.IconURL,
+		Name:                              card.Name,
+		Description:                       card.Description,
+		Version:                           card.Version,
+		DocumentationUrl:                  card.DocumentationURL,
+		Capabilities:                      capabilities,
+		DefaultInputModes:                 card.DefaultInputModes,
+		DefaultOutputModes:                card.DefaultOutputModes,
+		SupportsAuthenticatedExtendedCard: card.Capabilities.ExtendedAgentCard,
+		SecuritySchemes:                   schemes,
+		Provider:                          toProtoAgentProvider(card.Provider),
+		Security:                          toProtoSecurity(card.SecurityRequirements),
+		Skills:                            toProtoSkills(card.Skills),
+		IconUrl:                           card.IconURL,
+		Signatures:                        signatures,
 	}
+
+	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
+		return i.ProtocolVersion == a2a.Version
+	})
+	if agentInterfaceIdx == -1 {
+		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2a.Version)
+	}
+	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
+	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
+	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
+	var additionalInterfaces []*a2a.AgentInterface
+	for i, iface := range card.SupportedInterfaces {
+		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.Version {
+			continue
+		}
+		additionalInterfaces = append(additionalInterfaces, iface)
+	}
+	result.AdditionalInterfaces = toProtoAdditionalInterfaces(additionalInterfaces)
 
 	return result, nil
-}
-
-func ToProtoGetExtendedAgentCardRequest(req *a2a.GetExtendedAgentCardRequest) (*a2apb.GetExtendedAgentCardRequest, error) {
-	if req == nil {
-		return nil, nil
-	}
-
-	return &a2apb.GetExtendedAgentCardRequest{
-		Tenant: req.Tenant,
-	}, nil
 }

@@ -275,7 +275,7 @@ func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}}
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.protocolVersion)}}
 	if !reflect.DeepEqual(receivedParams, wantParams) {
 		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
 	}

@@ -29,7 +29,7 @@ import (
 type ProtocolVersion string
 
 // Version is the protocol version which SDK implements.
-const Version ProtocolVersion = "0.3.0"
+const Version ProtocolVersion = "1.0"
 
 // TaskInfoProvider provides information about the Task.
 type TaskInfoProvider interface {

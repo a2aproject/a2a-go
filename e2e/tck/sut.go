@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	// "github.com/a2aproject/a2a-go/a2agrpc"
+	"github.com/a2aproject/a2a-go/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -72,8 +72,8 @@ func main() {
 	agentCard := &a2a.AgentCard{
 		Name:        "TCK Core Agent",
 		Description: "A complete A2A agent implementation designed specifically for testing with the A2A Technology Compatibility Kit (TCK)",
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: cardUrl, ProtocolBinding: preferredTransport},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(cardUrl, preferredTransport),
 		},
 		Version:            "1.0.0",
 		DefaultInputModes:  []string{"text"},
@@ -113,11 +113,9 @@ func startGRPCServer(port int, handler a2asrv.RequestHandler) error {
 	}
 	log.Printf("Starting a gRPC server on 127.0.0.1:%d", port)
 
-	// TODO: uncomment and fix after pbconv is implemented
-
-	// grpcHandler := a2agrpc.NewHandler(handler)
+	grpcHandler := a2agrpc.NewHandler(handler)
 	grpcServer := grpc.NewServer()
-	// grpcHandler.RegisterWith(grpcServer)
+	grpcHandler.RegisterWith(grpcServer)
 	return grpcServer.Serve(grpcListener)
 }
 

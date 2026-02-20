@@ -19,4 +19,4 @@ package a2av0
 type ProtocolVersion string
 
 // Version is the protocol version which SDK implements.
-const Version ProtocolVersion = "0.3.0"
+const Version ProtocolVersion = "0.3"
