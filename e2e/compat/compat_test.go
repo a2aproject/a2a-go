@@ -124,7 +124,9 @@ func compileSUTAndRun(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
 		return 1
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	compatTestBinPath = filepath.Join(tmpDir, "compat-test-bin")
 
