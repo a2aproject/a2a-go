@@ -237,7 +237,7 @@ func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, pbReq *a2ap
 }
 
 func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
-	req, err := pbconv.FromProtoListTaksPushConfigRequest(pbReq)
+	req, err := pbconv.FromProtoListTaskPushConfigRequest(pbReq)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
@@ -253,7 +253,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 
 	resp := &a2a.ListTaskPushConfigResponse{
 		Configs:       configs,
-		NextPageToken: req.PageToken,
+		NextPageToken: "",
 	}
 
 	pbResp, err := pbconv.ToProtoListTaskPushConfigResponse(resp)

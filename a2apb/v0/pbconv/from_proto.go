@@ -205,7 +205,7 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 
 	var status a2a.TaskState
 	if req.GetStatus() != 0 {
-		status = a2a.TaskState(req.GetStatus().String())
+		status = fromProtoTaskState(req.GetStatus())
 	}
 
 	return &a2a.ListTasksRequest{
@@ -520,7 +520,7 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	return &a2a.TaskPushConfig{TaskID: taskID, Config: *config}, nil
 }
 
-func FromProtoListTaksPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
+func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is nil")
 	}

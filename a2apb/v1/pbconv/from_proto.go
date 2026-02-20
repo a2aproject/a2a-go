@@ -262,7 +262,7 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 
 	var status a2a.TaskState
 	if req.GetStatus() != 0 {
-		status = a2a.TaskState(req.GetStatus().String())
+		status = fromProtoTaskState(req.GetStatus())
 	}
 
 	listTasksRequest := a2a.ListTasksRequest{
