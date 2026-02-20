@@ -102,10 +102,11 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 	}
 
 	client := &Client{
-		config:       f.config,
-		transport:    conn,
-		interceptors: f.interceptors,
-		baseURL:      selected.endpoint.URL,
+		config:          f.config,
+		transport:       conn,
+		interceptors:    f.interceptors,
+		baseURL:         selected.endpoint.URL,
+		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
 	client.card.Store(card)
 	return client, nil
@@ -129,10 +130,11 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 	}
 
 	return &Client{
-		config:       f.config,
-		transport:    conn,
-		interceptors: f.interceptors,
-		baseURL:      selected.endpoint.URL,
+		config:          f.config,
+		transport:       conn,
+		interceptors:    f.interceptors,
+		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		baseURL:         selected.endpoint.URL,
 	}, nil
 }
 
@@ -146,7 +148,7 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 	var selected *transportCandidate
 	var failures []error
 	for _, tc := range candidates {
-		conn, err := tc.factory.Create(ctx, tc.endpoint.URL, card)
+		conn, err := tc.factory.Create(ctx, card, tc.endpoint)
 		if err == nil {
 			transport = conn
 			selected = &tc
@@ -174,10 +176,15 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 		key := makeTransportKey(opt.ProtocolVersion, opt.ProtocolBinding)
 
 		candidate, ok := f.transports[key]
+		candidateVersion := key.protocolSemver
 		if !ok { // if no exact version match fallback to compatibility by major version
 			for otherKey, tr := range f.transports {
+				if otherKey.protocol != key.protocol {
+					continue
+				}
 				if semver.Major(string(key.protocolSemver)) == semver.Major(string(otherKey.protocolSemver)) {
 					candidate = tr
+					candidateVersion = otherKey.protocolSemver
 					break
 				}
 			}
@@ -191,7 +198,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 					break
 				}
 			}
-			candidates = append(candidates, transportCandidate{candidate, opt, priority, string(key.protocolSemver)})
+			candidates = append(candidates, transportCandidate{candidate, opt, priority, string(candidateVersion)})
 		}
 	}
 

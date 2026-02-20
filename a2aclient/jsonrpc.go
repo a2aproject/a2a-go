@@ -57,8 +57,8 @@ type JSONRPCOption func(*jsonrpcTransport)
 func WithJSONRPCTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolJSONRPC,
-		TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (Transport, error) {
-			return NewJSONRPCTransport(url, client), nil
+		TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
+			return NewJSONRPCTransport(iface.URL, client), nil
 		}),
 	)
 }
