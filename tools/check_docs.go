@@ -86,29 +86,37 @@ func checkFile(fset *token.FileSet, filename string, file *ast.File) {
 			if !d.Name.IsExported() {
 				continue
 			}
-			checkDoc(fset, filename, d.Name.Name, d.Doc, "func")
+			checkDoc(fset, filename, d.Name.Name, d.Doc, "func", true)
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
 				case *ast.TypeSpec:
-					if !s.Name.IsExported() {
+						if !s.Name.IsExported() {
 						continue
 					}
 					doc := s.Doc
+					checkPrefix := true
 					if doc == nil {
+						if d.Lparen.IsValid() {
+							checkPrefix = false
+						}
 						doc = d.Doc // Fallback to GenDecl doc
 					}
-					checkDoc(fset, filename, s.Name.Name, doc, "type")
+					checkDoc(fset, filename, s.Name.Name, doc, "type", checkPrefix)
 				case *ast.ValueSpec:
 					for i, name := range s.Names {
 						if !name.IsExported() {
 							continue
 						}
 						doc := s.Doc
+						checkPrefix := true
 						if doc == nil {
+							if d.Lparen.IsValid() {
+								checkPrefix = false
+							}
 							doc = d.Doc // Fallback
 						}
-						checkDoc(fset, filename, name.Name, doc, "var/const")
+						checkDoc(fset, filename, name.Name, doc, "var/const", checkPrefix)
 						// If multiple vars are defined on one line, sharing doc is fine.
 						// We check once per spec usually, but here we can check per name.
 						// Actually, if it's a list, the doc applies to all.
@@ -122,7 +130,7 @@ func checkFile(fset *token.FileSet, filename string, file *ast.File) {
 	}
 }
 
-func checkDoc(fset *token.FileSet, filename, name string, doc *ast.CommentGroup, kind string) {
+func checkDoc(fset *token.FileSet, filename, name string, doc *ast.CommentGroup, kind string, checkPrefix bool) {
 	if doc == nil {
 		fmt.Printf("%s: %s %s is missing doc\n", filename, kind, name)
 		return
@@ -137,8 +145,24 @@ func checkDoc(fset *token.FileSet, filename, name string, doc *ast.CommentGroup,
 		return
 	}
 
-	if !strings.HasPrefix(text, name+" ") && !strings.HasPrefix(strings.ToLower(text), "deprecated:") {
-		fmt.Printf("%s: %s %s doc does not start with symbol name\n", pos, kind, name)
+	if checkPrefix {
+		hasPrefix := strings.HasPrefix(text, name)
+		validSeparator := false
+		if hasPrefix {
+			if len(text) == len(name) {
+				validSeparator = true
+			} else {
+				next := text[len(name)]
+				switch next {
+				case ' ', '.', ',', ':', ';', '!', '?', '(', ')':
+					validSeparator = true
+				}
+			}
+		}
+
+		if (!hasPrefix || !validSeparator) && !strings.HasPrefix(strings.ToLower(text), "deprecated:") {
+			fmt.Printf("%s: %s %s doc does not start with symbol name\n", pos, kind, name)
+		}
 	}
 
 	if len(strings.Fields(text)) < 3 {
