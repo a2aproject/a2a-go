@@ -285,7 +285,7 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.WithCallContext(ctx, svcParams)
+	return a2asrv.NewCallContext(ctx, svcParams)
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {
