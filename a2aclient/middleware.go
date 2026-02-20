@@ -48,6 +48,17 @@ func (m ServiceParams) Append(key string, vals ...string) {
 	m[strings.ToLower(key)] = result
 }
 
+func (m ServiceParams) clone() ServiceParams {
+	if m == nil {
+		return nil
+	}
+	c := make(ServiceParams, len(m))
+	for k, v := range m {
+		c[k] = slices.Clone(v)
+	}
+	return c
+}
+
 // Request represents a transport-agnostic request to be sent to A2A server.
 type Request struct {
 	// Method is the name of the method invoked on the A2A-server.
@@ -104,19 +115,19 @@ type serviceParamsKeyType struct{}
 // for serializing them according to the protocol binding.
 // [CallInterceptor]-s will be able to modify params before they are passed to the [Transport].
 func AttachServiceParams(ctx context.Context, params ServiceParams) context.Context {
-	existing := serviceParamsFrom(ctx)
+	existing := serviceParamsCloneFrom(ctx)
 	for k, values := range params {
 		existing.Append(k, values...)
 	}
 	return context.WithValue(ctx, serviceParamsKeyType{}, existing)
 }
 
-func serviceParamsFrom(ctx context.Context) ServiceParams {
+func serviceParamsCloneFrom(ctx context.Context) ServiceParams {
 	params, ok := ctx.Value(serviceParamsKeyType{}).(ServiceParams)
 	if !ok {
 		return make(ServiceParams)
 	}
-	return params
+	return params.clone()
 }
 
 // PassthroughInterceptor can be used by [CallInterceptor] implementers who don't need all methods.

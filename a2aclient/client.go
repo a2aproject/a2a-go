@@ -270,7 +270,7 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 	req := Request{
 		Method:        method,
 		BaseURL:       c.baseURL,
-		ServiceParams: serviceParamsFrom(ctx),
+		ServiceParams: serviceParamsCloneFrom(ctx),
 		Card:          c.card.Load(),
 		Payload:       payload,
 	}
