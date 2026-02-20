@@ -19,6 +19,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -857,17 +858,17 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	}
 
 	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
-		return i.ProtocolVersion == a2a.Version
+		return i.ProtocolVersion == a2a.ProtocolVersion(a2av0.Version)
 	})
 	if agentInterfaceIdx == -1 {
-		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2a.Version)
+		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2av0.Version)
 	}
 	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
 	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
 	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
 	var additionalInterfaces []*a2a.AgentInterface
 	for i, iface := range card.SupportedInterfaces {
-		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.Version {
+		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.ProtocolVersion(a2av0.Version) {
 			continue
 		}
 		additionalInterfaces = append(additionalInterfaces, iface)

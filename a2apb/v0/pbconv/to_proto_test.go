@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
@@ -775,8 +776,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Name:        "Test Agent",
 		Description: "An agent for testing.",
 		SupportedInterfaces: []*a2a.AgentInterface{
-			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2a.Version},
-			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2a.Version},
+			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)},
+			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)},
 		},
 		Provider: &a2a.AgentProvider{
 			Org: "Test Org",
@@ -840,7 +841,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 
 	extParams, _ := structpb.NewStruct(map[string]any{"key": "val"})
 	pCard := &a2apb.AgentCard{
-		ProtocolVersion:    string(a2a.Version),
+		ProtocolVersion:    string(a2av0.Version),
 		Name:               "Test Agent",
 		Description:        "An agent for testing.",
 		Url:                "https://example.com/agent",
