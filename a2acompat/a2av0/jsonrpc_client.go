@@ -38,9 +38,9 @@ type JSONRPCTransportConfig struct {
 }
 
 func NewJSONRPCTransportFactory(cfg JSONRPCTransportConfig) a2aclient.TransportFactory {
-	return a2aclient.TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (a2aclient.Transport, error) {
+	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
 		if cfg.URL == "" {
-			cfg.URL = url
+			cfg.URL = iface.URL
 		}
 		return NewJSONRPCTransport(cfg), nil
 	})
