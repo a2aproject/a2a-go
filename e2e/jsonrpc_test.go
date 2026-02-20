@@ -139,8 +139,8 @@ func mustCreateClient(t *testing.T, card *a2a.AgentCard) *a2aclient.Client {
 
 func newAgentCard(url string) *a2a.AgentCard {
 	return &a2a.AgentCard{
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: url, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(url, a2a.TransportProtocolJSONRPC),
 		},
 		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}

@@ -124,8 +124,8 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 	)
 	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
 
-	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-		{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+	client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{
+		a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
 	})
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)

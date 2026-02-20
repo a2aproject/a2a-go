@@ -123,8 +123,8 @@ func TestREST_RequestRouting(t *testing.T) {
 
 	server := httptest.NewServer(NewRESTHandler(reqHandler))
 
-	client, err := a2aclient.NewFromEndpoints(ctx, []a2a.AgentInterface{
-		{URL: server.URL, ProtocolBinding: a2a.TransportProtocolHTTPJSON},
+	client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{
+		a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON),
 	})
 	if err != nil {
 		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)

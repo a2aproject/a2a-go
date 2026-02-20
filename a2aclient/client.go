@@ -50,10 +50,11 @@ type Config struct {
 // The actual call is delegated to a specific [Transport] implementation.
 // [CallInterceptor]-s are applied before and after every protocol call.
 type Client struct {
-	config       Config
-	transport    Transport
-	interceptors []CallInterceptor
-	baseURL      string
+	config          Config
+	transport       Transport
+	protocolVersion a2a.ProtocolVersion
+	interceptors    []CallInterceptor
+	baseURL         string
 
 	card atomic.Pointer[a2a.AgentCard]
 }
@@ -258,7 +259,7 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 	req := Request{
 		Method:        method,
 		BaseURL:       c.baseURL,
-		ServiceParams: ServiceParams{},
+		ServiceParams: ServiceParams{a2a.SvcParamVersion: []string{string(c.protocolVersion)}},
 		Card:          c.card.Load(),
 		Payload:       payload,
 	}

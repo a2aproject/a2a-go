@@ -33,8 +33,8 @@ import (
 func WithGRPCTransport(opts ...grpc.DialOption) a2aclient.FactoryOption {
 	return a2aclient.WithTransport(
 		a2a.TransportProtocolGRPC,
-		a2aclient.TransportFactoryFn(func(ctx context.Context, url string, card *a2a.AgentCard) (a2aclient.Transport, error) {
-			conn, err := grpc.NewClient(url, opts...)
+		a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
+			conn, err := grpc.NewClient(iface.URL, opts...)
 			if err != nil {
 				return nil, err
 			}

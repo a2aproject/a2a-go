@@ -1233,7 +1233,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
+	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)

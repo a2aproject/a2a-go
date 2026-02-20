@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package a2av0 contains 0.3-compatible agent card type definition.
-package a2av0
+package a2a
 
-// ProtocolVersion is a string constant which represents a version of the protocol.
-type ProtocolVersion string
+// SvcParamVersion is the key for the service parameter that specifies the A2A protocol version
+// that the client is using.
+const SvcParamVersion = "A2A-Version"
 
-// Version is the protocol version which SDK implements.
-const Version ProtocolVersion = "0.3"
+// SvcParamExtensions is the key for the service parameter that specifies the A2A extensions
+// that the client wants to use for the request.
+const SvcParamExtensions = "A2A-Extensions"

@@ -45,8 +45,8 @@ func main() {
 
 	ctx := context.Background()
 	card := &a2a.AgentCard{
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: fmt.Sprintf("%s/invoke", *server), ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(fmt.Sprintf("%s/invoke", *server), a2a.TransportProtocolJSONRPC),
 		},
 		Capabilities: a2a.AgentCapabilities{Streaming: true},
 	}

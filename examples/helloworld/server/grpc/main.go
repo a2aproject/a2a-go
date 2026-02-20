@@ -92,8 +92,8 @@ func main() {
 	agentCard := &a2a.AgentCard{
 		Name:        "Hello World Agent",
 		Description: "Just a hello world agent",
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: addr, ProtocolBinding: a2a.TransportProtocolGRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(addr, a2a.TransportProtocolGRPC),
 		},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},

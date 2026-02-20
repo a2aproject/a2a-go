@@ -130,8 +130,8 @@ func startServerWithExtensions(t *testing.T, executor a2asrv.AgentExecutor, exte
 
 	card := &a2a.AgentCard{
 		Capabilities: a2a.AgentCapabilities{Extensions: extensions},
-		SupportedInterfaces: []a2a.AgentInterface{
-			{URL: server.URL, ProtocolBinding: a2a.TransportProtocolJSONRPC},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
 		},
 	}
 	return card

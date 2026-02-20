@@ -556,16 +556,16 @@ func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationCon
 	}, nil
 }
 
-func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []a2a.AgentInterface {
+func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []*a2a.AgentInterface {
 	pInterfaces := pCard.GetAdditionalInterfaces()
-	interfaces := make([]a2a.AgentInterface, len(pInterfaces)+1)
-	interfaces[0] = a2a.AgentInterface{
+	interfaces := make([]*a2a.AgentInterface, len(pInterfaces)+1)
+	interfaces[0] = &a2a.AgentInterface{
 		ProtocolBinding: a2a.TransportProtocol(pCard.GetPreferredTransport()),
 		URL:             pCard.GetUrl(),
 		ProtocolVersion: a2a.ProtocolVersion(pCard.GetProtocolVersion()),
 	}
 	for i, pIface := range pInterfaces {
-		interfaces[i+1] = a2a.AgentInterface{
+		interfaces[i+1] = &a2a.AgentInterface{
 			ProtocolBinding: a2a.TransportProtocol(pIface.GetTransport()),
 			URL:             pIface.GetUrl(),
 			ProtocolVersion: a2a.Version,

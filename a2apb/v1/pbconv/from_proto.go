@@ -648,11 +648,11 @@ func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfi
 	}, nil
 }
 
-func fromProtoSupportedInterfaces(pInterfaces []*a2apb.AgentInterface) ([]a2a.AgentInterface, error) {
+func fromProtoSupportedInterfaces(pInterfaces []*a2apb.AgentInterface) ([]*a2a.AgentInterface, error) {
 	if pInterfaces == nil {
 		return nil, nil
 	}
-	interfaces := make([]a2a.AgentInterface, len(pInterfaces))
+	interfaces := make([]*a2a.AgentInterface, len(pInterfaces))
 	for i, pIface := range pInterfaces {
 		url := pIface.GetUrl()
 		if url == "" {
@@ -662,7 +662,7 @@ func fromProtoSupportedInterfaces(pInterfaces []*a2apb.AgentInterface) ([]a2a.Ag
 		if pb == "" {
 			return nil, fmt.Errorf("protocol binding cannot be empty")
 		}
-		interfaces[i] = a2a.AgentInterface{
+		interfaces[i] = &a2a.AgentInterface{
 			URL:             url,
 			ProtocolBinding: a2a.TransportProtocol(pb),
 			Tenant:          pIface.GetTenant(),
