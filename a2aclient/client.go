@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
@@ -57,8 +56,7 @@ type Client struct {
 	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
 
-	cardResolver agentcard.Resolver
-	card         atomic.Pointer[a2a.AgentCard]
+	card atomic.Pointer[a2a.AgentCard]
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
