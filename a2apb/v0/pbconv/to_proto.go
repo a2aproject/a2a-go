@@ -575,7 +575,7 @@ func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2ap
 	}, nil
 }
 
-func toProtoAdditionalInterfaces(interfaces []a2a.AgentInterface) []*a2apb.AgentInterface {
+func toProtoAdditionalInterfaces(interfaces []*a2a.AgentInterface) []*a2apb.AgentInterface {
 	pInterfaces := make([]*a2apb.AgentInterface, len(interfaces))
 	for i, iface := range interfaces {
 		pInterfaces[i] = &a2apb.AgentInterface{
@@ -856,7 +856,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		Signatures:                        signatures,
 	}
 
-	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i a2a.AgentInterface) bool {
+	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
 		return i.ProtocolVersion == a2a.Version
 	})
 	if agentInterfaceIdx == -1 {
@@ -865,7 +865,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
 	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
 	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
-	var additionalInterfaces []a2a.AgentInterface
+	var additionalInterfaces []*a2a.AgentInterface
 	for i, iface := range card.SupportedInterfaces {
 		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.Version {
 			continue

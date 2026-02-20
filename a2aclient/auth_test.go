@@ -54,7 +54,7 @@ func TestAuth_JSONRPC(t *testing.T) {
 
 	schemeName := a2a.SecuritySchemeName("oauth2")
 	card := &a2a.AgentCard{
-		SupportedInterfaces: []a2a.AgentInterface{
+		SupportedInterfaces: []*a2a.AgentInterface{
 			{
 				ProtocolBinding: a2a.TransportProtocolJSONRPC,
 				ProtocolVersion: a2a.Version,
