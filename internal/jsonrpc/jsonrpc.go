@@ -15,6 +15,7 @@
 package jsonrpc
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -131,4 +132,44 @@ func ToJSONRPCError(err error) *Error {
 		Message: a2a.ErrInternalError.Error(),
 		Data:    map[string]any{"error": err.Error()},
 	}
+}
+
+func IsValidID(id any) bool {
+	if id == nil {
+		return true
+	}
+	switch id.(type) {
+	case string, float64:
+		return true
+	default:
+		return false
+	}
+}
+
+type ServerRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	ID      any             `json:"id"`
+}
+
+type ServerResponse struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      any    `json:"id"`
+	Result  any    `json:"result,omitempty"`
+	Error   *Error `json:"error,omitempty"`
+}
+
+type ClientRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+	ID      string `json:"id"`
+}
+
+type ClientResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
 }
