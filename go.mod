@@ -15,7 +15,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
