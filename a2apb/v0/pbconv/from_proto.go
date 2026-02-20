@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -568,7 +569,7 @@ func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []*a2a.AgentInterface
 		interfaces[i+1] = &a2a.AgentInterface{
 			ProtocolBinding: a2a.TransportProtocol(pIface.GetTransport()),
 			URL:             pIface.GetUrl(),
-			ProtocolVersion: a2a.Version,
+			ProtocolVersion: a2a.ProtocolVersion(a2av0.Version),
 		}
 	}
 	return interfaces

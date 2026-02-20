@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -1233,7 +1234,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
+	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
