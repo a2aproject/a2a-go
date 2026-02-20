@@ -30,8 +30,8 @@ import (
 
 type loggerKey struct{}
 
-// WithLogger creates a new Context with the provided Logger attached.
-func WithLogger(ctx context.Context, logger *slog.Logger) context.Context {
+// AttachLogger creates a new Context with the provided Logger attached.
+func AttachLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	return context.WithValue(ctx, loggerKey{}, logger)
 }
 

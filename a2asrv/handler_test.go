@@ -892,21 +892,21 @@ func TestRequestHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name: "dynamic",
-			option: WithExtendedAgentCardProducer(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			option: WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return card, nil
 			})),
 			wantCard: card,
 		},
 		{
 			name: "dynamic error",
-			option: WithExtendedAgentCardProducer(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			option: WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return nil, fmt.Errorf("failed")
 			})),
 			wantErr: fmt.Errorf("failed"),
 		},
 		{
 			name:    "not configured",
-			wantErr: a2a.ErrAuthenticatedExtendedCardNotConfigured,
+			wantErr: a2a.ErrExtendedCardNotConfigured,
 		},
 	}
 
@@ -919,7 +919,7 @@ func TestRequestHandler_GetAgentCard(t *testing.T) {
 			}
 			handler := newTestHandler(options...)
 
-			result, gotErr := handler.GetExtendedAgentCard(ctx)
+			result, gotErr := handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 
 			if tt.wantErr == nil {
 				if gotErr != nil {

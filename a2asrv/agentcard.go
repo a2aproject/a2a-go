@@ -23,9 +23,10 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+// WellKnownAgentCardPath is the standard HTTP path for retrieving the agent card as defined in A2A spec.
 const WellKnownAgentCardPath = "/.well-known/agent-card.json"
 
-// AgentCardProducer creates an AgentCard instances used for agent discovery and capability negotiation.
+// AgentCardProducer creates public AgentCard instances used for agent discovery and capability negotiation.
 type AgentCardProducer interface {
 	// Card returns a self-describing manifest for an agent. It provides essential
 	// metadata including the agent's identity, capabilities, skills, supported
@@ -36,21 +37,38 @@ type AgentCardProducer interface {
 // AgentCardProducerFn is a function type which implements [AgentCardProducer].
 type AgentCardProducerFn func(ctx context.Context) (*a2a.AgentCard, error)
 
+// Card implements AgentCardProducer.
 func (fn AgentCardProducerFn) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	return fn(ctx)
+}
+
+// ExtendedAgentCardProducer creates AgentCard instances used for communicating extended
+// capabilities to authenticated clients.
+type ExtendedAgentCardProducer interface {
+	// ExtendedCard returns a self-describing manifest for an agent. It contains extended data
+	// for authenticated clients.
+	ExtendedCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
+}
+
+// ExtendedAgentCardProducerFn is a function type which implements [ExtendedAgentCardProducer].
+type ExtendedAgentCardProducerFn func(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
+
+// ExtendedCard implements [ExtendedAgentCardProducer].
+func (fn ExtendedAgentCardProducerFn) ExtendedCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	return fn(ctx, req)
 }
 
 // WithExtendedAgentCard sets a static extended authenticated agent card.
 func WithExtendedAgentCard(card *a2a.AgentCard) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.authenticatedCardProducer = AgentCardProducerFn(func(ctx context.Context) (*a2a.AgentCard, error) {
+		h.authenticatedCardProducer = ExtendedAgentCardProducerFn(func(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 			return card, nil
 		})
 	}
 }
 
 // WithExtendedAgentCardProducer sets a dynamic extended authenticated agent card producer.
-func WithExtendedAgentCardProducer(cardProducer AgentCardProducer) RequestHandlerOption {
+func WithExtendedAgentCardProducer(cardProducer ExtendedAgentCardProducer) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.authenticatedCardProducer = cardProducer
 	}
@@ -66,7 +84,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 		panic(err.Error())
 	}
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		ctx := withRequestContext(req)
+		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
@@ -84,7 +102,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 // The information contained in this card can be queried from any origin.
 func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		ctx := withRequestContext(req)
+		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
 			writePublicCardHTTPOptions(rw, req)
 			rw.WriteHeader(http.StatusOK)
@@ -110,14 +128,14 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 	})
 }
 
-func withRequestContext(req *http.Request) context.Context {
+func attachLogger(req *http.Request) context.Context {
 	logger := log.LoggerFrom(req.Context())
 	withAttrs := logger.With(
 		"method", req.Method,
 		"host", req.Host,
 		"remote_addr", req.RemoteAddr,
 	)
-	return log.WithLogger(req.Context(), withAttrs)
+	return log.AttachLogger(req.Context(), withAttrs)
 }
 
 func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {

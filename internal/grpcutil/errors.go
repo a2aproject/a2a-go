@@ -40,7 +40,7 @@ var errorMappings = []struct {
 	{codes.DeadlineExceeded, context.DeadlineExceeded},
 
 	// Secondary mappings (only used for ToGRPCError)
-	{codes.NotFound, a2a.ErrAuthenticatedExtendedCardNotConfigured},
+	{codes.NotFound, a2a.ErrExtendedCardNotConfigured},
 	{codes.Unimplemented, a2a.ErrPushNotificationNotSupported},
 	{codes.Unimplemented, a2a.ErrMethodNotFound},
 	{codes.InvalidArgument, a2a.ErrUnsupportedContentType},

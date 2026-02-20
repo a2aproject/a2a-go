@@ -19,6 +19,7 @@ import (
 	"errors"
 	"iter"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -37,53 +38,53 @@ type testTransport struct {
 	ListTaskPushConfigFn   func(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 	CreateTaskPushConfigFn func(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 	DeleteTaskPushConfigFn func(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
-	GetAgentCardFn         func(context.Context, ServiceParams) (*a2a.AgentCard, error)
+	GetExtendedAgentCardFn func(context.Context, ServiceParams, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
 
 var _ Transport = (*testTransport)(nil)
 
-func (t *testTransport) GetTask(ctx context.Context, params ServiceParams, query *a2a.GetTaskRequest) (*a2a.Task, error) {
-	return t.GetTaskFn(ctx, params, query)
+func (t *testTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	return t.GetTaskFn(ctx, params, req)
 }
 
-func (t *testTransport) ListTasks(ctx context.Context, params ServiceParams, request *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	return t.ListTasksFn(ctx, params, request)
+func (t *testTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	return t.ListTasksFn(ctx, params, req)
 }
 
-func (t *testTransport) CancelTask(ctx context.Context, params ServiceParams, id *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	return t.CancelTaskFn(ctx, params, id)
+func (t *testTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	return t.CancelTaskFn(ctx, params, req)
 }
 
-func (t *testTransport) SendMessage(ctx context.Context, params ServiceParams, message *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	return t.SendMessageFn(ctx, params, message)
+func (t *testTransport) SendMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	return t.SendMessageFn(ctx, params, req)
 }
 
-func (t *testTransport) SubscribeToTask(ctx context.Context, params ServiceParams, id *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
-	return t.SubscribeToTaskFn(ctx, params, id)
+func (t *testTransport) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	return t.SubscribeToTaskFn(ctx, params, req)
 }
 
-func (t *testTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, message *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
-	return t.SendStreamingMessageFn(ctx, params, message)
+func (t *testTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+	return t.SendStreamingMessageFn(ctx, params, req)
 }
 
-func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	return t.GetTaskPushConfigFn(ctx, sParams, params)
+func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	return t.GetTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) ListTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	return t.ListTaskPushConfigFn(ctx, sParams, params)
+func (t *testTransport) ListTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	return t.ListTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) CreateTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	return t.CreateTaskPushConfigFn(ctx, sParams, params)
+func (t *testTransport) CreateTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+	return t.CreateTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) DeleteTaskPushConfig(ctx context.Context, sParams ServiceParams, params *a2a.DeleteTaskPushConfigRequest) error {
-	return t.DeleteTaskPushConfigFn(ctx, sParams, params)
+func (t *testTransport) DeleteTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
+	return t.DeleteTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) GetExtendedAgentCard(ctx context.Context, sParams ServiceParams) (*a2a.AgentCard, error) {
-	return t.GetAgentCardFn(ctx, sParams)
+func (t *testTransport) GetExtendedAgentCard(ctx context.Context, sParams ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	return t.GetExtendedAgentCardFn(ctx, sParams, req)
 }
 
 func (t *testTransport) Destroy() error {
@@ -275,7 +276,7 @@ func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.protocolVersion)}}
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.endpoint.ProtocolVersion)}}
 	if !reflect.DeepEqual(receivedParams, wantParams) {
 		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
 	}
@@ -393,80 +394,93 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 	want := &a2a.AgentCard{Name: "test", Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: true}}
 	extendedCard := &a2a.AgentCard{Name: "test", Description: "secret"}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+		GetExtendedAgentCardFn: func(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 			return extendedCard, nil
 		},
 	}
 	interceptor := &testInterceptor{}
 	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
 	client.card.Store(want)
-	got, err := client.GetExtendedAgentCard(ctx)
+	got, err := client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want nil", err)
 	}
 	if interceptor.lastReq == nil {
-		t.Fatal("lastReq = nil, want GertAgentCard")
+		t.Fatal("lastReq = nil, want GetExtendedAgentCard")
 	}
 	if diff := cmp.Diff(extendedCard, got); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
 	}
 }
 
-func TestClient_PassAgentCardToInterceptorsAfterResolved(t *testing.T) {
+func TestClient_UpdateAgentCard(t *testing.T) {
 	ctx := t.Context()
+	publicCard := &a2a.AgentCard{Name: "test"}
 	extendedCard := &a2a.AgentCard{
 		Name:         "test",
 		Description:  "secret",
 		Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: true},
 	}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+		GetExtendedAgentCardFn: func(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 			return extendedCard, nil
 		},
 	}
 	interceptor := &testInterceptor{}
-	client := &Client{transport: transport, interceptors: []CallInterceptor{interceptor}}
-	_, err := client.GetExtendedAgentCard(ctx)
-	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
-	}
-	if interceptor.lastReq.Card != nil {
-		t.Fatalf("lastReq.Card = %v, want nil", interceptor.lastReq.Card)
-	}
-	if interceptor.lastResp.Card != nil {
-		t.Fatalf("lastResp.Card = %v, want nil", interceptor.lastResp.Card)
+	endpoint := a2a.AgentInterface{URL: "example", ProtocolBinding: a2a.TransportProtocolGRPC}
+	client := &Client{transport: transport, endpoint: endpoint, interceptors: []CallInterceptor{interceptor}}
+
+	// Card must still contain the interface from which the client was created
+	err := client.UpdateCard(publicCard)
+	wantErrContain := "client needs to be recreated"
+	if err == nil || !strings.Contains(err.Error(), wantErrContain) {
+		t.Fatalf("client.UpdateCard() error = %v, want = %s", err, wantErrContain)
 	}
 
-	_, err = client.GetExtendedAgentCard(ctx)
+	publicCard.SupportedInterfaces = append(publicCard.SupportedInterfaces, &endpoint)
+	err = client.UpdateCard(publicCard)
+	if err != nil {
+		t.Fatalf("client.UpdateCard() error = %v, want nil", err)
+	}
+
+	// Card must list extended agent card in capabilities
+	_, err = client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
+	if !errors.Is(err, a2a.ErrExtendedCardNotConfigured) {
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want = %v", err, a2a.ErrExtendedCardNotConfigured)
+	}
+	publicCard.Capabilities.ExtendedAgentCard = true
+	err = client.UpdateCard(publicCard)
+	if err != nil {
+		t.Fatalf("client.UpdateCard() error = %v, want nil", err)
+	}
+
+	card, err := client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
-	if diff := cmp.Diff(extendedCard, interceptor.lastReq.Card); diff != "" {
+	if diff := cmp.Diff(publicCard, interceptor.lastReq.Card); diff != "" {
 		t.Fatalf("wrong interceptor.lastReq.Card (+got,-want) diff = %s", diff)
 	}
-	if diff := cmp.Diff(extendedCard, interceptor.lastResp.Card); diff != "" {
+	if diff := cmp.Diff(publicCard, interceptor.lastResp.Card); diff != "" {
 		t.Fatalf("wrong interceptor.lastResp.Card (+got,-want) diff = %s", diff)
+	}
+	if diff := cmp.Diff(extendedCard, card); diff != "" {
+		t.Fatalf("wrong client.GetExtendedAgentCard() (+got,-want) diff = %s", diff)
 	}
 }
 
-func TestClient_GetAgentCardCallSkippedIfNoExtendedCard(t *testing.T) {
+func TestClient_GetExtendedAgentCardSkippedIfNotSupported(t *testing.T) {
 	ctx := t.Context()
-	want := &a2a.AgentCard{
-		Name:         "test",
-		Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: false},
-	}
+	want := &a2a.AgentCard{Name: "test", Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: false}}
 	interceptor := &testInterceptor{}
 	client := &Client{interceptors: []CallInterceptor{interceptor}}
 	client.card.Store(want)
-	got, err := client.GetExtendedAgentCard(ctx)
-	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+	_, err := client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
+	if !errors.Is(err, a2a.ErrExtendedCardNotConfigured) {
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want = %v", err, a2a.ErrExtendedCardNotConfigured)
 	}
 	if interceptor.lastReq != nil {
 		t.Fatalf("lastReq = %v, want nil", interceptor.lastReq)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
 	}
 }
 
@@ -804,35 +818,35 @@ func TestClient_InterceptDeleteTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestClient_InterceptGetAgentCard(t *testing.T) {
+func TestClient_InterceptGetExtendedAgentCard(t *testing.T) {
 	ctx := t.Context()
 	card := &a2a.AgentCard{}
 	transport := &testTransport{
-		GetAgentCardFn: func(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+		GetExtendedAgentCardFn: func(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 			return card, nil
 		},
 	}
 	interceptor := &testInterceptor{}
 	client := newTestClient(transport, interceptor)
-	client.baseURL = "https://base.com"
-	resp, err := client.GetExtendedAgentCard(ctx)
-	if interceptor.lastReq.Method != "GetAgentCard" {
-		t.Fatalf("lastReq.Method = %v, want GetAgentCard", interceptor.lastReq.Method)
+	client.endpoint.URL = "https://base.com"
+	resp, err := client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
+	if interceptor.lastReq.Method != "GetExtendedAgentCard" {
+		t.Fatalf("lastReq.Method = %v, want GetExtendedAgentCard", interceptor.lastReq.Method)
 	}
-	if interceptor.lastReq.BaseURL != client.baseURL {
-		t.Fatalf("lastReq.BaseURL = %q, want %q", interceptor.lastReq.BaseURL, client.baseURL)
+	if interceptor.lastReq.BaseURL != client.endpoint.URL {
+		t.Fatalf("lastReq.BaseURL = %q, want %q", interceptor.lastReq.BaseURL, client.endpoint.URL)
 	}
-	if interceptor.lastResp.Method != "GetAgentCard" {
-		t.Fatalf("lastResp.Method = %v, want GetAgentCard", interceptor.lastResp.Method)
+	if interceptor.lastResp.Method != "GetExtendedAgentCard" {
+		t.Fatalf("lastResp.Method = %v, want GetExtendedAgentCard", interceptor.lastResp.Method)
 	}
-	if interceptor.lastResp.BaseURL != client.baseURL {
-		t.Fatalf("lastResp.BaseURL = %q, want %q", interceptor.lastResp.BaseURL, client.baseURL)
+	if interceptor.lastResp.BaseURL != client.endpoint.URL {
+		t.Fatalf("lastResp.BaseURL = %q, want %q", interceptor.lastResp.BaseURL, client.endpoint.URL)
 	}
 	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want nil", err)
 	}
-	if payload, ok := interceptor.lastReq.Payload.(*struct{}); !ok || payload != nil {
-		t.Fatalf("interceptor.Before payload = %v, want *struct{}", interceptor.lastReq.Payload)
+	if payload, ok := interceptor.lastReq.Payload.(*a2a.GetExtendedAgentCardRequest); !ok || payload == nil {
+		t.Fatalf("interceptor.Before payload = %v, want *a2a.GetExtendedAgentCardRequest", interceptor.lastReq.Payload)
 	}
 	if interceptor.lastResp.Payload != resp {
 		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, resp)

@@ -15,4 +15,5 @@
 // Package a2aext provides utilities for A2A extension implementers.
 package a2aext
 
+// ServiceParamsKey is the service param key client uses for requesting extension activation.
 const ServiceParamsKey = "x-a2a-extensions"

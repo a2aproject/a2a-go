@@ -252,7 +252,12 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 }
 
 func (h *Handler) GetExtendedAgentCard(ctx context.Context, pbReq *a2apb.GetExtendedAgentCardRequest) (*a2apb.AgentCard, error) {
-	card, err := h.handler.GetExtendedAgentCard(ctx)
+	req, err := pbconv.FromProtoGetExtendedAgentCardRequest(pbReq)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
+	}
+
+	card, err := h.handler.GetExtendedAgentCard(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -285,7 +290,7 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.WithCallContext(ctx, svcParams)
+	return a2asrv.NewCallContext(ctx, svcParams)
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {

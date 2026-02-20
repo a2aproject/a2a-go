@@ -82,7 +82,7 @@ func TestAuth_JSONRPC(t *testing.T) {
 	sessionID := SessionID("abcd")
 	credStore.Set(sessionID, schemeName, AuthCredential(token))
 
-	ctx = WithSessionID(ctx, sessionID)
+	ctx = AttachSessionID(ctx, sessionID)
 	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
 	if err != nil {
 		t.Fatalf("client.SendMessage() error = %v", err)
@@ -275,7 +275,7 @@ func TestAuthInterceptor(t *testing.T) {
 
 			ctx := t.Context()
 			if tc.sid != "" {
-				ctx = WithSessionID(ctx, tc.sid)
+				ctx = AttachSessionID(ctx, tc.sid)
 			}
 
 			credStore := NewInMemoryCredentialsStore()

@@ -202,7 +202,7 @@ func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 	}
 }
 
-// SendMessage sends a non-streaming message to the agent.
+// SendMessage implements [a2a.Transport].
 func (t *jsonrpcTransport) SendMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodMessageSend, params, req)
 	if err != nil {
@@ -261,12 +261,12 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 	}
 }
 
-// SendStreamingMessage sends a streaming message to the agent.
+// SendStreamingMessage implements [a2a.Transport].
 func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return t.streamRequestToEvents(ctx, jsonrpc.MethodMessageStream, params, req)
 }
 
-// GetTask retrieves the current state of a task.
+// GetTask implements [a2a.Transport].
 func (t *jsonrpcTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksGet, params, req)
 	if err != nil {
@@ -281,6 +281,7 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, params ServiceParams, re
 	return &task, nil
 }
 
+// ListTasks implements [a2a.Transport].
 func (t *jsonrpcTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksList, params, req)
 	if err != nil {
@@ -295,7 +296,7 @@ func (t *jsonrpcTransport) ListTasks(ctx context.Context, params ServiceParams, 
 	return &response, nil
 }
 
-// CancelTask requests cancellation of a task.
+// CancelTask implements [a2a.Transport].
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksCancel, params, req)
 	if err != nil {
@@ -310,12 +311,12 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, params ServiceParams,
 	return &task, nil
 }
 
-// SubscribeToTask reconnects to an SSE stream for an ongoing task.
+// SubscribeToTask implements [a2a.Transport].
 func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return t.streamRequestToEvents(ctx, jsonrpc.MethodTasksResubscribe, params, req)
 }
 
-// GetTaskPushConfig retrieves the push notification configuration for a task.
+// GetTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigGet, params, req)
 	if err != nil {
@@ -330,7 +331,7 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params Service
 	return &config, nil
 }
 
-// ListTaskPushConfig lists push notification configurations.
+// ListTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigList, params, req)
 	if err != nil {
@@ -345,7 +346,7 @@ func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params Servic
 	return configs, nil
 }
 
-// CreateTaskPushConfig sets or updates the push notification configuration for a task.
+// CreateTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigSet, params, req)
 	if err != nil {
@@ -360,15 +361,15 @@ func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params Serv
 	return &config, nil
 }
 
-// DeleteTaskPushConfig deletes a push notification configuration.
+// DeleteTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
 	_, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigDelete, params, req)
 	return err
 }
 
-// GetExtendedAgentCard retrieves the agent's card.
-func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, params, nil)
+// GetExtendedAgentCard implements [a2a.Transport].
+func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, params, req)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +381,7 @@ func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params Serv
 	return &card, nil
 }
 
-// Destroy closes the transport and releases resources.
+// Destroy implements [a2a.Transport].
 func (t *jsonrpcTransport) Destroy() error {
 	// HTTP client doesn't need explicit cleanup in most cases
 	// If a custom client with cleanup is needed, implement via options

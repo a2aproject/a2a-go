@@ -62,7 +62,7 @@ type RequestHandler interface {
 	DeleteTaskPushConfig(context.Context, *a2a.DeleteTaskPushConfigRequest) error
 
 	// GetAgentCard returns an extended a2a.AgentCard if configured.
-	GetExtendedAgentCard(context.Context) (*a2a.AgentCard, error)
+	GetExtendedAgentCard(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
 
 // Implements a2asrv.RequestHandler.
@@ -80,7 +80,7 @@ type defaultRequestHandler struct {
 	workQueue              workqueue.Queue
 	reqContextInterceptors []ExecutorContextInterceptor
 
-	authenticatedCardProducer AgentCardProducer
+	authenticatedCardProducer ExtendedAgentCardProducer
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -201,6 +201,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	return ih
 }
 
+// GetTask implements RequestHandler.
 func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	taskID := req.ID
 	if taskID == "" {
@@ -226,6 +227,7 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 	return task, nil
 }
 
+// ListTasks implements RequestHandler.
 func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	listResponse, err := h.taskStore.List(ctx, req)
 	if err != nil {
@@ -234,6 +236,7 @@ func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTask
 	return listResponse, nil
 }
 
+// CancelTask implements RequestHandler.
 func (h *defaultRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	if req == nil {
 		return nil, a2a.ErrInvalidParams
@@ -246,6 +249,7 @@ func (h *defaultRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelT
 	return response, nil
 }
 
+// SendMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	subscription, err := h.handleSendMessage(ctx, req)
 	if err != nil {
@@ -279,6 +283,7 @@ func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMe
 	return task.Task, nil
 }
 
+// SendStreamingMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		subscription, err := h.handleSendMessage(ctx, req)
@@ -295,6 +300,7 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 	}
 }
 
+// SubscribeToTask implements RequestHandler.
 func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if req == nil {
@@ -332,6 +338,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 	return h.execManager.Execute(ctx, req)
 }
 
+// GetTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
@@ -349,6 +356,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	return nil, push.ErrPushConfigNotFound
 }
 
+// ListTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
@@ -367,6 +375,7 @@ func (h *defaultRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a
 	return result, nil
 }
 
+// CreateTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
@@ -384,6 +393,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 	}, nil
 }
 
+// DeleteTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return a2a.ErrPushNotificationNotSupported
@@ -391,11 +401,12 @@ func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a
 	return h.pushConfigStore.Delete(ctx, req.TaskID, req.ID)
 }
 
-func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+// GetExtendedAgentCard implements RequestHandler.
+func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	if h.authenticatedCardProducer == nil {
-		return nil, a2a.ErrAuthenticatedExtendedCardNotConfigured
+		return nil, a2a.ErrExtendedCardNotConfigured
 	}
-	return h.authenticatedCardProducer.Card(ctx)
+	return h.authenticatedCardProducer.ExtendedCard(ctx, req)
 }
 
 func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (a2a.TaskID, bool) {

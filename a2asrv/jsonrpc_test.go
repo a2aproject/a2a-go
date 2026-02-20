@@ -104,7 +104,7 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 		{
 			method: "GetExtendedAgentCard",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.GetExtendedAgentCard(ctx)
+				return client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 			},
 		},
 	}

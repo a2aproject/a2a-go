@@ -36,10 +36,10 @@ type mockHandler struct {
 
 var _ RequestHandler = (*mockHandler)(nil)
 
-func (h *mockHandler) GetTask(ctx context.Context, query *a2a.GetTaskRequest) (*a2a.Task, error) {
+func (h *mockHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.GetTaskFn != nil {
-		return h.GetTaskFn(ctx, query)
+		return h.GetTaskFn(ctx, req)
 	}
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -55,7 +55,7 @@ func (h *mockHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) 
 	return &a2a.ListTasksResponse{}, nil
 }
 
-func (h *mockHandler) CancelTask(ctx context.Context, params *a2a.CancelTaskRequest) (*a2a.Task, error) {
+func (h *mockHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -63,10 +63,10 @@ func (h *mockHandler) CancelTask(ctx context.Context, params *a2a.CancelTaskRequ
 	return &a2a.Task{}, nil
 }
 
-func (h *mockHandler) SendMessage(ctx context.Context, params *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.SendMessageFn != nil {
-		return h.SendMessageFn(ctx, params)
+		return h.SendMessageFn(ctx, req)
 	}
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -74,9 +74,9 @@ func (h *mockHandler) SendMessage(ctx context.Context, params *a2a.SendMessageRe
 	return &a2a.Task{}, nil
 }
 
-func (h *mockHandler) SendStreamingMessage(ctx context.Context, params *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+func (h *mockHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	if h.SendStreamingMessageFn != nil {
-		return h.SendStreamingMessageFn(ctx, params)
+		return h.SendStreamingMessageFn(ctx, req)
 	}
 	return func(yield func(a2a.Event, error) bool) {
 		h.lastCallContext, _ = CallContextFrom(ctx)
@@ -88,7 +88,7 @@ func (h *mockHandler) SendStreamingMessage(ctx context.Context, params *a2a.Send
 	}
 }
 
-func (h *mockHandler) SubscribeToTask(ctx context.Context, params *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+func (h *mockHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		h.lastCallContext, _ = CallContextFrom(ctx)
 		if h.resultErr != nil {
@@ -99,7 +99,7 @@ func (h *mockHandler) SubscribeToTask(ctx context.Context, params *a2a.Subscribe
 	}
 }
 
-func (h *mockHandler) GetTaskPushConfig(ctx context.Context, params *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -107,7 +107,7 @@ func (h *mockHandler) GetTaskPushConfig(ctx context.Context, params *a2a.GetTask
 	return &a2a.TaskPushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) ListTaskPushConfig(ctx context.Context, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (h *mockHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -115,7 +115,7 @@ func (h *mockHandler) ListTaskPushConfig(ctx context.Context, params *a2a.ListTa
 	return []*a2a.TaskPushConfig{{}}, nil
 }
 
-func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, params *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -123,12 +123,12 @@ func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, params *a2a.Crea
 	return &a2a.TaskPushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) DeleteTaskPushConfig(ctx context.Context, params *a2a.DeleteTaskPushConfigRequest) error {
+func (h *mockHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	return h.resultErr
 }
 
-func (h *mockHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
+func (h *mockHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -235,7 +235,7 @@ var methodCalls = []struct {
 	{
 		method: "GetExtendedAgentCard",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.GetExtendedAgentCard(ctx)
+			return h.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 		},
 	},
 }
@@ -549,7 +549,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 			key := ExtensionsMetaKey
 			wantVal := "test"
 			meta := map[string][]string{key: {wantVal}}
-			ctx, callCtx := WithCallContext(ctx, NewServiceParams(meta))
+			ctx, callCtx := NewCallContext(ctx, NewServiceParams(meta))
 			_, _ = tc.call(ctx, handler)
 
 			if beforeCallCtx != afterCallCtx {

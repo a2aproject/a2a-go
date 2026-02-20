@@ -34,9 +34,9 @@ type SessionID string
 // Used to store a SessionID in context.Context.
 type sessionIDKey struct{}
 
-// WithSessionID allows callers to attach a session identifier to the request.
+// AttachSessionID allows callers to attach a session identifier to the request.
 // [CallInterceptor] can access this identifier using [SessionIDFrom].
-func WithSessionID(ctx context.Context, sid SessionID) context.Context {
+func AttachSessionID(ctx context.Context, sid SessionID) context.Context {
 	return context.WithValue(ctx, sessionIDKey{}, sid)
 }
 
@@ -50,7 +50,7 @@ func SessionIDFrom(ctx context.Context) (SessionID, bool) {
 type AuthCredential string
 
 // AuthInterceptor implements [CallInterceptor].
-// It uses SessionID provided using [WithSessionID] to lookup credentials
+// It uses SessionID provided using [AttachSessionID] to lookup credentials
 // and attach them according to the security scheme specified in the agent card.
 // Credentials fetching is delegated to [CredentialsService].
 type AuthInterceptor struct {
@@ -60,6 +60,10 @@ type AuthInterceptor struct {
 
 var _ CallInterceptor = (*AuthInterceptor)(nil)
 
+// Before implements the CallInterceptor interface.
+// It retrieves credentials for the current session and security requirements,
+// and attaches the appropriate authorization parameters (e.g. Bearer token or API Key)
+// to the request's ServiceParams.
 func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	if req.Card == nil || req.Card.SecurityRequirements == nil || req.Card.SecuritySchemes == nil {
 		return ctx, nil, nil
@@ -121,6 +125,7 @@ func NewInMemoryCredentialsStore() *InMemoryCredentialsStore {
 	}
 }
 
+// Get retrieves the credential for the given session ID and security scheme name.
 func (s *InMemoryCredentialsStore) Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -138,6 +143,7 @@ func (s *InMemoryCredentialsStore) Get(ctx context.Context, sid SessionID, schem
 	return credential, nil
 }
 
+// Set stores the credential for the given session ID and security scheme name.
 func (s *InMemoryCredentialsStore) Set(sid SessionID, scheme a2a.SecuritySchemeName, credential AuthCredential) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

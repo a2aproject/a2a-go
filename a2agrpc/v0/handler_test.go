@@ -1247,13 +1247,13 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		cardProducer a2asrv.AgentCardProducer
+		cardProducer a2asrv.ExtendedAgentCardProducer
 		want         *a2apb.AgentCard
 		wantErr      codes.Code
 	}{
 		{
 			name: "success",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return a2aCard, nil
 			}),
 			want: pCard,
@@ -1265,14 +1265,14 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name: "producer returns nil card",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return nil, nil
 			}),
 			want: &a2apb.AgentCard{},
 		},
 		{
 			name: "producer fails",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return badCard, nil
 			}),
 			wantErr: codes.Internal,

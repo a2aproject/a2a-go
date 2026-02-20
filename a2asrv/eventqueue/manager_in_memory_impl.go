@@ -25,6 +25,7 @@ const defaultQueueBufferSize = 32
 
 type MemManagerOption func(*inMemoryManager)
 
+// WithQueueBufferSize configures the size of the in-memory event queue buffer.
 func WithQueueBufferSize(size int) MemManagerOption {
 	return func(manager *inMemoryManager) {
 		manager.bufferSize = size

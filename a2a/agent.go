@@ -33,12 +33,11 @@ type AgentCapabilities struct {
 // metadata including the agent's identity, capabilities, skills, supported
 // communication methods, and security requirements.
 type AgentCard struct {
-	// AdditionalInterfaces is a list of additional supported transport and URL combinations.
-	// This allows agents to expose multiple transports, potentially at different
-	// URLs.
+	// SupportedInterfaces is a list of supported transport, protocol and URL combinations.
+	// This allows agents to expose multiple transports, potentially at different URLs.
 	//
 	// Best practices:
-	// - MUST include all supported transports for completeness
+	// - MUST include all supported transports.
 	// - MUST accurately declare the transport available at each URL
 	// - MAY reuse URLs if multiple transports are available at the same endpoint
 	//
@@ -96,8 +95,7 @@ type AgentCardSignature struct {
 	// Header is the unprotected JWS header values.
 	Header map[string]any `json:"header,omitempty" yaml:"header,omitempty" mapstructure:"header,omitempty"`
 
-	// Protected is a JWS header for the signature. This is a Base64url-encoded
-	// JSON object, as per RFC 7515.
+	// Protected is a JWS header for the signature. This is a Base64url-encoded JSON object, as per RFC 7515.
 	Protected string `json:"protected" yaml:"protected" mapstructure:"protected"`
 
 	// Signature is the computed signature, Base64url-encoded.
@@ -125,7 +123,6 @@ type AgentExtension struct {
 // This allows agents to expose the same functionality over multiple transport mechanisms.
 type AgentInterface struct {
 	// URL is the URL where this interface is available.
-	// Must be a valid absolute HTTPS URL in production.
 	URL string `json:"url" yaml:"url" mapstructure:"url"`
 
 	// ProtocolBinding is the protocol binding supported at this URL.
@@ -189,7 +186,10 @@ type AgentSkill struct {
 type TransportProtocol string
 
 const (
-	TransportProtocolJSONRPC  TransportProtocol = "JSONRPC"
-	TransportProtocolGRPC     TransportProtocol = "GRPC"
+	// TransportProtocolJSONRPC defines the JSON-RPC transport protocol.
+	TransportProtocolJSONRPC TransportProtocol = "JSONRPC"
+	// TransportProtocolGRPC defines the gRPC transport protocol.
+	TransportProtocolGRPC TransportProtocol = "GRPC"
+	// TransportProtocolHTTPJSON defines the HTTP+JSON transport protocol.
 	TransportProtocolHTTPJSON TransportProtocol = "HTTP+JSON"
 )

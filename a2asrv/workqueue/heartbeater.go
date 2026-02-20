@@ -21,12 +21,12 @@ import (
 
 type heartbeaterKeyType struct{}
 
-// WithHeartbeater creates a new context with the provided [Hearbeater] attached.
-func WithHeartbeater(ctx context.Context, hb Heartbeater) context.Context {
+// AttachHeartbeater creates a new context with the provided [Hearbeater] attached.
+func AttachHeartbeater(ctx context.Context, hb Heartbeater) context.Context {
 	return context.WithValue(ctx, heartbeaterKeyType{}, hb)
 }
 
-// HeartbeaterFrom returns a [Heartbeater] attached using [WithHeartbeater].
+// HeartbeaterFrom returns a [Heartbeater] attached using [AttachHeartbeater].
 func HeartbeaterFrom(ctx context.Context) (Heartbeater, bool) {
 	hb, ok := ctx.Value(heartbeaterKeyType{}).(Heartbeater)
 	return hb, ok
@@ -34,7 +34,7 @@ func HeartbeaterFrom(ctx context.Context) (Heartbeater, bool) {
 
 // Heartbeater defines an optional heartbeat policy for message handler. Heartbeats are sent while worker is handling a message.
 // For [NewPullQueue] the interface must be implemented by [Message] structs returned from Read.
-// For [NewPushQueue] heartbeater needs to be attached to context passed to [HandlerFn] using [WithHeartbeater].
+// For [NewPushQueue] heartbeater needs to be attached to context passed to [HandlerFn] using [AttachHeartbeater].
 type Heartbeater interface {
 	// HeartbeatInterval returns the interval between heartbeats.
 	HeartbeatInterval() time.Duration

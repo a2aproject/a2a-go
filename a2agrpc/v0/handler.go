@@ -264,7 +264,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 }
 
 func (h *Handler) GetAgentCard(ctx context.Context, pbReq *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	card, err := h.handler.GetExtendedAgentCard(ctx)
+	card, err := h.handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -297,7 +297,7 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.WithCallContext(ctx, svcParams)
+	return a2asrv.NewCallContext(ctx, svcParams)
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {

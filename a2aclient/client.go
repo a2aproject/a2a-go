@@ -53,8 +53,8 @@ type Client struct {
 	config          Config
 	transport       Transport
 	protocolVersion a2a.ProtocolVersion
+	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
-	baseURL         string
 
 	card atomic.Pointer[a2a.AgentCard]
 }
@@ -73,23 +73,28 @@ func (c *Client) AddCallInterceptor(ci CallInterceptor) {
 
 // A2A protocol methods
 
+// GetTask implements the 'GetTask' protocol method.
 func (c *Client) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	return doCall(ctx, c, "GetTask", req, c.transport.GetTask)
 }
 
+// ListTasks implements the 'ListTasks' protocol method.
 func (c *Client) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	return doCall(ctx, c, "ListTasks", req, c.transport.ListTasks)
 }
 
+// CancelTask implements the 'CancelTask' protocol method.
 func (c *Client) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	return doCall(ctx, c, "CancelTask", req, c.transport.CancelTask)
 }
 
+// SendMessage implements the 'SendMessage' protocol method (non-streaming).
 func (c *Client) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	req = c.withDefaultSendConfig(req, blocking(!c.config.Polling))
 	return doCall(ctx, c, "SendMessage", req, c.transport.SendMessage)
 }
 
+// SendStreamingMessage implements the 'SendStreamingMessage' protocol method (streaming).
 func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SendStreamingMessage"
@@ -137,6 +142,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 	}
 }
 
+// SubscribeToTask implements the `SubscribeToTask` protocol method.
 func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SubscribeToTask"
@@ -171,18 +177,22 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 	}
 }
 
+// GetTaskPushConfig implements the `GetTaskPushNotificationConfig` protocol method.
 func (c *Client) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "GetTaskPushConfig", req, c.transport.GetTaskPushConfig)
 }
 
+// ListTaskPushConfig implements the `ListTaskPushNotificationConfig` protocol method.
 func (c *Client) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "ListTaskPushConfig", req, c.transport.ListTaskPushConfig)
 }
 
+// CreateTaskPushConfig implements the `CreateTaskPushNotificationConfig` protocol method.
 func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
 	return doCall(ctx, c, "CreateTaskPushConfig", req, c.transport.CreateTaskPushConfig)
 }
 
+// DeleteTaskPushConfig implements the `DeleteTaskPushNotificationConfig` protocol method.
 func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	method := "DeleteTaskPushConfig"
 
@@ -200,34 +210,32 @@ func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPu
 	return errOverride
 }
 
-func (c *Client) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	if card := c.card.Load(); card != nil && !card.Capabilities.ExtendedAgentCard {
-		return card, nil
+// GetExtendedAgentCard implements the `GetExtendedAgentCard` protocol method.
+func (c *Client) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	card := c.card.Load()
+	if card != nil && !card.Capabilities.ExtendedAgentCard {
+		return nil, a2a.ErrExtendedCardNotConfigured
 	}
-
-	method := "GetAgentCard"
-	var req *struct{}
-	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, c, method, req)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-
-	resp, err := c.transport.GetExtendedAgentCard(ctx, res.params)
-	interceptedResponse, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
-	if errOverride != nil {
-		return nil, errOverride
-	}
-
-	if err == nil {
-		c.card.Store(interceptedResponse)
-	}
-
-	return interceptedResponse, nil
+	return doCall(ctx, c, "GetExtendedAgentCard", req, c.transport.GetExtendedAgentCard)
 }
 
+// UpdateCard updates the agent card used by the client.
+func (c *Client) UpdateCard(card *a2a.AgentCard) error {
+	found := false
+	for _, iface := range card.SupportedInterfaces {
+		if *iface == c.endpoint {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("client needs to be recreated, %+v not longer listed as supported", c.endpoint)
+	}
+	c.card.Store(card)
+	return nil
+}
+
+// Destroy cleans up resources associated with the client.
 func (c *Client) Destroy() error {
 	return c.transport.Destroy()
 }
@@ -256,10 +264,12 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest, blocking
 }
 
 func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method string, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
+	serviceParams := serviceParamsCloneFrom(ctx)
+	serviceParams[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
 	req := Request{
 		Method:        method,
-		BaseURL:       c.baseURL,
-		ServiceParams: ServiceParams{a2a.SvcParamVersion: []string{string(c.protocolVersion)}},
+		BaseURL:       c.endpoint.URL,
+		ServiceParams: serviceParams,
 		Card:          c.card.Load(),
 		Payload:       payload,
 	}
@@ -308,7 +318,7 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 
 func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallInterceptor, method string, params ServiceParams, payload T, err error) (T, error) {
 	resp := Response{
-		BaseURL:       c.baseURL,
+		BaseURL:       c.endpoint.URL,
 		Method:        method,
 		ServiceParams: params,
 		Payload:       payload,

@@ -34,9 +34,9 @@ type ConcurrencyConfig struct {
 	GetMaxExecutions func(scope string) int
 }
 
-// WithScope attaches the provided scope to context. It will later be used by components responsible
+// AttachScope attaches the provided scope to context. It will later be used by components responsible
 // for resource management for tracking and enforcing configured quotas.
-func WithScope(ctx context.Context, scope string) context.Context {
+func AttachScope(ctx context.Context, scope string) context.Context {
 	return context.WithValue(ctx, limiterScopeKey, scope)
 }
 

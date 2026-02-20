@@ -72,7 +72,7 @@ var codeToError = map[int]error{
 	-32004: a2a.ErrUnsupportedOperation,
 	-32005: a2a.ErrUnsupportedContentType,
 	-32006: a2a.ErrInvalidAgentResponse,
-	-32007: a2a.ErrAuthenticatedExtendedCardNotConfigured,
+	-32007: a2a.ErrExtendedCardNotConfigured,
 	-31401: a2a.ErrUnauthenticated,
 	-31403: a2a.ErrUnauthorized,
 }
