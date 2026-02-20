@@ -861,7 +861,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 		return i.ProtocolVersion == a2a.ProtocolVersion(a2av0.Version)
 	})
 	if agentInterfaceIdx == -1 {
-		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2a.Version)
+		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2av0.Version)
 	}
 	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
 	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
