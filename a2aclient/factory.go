@@ -60,8 +60,8 @@ type transportCandidate struct {
 }
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
-// Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST and then gRPC.
-var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil) /*, WithGRPCTransport()*/}
+// Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST.
+var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil)}
 
 // NewFromCard is a client [Client] constructor method which takes an [a2a.AgentCard] as input.
 // It is equivalent to [Factory].CreateFromCard method.

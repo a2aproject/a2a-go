@@ -1,4 +1,4 @@
-// Copyright 2026 The A2A Authors
+// Copyright 2025 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,5 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package pbconv provides conversion functions between A2A protobufs and native Go types.
-package pbconv
+/*
+Package a2agrpc provides an A2A gRPC service implementation which can be registered with [grpc.Server].
+The implementation performs protobuf translation and delegates the actual method handling to
+a transport-agnostic [a2asrv.RequestHandler].
+
+	grpcHandler := a2agrpc.NewHandler(requestHandler)
+
+	s := grpc.NewServer()
+	grpcHandler.RegisterWith(s)
+	if err := s.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		log.Fatalf("Server exited with error: %v", err)
+	}
+*/
+package a2agrpc
