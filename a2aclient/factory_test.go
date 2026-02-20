@@ -165,6 +165,18 @@ func TestFactory_TransportSelection(t *testing.T) {
 			serverSupports: []string{"grpc"},
 			wantErr:        true,
 		},
+		{
+			name:           "compatible same major version (server older)",
+			serverSupports: []string{"jsonrpc:1.0"},
+			clientSupports: []string{"jsonrpc:1.5"},
+			want:           "jsonrpc:1.5",
+		},
+		{
+			name:           "compatible same major version (server newer)",
+			serverSupports: []string{"jsonrpc:1.5"},
+			clientSupports: []string{"jsonrpc:1.0"},
+			want:           "jsonrpc:1.0",
+		},
 	}
 
 	for _, tc := range testCases {

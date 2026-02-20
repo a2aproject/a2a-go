@@ -172,7 +172,18 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 
 	for _, opt := range available {
 		key := makeTransportKey(opt.ProtocolVersion, opt.ProtocolBinding)
-		if tf, ok := f.transports[key]; ok {
+
+		candidate, ok := f.transports[key]
+		if !ok { // if no exact version match fallback to compatibility by major version
+			for otherKey, tr := range f.transports {
+				if semver.Major(string(key.protocolSemver)) == semver.Major(string(otherKey.protocolSemver)) {
+					candidate = tr
+					break
+				}
+			}
+		}
+
+		if candidate != nil {
 			priority := len(f.config.PreferredTransports)
 			for j, clientPref := range f.config.PreferredTransports {
 				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
@@ -180,7 +191,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 					break
 				}
 			}
-			candidates = append(candidates, transportCandidate{tf, opt, priority, string(key.protocolSemver)})
+			candidates = append(candidates, transportCandidate{candidate, opt, priority, string(key.protocolSemver)})
 		}
 	}
 
