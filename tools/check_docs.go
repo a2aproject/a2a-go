@@ -91,7 +91,7 @@ func checkFile(fset *token.FileSet, filename string, file *ast.File) {
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
 				case *ast.TypeSpec:
-						if !s.Name.IsExported() {
+					if !s.Name.IsExported() {
 						continue
 					}
 					doc := s.Doc
