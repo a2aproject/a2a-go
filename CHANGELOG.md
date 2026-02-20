@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.7](https://github.com/a2aproject/a2a-go/compare/v0.3.6...v0.3.7) (2026-02-20)
+
+
+### Features
+
+* implement tasks/list RPC ([#210](https://github.com/a2aproject/a2a-go/issues/210)) ([6e04698](https://github.com/a2aproject/a2a-go/commit/6e04698e63d4cb7d67a2aed700babd9bd6664b51))
+* retry cancelations ([#222](https://github.com/a2aproject/a2a-go/issues/222)) ([3057474](https://github.com/a2aproject/a2a-go/commit/30574743207ae68a96588fc81926ad7de3d9887e))
+
+
+### Bug Fixes
+
+* handle internal error: tck failure ([#186](https://github.com/a2aproject/a2a-go/issues/186)) ([b55fbfd](https://github.com/a2aproject/a2a-go/commit/b55fbfd6417fb48a89dd838611f35a6899d17e12))
+* **sse:** support data: prefix without space ([#188](https://github.com/a2aproject/a2a-go/issues/188)) ([6657a6d](https://github.com/a2aproject/a2a-go/commit/6657a6dc3b6872d425f03d6f340b7c1a82c55810)), closes [#162](https://github.com/a2aproject/a2a-go/issues/162)
+
 ## [0.3.6](https://github.com/a2aproject/a2a-go/compare/v0.3.5...v0.3.6) (2026-01-30)
 
 
