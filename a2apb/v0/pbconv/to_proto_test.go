@@ -1,4 +1,4 @@
-// Copyright 2026 The A2A Authors
+// Copyright 2025 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v1"
+	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -52,7 +52,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 				TaskID:         "test-task",
 				Role:           a2a.MessageRoleUser,
 				ReferenceTasks: []a2a.TaskID{"task-123"},
-				Parts:          a2a.ContentParts{{Content: a2a.Text("hello")}},
+				Parts:          a2a.ContentParts{a2a.NewTextPart("hello")},
 				Metadata:       a2aMeta,
 			},
 			want: &a2apb.Message{
@@ -61,7 +61,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 				TaskId:           "test-task",
 				ReferenceTaskIds: []string{"task-123"},
 				Role:             a2apb.Role_ROLE_USER,
-				Parts:            []*a2apb.Part{{Content: &a2apb.Part_Text{Text: "hello"}}},
+				Parts:            []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "hello"}}},
 				Metadata:         pMeta,
 			},
 		},
@@ -157,7 +157,7 @@ func TestToProto_toProtoMessges(t *testing.T) {
 }
 
 func TestToProto_toProtoPart(t *testing.T) {
-	pData, _ := structpb.NewValue(map[string]any{"key": "value"})
+	pData, _ := structpb.NewStruct(map[string]any{"key": "value"})
 	tests := []struct {
 		name    string
 		p       a2a.Part
@@ -166,52 +166,55 @@ func TestToProto_toProtoPart(t *testing.T) {
 	}{
 		{
 			name: "text",
-			p:    a2a.Part{Content: a2a.Text("hello")},
-			want: &a2apb.Part{Content: &a2apb.Part_Text{Text: "hello"}},
+			p:    *a2a.NewTextPart("hello"),
+			want: &a2apb.Part{Part: &a2apb.Part_Text{Text: "hello"}},
 		},
 		{
 			name: "data",
-			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"})},
-			want: &a2apb.Part{Content: &a2apb.Part_Data{Data: pData}},
+			p:    *a2a.NewDataPart(map[string]any{"key": "value"}),
+			want: &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
 		},
 		{
 			name: "file with bytes",
-			p: a2a.Part{Content: a2a.Raw([]byte("content")),
-				Filename:  "Test File",
+			p: a2a.Part{
+				Content:   a2a.Raw([]byte("content")),
 				MediaType: "text/plain",
 			},
-			want: &a2apb.Part{Content: &a2apb.Part_Raw{Raw: []byte("content")},
-				Filename:  "Test File",
-				MediaType: "text/plain",
-			},
+			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: "text/plain",
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+			}}},
 		},
 		{
 			name: "file with uri",
 			p: a2a.Part{
 				Content:   a2a.URL("http://example.com/file"),
-				Filename:  "example",
 				MediaType: "text/plain",
-			},
-			want: &a2apb.Part{Content: &a2apb.Part_Url{Url: "http://example.com/file"},
 				Filename:  "example",
-				MediaType: "text/plain",
 			},
+			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
+				MimeType: "text/plain",
+				Name:     "example",
+				File:     &a2apb.FilePart_FileWithUri{FileWithUri: "http://example.com/file"},
+			}}},
 		},
 		{
 			name:    "unsupported",
-			p:       a2a.Part{Content: nil}, // Use a nil a2a.Part to represent an unsupported type
+			p:       a2a.Part{Content: nil}, // Use a nil Content to represent an unsupported type
 			wantErr: true,
 		},
 		{
-			name:    "bad data",
-			p:       a2a.Part{Content: a2a.Data(map[string]any{"bad": func() {}})},
+			name: "bad data",
+			p: a2a.Part{
+				Content: a2a.Data(map[string]any{"bad": func() {}}),
+			},
 			wantErr: true,
 		},
 		{
 			name: "text with meta",
 			p:    a2a.Part{Content: a2a.Text("hello"), Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
-				Content:  &a2apb.Part_Text{Text: "hello"},
+				Part:     &a2apb.Part_Text{Text: "hello"},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 		},
@@ -219,7 +222,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 			name: "data with meta",
 			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
-				Content:  &a2apb.Part_Data{Data: pData},
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 		},
@@ -227,10 +230,11 @@ func TestToProto_toProtoPart(t *testing.T) {
 			name: "file with meta",
 			p: a2a.Part{
 				Content:  a2a.Raw([]byte("content")),
-				Metadata: map[string]any{"hello": "world"},
-			},
+				Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
-				Content:  &a2apb.Part_Raw{Raw: []byte("content")},
+				Part: &a2apb.Part_File{File: &a2apb.FilePart{
+					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+				}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
 		},
@@ -300,7 +304,7 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		{
 			name:  string(a2a.TaskStateCanceled),
 			state: a2a.TaskStateCanceled,
-			want:  a2apb.TaskState_TASK_STATE_CANCELED,
+			want:  a2apb.TaskState_TASK_STATE_CANCELLED,
 		},
 		{
 			name:  string(a2a.TaskStateCompleted),
@@ -368,7 +372,7 @@ func TestToProto_toProtoTaskStatus(t *testing.T) {
 			},
 			want: &a2apb.TaskStatus{
 				State:     a2apb.TaskState_TASK_STATE_WORKING,
-				Message:   pMsg,
+				Update:    pMsg,
 				Timestamp: pNow,
 			},
 		},
@@ -390,8 +394,8 @@ func TestToProto_toProtoTaskStatus(t *testing.T) {
 				Message: msg,
 			},
 			want: &a2apb.TaskStatus{
-				State:   a2apb.TaskState_TASK_STATE_WORKING,
-				Message: pMsg,
+				State:  a2apb.TaskState_TASK_STATE_WORKING,
+				Update: pMsg,
 			},
 		},
 		{
@@ -439,7 +443,6 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			name: "full config",
 			config: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				ID:     "tc1",
 				Config: a2a.PushConfig{
 					ID:    "c1",
 					URL:   "http://a.com",
@@ -451,14 +454,13 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId: "t1",
-				Id:     "tc1",
+				Name: "tasks/t1/pushNotificationConfigs/c1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:    "c1",
 					Url:   "http://a.com",
 					Token: "tok",
 					Authentication: &a2apb.AuthenticationInfo{
-						Scheme:      "Bearer",
+						Schemes:     []string{"Bearer"},
 						Credentials: "cred",
 					},
 				},
@@ -468,12 +470,10 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			name: "config without auth",
 			config: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				ID:     "tc1",
 				Config: a2a.PushConfig{ID: "c1", URL: "http://a.com"},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId: "t1",
-				Id:     "tc1",
+				Name: "tasks/t1/pushNotificationConfigs/c1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:  "c1",
 					Url: "http://a.com",
@@ -492,8 +492,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId:                 "test-task",
-				Id:                     "",
+				Name:                   "tasks/test-task/pushNotificationConfigs/",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{},
 			},
 		},
@@ -514,55 +513,58 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 }
 
 func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
-	configs := &a2a.ListTaskPushConfigResponse{
-		Configs: []*a2a.TaskPushConfig{
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
-		},
-		NextPageToken: "next",
+	configs := []*a2a.TaskPushConfig{
+		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
+		{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
 	}
-	pConf1, _ := ToProtoTaskPushConfig(configs.Configs[0])
-	pConf2, _ := ToProtoTaskPushConfig(configs.Configs[1])
+	pConf1, _ := ToProtoTaskPushConfig(configs[0])
+	pConf2, _ := ToProtoTaskPushConfig(configs[1])
 
 	tests := []struct {
 		name    string
-		configs *a2a.ListTaskPushConfigResponse
+		resp    *a2a.ListTaskPushConfigResponse
 		want    *a2apb.ListTaskPushNotificationConfigResponse
 		wantErr bool
 	}{
 		{
-			name:    "success",
-			configs: configs,
+			name: "success",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []*a2a.TaskPushConfig{
+					configs[0],
+					configs[1],
+				},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
-				Configs:       []*a2apb.TaskPushNotificationConfig{pConf1, pConf2},
-				NextPageToken: "next",
+				Configs: []*a2apb.TaskPushNotificationConfig{pConf1, pConf2},
 			},
 		},
 		{
-			name:    "empty slice",
-			configs: &a2a.ListTaskPushConfigResponse{},
+			name: "empty slice",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []*a2a.TaskPushConfig{},
+			},
 			want: &a2apb.ListTaskPushNotificationConfigResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
 			},
 		},
 		{
-			name:    "conversion error",
-			configs: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}}},
+			name: "conversion error",
+			resp: &a2a.ListTaskPushConfigResponse{
+				Configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}},
+			},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ToProtoListTaskPushConfigResponse(tt.configs)
+			got, err := ToProtoListTaskPushConfigResponse(tt.resp)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("toProtoListTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ToProtoListTaskPushConfigResponse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr {
-				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoListTaskPushConfig() got = %v, want %v", got, tt.want)
-				}
+			if !tt.wantErr && !proto.Equal(got, tt.want) {
+				t.Errorf("ToProtoListTaskPushConfigResponse() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -582,14 +584,14 @@ func TestToProto_toProtoTask(t *testing.T) {
 		{ID: a2aMsgID, Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("history")}},
 	}
 	pHistory := []*a2apb.Message{
-		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Parts: []*a2apb.Part{{Content: &a2apb.Part_Text{Text: "history"}}}},
+		{MessageId: a2aMsgID, Role: a2apb.Role_ROLE_USER, Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "history"}}}},
 	}
 
 	a2aArtifacts := []*a2a.Artifact{
 		{ID: a2aArtifactID, Name: "artifact1", Parts: a2a.ContentParts{a2a.NewTextPart("artifact content")}},
 	}
 	pArtifacts := []*a2apb.Artifact{
-		{ArtifactId: string(a2aArtifactID), Name: "artifact1", Parts: []*a2apb.Part{{Content: &a2apb.Part_Text{Text: "artifact content"}}}},
+		{ArtifactId: string(a2aArtifactID), Name: "artifact1", Parts: []*a2apb.Part{{Part: &a2apb.Part_Text{Text: "artifact content"}}}},
 	}
 
 	a2aStatus := a2a.TaskStatus{
@@ -599,7 +601,7 @@ func TestToProto_toProtoTask(t *testing.T) {
 	}
 	pStatus := &a2apb.TaskStatus{
 		State:     a2apb.TaskState_TASK_STATE_WORKING,
-		Message:   &a2apb.Message{MessageId: "status-msg", Role: a2apb.Role_ROLE_AGENT},
+		Update:    &a2apb.Message{MessageId: "status-msg", Role: a2apb.Role_ROLE_AGENT},
 		Timestamp: pNow,
 	}
 
@@ -773,8 +775,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Name:        "Test Agent",
 		Description: "An agent for testing.",
 		SupportedInterfaces: []a2a.AgentInterface{
-			{ProtocolBinding: "http+json", URL: "https://example.com/agent/http+json", ProtocolVersion: "1.0"},
-			{ProtocolBinding: "grpc", URL: "https://example.com/agent/grpc", ProtocolVersion: "1.0"},
+			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2a.Version},
+			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2a.Version},
 		},
 		Provider: &a2a.AgentProvider{
 			Org: "Test Org",
@@ -797,7 +799,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Description: "API Key",
 			},
 			"oauth2": a2a.OAuth2SecurityScheme{
-				Description: "OAuth2",
+				Description:       "OAuth2",
+				Oauth2MetadataURL: "https://example.com/oauth2/metadata",
 				Flows: &a2a.AuthorizationCodeOAuthFlow{
 					AuthorizationURL: "https://example.com/auth",
 					TokenURL:         "https://example.com/token",
@@ -807,8 +810,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		},
 		SecurityRequirements: a2a.SecurityRequirementsOptions{
 			map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-				a2a.SecuritySchemeName("apiKey"): {},
-				a2a.SecuritySchemeName("oauth2"): {"read"},
+				a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
+				a2a.SecuritySchemeName("oauth2"): a2a.SecuritySchemeScopes{"read"},
 			},
 		},
 		DefaultInputModes:  []string{"text/plain"},
@@ -824,7 +827,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				OutputModes: []string{"text/markdown"},
 				SecurityRequirements: a2a.SecurityRequirementsOptions{
 					map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-						a2a.SecuritySchemeName("apiKey"): {},
+						a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
 					},
 				},
 			},
@@ -837,22 +840,23 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 
 	extParams, _ := structpb.NewStruct(map[string]any{"key": "val"})
 	pCard := &a2apb.AgentCard{
-		Name:        "Test Agent",
-		Description: "An agent for testing.",
-		SupportedInterfaces: []*a2apb.AgentInterface{
-			{ProtocolBinding: "http+json", Url: "https://example.com/agent/http+json", ProtocolVersion: "1.0"},
-			{ProtocolBinding: "grpc", Url: "https://example.com/agent/grpc", ProtocolVersion: "1.0"},
+		ProtocolVersion:    string(a2a.Version),
+		Name:               "Test Agent",
+		Description:        "An agent for testing.",
+		Url:                "https://example.com/agent",
+		PreferredTransport: string(a2a.TransportProtocolGRPC),
+		AdditionalInterfaces: []*a2apb.AgentInterface{
+			{Transport: string(a2a.TransportProtocolJSONRPC), Url: "https://example.com/agent/jsonrpc"},
 		},
 		Provider: &a2apb.AgentProvider{
 			Organization: "Test Org",
 			Url:          "https://example.com/org",
 		},
 		Version:          "0.1.0",
-		DocumentationUrl: proto.String("https://example.com/docs"),
+		DocumentationUrl: "https://example.com/docs",
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:         proto.Bool(true),
-			PushNotifications: proto.Bool(true),
-			ExtendedAgentCard: proto.Bool(true),
+			Streaming:         true,
+			PushNotifications: true,
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -870,7 +874,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			"oauth2": {
 				Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
 					Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
-						Description: "OAuth2",
+						Description:       "OAuth2",
+						Oauth2MetadataUrl: "https://example.com/oauth2/metadata",
 						Flows: &a2apb.OAuthFlows{
 							Flow: &a2apb.OAuthFlows_AuthorizationCode{
 								AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
@@ -884,7 +889,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				},
 			},
 		},
-		SecurityRequirements: []*a2apb.SecurityRequirement{
+		Security: []*a2apb.Security{
 			{Schemes: map[string]*a2apb.StringList{
 				"apiKey": {List: []string{}},
 				"oauth2": {List: []string{"read"}},
@@ -901,7 +906,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				Examples:    []string{"do a test"},
 				InputModes:  []string{"text/markdown"},
 				OutputModes: []string{"text/markdown"},
-				SecurityRequirements: []*a2apb.SecurityRequirement{
+				Security: []*a2apb.Security{
 					{Schemes: map[string]*a2apb.StringList{"apiKey": {List: []string{}}}},
 				},
 			},
@@ -909,7 +914,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Signatures: []*a2apb.AgentCardSignature{
 			{Protected: "abc", Signature: "def", Header: mustMakeProtoMetadata(t, map[string]any{"version": "1"})},
 		},
-		IconUrl: proto.String("https://icons.com/icon.png"),
+		IconUrl:                           "https://icons.com/icon.png",
+		SupportsAuthenticatedExtendedCard: true,
 	}
 
 	tests := []struct {
@@ -1185,7 +1191,7 @@ func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 		MessageId: "test-message",
 		Role:      a2apb.Role_ROLE_AGENT,
 		Parts: []*a2apb.Part{
-			{Content: &a2apb.Part_Text{Text: "response"}},
+			{Part: &a2apb.Part_Text{Text: "response"}},
 		},
 	}
 
@@ -1205,7 +1211,7 @@ func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 		Status: &a2apb.TaskStatus{
 			State:     a2apb.TaskState_TASK_STATE_COMPLETED,
 			Timestamp: timestamppb.New(now),
-			Message:   pMsg,
+			Update:    pMsg,
 		},
 	}
 
@@ -1219,7 +1225,7 @@ func TestToProto_toProtoSendMessageResponse(t *testing.T) {
 			name:   "message response",
 			result: a2aMsg,
 			want: &a2apb.SendMessageResponse{
-				Payload: &a2apb.SendMessageResponse_Message{Message: pMsg},
+				Payload: &a2apb.SendMessageResponse_Msg{Msg: pMsg},
 			},
 		},
 		{
@@ -1300,7 +1306,7 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 			name:  "message",
 			event: a2aMsg,
 			want: &a2apb.StreamResponse{
-				Payload: &a2apb.StreamResponse_Message{Message: pMsg},
+				Payload: &a2apb.StreamResponse_Msg{Msg: pMsg},
 			},
 		},
 		{
