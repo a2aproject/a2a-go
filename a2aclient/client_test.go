@@ -816,20 +816,20 @@ func TestClient_InterceptGetAgentCard(t *testing.T) {
 	client := newTestClient(transport, interceptor)
 	client.baseURL = "https://base.com"
 	resp, err := client.GetExtendedAgentCard(ctx)
-	if interceptor.lastReq.Method != "GetAgentCard" {
-		t.Fatalf("lastReq.Method = %v, want GetAgentCard", interceptor.lastReq.Method)
+	if interceptor.lastReq.Method != "GetExtendedAgentCard" {
+		t.Fatalf("lastReq.Method = %v, want GetExtendedAgentCard", interceptor.lastReq.Method)
 	}
 	if interceptor.lastReq.BaseURL != client.baseURL {
 		t.Fatalf("lastReq.BaseURL = %q, want %q", interceptor.lastReq.BaseURL, client.baseURL)
 	}
-	if interceptor.lastResp.Method != "GetAgentCard" {
-		t.Fatalf("lastResp.Method = %v, want GetAgentCard", interceptor.lastResp.Method)
+	if interceptor.lastResp.Method != "GetExtendedAgentCard" {
+		t.Fatalf("lastResp.Method = %v, want GetExtendedAgentCard", interceptor.lastResp.Method)
 	}
 	if interceptor.lastResp.BaseURL != client.baseURL {
 		t.Fatalf("lastResp.BaseURL = %q, want %q", interceptor.lastResp.BaseURL, client.baseURL)
 	}
 	if err != nil {
-		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
+		t.Fatalf("client.GetExtendedAgentCard() error = %v, want nil", err)
 	}
 	if payload, ok := interceptor.lastReq.Payload.(*struct{}); !ok || payload != nil {
 		t.Fatalf("interceptor.Before payload = %v, want *struct{}", interceptor.lastReq.Payload)
