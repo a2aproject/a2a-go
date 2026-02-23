@@ -199,13 +199,13 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.
 	return pbconv.FromProtoTaskPushConfig(pbConfig)
 }
 
-func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	pbReq, err := pbconv.ToProtoListTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	pbResp, err := c.client.ListTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq)
+	pbResp, err := c.client.ListTaskPushNotificationConfigs(withGRPCMetadata(ctx, params), pbReq)
 	if err != nil {
 		return nil, grpcutil.FromGRPCError(err)
 	}

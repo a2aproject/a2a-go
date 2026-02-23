@@ -116,7 +116,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	case methodPushConfigGet:
 		result, err = h.onGetTaskPushConfig(ctx, req.Params)
 	case methodPushConfigList:
-		result, err = h.onListTaskPushConfig(ctx, req.Params)
+		result, err = h.onListTaskPushConfigs(ctx, req.Params)
 	case methodPushConfigSet:
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case methodPushConfigDelete:
@@ -351,12 +351,12 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return toCompatTaskPushConfig(config)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfig(ctx context.Context, raw json.RawMessage) ([]*taskPushConfig, error) {
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*taskPushConfig, error) {
 	var params listTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
-	configs, err := h.handler.ListTaskPushConfig(ctx, toCoreListTaskPushConfigRequest(&params))
+	configs, err := h.handler.ListTaskPushConfigs(ctx, toCoreListTaskPushConfigRequest(&params))
 	if err != nil {
 		return nil, err
 	}

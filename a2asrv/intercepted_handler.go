@@ -158,12 +158,12 @@ func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return doCall(ctx, callCtx, h, req, h.Handler.GetTaskPushConfig)
 }
 
-func (h *InterceptedHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (h *InterceptedHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	ctx, callCtx := withMethodCallContext(ctx, "ListTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
-	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfig)
+	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfigs)
 }
 
 func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {

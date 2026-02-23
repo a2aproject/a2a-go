@@ -243,7 +243,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 	}
 
 	ctx, callCtx := withCallContext(ctx)
-	configs, err := h.handler.ListTaskPushConfig(ctx, req)
+	configs, err := h.handler.ListTaskPushConfigs(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}

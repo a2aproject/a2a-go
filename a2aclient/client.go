@@ -175,8 +175,8 @@ func (c *Client) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConf
 	return doCall(ctx, c, "GetTaskPushConfig", req, c.transport.GetTaskPushConfig)
 }
 
-func (c *Client) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	return doCall(ctx, c, "ListTaskPushConfig", req, c.transport.ListTaskPushConfig)
+func (c *Client) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	return doCall(ctx, c, "ListTaskPushConfigs", req, c.transport.ListTaskPushConfigs)
 }
 
 func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {

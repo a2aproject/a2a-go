@@ -53,7 +53,7 @@ type RequestHandler interface {
 	GetTaskPushConfig(context.Context, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
 	// ListTaskPushConfig handles the `tasks/pushNotificationConfig/list` protocol method.
-	ListTaskPushConfig(context.Context, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
+	ListTaskPushConfigs(context.Context, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
 	// CreateTaskPushConfig handles the `tasks/pushNotificationConfig/set` protocol method.
 	CreateTaskPushConfig(context.Context, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
@@ -349,7 +349,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	return nil, push.ErrPushConfigNotFound
 }
 
-func (h *defaultRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
@@ -377,11 +377,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 		return nil, fmt.Errorf("failed to save push config: %w", err)
 	}
 
-	return &a2a.TaskPushConfig{
-		TaskID: req.TaskID,
-		ID:     saved.ID,
-		Config: *saved,
-	}, nil
+	return &a2a.TaskPushConfig{TaskID: req.TaskID, Config: *saved}, nil
 }
 
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {

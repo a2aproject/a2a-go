@@ -315,7 +315,7 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params Service
 }
 
 // ListTaskPushConfig lists push notification configurations.
-func (t *jsonrpcTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigList, params, req)
 	if err != nil {
 		return nil, err

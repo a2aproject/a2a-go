@@ -90,7 +90,7 @@ func TestREST_RequestRouting(t *testing.T) {
 		{
 			method: "ListTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{TaskID: a2a.TaskID("test-id")})
+				return client.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: a2a.TaskID("test-id")})
 			},
 		},
 		{

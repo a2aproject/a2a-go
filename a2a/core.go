@@ -791,6 +791,17 @@ type CancelTaskRequest struct {
 
 	// ID is the ID of the task to cancel.
 	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+
+	// Metadata is an optional metadata for extensions. The key is an extension-specific identifier.
+	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+}
+
+func (r *CancelTaskRequest) Meta() map[string]any {
+	return r.Metadata
+}
+
+func (r *CancelTaskRequest) SetMeta(k string, v any) {
+	setMeta(&r.Metadata, k, v)
 }
 
 // SubscribeToTaskRequest represents a request to subscribe to task events.

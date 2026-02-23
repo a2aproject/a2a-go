@@ -277,7 +277,7 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 }
 
 // ListTaskPushConfig lists all push notification configurations for a task.
-func (t *RESTTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	path := rest.MakeListPushConfigsPath(string(req.TaskID))
 	var configs []*a2a.TaskPushConfig
 

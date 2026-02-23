@@ -38,7 +38,7 @@ const (
 	MethodTasksResubscribe     = "SubscribeToTask"
 	MethodPushConfigGet        = "GetTaskPushNotificationConfig"
 	MethodPushConfigSet        = "CreateTaskPushNotificationConfig"
-	MethodPushConfigList       = "ListTaskPushNotificationConfig" // TODO: should be pluralized?
+	MethodPushConfigList       = "ListTaskPushNotificationConfigs"
 	MethodPushConfigDelete     = "DeleteTaskPushNotificationConfig"
 	MethodGetExtendedAgentCard = "GetExtendedAgentCard"
 )

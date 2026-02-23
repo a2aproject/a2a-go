@@ -284,9 +284,7 @@ func toCompatCancelTaskRequest(req *a2a.CancelTaskRequest) *taskIDParams {
 	if req == nil {
 		return nil
 	}
-	return &taskIDParams{
-		ID: req.ID,
-	}
+	return &taskIDParams{ID: req.ID, Metadata: req.Metadata}
 }
 
 func toCompatSendMessageRequest(req *a2a.SendMessageRequest) *messageSendParams {
@@ -367,9 +365,7 @@ func toCoreGetTaskRequest(q *taskQueryParams) *a2a.GetTaskRequest {
 }
 
 func toCoreCancelTaskRequest(q *taskIDParams) *a2a.CancelTaskRequest {
-	return &a2a.CancelTaskRequest{
-		ID: q.ID,
-	}
+	return &a2a.CancelTaskRequest{ID: q.ID, Metadata: q.Metadata}
 }
 
 func toCoreSendMessageRequest(p *messageSendParams) (*a2a.SendMessageRequest, error) {
@@ -639,9 +635,5 @@ func fromCompatTaskPushConfig(comp *taskPushConfig) (*a2a.TaskPushConfig, error)
 	if comp == nil {
 		return nil, nil
 	}
-	return &a2a.TaskPushConfig{
-		TaskID: comp.TaskID,
-		Config: *toCorePushConfig(comp.Config),
-		ID:     comp.Config.ID,
-	}, nil
+	return &a2a.TaskPushConfig{TaskID: comp.TaskID, Config: *toCorePushConfig(comp.Config)}, nil
 }

@@ -135,7 +135,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	case jsonrpc.MethodPushConfigGet:
 		result, err = h.onGetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigList:
-		result, err = h.onListTaskPushConfig(ctx, req.Params)
+		result, err = h.onListTaskPushConfigs(ctx, req.Params)
 	case jsonrpc.MethodPushConfigSet:
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigDelete:
@@ -343,12 +343,12 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return h.handler.GetTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfig(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
 	var params a2a.ListTaskPushConfigRequest
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
-	return h.handler.ListTaskPushConfig(ctx, &params)
+	return h.handler.ListTaskPushConfigs(ctx, &params)
 }
 
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {

@@ -137,9 +137,14 @@ func ToProtoCancelTaskRequest(req *a2a.CancelTaskRequest) (*a2apb.CancelTaskRequ
 	if req == nil {
 		return nil, nil
 	}
+	metadata, err := toProtoMap(req.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	return &a2apb.CancelTaskRequest{
-		Tenant: req.Tenant,
-		Id:     string(req.ID),
+		Tenant:   req.Tenant,
+		Id:       string(req.ID),
+		Metadata: metadata,
 	}, nil
 }
 
@@ -565,13 +570,12 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 
 	return &a2apb.TaskPushNotificationConfig{
 		Tenant:                 config.Tenant,
-		Id:                     string(config.ID),
 		TaskId:                 string(config.TaskID),
 		PushNotificationConfig: pConfig,
 	}, nil
 }
 
-func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigsResponse, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -583,18 +587,18 @@ func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2
 		}
 		configs[i] = configProto
 	}
-	return &a2apb.ListTaskPushNotificationConfigResponse{
+	return &a2apb.ListTaskPushNotificationConfigsResponse{
 		Configs:       configs,
 		NextPageToken: req.NextPageToken,
 	}, nil
 }
 
-func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
+func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigsRequest, error) {
 	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.ListTaskPushNotificationConfigRequest{
+	return &a2apb.ListTaskPushNotificationConfigsRequest{
 		Tenant:    req.Tenant,
 		TaskId:    string(req.TaskID),
 		PageSize:  int32(req.PageSize),

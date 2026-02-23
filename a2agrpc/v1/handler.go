@@ -224,14 +224,14 @@ func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, pbReq *a2ap
 	return pbConfig, nil
 }
 
-func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func (h *Handler) ListTaskPushNotificationConfigs(ctx context.Context, pbReq *a2apb.ListTaskPushNotificationConfigsRequest) (*a2apb.ListTaskPushNotificationConfigsResponse, error) {
 	req, err := pbconv.FromProtoListTaskPushConfigRequest(pbReq)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 
 	ctx, callCtx := withCallContext(ctx)
-	configs, err := h.handler.ListTaskPushConfig(ctx, req)
+	configs, err := h.handler.ListTaskPushConfigs(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
