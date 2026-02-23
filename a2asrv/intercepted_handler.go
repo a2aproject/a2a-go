@@ -159,7 +159,7 @@ func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 }
 
 func (h *InterceptedHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "ListTaskPushConfig")
+	ctx, callCtx := withMethodCallContext(ctx, "ListTaskPushConfigs")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}

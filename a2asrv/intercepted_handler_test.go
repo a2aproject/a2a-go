@@ -209,7 +209,7 @@ var methodCalls = []struct {
 		},
 	},
 	{
-		method: "ListTaskPushConfig",
+		method: "ListTaskPushConfigs",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
 			return h.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{})
 		},
