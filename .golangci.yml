@@ -7,8 +7,64 @@ formatters:
 linters:
   enable:
     - goheader
+    - revive
 
   settings:
+   
+    revive:
+      rules:
+        - name: defer
+          severity: warning
+          disabled: false
+          arguments:
+            - "call-chain"
+            - "loop"
+            - "method-call"
+            - "recover"
+            - "immediate-recover"
+            - "return"
+        
+        - name: early-return
+          severity: warning
+          disabled: false
+          arguments:
+            - "preserve-scope"
+            - "allow-jump"
+        
+        - name: exported
+          severity: warning
+          disabled: false
+          arguments:
+            - "disable-stuttering-check"
+            - "check-public-interface"
+        - name: package-comments
+          severity: warning
+          disabled: false
+
+        - name: identical-branches
+          severity: warning
+          disabled: false
+        - name: identical-ifelseif-branches
+          severity: warning
+          disabled: false
+        - name: identical-ifelseif-conditions
+          severity: warning
+          disabled: false
+        - name: identical-switch-branches
+          severity: warning
+          disabled: false
+        - name: identical-switch-conditions
+          severity: warning
+          disabled: false
+        - name: import-shadowing
+          severity: warning
+          disabled: false
+
+        - name: receiver-naming
+          severity: warning
+          disabled: false
+          arguments:
+            - max-length: 4
 
     goheader:
       values:
