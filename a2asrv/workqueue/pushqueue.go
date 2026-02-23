@@ -19,7 +19,6 @@ import (
 	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 )
 
 // ErrConcurrencyLimitExceeded is returned new work acceptance violates the configured concurrency limit.
@@ -27,8 +26,8 @@ var ErrConcurrencyLimitExceeded = errors.New("concurrency limit exceeded")
 
 type pushQueue struct {
 	Writer
-	concurrencyConfig limiter.ConcurrencyConfig
-	handlerFn         HandlerFn
+	config    HandlerConfig
+	handlerFn HandlerFn
 }
 
 // NewPushQueue creates a [Queue] implementation through which SDK submits work to the queue backend.
@@ -44,7 +43,7 @@ func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 }
 
 // RegisterHandler implements [Queue].
-func (q *pushQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn HandlerFn) {
-	q.concurrencyConfig = cfg
+func (q *pushQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
+	q.config = cfg
 	q.handlerFn = handlerFn
 }

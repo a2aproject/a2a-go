@@ -56,6 +56,10 @@ type Writer interface {
 	Write(context.Context, *Payload) (a2a.TaskID, error)
 }
 
+type HandlerConfig struct {
+	Limiter limiter.ConcurrencyConfig
+}
+
 // Queue is an interface for the work distribution component.
 // Executor backend registers itself using RegisterHandler when RequestHandler is created.
 // HandlerFn can be used by work queue implementations to start execution when works is received.
@@ -63,5 +67,5 @@ type Queue interface {
 	Writer
 
 	// RegisterHandler registers an executor. This method is called by the SDK.
-	RegisterHandler(limiter.ConcurrencyConfig, HandlerFn)
+	RegisterHandler(HandlerConfig, HandlerFn)
 }
