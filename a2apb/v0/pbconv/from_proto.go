@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -113,7 +114,14 @@ func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
 	case *a2apb.Part_Text:
 		return a2a.Part{Content: a2a.Text(part.Text), Metadata: meta}, nil
 	case *a2apb.Part_Data:
-		return a2a.Part{Content: a2a.Data(part.Data.GetData().AsMap()), Metadata: meta}, nil
+		var val any = part.Data.GetData().AsMap()
+		if compat, ok := meta["data_part_compat"].(bool); ok && compat {
+			if m, ok := val.(map[string]any); ok {
+				val = m["value"]
+				delete(meta, "data_part_compat")
+			}
+		}
+		return a2a.Part{Content: a2a.Data{Value: val}, Metadata: meta}, nil
 	case *a2apb.Part_File:
 		return fromProtoFilePart(part.File, meta)
 	default:
@@ -582,7 +590,7 @@ func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []*a2a.AgentInterface
 		interfaces[i+1] = &a2a.AgentInterface{
 			ProtocolBinding: a2a.TransportProtocol(pIface.GetTransport()),
 			URL:             pIface.GetUrl(),
-			ProtocolVersion: a2a.Version,
+			ProtocolVersion: a2a.ProtocolVersion(a2av0.Version),
 		}
 	}
 	return interfaces

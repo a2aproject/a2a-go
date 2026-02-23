@@ -276,8 +276,8 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 	return &config, nil
 }
 
-// ListTaskPushConfig implements [a2a.Transport].
-func (t *RESTTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+// ListTaskPushConfigs implements [a2a.Transport].
+func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	path := rest.MakeListPushConfigsPath(string(req.TaskID))
 	var configs []*a2a.TaskPushConfig
 

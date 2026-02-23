@@ -140,9 +140,14 @@ func ToProtoCancelTaskRequest(req *a2a.CancelTaskRequest) (*a2apb.CancelTaskRequ
 	if req == nil {
 		return nil, nil
 	}
+	metadata, err := toProtoMap(req.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	return &a2apb.CancelTaskRequest{
-		Tenant: req.Tenant,
-		Id:     string(req.ID),
+		Tenant:   req.Tenant,
+		Id:       string(req.ID),
+		Metadata: metadata,
 	}, nil
 }
 
@@ -328,7 +333,11 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 }
 
 func toProtoDataPart(part a2a.Data) (*a2apb.Part_Data, error) {
-	s, err := toProtoMap(part)
+	m, ok := part.Value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("DataPart value must be a map for protobuf conversion, got %T", part.Value)
+	}
+	s, err := toProtoMap(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
@@ -574,14 +583,13 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 
 	return &a2apb.TaskPushNotificationConfig{
 		Tenant:                 config.Tenant,
-		Id:                     string(config.ID),
 		TaskId:                 string(config.TaskID),
 		PushNotificationConfig: pConfig,
 	}, nil
 }
 
 // ToProtoListTaskPushConfigResponse converts a [a2a.ListTaskPushConfigResponse] to a [a2apb.ListTaskPushNotificationConfigResponse].
-func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigsResponse, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -593,19 +601,19 @@ func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2
 		}
 		configs[i] = configProto
 	}
-	return &a2apb.ListTaskPushNotificationConfigResponse{
+	return &a2apb.ListTaskPushNotificationConfigsResponse{
 		Configs:       configs,
 		NextPageToken: req.NextPageToken,
 	}, nil
 }
 
 // ToProtoListTaskPushConfigRequest converts a [a2a.ListTaskPushConfigRequest] to a [a2apb.ListTaskPushNotificationConfigRequest].
-func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
+func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigsRequest, error) {
 	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.ListTaskPushNotificationConfigRequest{
+	return &a2apb.ListTaskPushNotificationConfigsRequest{
 		Tenant:    req.Tenant,
 		TaskId:    string(req.TaskID),
 		PageSize:  int32(req.PageSize),

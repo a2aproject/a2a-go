@@ -322,7 +322,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
+func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected method GET, got %s", r.Method)
@@ -341,7 +341,7 @@ func TestRESTTransport_ListTaskPushConfig(t *testing.T) {
 
 	transport := NewRESTTransport(server.URL, server.Client())
 
-	configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{
+	configs, err := transport.ListTaskPushConfigs(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{
 		TaskID: a2a.TaskID("task-123"),
 	})
 	if err != nil {

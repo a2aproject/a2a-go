@@ -41,7 +41,7 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 	mux.HandleFunc("POST /tasks/{idAndAction}", handlePOSTTasks(handler))
 	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), handleCreateTaskPushConfig(handler))
 	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), handleGetTaskPushConfig(handler))
-	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), handleListTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), handleListTaskPushConfigs(handler))
 	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), handleDeleteTaskPushConfig(handler))
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), handleGetExtendedAgentCard(handler))
 
@@ -334,7 +334,7 @@ func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
+func handleListTaskPushConfigs(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -347,7 +347,7 @@ func handleListTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 			TaskID: a2a.TaskID(taskID),
 		}
 
-		result, err := handler.ListTaskPushConfig(ctx, params)
+		result, err := handler.ListTaskPushConfigs(ctx, params)
 
 		if err != nil {
 			writeRESTError(ctx, rw, err, a2a.TaskID(taskID))

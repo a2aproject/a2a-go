@@ -31,37 +31,37 @@ import (
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
-	// GetTask handles the 'tasks/get' protocol method.
+	// GetTask handles the 'GetTask' protocol method.
 	GetTask(context.Context, *a2a.GetTaskRequest) (*a2a.Task, error)
 
-	// ListTasks handles the 'tasks/list' protocol method.
+	// ListTasks handles the 'ListTasks' protocol method.
 	ListTasks(context.Context, *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 
-	// CancelTask handles the 'tasks/cancel' protocol method.
+	// CancelTask handles the 'CancelTask' protocol method.
 	CancelTask(context.Context, *a2a.CancelTaskRequest) (*a2a.Task, error)
 
-	// SendMessage handles the 'message/send' protocol method (non-streaming).
+	// SendMessage handles the 'SendMessage' protocol method (non-streaming).
 	SendMessage(context.Context, *a2a.SendMessageRequest) (a2a.SendMessageResult, error)
 
-	// SubscribeToTask handles the `tasks/resubscribe` protocol method.
+	// SubscribeToTask handles the `SubscribeToTask` protocol method.
 	SubscribeToTask(context.Context, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 
-	// SendStreamingMessage handles the 'message/stream' protocol method (streaming).
+	// SendStreamingMessage handles the 'SendStreamingMessage' protocol method (streaming).
 	SendStreamingMessage(context.Context, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 
-	// GetTaskPushConfig handles the `tasks/pushNotificationConfig/get` protocol method.
+	// GetTaskPushConfig handles the `GetTaskPushNotificationConfig` protocol method.
 	GetTaskPushConfig(context.Context, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// ListTaskPushConfig handles the `tasks/pushNotificationConfig/list` protocol method.
-	ListTaskPushConfig(context.Context, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
+	// ListTaskPushConfigs handles the `ListTaskPushNotificationConfigs` protocol method.
+	ListTaskPushConfigs(context.Context, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
-	// CreateTaskPushConfig handles the `tasks/pushNotificationConfig/set` protocol method.
+	// CreateTaskPushConfig handles the `CreateTaskPushNotificationConfig` protocol method.
 	CreateTaskPushConfig(context.Context, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// DeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
+	// DeleteTaskPushConfig handles the `DeleteTaskPushNotificationConfig` protocol method.
 	DeleteTaskPushConfig(context.Context, *a2a.DeleteTaskPushConfigRequest) error
 
-	// GetExtendedAgentCard returns an extended a2a.AgentCard if configured.
+	// GetExtendedAgentCard handles the `GetExtendedAgentCard` protocol method.
 	GetExtendedAgentCard(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
 
@@ -356,8 +356,8 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	return nil, push.ErrPushConfigNotFound
 }
 
-// ListTaskPushConfig implements RequestHandler.
-func (h *defaultRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+// ListTaskPushConfigs implements RequestHandler.
+func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return nil, a2a.ErrPushNotificationNotSupported
 	}
@@ -386,11 +386,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 		return nil, fmt.Errorf("failed to save push config: %w", err)
 	}
 
-	return &a2a.TaskPushConfig{
-		TaskID: req.TaskID,
-		ID:     saved.ID,
-		Config: *saved,
-	}, nil
+	return &a2a.TaskPushConfig{TaskID: req.TaskID, Config: *saved}, nil
 }
 
 // DeleteTaskPushConfig implements RequestHandler.

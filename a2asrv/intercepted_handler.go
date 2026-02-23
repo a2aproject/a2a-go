@@ -165,13 +165,13 @@ func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return doCall(ctx, callCtx, h, req, h.Handler.GetTaskPushConfig)
 }
 
-// ListTaskPushConfig implements RequestHandler.
-func (h *InterceptedHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	ctx, callCtx := attachMethodCallContext(ctx, "ListTaskPushConfig")
+// ListTaskPushConfigs implements RequestHandler.
+func (h *InterceptedHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	ctx, callCtx := attachMethodCallContext(ctx, "ListTaskPushConfigs")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
-	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfig)
+	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfigs)
 }
 
 // CreateTaskPushConfig implements RequestHandler.

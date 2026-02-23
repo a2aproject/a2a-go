@@ -182,9 +182,9 @@ func (c *Client) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConf
 	return doCall(ctx, c, "GetTaskPushConfig", req, c.transport.GetTaskPushConfig)
 }
 
-// ListTaskPushConfig implements the `ListTaskPushNotificationConfig` protocol method.
-func (c *Client) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	return doCall(ctx, c, "ListTaskPushConfig", req, c.transport.ListTaskPushConfig)
+// ListTaskPushConfigs implements the `ListTaskPushNotificationConfig` protocol method.
+func (c *Client) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	return doCall(ctx, c, "ListTaskPushConfigs", req, c.transport.ListTaskPushConfigs)
 }
 
 // CreateTaskPushConfig implements the `CreateTaskPushNotificationConfig` protocol method.

@@ -1598,14 +1598,7 @@ func TestRequestHandler_SetTaskPushConfig(t *testing.T) {
 				got.Config.ID = ""
 			}
 
-			want := &a2a.TaskPushConfig{
-				ID:     tc.params.Config.ID,
-				Config: tc.params.Config,
-				TaskID: tc.params.TaskID,
-			}
-			if want.ID == "" {
-				want.ID = got.ID
-			}
+			want := &a2a.TaskPushConfig{Config: tc.params.Config, TaskID: tc.params.TaskID}
 			if want.Config.ID == "" {
 				want.Config.ID = got.Config.ID
 			}
@@ -1663,7 +1656,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_ListTaskPushConfig(t *testing.T) {
+func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 	config1 := a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
@@ -1708,14 +1701,14 @@ func TestRequestHandler_ListTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handler.ListTaskPushConfig(ctx, tc.params)
+			got, err := handler.ListTaskPushConfigs(ctx, tc.params)
 			if err != nil {
-				t.Errorf("OnListTaskPushConfig() failed: %v", err)
+				t.Errorf("OnListTaskPushConfigs() failed: %v", err)
 				return
 			}
 			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("OnListTaskPushConfig() mismatch (-want +got):\n%s", diff)
+				t.Errorf("OnListTaskPushConfigs() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1766,9 +1759,9 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 				return
 			}
 
-			got, err := handler.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{TaskID: taskID})
+			got, err := handler.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: taskID})
 			if err != nil {
-				t.Errorf("OnListTaskPushConfig() for verification failed: %v", err)
+				t.Errorf("OnListTaskPushConfigs() for verification failed: %v", err)
 				return
 			}
 

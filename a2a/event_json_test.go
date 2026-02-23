@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -317,3 +318,55 @@ type customEvent struct {
 }
 
 func (c *customEvent) isEvent() {}
+
+func TestEventJSON_DataPartPrimitives(t *testing.T) {
+	testCases := []struct {
+		name string
+		val  any
+	}{
+		{"string", "some string"},
+		{"int", 123},
+		{"bool", true},
+		{"float", 12.34},
+		{"slice", []any{"a", 1, true}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &Message{
+				ID:    "msg-1",
+				Role:  MessageRoleUser,
+				Parts: ContentParts{NewDataPart(tc.val)},
+			}
+			sr := StreamResponse{Event: msg}
+
+			// Marshal
+			data, err := sr.MarshalJSON()
+			if err != nil {
+				t.Fatalf("MarshalJSON failed: %v", err)
+			}
+
+			// Unmarshal
+			var gotSR StreamResponse
+			if err := json.Unmarshal(data, &gotSR); err != nil {
+				t.Fatalf("UnmarshalJSON failed: %v", err)
+			}
+
+			gotMsg, ok := gotSR.Event.(*Message)
+			if !ok {
+				t.Fatalf("Expected *Message, got %T", gotSR.Event)
+			}
+
+			if len(gotMsg.Parts) != 1 {
+				t.Fatalf("Expected 1 part, got %d", len(gotMsg.Parts))
+			}
+
+			// Helper method to retrieve value
+			gotData := gotMsg.Parts[0].Data()
+			if gotData == nil {
+				t.Fatalf("Expected DataPart, got nil or non-Data part")
+			}
+			t.Logf("Got data: %#v (%T)", gotData, gotData)
+		})
+	}
+}

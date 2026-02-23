@@ -16,6 +16,7 @@
 package jsonrpc
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -38,7 +39,7 @@ const (
 	MethodTasksResubscribe     = "SubscribeToTask"
 	MethodPushConfigGet        = "GetTaskPushNotificationConfig"
 	MethodPushConfigSet        = "CreateTaskPushNotificationConfig"
-	MethodPushConfigList       = "ListTaskPushNotificationConfig" // TODO: should be pluralized?
+	MethodPushConfigList       = "ListTaskPushNotificationConfigs"
 	MethodPushConfigDelete     = "DeleteTaskPushNotificationConfig"
 	MethodGetExtendedAgentCard = "GetExtendedAgentCard"
 )
@@ -134,4 +135,49 @@ func ToJSONRPCError(err error) *Error {
 		Message: a2a.ErrInternalError.Error(),
 		Data:    map[string]any{"error": err.Error()},
 	}
+}
+
+// IsValidID checks if the given ID is valid for a JSON-RPC request.
+func IsValidID(id any) bool {
+	if id == nil {
+		return true
+	}
+	switch id.(type) {
+	case string, float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// ServerRequest represents a JSON-RPC 2.0 server request.
+type ServerRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	ID      any             `json:"id"`
+}
+
+// ServerResponse represents a JSON-RPC 2.0 server response.
+type ServerResponse struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      any    `json:"id"`
+	Result  any    `json:"result,omitempty"`
+	Error   *Error `json:"error,omitempty"`
+}
+
+// ClientRequest represents a JSON-RPC 2.0 client request.
+type ClientRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+	ID      string `json:"id"`
+}
+
+// ClientResponse represents a JSON-RPC 2.0 client response.
+type ClientResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *Error          `json:"error,omitempty"`
 }

@@ -19,6 +19,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -325,7 +326,25 @@ func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
 }
 
 func toProtoDataPart(part *a2a.Part) (*a2apb.Part, error) {
-	s, err := toProtoMap(part.Content.(a2a.Data))
+	dataContent, ok := part.Content.(a2a.Data)
+	if !ok {
+		return nil, fmt.Errorf("part content is not Data")
+	}
+	var s *structpb.Struct
+	var err error
+
+	if m, ok := dataContent.Value.(map[string]any); ok {
+		s, err = toProtoMap(m)
+	} else {
+		// Version 0.3 clients expect a map, so we wrap non-map values.
+		m := map[string]any{"value": dataContent.Value}
+		if part.Metadata == nil {
+			part.Metadata = make(map[string]any)
+		}
+		part.Metadata["data_part_compat"] = true
+		s, err = toProtoMap(m)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}
@@ -873,17 +892,17 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	}
 
 	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
-		return i.ProtocolVersion == a2a.Version
+		return i.ProtocolVersion == a2a.ProtocolVersion(a2av0.Version)
 	})
 	if agentInterfaceIdx == -1 {
-		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2a.Version)
+		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2av0.Version)
 	}
 	result.ProtocolVersion = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolVersion)
 	result.Url = card.SupportedInterfaces[agentInterfaceIdx].URL
 	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
 	var additionalInterfaces []*a2a.AgentInterface
 	for i, iface := range card.SupportedInterfaces {
-		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.Version {
+		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.ProtocolVersion(a2av0.Version) {
 			continue
 		}
 		additionalInterfaces = append(additionalInterfaces, iface)

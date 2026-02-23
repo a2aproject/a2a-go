@@ -29,7 +29,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonrpcRequest {
+func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonrpc.ClientRequest {
 	t.Helper()
 	if httpReq.Method != "POST" {
 		t.Errorf("got %s, want POST", httpReq.Method)
@@ -38,7 +38,7 @@ func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonr
 		t.Errorf("got Content-Type %s, want application/json", httpReq.Header.Get("Content-Type"))
 	}
 
-	var req jsonrpcRequest
+	var req jsonrpc.ClientRequest
 	if err := json.NewDecoder(httpReq.Body).Decode(&req); err != nil {
 		t.Fatalf("Failed to decode request: %v", err)
 	}
@@ -51,8 +51,8 @@ func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonr
 	return req
 }
 
-func newResponse(req jsonrpcRequest, msg json.RawMessage) jsonrpcResponse {
-	return jsonrpcResponse{JSONRPC: "2.0", ID: req.ID, Result: msg}
+func newResponse(req jsonrpc.ClientRequest, msg json.RawMessage) jsonrpc.ClientResponse {
+	return jsonrpc.ClientResponse{JSONRPC: "2.0", ID: req.ID, Result: msg}
 }
 
 func TestJSONRPCTransport_SendMessage(t *testing.T) {
@@ -239,7 +239,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
-		resp := jsonrpcResponse{
+		resp := jsonrpc.ClientResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Error: &jsonrpc.Error{
@@ -486,7 +486,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			req := mustDecodeJSONRPC(t, r, "ListTaskPushNotificationConfig")
+			req := mustDecodeJSONRPC(t, r, "ListTaskPushNotificationConfigs")
 
 			resp := newResponse(
 				req,
@@ -498,10 +498,10 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{})
+		configs, err := transport.ListTaskPushConfigs(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{})
 
 		if err != nil {
-			t.Fatalf("ListTaskPushConfig failed: %v", err)
+			t.Fatalf("ListTaskPushConfigs failed: %v", err)
 		}
 
 		if len(configs) != 2 {
@@ -571,7 +571,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req jsonrpcRequest
+		var req jsonrpc.ClientRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("Failed to decode request: %v", err)
 			return
@@ -611,7 +611,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
-		resp := jsonrpcResponse{
+		resp := jsonrpc.ClientResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Error: &jsonrpc.Error{

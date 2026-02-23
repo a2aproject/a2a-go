@@ -71,8 +71,8 @@ func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServicePa
 	return t.GetTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) ListTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	return t.ListTaskPushConfigFn(ctx, sParams, req)
+func (t *testTransport) ListTaskPushConfigs(ctx context.Context, sParams ServiceParams, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	return t.ListTaskPushConfigFn(ctx, sParams, params)
 }
 
 func (t *testTransport) CreateTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
@@ -732,7 +732,7 @@ func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 	}
 }
 
-func TestClient_InterceptListTaskPushConfig(t *testing.T) {
+func TestClient_InterceptListTaskPushConfigs(t *testing.T) {
 	ctx := t.Context()
 	config := &a2a.TaskPushConfig{}
 	transport := &testTransport{
@@ -743,15 +743,15 @@ func TestClient_InterceptListTaskPushConfig(t *testing.T) {
 	interceptor := &testInterceptor{}
 	client := newTestClient(transport, interceptor)
 	req := &a2a.ListTaskPushConfigRequest{}
-	resp, err := client.ListTaskPushConfig(ctx, req)
-	if interceptor.lastReq.Method != "ListTaskPushConfig" {
-		t.Fatalf("lastReq.Method = %v, want ListTaskPushConfig", interceptor.lastReq.Method)
+	resp, err := client.ListTaskPushConfigs(ctx, req)
+	if interceptor.lastReq.Method != "ListTaskPushConfigs" {
+		t.Fatalf("lastReq.Method = %v, want ListTaskPushConfigs", interceptor.lastReq.Method)
 	}
-	if interceptor.lastResp.Method != "ListTaskPushConfig" {
-		t.Fatalf("lastResp.Method = %v, want ListTaskPushConfig", interceptor.lastResp.Method)
+	if interceptor.lastResp.Method != "ListTaskPushConfigs" {
+		t.Fatalf("lastResp.Method = %v, want ListTaskPushConfigs", interceptor.lastResp.Method)
 	}
 	if err != nil || len(resp) != 1 || resp[0] != config {
-		t.Fatalf("client.ListTaskPushConfig() = (%v, %v), want %v", resp, err, config)
+		t.Fatalf("client.ListTaskPushConfigs() = (%v, %v), want %v", resp, err, config)
 	}
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)

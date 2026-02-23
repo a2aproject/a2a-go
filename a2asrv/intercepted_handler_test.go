@@ -107,7 +107,7 @@ func (h *mockHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPus
 	return &a2a.TaskPushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (h *mockHandler) ListTaskPushConfigs(ctx context.Context, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
@@ -209,9 +209,9 @@ var methodCalls = []struct {
 		},
 	},
 	{
-		method: "ListTaskPushConfig",
+		method: "ListTaskPushConfigs",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.ListTaskPushConfig(ctx, &a2a.ListTaskPushConfigRequest{})
+			return h.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{})
 		},
 	},
 	{

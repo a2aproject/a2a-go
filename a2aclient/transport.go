@@ -46,8 +46,8 @@ type Transport interface {
 	// GetTaskPushConfig calls the `GetTaskPushNotificationConfig` protocol method.
 	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// ListTaskPushConfig calls the `ListTaskPushNotificationConfig` protocol method.
-	ListTaskPushConfig(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
+	// ListTaskPushConfigs calls the `ListTaskPushNotificationConfig` protocol method.
+	ListTaskPushConfigs(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
 	// CreateTaskPushConfig calls the `CreateTaskPushNotificationConfig` protocol method.
 	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
@@ -114,7 +114,7 @@ func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params Serv
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	return nil, errNotImplemented
 }
 

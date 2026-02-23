@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
 	"github.com/a2aproject/a2a-go/a2asrv"
@@ -222,11 +223,7 @@ func (m *mockRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 		if _, ok := m.pushConfigs[req.TaskID]; !ok {
 			m.pushConfigs[req.TaskID] = make(map[string]*a2a.TaskPushConfig)
 		}
-		taskPushConfig := &a2a.TaskPushConfig{
-			TaskID: req.TaskID,
-			ID:     req.Config.ID,
-			Config: req.Config,
-		}
+		taskPushConfig := &a2a.TaskPushConfig{TaskID: req.TaskID, Config: req.Config}
 		m.pushConfigs[req.TaskID][req.Config.ID] = taskPushConfig
 		return taskPushConfig, nil
 	}
@@ -246,7 +243,7 @@ func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	m.capturedListTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
@@ -1143,7 +1140,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 					t.Fatalf("ListTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
 				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedListTaskPushConfigRequest, tt.wantParams) {
-					t.Errorf("OnListTaskPushConfig() request got = %v, want %v", mockHandler.capturedListTaskPushConfigRequest, tt.wantParams)
+					t.Errorf("OnListTaskPushConfigs() request got = %v, want %v", mockHandler.capturedListTaskPushConfigRequest, tt.wantParams)
 				}
 			}
 		})
@@ -1233,7 +1230,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
+	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)

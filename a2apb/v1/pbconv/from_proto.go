@@ -113,7 +113,7 @@ func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
 	case *a2apb.Part_Raw:
 		part.Content = a2a.Raw(content.Raw)
 	case *a2apb.Part_Data:
-		part.Content = a2a.Data(content.Data.GetStructValue().AsMap())
+		part.Content = a2a.Data{Value: content.Data.GetStructValue().AsMap()}
 	case *a2apb.Part_Url:
 		part.Content = a2a.URL(content.Url)
 	default:
@@ -230,8 +230,9 @@ func FromProtoCancelTaskRequest(req *a2apb.CancelTaskRequest) (*a2a.CancelTaskRe
 	}
 
 	request := &a2a.CancelTaskRequest{
-		Tenant: req.GetTenant(),
-		ID:     taskID,
+		Tenant:   req.GetTenant(),
+		ID:       taskID,
+		Metadata: fromProtoMap(req.GetMetadata()),
 	}
 	return request, nil
 }
@@ -604,18 +605,10 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	if taskID == "" {
 		return nil, fmt.Errorf("task id cannot be empty")
 	}
-	id := pTaskConfig.GetId()
-	if id == "" {
-		return nil, fmt.Errorf("config id cannot be empty")
-	}
 
 	pConf := pTaskConfig.GetPushNotificationConfig()
 	if pConf == nil {
 		return nil, fmt.Errorf("push notification config cannot be empty")
-	}
-
-	if pConf.GetId() != id {
-		return nil, fmt.Errorf("config id mismatch: %q != %q", pConf.GetId(), id)
 	}
 
 	config, err := fromProtoPushConfig(pConf)
@@ -627,12 +620,11 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 		Tenant: pTaskConfig.GetTenant(),
 		Config: *config,
 		TaskID: taskID,
-		ID:     id,
 	}, nil
 }
 
 // FromProtoListTaskPushConfigResponse converts a [a2apb.ListTaskPushNotificationConfigResponse] to a [a2a.ListTaskPushConfigResponse].
-func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigResponse) (*a2a.ListTaskPushConfigResponse, error) {
+func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigsResponse) (*a2a.ListTaskPushConfigResponse, error) {
 	configs := make([]*a2a.TaskPushConfig, len(resp.GetConfigs()))
 	for i, pConfig := range resp.GetConfigs() {
 		config, err := FromProtoTaskPushConfig(pConfig)
@@ -648,7 +640,7 @@ func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationCon
 }
 
 // FromProtoListTaskPushConfigRequest converts a [a2apb.ListTaskPushNotificationConfigRequest] to a [a2a.ListTaskPushConfigRequest].
-func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
+func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigsRequest) (*a2a.ListTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
