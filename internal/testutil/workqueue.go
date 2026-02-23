@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 )
 
+// TestWorkQueue is a mock of [workqueue.Queue].
 type TestWorkQueue struct {
 	HandlerFn workqueue.HandlerFn
 	Payloads  []*workqueue.Payload
@@ -30,6 +31,7 @@ type TestWorkQueue struct {
 	RegisterHandlerFunc func(workqueue.HandlerConfig, workqueue.HandlerFn)
 }
 
+// Write implements [workqueue.Writer] interface.
 func (m *TestWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2a.TaskID, error) {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, payload)
@@ -38,6 +40,7 @@ func (m *TestWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (
 	return payload.TaskID, m.WriteErr
 }
 
+// RegisterHandler implements [workqueue.Queue] interface.
 func (m *TestWorkQueue) RegisterHandler(cfg workqueue.HandlerConfig, fn workqueue.HandlerFn) {
 	if m.RegisterHandlerFunc != nil {
 		m.RegisterHandlerFunc(cfg, fn)

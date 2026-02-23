@@ -32,6 +32,7 @@ type TestQueueManager struct {
 
 var _ eventqueue.Manager = (*TestQueueManager)(nil)
 
+// CreateWriter implements [eventqueue.Manager] interface.
 func (m *TestQueueManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
 	if m.CreateWriterFunc != nil {
 		return m.CreateWriterFunc(ctx, taskID)
@@ -39,6 +40,7 @@ func (m *TestQueueManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) 
 	return m.Manager.CreateWriter(ctx, taskID)
 }
 
+// CreateReader implements [eventqueue.Manager] interface.
 func (m *TestQueueManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
 	if m.CreateReaderFunc != nil {
 		return m.CreateReaderFunc(ctx, taskID)
@@ -46,6 +48,7 @@ func (m *TestQueueManager) CreateReader(ctx context.Context, taskID a2a.TaskID) 
 	return m.Manager.CreateReader(ctx, taskID)
 }
 
+// Destroy implements [eventqueue.Manager] interface.
 func (m *TestQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
 	if m.DestroyFunc != nil {
 		return m.DestroyFunc(ctx, taskID)

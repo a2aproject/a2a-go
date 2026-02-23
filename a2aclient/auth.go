@@ -104,6 +104,7 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 
 // CredentialsService is used by [AuthInterceptor] for resolving credentials.
 type CredentialsService interface {
+	// Get retrieves the credential for the given session ID and security scheme name.
 	Get(ctx context.Context, sid SessionID, scheme a2a.SecuritySchemeName) (AuthCredential, error)
 }
 

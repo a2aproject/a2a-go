@@ -204,9 +204,9 @@ func (e *testExecutor) mustWrite(t *testing.T, event a2a.Event) {
 	}
 }
 
-func (e *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
+func (c *testCanceler) mustWrite(t *testing.T, event a2a.Event) {
 	t.Helper()
-	if err := e.queue.Write(t.Context(), event); err != nil {
+	if err := c.queue.Write(t.Context(), event); err != nil {
 		t.Fatalf("queue Write() failed: %v", err)
 	}
 }

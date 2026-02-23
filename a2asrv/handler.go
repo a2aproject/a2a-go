@@ -61,7 +61,7 @@ type RequestHandler interface {
 	// DeleteTaskPushConfig handles the `tasks/pushNotificationConfig/delete` protocol method.
 	DeleteTaskPushConfig(context.Context, *a2a.DeleteTaskPushConfigRequest) error
 
-	// GetAgentCard returns an extended a2a.AgentCard if configured.
+	// GetExtendedAgentCard returns an extended a2a.AgentCard if configured.
 	GetExtendedAgentCard(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
 

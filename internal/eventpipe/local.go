@@ -24,11 +24,13 @@ import (
 
 const defaultBufferSize = 1024
 
+// Reader is an interface for reading events.
 type Reader interface {
 	// Read dequeues an event or blocks if the queue is empty.
 	Read(ctx context.Context) (a2a.Event, error)
 }
 
+// Writer is an interface for writing events.
 type Writer interface {
 	// Write enqueues an event or blocks if the queue is full.
 	Write(ctx context.Context, event a2a.Event) error
@@ -38,14 +40,17 @@ type localOptions struct {
 	bufferSize int
 }
 
+// LocalPipeOption is a functional option for configuring a local pipe.
 type LocalPipeOption func(*localOptions)
 
+// WithBufferSize configures the size of the event buffer for the local pipe.
 func WithBufferSize(size int) LocalPipeOption {
 	return func(opts *localOptions) {
 		opts.bufferSize = size
 	}
 }
 
+// Local represents a local event pipe with a reader and a writer.
 type Local struct {
 	Reader Reader
 	Writer Writer
@@ -53,6 +58,7 @@ type Local struct {
 	closeWriter func()
 }
 
+// NewLocal creates a new local event pipe.
 func NewLocal(opts ...LocalPipeOption) *Local {
 	options := &localOptions{bufferSize: defaultBufferSize}
 	for _, opt := range opts {
@@ -115,6 +121,7 @@ func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
 	}
 }
 
+// Close closes the local event pipe.
 func (q *Local) Close() {
 	q.closeWriter()
 }

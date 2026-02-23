@@ -56,6 +56,7 @@ type Writer interface {
 	Write(context.Context, *Payload) (a2a.TaskID, error)
 }
 
+// HandlerConfig configures the work queue handler.
 type HandlerConfig struct {
 	Limiter limiter.ConcurrencyConfig
 }

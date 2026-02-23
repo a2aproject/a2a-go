@@ -41,9 +41,9 @@ type RESTTransport struct {
 // By default, an HTTP client with 5-second timeout is used.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
-func NewRESTTransport(url string, client *http.Client) Transport {
+func NewRESTTransport(tURL string, client *http.Client) Transport {
 	t := &RESTTransport{
-		url:        url,
+		url:        tURL,
 		httpClient: client,
 	}
 

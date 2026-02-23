@@ -339,18 +339,18 @@ type TaskStatus struct {
 }
 
 // Meta implements MetadataCarrier.
-func (m *Task) Meta() map[string]any {
-	return m.Metadata
+func (t *Task) Meta() map[string]any {
+	return t.Metadata
 }
 
 // SetMeta implements MetadataCarrier.
-func (m *Task) SetMeta(k string, v any) {
-	setMeta(&m.Metadata, k, v)
+func (t *Task) SetMeta(k string, v any) {
+	setMeta(&t.Metadata, k, v)
 }
 
 // TaskInfo implements TaskInfoProvider.
-func (m *Task) TaskInfo() TaskInfo {
-	return TaskInfo{TaskID: m.ID, ContextID: m.ContextID}
+func (t *Task) TaskInfo() TaskInfo {
+	return TaskInfo{TaskID: t.ID, ContextID: t.ContextID}
 }
 
 // ArtifactID is a unique identifier for the artifact within the scope of the task.
@@ -418,18 +418,18 @@ type TaskArtifactUpdateEvent struct {
 }
 
 // Meta implements MetadataCarrier.
-func (a *TaskArtifactUpdateEvent) Meta() map[string]any {
-	return a.Metadata
+func (e *TaskArtifactUpdateEvent) Meta() map[string]any {
+	return e.Metadata
 }
 
 // SetMeta implements MetadataCarrier.
-func (a *TaskArtifactUpdateEvent) SetMeta(k string, v any) {
-	setMeta(&a.Metadata, k, v)
+func (e *TaskArtifactUpdateEvent) SetMeta(k string, v any) {
+	setMeta(&e.Metadata, k, v)
 }
 
 // TaskInfo implements TaskInfoProvider.
-func (m *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
-	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
+func (e *TaskArtifactUpdateEvent) TaskInfo() TaskInfo {
+	return TaskInfo{TaskID: e.TaskID, ContextID: e.ContextID}
 }
 
 // NewArtifactEvent create a TaskArtifactUpdateEvent for an Artifact with a random ID.
@@ -493,18 +493,18 @@ func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *M
 }
 
 // Meta implements MetadataCarrier.
-func (a *TaskStatusUpdateEvent) Meta() map[string]any {
-	return a.Metadata
+func (e *TaskStatusUpdateEvent) Meta() map[string]any {
+	return e.Metadata
 }
 
 // SetMeta implements MetadataCarrier.
-func (a *TaskStatusUpdateEvent) SetMeta(k string, v any) {
-	setMeta(&a.Metadata, k, v)
+func (e *TaskStatusUpdateEvent) SetMeta(k string, v any) {
+	setMeta(&e.Metadata, k, v)
 }
 
 // TaskInfo implements TaskInfoProvider.
-func (m *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
-	return TaskInfo{TaskID: m.TaskID, ContextID: m.ContextID}
+func (e *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
+	return TaskInfo{TaskID: e.TaskID, ContextID: e.ContextID}
 }
 
 // ContentParts is an array of content parts that form the message body or an artifact.

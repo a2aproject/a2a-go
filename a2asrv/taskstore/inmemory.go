@@ -84,6 +84,7 @@ func NewInMemory(config *InMemoryStoreConfig) *InMemory {
 	return m
 }
 
+// Create implements [Store] interface.
 func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, error) {
 	if err := validateTask(task); err != nil {
 		return TaskVersionMissing, err
@@ -115,6 +116,7 @@ func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, err
 	return version, nil
 }
 
+// Update implements [Store] interface.
 func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion, error) {
 	if err := validateTask(req.Task); err != nil {
 		return TaskVersionMissing, err
@@ -147,6 +149,7 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 	return version, nil
 }
 
+// Get implements [Store] interface.
 func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, error) {
 	s.mu.RLock()
 	storedTask, ok := s.tasks[taskID]
@@ -164,6 +167,7 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 	return &StoredTask{Task: task, Version: storedTask.version}, nil
 }
 
+// List implements [Store] interface.
 func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
 	userName, err := s.config.Authenticator(ctx)
 	if userName == "" || err != nil {

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package grpcutil provides gRPC utility functions for A2A.
 package grpcutil
 
 import (

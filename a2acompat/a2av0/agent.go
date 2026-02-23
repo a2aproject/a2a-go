@@ -218,7 +218,10 @@ type AgentSkill struct {
 type TransportProtocol string
 
 const (
-	TransportProtocolJSONRPC  TransportProtocol = "JSONRPC"
-	TransportProtocolGRPC     TransportProtocol = "GRPC"
+	// TransportProtocolJSONRPC specifies the JSON-RPC over HTTP transport protocol.
+	TransportProtocolJSONRPC TransportProtocol = "JSONRPC"
+	// TransportProtocolGRPC specifies the gRPC transport protocol.
+	TransportProtocolGRPC TransportProtocol = "GRPC"
+	// TransportProtocolHTTPJSON specifies the HTTP with JSON payload transport protocol.
 	TransportProtocolHTTPJSON TransportProtocol = "HTTP+JSON"
 )

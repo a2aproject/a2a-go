@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jsonrpc provides JSON-RPC 2.0 protocol implementation for A2A.
 package jsonrpc
 
 import (
@@ -42,7 +43,7 @@ const (
 	MethodGetExtendedAgentCard = "GetExtendedAgentCard"
 )
 
-// jsonrpcError represents a JSON-RPC 2.0 error object.
+// Error represents a JSON-RPC 2.0 error object.
 // TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
 // This needs to be implemented across all transports (currently not in grpc either).
 type Error struct {
@@ -77,6 +78,7 @@ var codeToError = map[int]error{
 	-31403: a2a.ErrUnauthorized,
 }
 
+// ToA2AError converts a JSON-RPC error to an [a2a.Error].
 func (e *Error) ToA2AError() error {
 	err, ok := codeToError[e.Code]
 	if !ok {
@@ -95,6 +97,7 @@ func (e *Error) ToA2AError() error {
 	return result
 }
 
+// ToJSONRPCError converts an error to a JSON-RPC [Error].
 func ToJSONRPCError(err error) *Error {
 	jsonrpcErr := &Error{}
 	if errors.As(err, &jsonrpcErr) {

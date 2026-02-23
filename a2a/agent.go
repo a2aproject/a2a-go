@@ -136,6 +136,7 @@ type AgentInterface struct {
 	ProtocolVersion ProtocolVersion `json:"protocolVersion" yaml:"protocolVersion" mapstructure:"protocolVersion"`
 }
 
+// NewAgentInterface creates a new [AgentInterface] with the provided URL and protocol binding.
 func NewAgentInterface(url string, protocolBinding TransportProtocol) *AgentInterface {
 	return &AgentInterface{URL: url, ProtocolBinding: protocolBinding, ProtocolVersion: Version}
 }

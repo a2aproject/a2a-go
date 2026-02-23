@@ -75,7 +75,7 @@ type ProcessorResult struct {
 
 // Executor implementation starts an agent execution.
 type Executor interface {
-	// Start starts publishing events to the queue. Called in a separate goroutine.
+	// Execute starts publishing events to the queue. Called in a separate goroutine.
 	Execute(context.Context, eventpipe.Writer) error
 }
 

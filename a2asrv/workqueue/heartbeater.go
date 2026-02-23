@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package workqueue provides a work queue implementation for task execution.
 package workqueue
 
 import (

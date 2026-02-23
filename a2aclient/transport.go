@@ -43,33 +43,35 @@ type Transport interface {
 	// SendStreamingMessage calls the 'SendStreamingMessage' protocol method (streaming).
 	SendStreamingMessage(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 
-	// GetTaskPushNotificationConfig calls the `GetTaskPushNotificationConfig` protocol method.
+	// GetTaskPushConfig calls the `GetTaskPushNotificationConfig` protocol method.
 	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// ListTaskPushNotificationConfig calls the `ListTaskPushNotificationConfig` protocol method.
+	// ListTaskPushConfig calls the `ListTaskPushNotificationConfig` protocol method.
 	ListTaskPushConfig(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
-	// CreateTaskPushNotificationConfig calls the `CreateTaskPushNotificationConfig` protocol method.
+	// CreateTaskPushConfig calls the `CreateTaskPushNotificationConfig` protocol method.
 	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// DeleteTaskPushNotificationConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
+	// DeleteTaskPushConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
 	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 
 	// GetExtendedAgentCard calls the 'GetExtendedAgentCard' protocol method.
 	GetExtendedAgentCard(context.Context, ServiceParams, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 
-	// Clean up resources associated with the transport (eg. close a gRPC channel).
+	// Destroy cleans up resources associated with the transport (eg. close a gRPC channel).
 	Destroy() error
 }
 
 // TransportFactory creates an A2A protocol connection to the provided URL.
 type TransportFactory interface {
+	// Create creates an A2A protocol connection to the provided URL.
 	Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 }
 
 // TransportFactoryFn implements TransportFactory.
 type TransportFactoryFn func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 
+// Create implements [TransportFactory] interface.
 func (fn TransportFactoryFn) Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
 	return fn(ctx, card, iface)
 }

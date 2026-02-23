@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package testexecutor provides mock implementations for agent executor for testing.
 package testexecutor
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 )
 
+// TestAgentExecutor is a mock of [a2asrv.AgentExecutor].
 type TestAgentExecutor struct {
 	Emitted   []a2a.Event
 	ExecuteFn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
@@ -30,10 +32,12 @@ type TestAgentExecutor struct {
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
+// FromFunction creates a [TestAgentExecutor] from a function.
 func FromFunction(fn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
 
+// FromEventGenerator creates a [TestAgentExecutor] that emits events from a generator.
 func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Event) *TestAgentExecutor {
 	var exec *TestAgentExecutor
 	exec = &TestAgentExecutor{
@@ -52,6 +56,7 @@ func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Ev
 	return exec
 }
 
+// Execute implements [a2asrv.AgentExecutor] interface.
 func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	if e.ExecuteFn != nil {
 		return e.ExecuteFn(ctx, execCtx)
@@ -59,6 +64,7 @@ func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executo
 	return func(yield func(a2a.Event, error) bool) {}
 }
 
+// Cancel implements [a2asrv.AgentExecutor] interface.
 func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	if e.CancelFn != nil {
 		return e.CancelFn(ctx, execCtx)
