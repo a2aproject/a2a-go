@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -86,7 +87,7 @@ func TestToGRPCError(t *testing.T) {
 		{
 			name: "ErrAuthenticatedExtendedCardNotConfigured",
 			err:  a2a.ErrAuthenticatedExtendedCardNotConfigured,
-			want: status.Error(codes.NotFound, a2a.ErrAuthenticatedExtendedCardNotConfigured.Error()),
+			want: status.Error(codes.FailedPrecondition, a2a.ErrAuthenticatedExtendedCardNotConfigured.Error()),
 		},
 		{
 			name: "ErrInvalidAgentResponse",
@@ -273,5 +274,67 @@ func TestFromGRPCError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestErrorInfo(t *testing.T) {
+	err := a2a.NewError(a2a.ErrTaskNotFound, "oops").WithDetails(map[string]any{
+		"foo": "bar",
+		"num": 123,
+	})
+	grpcErr := ToGRPCError(err)
+
+	st, ok := status.FromError(grpcErr)
+	if !ok {
+		t.Fatalf("Expected gRPC status error")
+	}
+
+	var foundErrorInfo bool
+	var foundStruct bool
+	for _, d := range st.Details() {
+		switch v := d.(type) {
+		case *errdetails.ErrorInfo:
+			foundErrorInfo = true
+			if v.Reason != "TASK_NOT_FOUND" {
+				t.Errorf("ErrorInfo.Reason = %q, want %q", v.Reason, "TASK_NOT_FOUND")
+			}
+			if v.Domain != "a2a-protocol.org" {
+				t.Errorf("ErrorInfo.Domain = %q, want %q", v.Domain, "a2a-protocol.org")
+			}
+			if v.Metadata["foo"] != "bar" {
+				t.Errorf("ErrorInfo.Metadata[foo] = %q, want %q", v.Metadata["foo"], "bar")
+			}
+			if _, ok := v.Metadata["num"]; ok {
+				t.Errorf("ErrorInfo.Metadata[num] should not be present")
+			}
+		case *structpb.Struct:
+			foundStruct = true
+			if v.AsMap()["num"].(float64) != 123 {
+				t.Errorf("Struct.num = %v, want %v", v.AsMap()["num"], 123)
+			}
+		}
+	}
+
+	if !foundErrorInfo {
+		t.Errorf("ErrorInfo not found in details")
+	}
+	if !foundStruct {
+		t.Errorf("structpb.Struct not found in details")
+	}
+
+	// Test round-trip
+	back := FromGRPCError(grpcErr)
+	var a2aBack *a2a.Error
+	if !errors.As(back, &a2aBack) {
+		t.Fatalf("Expected *a2a.Error")
+	}
+	if !errors.Is(a2aBack.Err, a2a.ErrTaskNotFound) {
+		t.Errorf("Round-trip error = %v, want %v", a2aBack.Err, a2a.ErrTaskNotFound)
+	}
+	if a2aBack.Details["num"].(float64) != 123 {
+		t.Errorf("Round-trip details[num] = %v, want %v", a2aBack.Details["num"], 123)
+	}
+	if a2aBack.Details["foo"] != "bar" {
+		t.Errorf("Round-trip details[foo] = %v, want %v", a2aBack.Details["foo"], "bar")
 	}
 }

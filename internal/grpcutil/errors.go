@@ -17,35 +17,45 @@ package grpcutil
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var errorMappings = []struct {
-	code codes.Code
-	err  error
+	code   codes.Code
+	err    error
+	reason string
 }{
 	// Primary mappings (used for FromGRPCError as the first match is chosen)
-	{codes.NotFound, a2a.ErrTaskNotFound},
-	{codes.FailedPrecondition, a2a.ErrTaskNotCancelable},
-	{codes.Unimplemented, a2a.ErrUnsupportedOperation},
-	{codes.InvalidArgument, a2a.ErrInvalidParams},
-	{codes.Internal, a2a.ErrInternalError},
-	{codes.Unauthenticated, a2a.ErrUnauthenticated},
-	{codes.PermissionDenied, a2a.ErrUnauthorized},
-	{codes.Canceled, context.Canceled},
-	{codes.DeadlineExceeded, context.DeadlineExceeded},
+	{codes.NotFound, a2a.ErrTaskNotFound, "TASK_NOT_FOUND"},
+	{codes.FailedPrecondition, a2a.ErrTaskNotCancelable, "TASK_NOT_CANCELABLE"},
+	{codes.Unimplemented, a2a.ErrUnsupportedOperation, "UNSUPPORTED_OPERATION"},
+	{codes.InvalidArgument, a2a.ErrInvalidParams, "INVALID_PARAMS"},
+	{codes.Internal, a2a.ErrInternalError, "INTERNAL_ERROR"},
+	{codes.Unauthenticated, a2a.ErrUnauthenticated, "UNAUTHENTICATED"},
+	{codes.PermissionDenied, a2a.ErrUnauthorized, "UNAUTHORIZED"},
+	{codes.Canceled, context.Canceled, "INTERNAL_ERROR"},
+	{codes.DeadlineExceeded, context.DeadlineExceeded, "INTERNAL_ERROR"},
 
 	// Secondary mappings (only used for ToGRPCError)
-	{codes.NotFound, a2a.ErrAuthenticatedExtendedCardNotConfigured},
-	{codes.Unimplemented, a2a.ErrPushNotificationNotSupported},
-	{codes.Unimplemented, a2a.ErrMethodNotFound},
-	{codes.InvalidArgument, a2a.ErrUnsupportedContentType},
-	{codes.InvalidArgument, a2a.ErrInvalidRequest},
-	{codes.Internal, a2a.ErrInvalidAgentResponse},
+	{codes.FailedPrecondition, a2a.ErrAuthenticatedExtendedCardNotConfigured, "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
+	{codes.Unimplemented, a2a.ErrPushNotificationNotSupported, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
+	{codes.Unimplemented, a2a.ErrMethodNotFound, "METHOD_NOT_FOUND"},
+	{codes.InvalidArgument, a2a.ErrUnsupportedContentType, "UNSUPPORTED_CONTENT_TYPE"},
+	{codes.InvalidArgument, a2a.ErrInvalidRequest, "INVALID_REQUEST"},
+	{codes.Internal, a2a.ErrInvalidAgentResponse, "INVALID_AGENT_RESPONSE"},
+
+	// Additional mappings from a2a/errors.go
+	{codes.FailedPrecondition, a2a.ErrExtensionSupportRequired, "EXTENSION_SUPPORT_REQUIRED"},
+	{codes.Unimplemented, a2a.ErrVersionNotSupported, "VERSION_NOT_SUPPORTED"},
+	{codes.InvalidArgument, a2a.ErrParseError, "PARSE_ERROR"},
+	{codes.Internal, a2a.ErrServerError, "SERVER_ERROR"},
 }
 
 // ToGRPCError translates a2a errors into gRPC status errors.
@@ -60,30 +70,48 @@ func ToGRPCError(err error) error {
 	}
 
 	code := codes.Internal
+	reason := "INTERNAL_ERROR"
 	for _, mapping := range errorMappings {
 		if errors.Is(err, mapping.err) {
 			code = mapping.code
+			reason = mapping.reason
 			break
 		}
 	}
 
 	st := status.New(code, err.Error())
 
+	additionalMeta := map[string]any{}
+	errInfoMeta := map[string]string{}
 	var a2aErr *a2a.Error
 	if errors.As(err, &a2aErr) && len(a2aErr.Details) > 0 {
-		s, err := structpb.NewStruct(a2aErr.Details)
-		if err != nil {
-			return st.Err()
+		for k, v := range a2aErr.Details {
+			if s, ok := v.(string); ok {
+				errInfoMeta[k] = s
+			} else {
+				additionalMeta[k] = v
+			}
 		}
-
-		withDetails, err := st.WithDetails(s)
-		if err != nil {
-			return st.Err()
-		}
-		st = withDetails
 	}
 
-	return st.Err()
+	errInfo := &errdetails.ErrorInfo{Reason: reason, Domain: "a2a-protocol.org"}
+	if len(errInfoMeta) > 0 {
+		errInfo.Metadata = errInfoMeta
+	}
+
+	var messages = []protoadapt.MessageV1{errInfo}
+	if len(additionalMeta) > 0 {
+		s, err := structpb.NewStruct(additionalMeta)
+		if err == nil {
+			messages = append(messages, s)
+		}
+	}
+
+	withDetails, err := st.WithDetails(messages...)
+	if err != nil {
+		return st.Err()
+	}
+	return withDetails.Err()
 }
 
 // FromGRPCError translates gRPC errors into a2a errors.
@@ -106,10 +134,13 @@ func FromGRPCError(err error) error {
 
 	details := make(map[string]any)
 	for _, d := range s.Details() {
-		if pbStruct, ok := d.(*structpb.Struct); ok {
-			for k, v := range pbStruct.AsMap() {
-				details[k] = v
+		switch v := d.(type) {
+		case *errdetails.ErrorInfo:
+			for k, val := range v.Metadata {
+				details[k] = val
 			}
+		case *structpb.Struct:
+			maps.Copy(details, v.AsMap())
 		}
 	}
 
