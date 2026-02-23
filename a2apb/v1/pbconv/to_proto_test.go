@@ -171,7 +171,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "data",
-			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"})},
+			p:    a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}},
 			want: &a2apb.Part{Content: &a2apb.Part_Data{Data: pData}},
 		},
 		{
@@ -204,7 +204,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name:    "bad data",
-			p:       a2a.Part{Content: a2a.Data(map[string]any{"bad": func() {}})},
+			p:       a2a.Part{Content: a2a.Data{Value: map[string]any{"bad": func() {}}}},
 			wantErr: true,
 		},
 		{
@@ -217,7 +217,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "data with meta",
-			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
+			p:    a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}, Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Content:  &a2apb.Part_Data{Data: pData},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),

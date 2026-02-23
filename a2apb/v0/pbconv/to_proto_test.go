@@ -206,7 +206,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		{
 			name: "bad data",
 			p: a2a.Part{
-				Content: a2a.Data(map[string]any{"bad": func() {}}),
+				Content: a2a.Data{Value: map[string]any{"bad": func() {}}},
 			},
 			wantErr: true,
 		},
@@ -220,7 +220,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 		},
 		{
 			name: "data with meta",
-			p:    a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
+			p:    a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}, Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
@@ -236,6 +236,14 @@ func TestToProto_toProtoPart(t *testing.T) {
 					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
 				}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
+			},
+		},
+		{
+			name: "primitive data compat",
+			p:    *a2a.NewDataPart("hello"),
+			want: &a2apb.Part{
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: mustMakeProtoMetadata(t, map[string]any{"value": "hello"})}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"data_part_compat": true}),
 			},
 		},
 	}
@@ -810,8 +818,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		},
 		SecurityRequirements: a2a.SecurityRequirementsOptions{
 			map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-				a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
-				a2a.SecuritySchemeName("oauth2"): a2a.SecuritySchemeScopes{"read"},
+				a2a.SecuritySchemeName("apiKey"): {},
+				a2a.SecuritySchemeName("oauth2"): {"read"},
 			},
 		},
 		DefaultInputModes:  []string{"text/plain"},
@@ -827,7 +835,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				OutputModes: []string{"text/markdown"},
 				SecurityRequirements: a2a.SecurityRequirementsOptions{
 					map[a2a.SecuritySchemeName]a2a.SecuritySchemeScopes{
-						a2a.SecuritySchemeName("apiKey"): a2a.SecuritySchemeScopes{},
+						a2a.SecuritySchemeName("apiKey"): {},
 					},
 				},
 			},

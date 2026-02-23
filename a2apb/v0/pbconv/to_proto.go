@@ -316,7 +316,25 @@ func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
 }
 
 func toProtoDataPart(part *a2a.Part) (*a2apb.Part, error) {
-	s, err := toProtoMap(part.Content.(a2a.Data))
+	dataContent, ok := part.Content.(a2a.Data)
+	if !ok {
+		return nil, fmt.Errorf("part content is not Data")
+	}
+	var s *structpb.Struct
+	var err error
+
+	if m, ok := dataContent.Value.(map[string]any); ok {
+		s, err = toProtoMap(m)
+	} else {
+		// Version 0.3 clients expect a map, so we wrap non-map values.
+		m := map[string]any{"value": dataContent.Value}
+		if part.Metadata == nil {
+			part.Metadata = make(map[string]any)
+		}
+		part.Metadata["data_part_compat"] = true
+		s, err = toProtoMap(m)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}

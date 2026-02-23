@@ -43,7 +43,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 		{
 			name: "data",
 			p:    &a2apb.Part{Part: &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}}},
-			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"})},
+			want: a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}},
 		},
 		{
 			name: "file with bytes",
@@ -88,7 +88,15 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: pData}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
-			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
+			want: a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}, Metadata: map[string]any{"hello": "world"}},
+		},
+		{
+			name: "primitive data compat",
+			p: &a2apb.Part{
+				Part:     &a2apb.Part_Data{Data: &a2apb.DataPart{Data: mustMakeProtoMetadata(t, map[string]any{"value": "hello"})}},
+				Metadata: mustMakeProtoMetadata(t, map[string]any{"data_part_compat": true}),
+			},
+			want: a2a.Part{Content: a2a.Data{Value: "hello"}, Metadata: map[string]any{}},
 		},
 		{
 			name: "file with meta",

@@ -250,7 +250,7 @@ func (p textPart) MarshalJSON() ([]byte, error) {
 }
 
 type dataPart struct {
-	Data     map[string]any `json:"data"`
+	Data     any            `json:"data"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
 

@@ -85,7 +85,6 @@ func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
 
 // StreamResponse is a wrapper around Event that can be sent over a streaming connection.
-// It implements event JSON codec where the serialized representation is a JSON object
 // with a single field matching the event type name.
 type StreamResponse struct {
 	// Event is the event to be sent over the streaming connection.
@@ -536,8 +535,8 @@ func NewFileURLPart(url URL, mimeType string) *Part {
 }
 
 // NewDataPart creates a Part that contains structured data.
-func NewDataPart(data map[string]any) *Part {
-	return &Part{Content: Data(data)}
+func NewDataPart(data any) *Part {
+	return &Part{Content: Data{Value: data}}
 }
 
 // Text is a helper that returns the text content of the part if it is a Text part.
@@ -557,9 +556,9 @@ func (p *Part) Raw() []byte {
 }
 
 // Data is a helper that returns the data content of the part if it is a Data part.
-func (p *Part) Data() map[string]any {
+func (p *Part) Data() any {
 	if v, ok := p.Content.(Data); ok {
-		return map[string]any(v)
+		return v.Value
 	}
 	return nil
 }
@@ -598,7 +597,9 @@ type Raw []byte
 type URL string
 
 // Data represents content of a Part carrying structured data.
-type Data map[string]any
+type Data struct {
+	Value any
+}
 
 func (p Part) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
@@ -609,7 +610,7 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	case Raw:
 		m["raw"] = []byte(v)
 	case Data:
-		m["data"] = map[string]any(v)
+		m["data"] = v.Value
 	case URL:
 		m["url"] = string(v)
 	}
@@ -643,11 +644,7 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		p.Content = Raw(b)
 		delete(raw, "raw")
 	} else if v, ok := raw["data"]; ok {
-		data, ok := v.(map[string]any)
-		if !ok {
-			return fmt.Errorf("part 'data' field must be a JSON object, got %T", v)
-		}
-		p.Content = Data(data)
+		p.Content = Data{Value: v}
 		delete(raw, "data")
 	} else if v, ok := raw["url"].(string); ok {
 		p.Content = URL(v)

@@ -85,7 +85,7 @@ func TestFromProto_fromProtoPart(t *testing.T) {
 				Content:  &a2apb.Part_Data{Data: pData},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},
-			want: a2a.Part{Content: a2a.Data(map[string]any{"key": "value"}), Metadata: map[string]any{"hello": "world"}},
+			want: a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}, Metadata: map[string]any{"hello": "world"}},
 		},
 		{
 			name: "file with meta",

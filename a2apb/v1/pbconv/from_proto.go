@@ -111,7 +111,7 @@ func fromProtoPart(p *a2apb.Part) (a2a.Part, error) {
 	case *a2apb.Part_Raw:
 		part.Content = a2a.Raw(content.Raw)
 	case *a2apb.Part_Data:
-		part.Content = a2a.Data(content.Data.GetStructValue().AsMap())
+		part.Content = a2a.Data{Value: content.Data.GetStructValue().AsMap()}
 	case *a2apb.Part_Url:
 		part.Content = a2a.URL(content.Url)
 	default:

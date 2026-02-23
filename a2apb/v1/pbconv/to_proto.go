@@ -319,7 +319,11 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 }
 
 func toProtoDataPart(part a2a.Data) (*a2apb.Part_Data, error) {
-	s, err := toProtoMap(part)
+	m, ok := part.Value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("DataPart value must be a map for protobuf conversion, got %T", part.Value)
+	}
+	s, err := toProtoMap(m)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
 	}

@@ -132,8 +132,17 @@ func toCompatParts(parts a2a.ContentParts) ContentParts {
 				Metadata: p.Metadata,
 			}
 		case a2a.Data:
+			val := c.Value
+			// Compatibility mode: wrap non-map values to avoid crashing old clients that expect a map.
+			if _, ok := val.(map[string]any); !ok {
+				val = map[string]any{"value": val}
+				if p.Metadata == nil {
+					p.Metadata = make(map[string]any)
+				}
+				p.Metadata["data_part_compat"] = true
+			}
 			res[i] = dataPart{
-				Data:     map[string]any(c),
+				Data:     val,
 				Metadata: p.Metadata,
 			}
 		case a2a.Raw:
@@ -470,8 +479,15 @@ func toCoreParts(parts ContentParts) (a2a.ContentParts, error) {
 				Metadata: c.Metadata,
 			}
 		case dataPart:
+			val := c.Data
+			if compat, ok := c.Metadata["data_part_compat"].(bool); ok && compat {
+				if m, ok := val.(map[string]any); ok {
+					val = m["value"]
+					delete(c.Metadata, "data_part_compat")
+				}
+			}
 			res[i] = &a2a.Part{
-				Content:  a2a.Data(c.Data),
+				Content:  a2a.Data{Value: val},
 				Metadata: c.Metadata,
 			}
 		case filePart:
