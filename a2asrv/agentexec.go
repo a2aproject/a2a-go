@@ -150,8 +150,6 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		}
 	}
 
-	execCtx.ctx.Tenant = params.Tenant
-
 	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors}
 	processor := newProcessor(
 		taskupdate.NewManager(f.taskStore, execCtx.ctx.TaskInfo(), execCtx.task),

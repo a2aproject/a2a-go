@@ -15,7 +15,6 @@
 package a2asrv
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
