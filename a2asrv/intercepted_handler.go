@@ -290,8 +290,6 @@ func attachMethodCallContext(ctx context.Context, method string, tenant string) 
 	callCtx.method = method
 	if tenant != "" {
 		callCtx.tenant = tenant
-	} else if callCtx.tenant == "" {
-		callCtx.tenant = TenantFromContext(ctx)
 	}
 	return ctx, callCtx
 }

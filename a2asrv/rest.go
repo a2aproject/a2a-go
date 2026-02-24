@@ -17,13 +17,16 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/pathtemplate"
 	"github.com/a2aproject/a2a-go/internal/rest"
 	"github.com/a2aproject/a2a-go/internal/sse"
 	"github.com/a2aproject/a2a-go/log"
@@ -46,6 +49,37 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), handleGetExtendedAgentCard(handler))
 
 	return mux
+}
+
+// NewTenantRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
+// It extracts tenant information from the URL path based on a provided template, strips the tenant prefix,
+// and attaches the tenant ID to the request context.
+// Examples of templates:
+// - "/{*}"
+// - "/locations/*/projects/{*}"
+// - "/{locations/*/projects/*}"
+func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler) http.Handler {
+	compiledTemplate, err := pathtemplate.New(tenantTemplate)
+	if err != nil {
+		panic(fmt.Errorf("invalid template: %w", err))
+	}
+	restHandler := NewRESTHandler(handler)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		matchResult, ok := compiledTemplate.Match(r.URL.Path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		r2 := new(http.Request)
+		*r2 = *r
+		r2 = r2.WithContext(attachTenant(r.Context(), matchResult.Captured))
+		r2.URL = new(url.URL)
+		*r2.URL = *r.URL
+		r2.URL.Path = matchResult.Rest
+		r2.URL.RawPath = ""
+		restHandler.ServeHTTP(w, r2)
+	})
 }
 
 func handleSendMessage(handler RequestHandler) http.HandlerFunc {
@@ -424,8 +458,21 @@ func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, task
 	}
 }
 
+type tenantKeyType struct{}
+
 func fillTenant(ctx context.Context, tenant *string) {
-	if *tenant == "" {
-		*tenant = TenantFromContext(ctx)
+	if t := tenantFromContext(ctx); t != "" {
+		*tenant = t
 	}
+}
+
+func attachTenant(parent context.Context, tenant string) context.Context {
+	return context.WithValue(parent, tenantKeyType{}, tenant)
+}
+
+func tenantFromContext(ctx context.Context) string {
+	if tenant, ok := ctx.Value(tenantKeyType{}).(string); ok {
+		return tenant
+	}
+	return ""
 }

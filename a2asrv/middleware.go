@@ -132,18 +132,3 @@ func (PassthroughCallInterceptor) Before(ctx context.Context, callCtx *CallConte
 func (PassthroughCallInterceptor) After(ctx context.Context, callCtx *CallContext, resp *Response) error {
 	return nil
 }
-
-type tenantKeyType struct{}
-
-// AttachTenant returns a new context with the provided tenant ID attached.
-func AttachTenant(parent context.Context, tenant string) context.Context {
-	return context.WithValue(parent, tenantKeyType{}, tenant)
-}
-
-// TenantFromContext returns the tenant ID from the provided context, or an empty string if not found.
-func TenantFromContext(ctx context.Context) string {
-	if tenant, ok := ctx.Value(tenantKeyType{}).(string); ok {
-		return tenant
-	}
-	return ""
-}
