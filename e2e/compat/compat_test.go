@@ -196,7 +196,7 @@ func startNewServer(t *testing.T) (port int, stop func()) {
 
 	executor := &testAgentExecutor{t: t}
 	requestHandler := a2asrv.NewHandler(executor)
-	jsonRpcHandler := a2av0.NewJSONRPCHandler(requestHandler, a2av0.JSONRPCHandlerConfig{})
+	jsonRpcHandler := a2av0.NewJSONRPCHandler(requestHandler)
 
 	mux := http.NewServeMux()
 	mux.Handle("/invoke", jsonRpcHandler)

@@ -31,24 +31,16 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// JSONRPCHandlerConfig holds the configuration for the JSON-RPC handler.
-type JSONRPCHandlerConfig struct {
-	PanicHandler      func(r any) error
-	KeepAliveInterval time.Duration
-}
-
 type jsonrpcHandler struct {
-	handler           a2asrv.RequestHandler
-	keepAliveInterval time.Duration
-	panicHandler      func(r any) error
+	handler a2asrv.RequestHandler
+	cfg     *a2asrv.TransportConfig
 }
 
 // NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC v0.3.
-func NewJSONRPCHandler(handler a2asrv.RequestHandler, config JSONRPCHandlerConfig) http.Handler {
-	h := &jsonrpcHandler{
-		handler:           handler,
-		keepAliveInterval: config.KeepAliveInterval,
-		panicHandler:      config.PanicHandler,
+func NewJSONRPCHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOption) http.Handler {
+	h := &jsonrpcHandler{handler: handler, cfg: &a2asrv.TransportConfig{}}
+	for _, opt := range opts {
+		opt(h.cfg)
 	}
 	return h
 }
@@ -95,10 +87,10 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
 	defer func() {
 		if r := recover(); r != nil {
-			if h.panicHandler == nil {
+			if h.cfg.PanicHandler == nil {
 				panic(r)
 			}
-			err := h.panicHandler(r)
+			err := h.cfg.PanicHandler(r)
 			if err != nil {
 				h.writeJSONRPCError(ctx, rw, err, req.ID)
 				return
@@ -180,8 +172,8 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	// Set up keep-alive ticker if enabled (interval > 0)
 	var keepAliveTicker *time.Ticker
 	var keepAliveChan <-chan time.Time
-	if h.keepAliveInterval > 0 {
-		keepAliveTicker = time.NewTicker(h.keepAliveInterval)
+	if h.cfg.KeepAliveInterval > 0 {
+		keepAliveTicker = time.NewTicker(h.cfg.KeepAliveInterval)
 		defer keepAliveTicker.Stop()
 		keepAliveChan = keepAliveTicker.C
 	}
@@ -191,10 +183,10 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		case <-ctx.Done():
 			return
 		case err := <-panicChan:
-			if h.panicHandler == nil {
+			if h.cfg.PanicHandler == nil {
 				panic(err)
 			}
-			data, ok := marshalJSONRPCError(req, h.panicHandler(err))
+			data, ok := marshalJSONRPCError(req, h.cfg.PanicHandler(err))
 			if !ok {
 				log.Error(ctx, "failed to marshal error response", err)
 				return

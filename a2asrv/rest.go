@@ -17,8 +17,10 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -29,26 +31,36 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
+type restHandler struct {
+	handler RequestHandler
+	cfg     *TransportConfig
+}
+
 // NewRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
-func NewRESTHandler(handler RequestHandler) http.Handler {
+func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handler {
+	h := &restHandler{handler: handler, cfg: &TransportConfig{}}
+	for _, option := range opts {
+		option(h.cfg)
+	}
+
 	mux := http.NewServeMux()
 
 	// TODO: handle tenant
-	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), handleSendMessage(handler))
-	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), handleStreamMessage(handler))
-	mux.HandleFunc("GET "+rest.MakeGetTaskPath("{id}"), handleGetTask(handler))
-	mux.HandleFunc("GET "+rest.MakeListTasksPath(), handleListTasks(handler))
-	mux.HandleFunc("POST /tasks/{idAndAction}", handlePOSTTasks(handler))
-	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), handleCreateTaskPushConfig(handler))
-	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), handleGetTaskPushConfig(handler))
-	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), handleListTaskPushConfigs(handler))
-	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), handleDeleteTaskPushConfig(handler))
-	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), handleGetExtendedAgentCard(handler))
+	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage(handler))
+	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage(handler))
+	mux.HandleFunc("GET "+rest.MakeGetTaskPath("{id}"), h.handleGetTask(handler))
+	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks(handler))
+	mux.HandleFunc("POST /tasks/{idAndAction}", h.handlePOSTTasks(handler))
+	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), h.handleCreateTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), h.handleGetTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), h.handleListTaskPushConfigs(handler))
+	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), h.handleDeleteTaskPushConfig(handler))
+	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard(handler))
 
 	return mux
 }
 
-func handleSendMessage(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleSendMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		var message a2a.SendMessageRequest
@@ -71,7 +83,7 @@ func handleSendMessage(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		var message a2a.SendMessageRequest
@@ -80,11 +92,11 @@ func handleStreamMessage(handler RequestHandler) http.HandlerFunc {
 			return
 		}
 		fillTenant(ctx, &message.Tenant)
-		handleStreamingRequest(handler.SendStreamingMessage(ctx, &message), rw, req)
+		h.handleStreamingRequest(handler.SendStreamingMessage(ctx, &message), rw, req)
 	}
 }
 
-func handleGetTask(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleGetTask(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -120,13 +132,13 @@ func handleGetTask(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleListTasks(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleListTasks(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		query := req.URL.Query()
 		request := &a2a.ListTasksRequest{}
 		var err error
-		parse := func(key string, target interface{}) {
+		parse := func(key string, target any) {
 			val := query.Get(key)
 			if val == "" {
 				return
@@ -169,7 +181,7 @@ func handleListTasks(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		idAndAction := req.PathValue("idAndAction")
@@ -180,12 +192,12 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 
 		if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok {
 			taskID := before
-			handleCancelTask(handler, taskID, rw, req)
+			h.handleCancelTask(handler, taskID, rw, req)
 		} else if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
 			taskID := before
 			req2 := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}
 			fillTenant(ctx, &req2.Tenant)
-			handleStreamingRequest(handler.SubscribeToTask(ctx, req2), rw, req)
+			h.handleStreamingRequest(handler.SubscribeToTask(ctx, req2), rw, req)
 		} else {
 			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 			return
@@ -193,7 +205,7 @@ func handlePOSTTasks(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleCancelTask(handler RequestHandler, taskID string, rw http.ResponseWriter, req *http.Request) {
+func (h *restHandler) handleCancelTask(handler RequestHandler, taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
 	id := &a2a.CancelTaskRequest{
@@ -213,7 +225,7 @@ func handleCancelTask(handler RequestHandler, taskID string, rw http.ResponseWri
 	}
 }
 
-func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.ResponseWriter, req *http.Request) {
+func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
 	sseWriter, err := sse.NewWriter(rw)
@@ -223,62 +235,97 @@ func handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.R
 	}
 	sseWriter.WriteHeaders()
 
-	sseChan := make(chan []byte)
+	sseChan, panicChan := make(chan []byte), make(chan error)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// TODO: handle panic and sse keep-alives similar to jsonrpc
 	go func() {
-		defer close(sseChan)
-		events := eventSequence
-		for event, err := range events {
+		defer func() {
+			if r := recover(); r != nil {
+				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
+			} else {
+				close(sseChan)
+			}
+		}()
+
+		handleError := func(err error) {
+			errResp := rest.ToRESTError(err, a2a.TaskID(""))
+			bytes, jErr := json.Marshal(errResp)
+			if jErr != nil {
+				log.Error(ctx, "failed to marshal error response", jErr)
+				return
+			}
+			select {
+			case <-requestCtx.Done():
+			case sseChan <- bytes:
+			}
+		}
+
+		for event, err := range eventSequence {
 			if err != nil {
-				// TODO(yarolegovich): clarify how rest bindings sends SSE errors
-				log.Warn(ctx, "unhandled sse error", "error", err)
+				handleError(err)
 				return
 			}
 
-			b, jbErr := json.Marshal(a2a.StreamResponse{Event: event})
-			if jbErr != nil {
-				errObj := map[string]string{"error": jbErr.Error()}
-				if eb, err := json.Marshal(errObj); err == nil {
-					if eb != nil {
-						select {
-						case <-requestCtx.Done():
-							return
-						case sseChan <- eb:
-						}
-					}
-				}
+			bytes, jErr := json.Marshal(a2a.StreamResponse{Event: event})
+			if jErr != nil {
+				handleError(jErr)
 				return
 			}
 
 			select {
 			case <-requestCtx.Done():
 				return
-			case sseChan <- b:
+			case sseChan <- bytes:
 			}
 		}
 	}()
+
+	// Set up keep-alive ticker if enabled (interval > 0)
+	var keepAliveTicker *time.Ticker
+	var keepAliveChan <-chan time.Time
+	if h.cfg.KeepAliveInterval > 0 {
+		keepAliveTicker = time.NewTicker(h.cfg.KeepAliveInterval)
+		defer keepAliveTicker.Stop()
+		keepAliveChan = keepAliveTicker.C
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		// TODO(yarolegovich): add keep-alive
+		case err := <-panicChan:
+			if h.cfg.PanicHandler == nil {
+				panic(err)
+			}
+			errResp := rest.ToRESTError(h.cfg.PanicHandler(err), a2a.TaskID(""))
+			data, jErr := json.Marshal(errResp)
+			if jErr != nil {
+				log.Error(ctx, "failed to marshal panic error response", jErr)
+				return
+			}
+			if err := sseWriter.WriteData(ctx, data); err != nil {
+				log.Error(ctx, "failed to write panic event", err)
+				return
+			}
+		case <-keepAliveChan:
+			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
+				log.Error(ctx, "failed to write keep-alive", err)
+				return
+			}
 		case data, ok := <-sseChan:
 			if !ok {
 				return
 			}
 			if err := sseWriter.WriteData(ctx, data); err != nil {
-				log.Error(ctx, "failed to write SSE data", err)
+				log.Error(ctx, "failed to write an event", err)
 				return
 			}
 		}
 	}
 }
 
-func handleCreateTaskPushConfig(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleCreateTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -313,7 +360,7 @@ func handleCreateTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -343,7 +390,7 @@ func handleGetTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleListTaskPushConfigs(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleListTaskPushConfigs(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -370,7 +417,7 @@ func handleListTaskPushConfigs(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 		taskID := req.PathValue("id")
@@ -395,10 +442,9 @@ func handleDeleteTaskPushConfig(handler RequestHandler) http.HandlerFunc {
 	}
 }
 
-func handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
+func (h *restHandler) handleGetExtendedAgentCard(handler RequestHandler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		// TODO: extract tenant from path
 		req2 := &a2a.GetExtendedAgentCardRequest{}
 		fillTenant(ctx, &req2.Tenant)
 		result, err := handler.GetExtendedAgentCard(ctx, req2)
