@@ -54,6 +54,8 @@ type ExecutorContext struct {
 	User *User
 	// ServiceParams of the request which triggered the execution.
 	ServiceParams *ServiceParams
+	// Tenant is an optional ID of the agent owner.
+	Tenant string
 }
 
 var _ a2a.TaskInfoProvider = (*ExecutorContext)(nil)

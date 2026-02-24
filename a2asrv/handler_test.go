@@ -1263,7 +1263,7 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 		},
 		{
 			name:    "nil params",
-			params:  nil,
+			params:  &a2a.CancelTaskRequest{},
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
