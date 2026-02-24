@@ -66,13 +66,15 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 				yield(nil, fmt.Errorf("task snapshot loading failed: %w", err))
 				return
 			}
-			if !yield(storedTask.Task, nil) {
-				return
+			if storedTask != nil {
+				if !yield(storedTask.Task, nil) {
+					return
+				}
+				if storedTask.Task.Status.State.Terminal() {
+					return
+				}
+				emittedTaskVersion = storedTask.Version
 			}
-			if storedTask.Task.Status.State.Terminal() {
-				return
-			}
-			emittedTaskVersion = storedTask.Version
 		}
 
 		terminalReported := false

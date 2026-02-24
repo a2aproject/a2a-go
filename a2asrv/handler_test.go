@@ -21,6 +21,7 @@ import (
 	"iter"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1345,26 +1346,20 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
-			first := true
+			var once sync.Once
 			for event, err := range originalExecuteFunc(ctx, execCtx) {
 				if !yield(event, err) {
 					return
 				}
-				if first {
-					time.Sleep(10 * time.Millisecond)
-					first = false
-				}
+				once.Do(func() { time.Sleep(10 * time.Millisecond) })
 			}
 		}
 	}
 
 	go func() {
-		first := true
+		var once sync.Once
 		for range handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: userMsg}) {
-			if first {
-				close(firstEventConsumed)
-				first = false
-			}
+			once.Do(func() { close(firstEventConsumed) })
 			// Events have to be consumed to prevent a deadlock.
 		}
 	}()
