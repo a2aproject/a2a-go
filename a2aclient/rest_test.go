@@ -448,3 +448,24 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 		t.Errorf("got card Description %s, want test", card.Description)
 	}
 }
+
+func TestRESTTransport_Tenant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/my-tenant/tasks" {
+			t.Errorf("expected path /my-tenant/tasks, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tasks":[]}`))
+	}))
+	defer server.Close()
+
+	transport := &tenantTransportDecorator{
+		base:   NewRESTTransport(server.URL, server.Client()),
+		tenant: "my-tenant",
+	}
+
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+}
