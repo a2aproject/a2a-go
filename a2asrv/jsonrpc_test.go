@@ -338,7 +338,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 			if tc.option != nil {
 				opts = append(opts, tc.option)
 			}
-			reqHandler := NewHandler(mockExecutor)
+			reqHandler := NewHandler(mockExecutor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
 			server := httptest.NewServer(NewJSONRPCHandler(reqHandler, opts...))
 			defer server.Close()
 

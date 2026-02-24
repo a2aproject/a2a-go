@@ -240,6 +240,7 @@ func TestREST_Validations(t *testing.T) {
 		WithTaskStore(store),
 		WithPushNotifications(pushstore, pushsender),
 		WithExtendedAgentCard(&a2a.AgentCard{}),
+		WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true, ExtendedAgentCard: true}),
 	)
 	server := httptest.NewServer(NewRESTHandler(reqHandler))
 	defer server.Close()

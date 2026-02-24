@@ -1203,7 +1203,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 	}
 }
 
-func TestGrpcHandler_GetAgentCard(t *testing.T) {
+func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 	ctx := t.Context()
 
 	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
@@ -1254,7 +1254,11 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
+			handler := a2asrv.NewHandler(
+				nil,
+				a2asrv.WithExtendedAgentCardProducer(tt.cardProducer),
+				a2asrv.WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
+			)
 			client := startTestServer(t, handler)
 			resp, err := client.GetExtendedAgentCard(ctx, &a2apb.GetExtendedAgentCardRequest{})
 			if tt.wantErr != codes.OK {
