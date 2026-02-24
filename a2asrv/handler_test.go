@@ -1322,38 +1322,54 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	ctx := t.Context()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	wantEvents := []a2a.Event{
-		newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Starting"),
+	ts := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+
+	userMsg := newUserMessage(taskSeed, "Work")
+	missedStatusUpdate := newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Starting")
+	executorEvents := []a2a.Event{
+		missedStatusUpdate,
 		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
 		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done"),
 	}
-
-	ts := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	executor := newEventReplayAgent(wantEvents, nil)
+	wantEvents := append([]a2a.Event{
+		&a2a.Task{
+			ID:        taskSeed.ID,
+			ContextID: taskSeed.ContextID,
+			History:   []*a2a.Message{userMsg},
+			Status:    missedStatusUpdate.Status,
+		},
+	}, executorEvents[1:]...)
+	executor := newEventReplayAgent(executorEvents, nil)
 	handler := NewHandler(executor, WithTaskStore(ts))
-	executionStarted := make(chan struct{})
+	firstEventConsumed := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
-			close(executionStarted)
-			time.Sleep(10 * time.Millisecond)
+			first := true
 			for event, err := range originalExecuteFunc(ctx, execCtx) {
 				if !yield(event, err) {
 					return
+				}
+				if first {
+					time.Sleep(10 * time.Millisecond)
+					first = false
 				}
 			}
 		}
 	}
 
 	go func() {
-		for range handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{
-			Message: newUserMessage(taskSeed, "Work"),
-		}) {
+		first := true
+		for range handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: userMsg}) {
+			if first {
+				close(firstEventConsumed)
+				first = false
+			}
 			// Events have to be consumed to prevent a deadlock.
 		}
 	}()
 
-	<-executionStarted
+	<-firstEventConsumed
 
 	seq := handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID})
 	gotEvents, err := collectEvents(seq)
@@ -1362,7 +1378,7 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
-		t.Fatalf("OnResubscribeToTask() events mismatch (-want +got):\n%s", diff)
+		t.Fatalf("OnResubscribeToTask() events mismatch (+got,-want):\n%s", diff)
 	}
 }
 

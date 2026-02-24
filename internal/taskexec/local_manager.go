@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/log"
 )
@@ -49,6 +50,7 @@ var (
 type localManager struct {
 	queueManager eventqueue.Manager
 	factory      Factory
+	store        taskstore.Store
 	panicHandler PanicHandlerFn
 
 	mu           sync.Mutex
@@ -69,6 +71,7 @@ type localExecution struct {
 
 	pipe         *eventpipe.Local
 	queueManager eventqueue.Manager
+	store        taskstore.Store
 }
 
 var _ Manager = (*localManager)(nil)
@@ -78,6 +81,7 @@ type LocalManagerConfig struct {
 	QueueManager      eventqueue.Manager
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Factory           Factory
+	TaskStore         taskstore.Store
 	PanicHandler      PanicHandlerFn
 }
 
@@ -86,6 +90,7 @@ func NewLocalManager(cfg LocalManagerConfig) Manager {
 	manager := &localManager{
 		queueManager: cfg.QueueManager,
 		factory:      cfg.Factory,
+		store:        cfg.TaskStore,
 		panicHandler: cfg.PanicHandler,
 		limiter:      newConcurrencyLimiter(cfg.ConcurrencyConfig),
 		executions:   make(map[a2a.TaskID]*localExecution),
@@ -101,11 +106,12 @@ func newCancelation(req *a2a.CancelTaskRequest) *cancelation {
 	return &cancelation{req: req, result: newPromise()}
 }
 
-func newLocalExecution(qm eventqueue.Manager, tid a2a.TaskID, req *a2a.SendMessageRequest) *localExecution {
+func newLocalExecution(qm eventqueue.Manager, store taskstore.Store, tid a2a.TaskID, req *a2a.SendMessageRequest) *localExecution {
 	return &localExecution{
 		tid:          tid,
 		req:          req,
 		queueManager: qm,
+		store:        store,
 		pipe:         eventpipe.NewLocal(),
 		result:       newPromise(),
 	}
@@ -122,7 +128,9 @@ func (m *localManager) Resubscribe(ctx context.Context, taskID a2a.TaskID) (Subs
 	if err != nil {
 		return nil, fmt.Errorf("no queue for active execution")
 	}
-	return newLocalSubscription(execution, queue), nil
+	subscription := newLocalSubscription(execution, queue)
+	subscription.startWithTask = true
+	return subscription, nil
 }
 
 // Execute starts two goroutine in a detached context. One will invoke [Executor] for event generation and
@@ -178,7 +186,7 @@ func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, req 
 		return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
 	}
 
-	execution := newLocalExecution(m.queueManager, tid, req)
+	execution := newLocalExecution(m.queueManager, m.store, tid, req)
 	m.executions[tid] = execution
 
 	return execution, nil

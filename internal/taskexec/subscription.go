@@ -28,15 +28,17 @@ import (
 )
 
 type localSubscription struct {
-	execution *localExecution
-	queue     eventqueue.Reader
-	consumed  bool
+	execution     *localExecution
+	queue         eventqueue.Reader
+	store         taskstore.Store
+	startWithTask bool
+	consumed      bool
 }
 
 var _ Subscription = (*localSubscription)(nil)
 
 func newLocalSubscription(e *localExecution, q eventqueue.Reader) *localSubscription {
-	return &localSubscription{execution: e, queue: q}
+	return &localSubscription{execution: e, queue: q, store: e.store}
 }
 
 func (s *localSubscription) TaskID() a2a.TaskID {
@@ -57,6 +59,22 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			}
 		}()
 
+		emittedTaskVersion := taskstore.TaskVersionMissing
+		if s.startWithTask {
+			storedTask, err := s.store.Get(ctx, s.execution.tid)
+			if err != nil && !errors.Is(err, a2a.ErrTaskNotFound) {
+				yield(nil, fmt.Errorf("task snapshot loading failed: %w", err))
+				return
+			}
+			if !yield(storedTask.Task, nil) {
+				return
+			}
+			if storedTask.Task.Status.State.Terminal() {
+				return
+			}
+			emittedTaskVersion = storedTask.Version
+		}
+
 		terminalReported := false
 		for {
 			msg, err := s.queue.Read(ctx)
@@ -66,6 +84,10 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			if err != nil {
 				yield(nil, err)
 				return
+			}
+			if !msg.TaskVersion.After(emittedTaskVersion) {
+				log.Info(ctx, "skipping old event", "version", msg.TaskVersion, "emitted", emittedTaskVersion)
+				continue
 			}
 			event := msg.Event
 			terminalReported = taskupdate.IsFinal(event)
