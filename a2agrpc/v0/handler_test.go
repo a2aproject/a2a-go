@@ -1278,11 +1278,7 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := a2asrv.NewHandler(
-				nil,
-				a2asrv.WithExtendedAgentCardProducer(tt.cardProducer),
-				a2asrv.WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
-			)
+			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
 			client := startTestServer(t, handler)
 			resp, err := client.GetAgentCard(ctx, &a2apb.GetAgentCardRequest{})
 			if tt.wantErr != codes.OK {

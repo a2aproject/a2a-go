@@ -45,7 +45,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 			finalUpdate,
 		}
 	})
-	reqHandler := a2asrv.NewHandler(executor, a2asrv.WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	reqHandler := a2asrv.NewHandler(executor)
 
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
@@ -86,7 +86,6 @@ func TestJSONRPC_ExecutionScopeStreamingPanic(t *testing.T) {
 		a2asrv.WithExecutionPanicHandler(func(r any) error {
 			return a2a.ErrInvalidRequest
 		}),
-		a2asrv.WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
 	)
 
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler))

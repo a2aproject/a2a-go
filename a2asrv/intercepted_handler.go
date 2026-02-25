@@ -337,9 +337,10 @@ func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error 
 	if h.capabilities == nil || len(h.capabilities.Extensions) == 0 {
 		return nil
 	}
+	requestedURIs := callCtx.Extensions().RequestedURIs()
 	for _, ext := range h.capabilities.Extensions {
 		if ext.Required {
-			found := slices.Contains(callCtx.Extensions().RequestedURIs(), ext.URI)
+			found := slices.Contains(requestedURIs, ext.URI)
 			if !found {
 				return a2a.ErrExtensionSupportRequired
 			}

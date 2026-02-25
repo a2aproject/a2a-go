@@ -319,7 +319,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 			ctx := t.Context()
 			store := testutil.NewTestTaskStore().WithTasks(t, taskStoreSeed...)
 			executor := newEventReplayAgent(tt.agentEvents, nil)
-			handler := NewHandler(executor, WithTaskStore(store), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+			handler := NewHandler(executor, WithTaskStore(store))
 
 			eventI := 0
 			var streamErr error
@@ -568,7 +568,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 			executor, waitingChan := createExecutor(tt.agentEvents)
 			close(waitingChan)
-			handler := NewHandler(executor, WithTaskStore(store), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+			handler := NewHandler(executor, WithTaskStore(store))
 
 			gotEvents := 0
 			for _, gotErr := range handler.SendStreamingMessage(ctx, tt.input) {
@@ -602,7 +602,7 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 			}
 		},
 	}
-	handler := NewHandler(executor, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	handler := NewHandler(executor, WithTaskStore(ts))
 
 	var lastEvent a2a.Event
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("perform protected operation"))
@@ -642,7 +642,15 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 		options    []RequestHandlerOption
 	}{
 		{
-			name:       "success",
+			name:       "no capability checks - success",
+			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			wantResult: newAgentMessage("hello"),
+			options: []RequestHandlerOption{
+				WithTaskStore(store),
+			},
+		},
+		{
+			name:       "streaming supported",
 			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
 			wantResult: newAgentMessage("hello"),
 			options: []RequestHandlerOption{
@@ -651,9 +659,10 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 			},
 		},
 		{
-			name:  "no capability checks",
+			name:  "streaming not supported",
 			input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
 			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}),
 				WithTaskStore(store),
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
@@ -778,7 +787,7 @@ func TestRequestHandler_TaskExecutionFailOnInvalidEvent(t *testing.T) {
 
 				store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 				executor := newEventReplayAgent([]a2a.Event{tc.event}, nil)
-				handler := NewHandler(executor, WithTaskStore(store), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+				handler := NewHandler(executor, WithTaskStore(store))
 
 				var result a2a.Event
 				if streaming {
@@ -939,7 +948,6 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 			name: "static",
 			options: []RequestHandlerOption{
 				WithExtendedAgentCard(card),
-				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
 			},
 			wantCard: card,
 		},
@@ -949,7 +957,6 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 				WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 					return card, nil
 				})),
-				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
 			},
 			wantCard: card,
 		},
@@ -959,20 +966,20 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 				WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 					return nil, fmt.Errorf("failed")
 				})),
-				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
 			},
 			wantErr: fmt.Errorf("failed"),
 		},
 		{
-			name: "agent card producer not configured",
+			name: "extendedAgentCard supported but not configured",
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
 			},
 			wantErr: a2a.ErrExtendedCardNotConfigured,
 		},
 		{
-			name: "no capability checks",
+			name: "extendedAgentCard not supported",
 			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: false}),
 				WithExtendedAgentCard(card),
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
@@ -1395,7 +1402,7 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 
 	ts := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 	executor := newEventReplayAgent(wantEvents, nil)
-	handler := NewHandler(executor, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	handler := NewHandler(executor, WithTaskStore(ts))
 	executionStarted := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
@@ -1450,7 +1457,7 @@ func TestRequestHandler_SubscribeToTask_NoCapabilityChecks(t *testing.T) {
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrUnsupportedOperation
 	executor := &mockAgentExecutor{}
-	handler := NewHandler(executor)
+	handler := NewHandler(executor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
@@ -1636,7 +1643,6 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
 			},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1647,7 +1653,6 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{URL: "https://example.com/push-no-id"},
 			},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1659,31 +1664,38 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 			},
 			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
 		{
-			name: "without push notifications",
+			name: "pushNotifications not supported",
 			req: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
 				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req: &a2a.CreateTaskPushConfigRequest{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+			wantErr: a2a.ErrInternalError,
+			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 			},
 		},
 		{
-			name: "without push notifications capability",
+			name: "without capability checks and pushNotifications not configured",
 			req: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
 				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-			options: []RequestHandlerOption{
-				WithPushNotifications(ps, pn),
-			},
 		},
 	}
 
@@ -1743,7 +1755,6 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			want: &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1752,7 +1763,6 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
 			wantErr: push.ErrPushConfigNotFound,
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1761,24 +1771,28 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			req:     &a2a.GetTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
 			wantErr: push.ErrPushConfigNotFound,
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
 		{
-			name: "without push notifications",
+			name: "pushNotifications not supported",
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 		{
-			name: "without push notifications capability",
+			name: "pushNotifications supported but not configured",
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			options: []RequestHandlerOption{
-				WithPushNotifications(ps, pn),
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 			},
+			wantErr: a2a.ErrInternalError,
+		},
+		{
+			name:    "without capability checks and pushNotifications not configured",
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 	}
@@ -1832,7 +1846,6 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 				{TaskID: taskID, Config: config2},
 			},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1841,7 +1854,6 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
 			want: []*a2a.TaskPushConfig{},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
@@ -1850,31 +1862,39 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: "non-existent-task"},
 			want: []*a2a.TaskPushConfig{},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 				WithPushNotifications(ps, pn),
 			},
 		},
 		{
-			name: "without push notifications",
+			name: "pushNotifications not supported",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 			want: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 		{
-			name: "without push notifications capability",
+			name: "pushNotifications supported but not configured",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 			want: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
 			options: []RequestHandlerOption{
-				WithPushNotifications(ps, pn),
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+			},
+			wantErr: a2a.ErrInternalError,
+		},
+		{
+			name: "without capability checks and pushNotifications not configured",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
+			want: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
@@ -1905,19 +1925,18 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	config2 := a2a.PushConfig{ID: "config-2", URL: "https://example.com/push2"}
 
 	testCases := []struct {
-		name       string
-		req        *a2a.DeleteTaskPushConfigRequest
-		wantRemain []*a2a.TaskPushConfig
-		options    []RequestHandlerOption
-		wantErr    error
+		name            string
+		req             *a2a.DeleteTaskPushConfigRequest
+		wantRemain      []*a2a.TaskPushConfig
+		options         []RequestHandlerOption
+		withPushConfigs bool
+		wantErr         error
 	}{
 		{
-			name:       "delete existing",
-			req:        &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
-			},
+			name:            "delete existing",
+			req:             &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain:      []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
+			withPushConfigs: true,
 		},
 		{
 			name: "delete non-existent config",
@@ -1926,9 +1945,7 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
-			},
+			withPushConfigs: true,
 		},
 		{
 			name: "delete from non-existent task",
@@ -1937,12 +1954,34 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
+			withPushConfigs: true,
+		},
+		{
+			name: "pushNotifications not supported",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
 			},
+			wantErr: a2a.ErrInternalError,
 		},
 		{
-			name: "without push notifications capability",
+			name: "without capability checks and pushNotifications not configured",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			wantRemain: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
@@ -1956,7 +1995,9 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
 			pn := testutil.NewTestPushSender(t)
-			tc.options = append(tc.options, WithPushNotifications(ps, pn))
+			if tc.withPushConfigs {
+				tc.options = append(tc.options, WithPushNotifications(ps, pn))
+			}
 			handler := newTestHandler(tc.options...)
 			err := handler.DeleteTaskPushConfig(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
