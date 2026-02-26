@@ -33,7 +33,7 @@ import (
 
 // RESTTransport implemetns Transport using RESTful HTTP API.
 type RESTTransport struct {
-	url        string
+	url        *url.URL
 	httpClient *http.Client
 }
 
@@ -41,9 +41,9 @@ type RESTTransport struct {
 // By default, an HTTP client with 5-second timeout is used.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
-func NewRESTTransport(tURL string, client *http.Client) Transport {
+func NewRESTTransport(u *url.URL, client *http.Client) Transport {
 	t := &RESTTransport{
-		url:        tURL,
+		url:        u,
 		httpClient: client,
 	}
 
@@ -60,7 +60,11 @@ func WithRESTTransport(client *http.Client) FactoryOption {
 	return WithTransport(
 		a2a.TransportProtocolHTTPJSON,
 		TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
-			return NewRESTTransport(iface.URL, client), nil
+			u, err := url.Parse(iface.URL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
+			}
+			return NewRESTTransport(u, client), nil
 		}),
 	)
 }
@@ -83,16 +87,12 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		return nil, fmt.Errorf("failed to marshal request: %w: %w", err, a2a.ErrInvalidRequest)
 	}
 
-	u, err := url.Parse(t.url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
-	}
-
 	rel, err := url.Parse(req.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse path: %w", err)
 	}
 
+	u := t.url
 	if req.tenant != "" {
 		u = u.JoinPath(req.tenant, rel.Path)
 	} else {
