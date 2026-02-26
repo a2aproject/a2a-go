@@ -275,13 +275,13 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 
 func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
 	var result []*a2a.Task
-	const defaultHistoryLength = 100
+	const defaultMaxHistoryLength = 100
 	for _, storedTask := range tasks {
 		taskCopy, err := utils.DeepCopy(storedTask.task)
 		if err != nil {
 			return nil, err
 		}
-		historyLength := defaultHistoryLength
+		historyLength := defaultMaxHistoryLength
 		if req.HistoryLength != nil {
 			historyLength = *req.HistoryLength
 		}
