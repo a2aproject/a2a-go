@@ -22,7 +22,6 @@ import (
 	"iter"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -57,7 +56,7 @@ func NewJSONRPCHandler(handler a2asrv.RequestHandler, config JSONRPCHandlerConfi
 // ServeHTTP handles incoming HTTP requests.
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, _ = a2asrv.NewCallContext(ctx, convertHeaders(req.Header))
+	ctx, _ = a2asrv.NewCallContext(ctx, ToServiceParams(req.Header))
 
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
@@ -422,17 +421,4 @@ func (h *jsonrpcHandler) writeJSONRPCError(ctx context.Context, rw http.Response
 	if err := json.NewEncoder(rw).Encode(resp); err != nil {
 		log.Error(ctx, "failed to send error response", err)
 	}
-}
-
-func convertHeaders(headers map[string][]string) *a2asrv.ServiceParams {
-	meta := make(map[string][]string, len(headers))
-	for k, v := range headers {
-		lk := strings.ToLower(k)
-		if lk == lowerSvcParamExtensionsKey {
-			meta[lk[2:]] = v // old clients send it with "x-" prefix
-		} else {
-			meta[lk] = v
-		}
-	}
-	return a2asrv.NewServiceParams(meta)
 }

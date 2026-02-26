@@ -22,7 +22,6 @@ import (
 	"io"
 	"iter"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -86,13 +85,9 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
 
-	for k, vals := range params {
-		lk := strings.ToLower(k)
-		if lk == lowerSvcParamExtensionsKey {
-			lk = "x-" + lk // old servers expect x- prefix
-		}
+	for k, vals := range FromServiceParams(params) {
 		for _, v := range vals {
-			httpReq.Header.Add(lk, v)
+			httpReq.Header.Add(k, v)
 		}
 	}
 

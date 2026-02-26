@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/a2aproject/a2a-go/internal/grpcutil"
 	"google.golang.org/grpc"
@@ -306,7 +307,7 @@ func (h *Handler) DeleteTaskPushNotificationConfig(ctx context.Context, pbReq *a
 func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext) {
 	var svcParams *a2asrv.ServiceParams
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
-		svcParams = convertMeta(meta)
+		svcParams = a2av0.ToServiceParams(meta)
 	}
 	return a2asrv.NewCallContext(ctx, svcParams)
 }
@@ -317,18 +318,4 @@ func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {
 		return metadata.MD{}
 	}
 	return metadata.MD{strings.ToLower("X-" + a2a.SvcParamExtensions): activated}
-}
-
-func convertMeta(meta metadata.MD) *a2asrv.ServiceParams {
-	converted := make(map[string][]string, len(meta))
-	legacyExtensionsKey := strings.ToLower("x-" + a2a.SvcParamExtensions)
-	for k, v := range meta {
-		lk := strings.ToLower(k)
-		if lk == legacyExtensionsKey {
-			converted[lk[2:]] = v // cut "x-"
-		} else {
-			converted[lk] = v
-		}
-	}
-	return a2asrv.NewServiceParams(converted)
 }

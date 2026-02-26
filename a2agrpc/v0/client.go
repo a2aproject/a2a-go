@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
+	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
 	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
 	"github.com/a2aproject/a2a-go/internal/grpcutil"
@@ -259,15 +260,9 @@ func withGRPCMetadata(ctx context.Context, params a2aclient.ServiceParams) conte
 	if len(params) == 0 {
 		return ctx
 	}
-	extKey := strings.ToLower(a2a.SvcParamExtensions)
 	meta := metadata.MD{}
-	for k, vals := range params {
-		lk := strings.ToLower(k)
-		if lk == extKey {
-			meta["x-"+lk] = vals
-		} else {
-			meta[lk] = vals
-		}
+	for k, vals := range a2av0.FromServiceParams(params) {
+		meta[strings.ToLower(k)] = vals
 	}
 	return metadata.NewOutgoingContext(ctx, meta)
 }
