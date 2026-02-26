@@ -21,6 +21,7 @@ import (
 	"maps"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -105,11 +106,14 @@ func ToGRPCError(err error) error {
 		s, err := structpb.NewStruct(additionalMeta)
 		if err == nil {
 			messages = append(messages, s)
+		} else {
+			log.Warn(context.Background(), "failed to convert error meta to proto", "error", err, "meta", additionalMeta)
 		}
 	}
 
 	withDetails, err := st.WithDetails(messages...)
 	if err != nil {
+		log.Warn(context.Background(), "failed to attach details to gRPC error", "error", err)
 		return st.Err()
 	}
 	return withDetails.Err()
