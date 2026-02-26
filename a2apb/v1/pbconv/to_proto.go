@@ -527,7 +527,7 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 		lastUpdatedAfter = timestamppb.New(*request.StatusTimestampAfter)
 	}
 	pageSize := int32(request.PageSize)
-	historyLength := proto.Int32(int32(request.HistoryLength))
+	historyLength := proto.Int32(int32(*request.HistoryLength))
 
 	return &a2apb.ListTasksRequest{
 		Tenant:               request.Tenant,

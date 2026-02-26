@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -290,15 +291,21 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 		},
 		{
 			name:         "HistoryLength filter",
-			request:      &a2a.ListTasksRequest{HistoryLength: 2},
+			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(2)},
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
-			name:       "with negative HistoryLength filter",
-			givenTasks: []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
-			request:    &a2a.ListTasksRequest{HistoryLength: -1},
-			wantErr:    fmt.Errorf("history length must be non-negative integer, got -1: %w", a2a.ErrInvalidRequest),
+			name:         "HistoryLength filter with 0",
+			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}},
+		},
+		{
+			name:         "with negative HistoryLength filter",
+			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
+			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(-1)},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
 			name:         "PageSize filter",

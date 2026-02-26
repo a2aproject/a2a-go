@@ -21,6 +21,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2apb/v0"
+	"github.com/a2aproject/a2a-go/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -420,7 +421,7 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		{
 			name: "with historyLength",
 			req:  &a2apb.ListTasksRequest{HistoryLength: 10},
-			want: &a2a.ListTasksRequest{HistoryLength: 10},
+			want: &a2a.ListTasksRequest{HistoryLength: utils.Ptr(10)},
 		},
 		{
 			name: "with lastUpdatedAfter",
@@ -435,7 +436,7 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		{
 			name: "with all filters",
 			req:  &a2apb.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, LastUpdatedTime: timestamppb.New(cutOffTime)},
-			want: &a2a.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: 10, IncludeArtifacts: true, StatusTimestampAfter: &cutOffTime},
+			want: &a2a.ListTasksRequest{PageSize: 10, PageToken: "test", HistoryLength: utils.Ptr(10), IncludeArtifacts: true, StatusTimestampAfter: &cutOffTime},
 		},
 		{
 			name: "without filters",

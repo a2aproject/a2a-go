@@ -795,7 +795,7 @@ type ListTasksRequest struct {
 	PageToken string `json:"pageToken,omitempty" yaml:"pageToken,omitempty" mapstructure:"pageToken,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
-	HistoryLength int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
+	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
 	// StatusTimestampAfter is the time to list tasks updated after.
 	StatusTimestampAfter *time.Time `json:"statusTimestampAfter,omitempty" yaml:"statusTimestampAfter,omitempty" mapstructure:"statusTimestampAfter,omitempty"`

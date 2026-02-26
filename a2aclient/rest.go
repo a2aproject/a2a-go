@@ -194,8 +194,8 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 	if req.PageToken != "" {
 		query.Add("pageToken", string(req.PageToken))
 	}
-	if req.HistoryLength != 0 {
-		query.Add("historyLength", strconv.Itoa(req.HistoryLength))
+	if req.HistoryLength != nil {
+		query.Add("historyLength", strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
 		query.Add("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))

@@ -220,15 +220,21 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		status = fromProtoTaskState(req.GetStatus())
 	}
 
-	return &a2a.ListTasksRequest{
+	request := &a2a.ListTasksRequest{
 		ContextID:            req.GetContextId(),
 		Status:               status,
 		PageSize:             int(req.GetPageSize()),
 		PageToken:            req.GetPageToken(),
-		HistoryLength:        int(req.GetHistoryLength()),
 		StatusTimestampAfter: lastUpdatedAfter,
 		IncludeArtifacts:     req.GetIncludeArtifacts(),
-	}, nil
+	}
+
+	if req.HistoryLength > 0 {
+		hl := int(req.HistoryLength)
+		request.HistoryLength = &hl
+	}
+
+	return request, nil
 }
 
 // FromProtoListTasksResponse converts a [a2apb.ListTasksResponse] to a [a2a.ListTasksResponse].
