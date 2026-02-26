@@ -409,7 +409,7 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 
 	task, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
 	if task.Status.State != a2a.TaskStateCompleted {
-		t.Fatalf("handler.OnGetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+		t.Fatalf("handler.GetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
 	}
 }
 
@@ -622,6 +622,65 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 		}
 	} else {
 		t.Fatalf("SendStreamingMessage() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
+	}
+}
+
+func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+	completedTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	taskStoreSeed := []*a2a.Task{taskSeed, inputRequiredTaskSeed, completedTaskSeed}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskStoreSeed...)
+	agentEvents := []a2a.Event{newAgentMessage("hello")}
+	executor := newEventReplayAgent(agentEvents, nil)
+
+	tests := []struct {
+		name       string
+		input      *a2a.SendMessageRequest
+		wantResult a2a.SendMessageResult
+		wantErr    error
+		options    []RequestHandlerOption
+	}{
+		{
+			name:       "no capability checks - success",
+			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			wantResult: newAgentMessage("hello"),
+			options: []RequestHandlerOption{
+				WithTaskStore(store),
+			},
+		},
+		{
+			name:       "streaming supported",
+			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			wantResult: newAgentMessage("hello"),
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
+				WithTaskStore(store),
+			},
+		},
+		{
+			name:  "streaming not supported",
+			input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}),
+				WithTaskStore(store),
+			},
+			wantErr: a2a.ErrUnsupportedOperation,
+		},
+	}
+	for _, tt := range tests {
+		ctx := t.Context()
+		handler := NewHandler(executor, tt.options...)
+		for event, err := range handler.SendStreamingMessage(ctx, tt.input) {
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SendStreamingMessage() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil {
+				if diff := cmp.Diff(tt.wantResult, event); diff != "" {
+					t.Fatalf("SendStreamingMessage() mismatch (-want +got):\n%s", diff)
+				}
+			}
+		}
 	}
 }
 
@@ -876,66 +935,79 @@ func TestRequestHandler_SendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_GetAgentCard(t *testing.T) {
+func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
 	tests := []struct {
 		name     string
-		option   RequestHandlerOption
+		options  []RequestHandlerOption
 		wantCard *a2a.AgentCard
 		wantErr  error
 	}{
 		{
-			name:     "static",
-			option:   WithExtendedAgentCard(card),
+			name: "static",
+			options: []RequestHandlerOption{
+				WithExtendedAgentCard(card),
+			},
 			wantCard: card,
 		},
 		{
 			name: "dynamic",
-			option: WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-				return card, nil
-			})),
+			options: []RequestHandlerOption{
+				WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+					return card, nil
+				})),
+			},
 			wantCard: card,
 		},
 		{
 			name: "dynamic error",
-			option: WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-				return nil, fmt.Errorf("failed")
-			})),
+			options: []RequestHandlerOption{
+				WithExtendedAgentCardProducer(ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+					return nil, fmt.Errorf("failed")
+				})),
+			},
 			wantErr: fmt.Errorf("failed"),
 		},
 		{
-			name:    "not configured",
+			name: "extendedAgentCard supported but not configured",
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
+			},
 			wantErr: a2a.ErrExtendedCardNotConfigured,
+		},
+		{
+			name: "extendedAgentCard not supported",
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: false}),
+				WithExtendedAgentCard(card),
+			},
+			wantErr: a2a.ErrUnsupportedOperation,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			var options []RequestHandlerOption
-			if tt.option != nil {
-				options = append(options, tt.option)
-			}
-			handler := newTestHandler(options...)
+			handler := newTestHandler(tt.options...)
 
 			result, gotErr := handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 
 			if tt.wantErr == nil {
 				if gotErr != nil {
-					t.Errorf("OnGetAgentCard() error = %v, wantErr nil", gotErr)
+					t.Errorf("GetExtendedAgentCard() error = %v, wantErr nil", gotErr)
 					return
 				}
 				if diff := cmp.Diff(result, tt.wantCard); diff != "" {
-					t.Errorf("OnGetAgentCard() got = %v, want %v", result, tt.wantCard)
+					t.Errorf("GetExtendedAgentCard() got = %v, want %v", result, tt.wantCard)
 				}
 			} else {
 				if gotErr == nil {
-					t.Errorf("OnGetAgentCard() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("GetExtendedAgentCard() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
 				if gotErr.Error() != tt.wantErr.Error() {
-					t.Errorf("OnGetAgentCard() error = %v, wantErr %v", gotErr, tt.wantErr)
+					t.Errorf("GetExtendedAgentCard() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 			}
 		})
@@ -1134,19 +1206,19 @@ func TestRequestHandler_GetTask(t *testing.T) {
 			result, err := handler.GetTask(ctx, tt.query)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Errorf("OnGetTask() error = %v, wantErr nil", err)
+					t.Errorf("GetTask() error = %v, wantErr nil", err)
 					return
 				}
 				if diff := cmp.Diff(result, tt.want); diff != "" {
-					t.Errorf("OnGetTask() got = %v, want %v", result, tt.want)
+					t.Errorf("GetTask() got = %v, want %v", result, tt.want)
 				}
 			} else {
 				if err == nil {
-					t.Errorf("OnGetTask() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("GetTask() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
 				if err.Error() != tt.wantErr.Error() {
-					t.Errorf("OnGetTask() error = %v, wantErr %v", err, tt.wantErr)
+					t.Errorf("GetTask() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			}
 		})
@@ -1161,7 +1233,7 @@ func TestRequestHandler_GetTask_StoreGetFails(t *testing.T) {
 
 	result, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: a2a.NewTaskID()})
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("OnGetTask() = (%v, %v), want error %v", result, err, wantErr)
+		t.Fatalf("GetTask() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
@@ -1220,19 +1292,19 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Errorf("OnListTasks() error = %v, wantErr nil", err)
+					t.Errorf("ListTasks() error = %v, wantErr nil", err)
 					return
 				}
 				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
-					t.Errorf("OnListTasks() mismatch (+got -want): %s", diff)
+					t.Errorf("ListTasks() mismatch (+got -want): %s", diff)
 				}
 			} else {
 				if err == nil {
-					t.Errorf("OnListTasks() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("ListTasks() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
 				if err.Error() != tt.wantErr.Error() {
-					t.Errorf("OnListTasks() error = %v, wantErr %v", err, tt.wantErr)
+					t.Errorf("ListTasks() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			}
 		})
@@ -1300,19 +1372,19 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 			result, err := handler.CancelTask(ctx, tt.params)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Errorf("OnCancelTask() error = %v, wantErr nil", err)
+					t.Errorf("CancelTask() error = %v, wantErr nil", err)
 					return
 				}
 				if diff := cmp.Diff(result, tt.want); diff != "" {
-					t.Errorf("OnCancelTask() got = %v, want %v", result, tt.want)
+					t.Errorf("CancelTask() got = %v, want %v", result, tt.want)
 				}
 			} else {
 				if err == nil {
-					t.Errorf("OnCancelTask() error = nil, wantErr %q", tt.wantErr)
+					t.Errorf("CancelTask() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
 				if err.Error() != tt.wantErr.Error() {
-					t.Errorf("OnCancelTask() error = %v, wantErr %v", err, tt.wantErr)
+					t.Errorf("CancelTask() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			}
 		})
@@ -1362,21 +1434,35 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
-		t.Fatalf("OnResubscribeToTask() events mismatch (-want +got):\n%s", diff)
+		t.Fatalf("SubscribeToTask() events mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestRequestHandler_ResubscribeToTask_NotFound(t *testing.T) {
+func TestRequestHandler_SubscribeToTask_NotFound(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrTaskNotFound
 	executor := &mockAgentExecutor{}
-	handler := NewHandler(executor)
+	handler := NewHandler(executor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
 	if result != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("OnResubscribeToTask() = (%v, %v), want error %v", result, err, wantErr)
+		t.Fatalf("SubscribeToTask() = (%v, %v), want error %v", result, err, wantErr)
+	}
+}
+
+func TestRequestHandler_SubscribeToTask_NoCapabilityChecks(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.NewTaskID()
+	wantErr := a2a.ErrUnsupportedOperation
+	executor := &mockAgentExecutor{}
+	handler := NewHandler(executor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}))
+
+	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
+
+	if result != nil || !errors.Is(err, wantErr) {
+		t.Fatalf("SubscribeToTask() = (%v, %v), want error %v", result, err, wantErr)
 	}
 }
 
@@ -1394,7 +1480,7 @@ func TestRequestHandler_CancelTask_AgentCancelFails(t *testing.T) {
 
 	result, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
 	if result != nil || err.Error() != wantErr.Error() {
-		t.Fatalf("OnCancelTask() error = %v, wantErr %v", err, wantErr)
+		t.Fatalf("CancelTask() error = %v, wantErr %v", err, wantErr)
 	}
 }
 
@@ -1537,73 +1623,114 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_SetTaskPushConfig(t *testing.T) {
+func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t)
+
 	testCases := []struct {
 		name    string
-		params  *a2a.CreateTaskPushConfigRequest
+		req     *a2a.CreateTaskPushConfigRequest
 		wantErr error
+		options []RequestHandlerOption
 	}{
 		{
 			name: "valid config with id",
-			params: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
 				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
 			},
 		},
 		{
 			name: "valid config without id",
-			params: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
 				Config: a2a.PushConfig{URL: "https://example.com/push-no-id"},
+			},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
 			},
 		},
 		{
 			name: "invalid config - empty URL",
-			params: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
 				Config: a2a.PushConfig{ID: "config-invalid"},
 			},
 			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
+		},
+		{
+			name: "pushNotifications not supported",
+			req: &a2a.CreateTaskPushConfigRequest{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req: &a2a.CreateTaskPushConfigRequest{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+			wantErr: a2a.ErrInternalError,
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+			},
+		},
+		{
+			name: "without capability checks and pushNotifications not configured",
+			req: &a2a.CreateTaskPushConfigRequest{
+				TaskID: taskID,
+				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ps := testutil.NewTestPushConfigStore()
-			pn := testutil.NewTestPushSender(t)
-			handler := newTestHandler(WithPushNotifications(ps, pn))
-			got, err := handler.CreateTaskPushConfig(ctx, tc.params)
+			handler := newTestHandler(tc.options...)
+			got, err := handler.CreateTaskPushConfig(ctx, tc.req)
 
 			if tc.wantErr != nil {
 				if err == nil || err.Error() != tc.wantErr.Error() {
-					t.Errorf("OnSetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+					t.Errorf("CreateTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("OnSetTaskPushConfig() failed: %v", err)
+				t.Errorf("CreateTaskPushConfig() failed: %v", err)
 				return
 			}
 
 			if got.Config.ID == "" {
-				t.Errorf("OnSetTaskPushConfig() expected a generated ID, but it was empty")
+				t.Errorf("CreateTaskPushConfig() expected a generated ID, but it was empty")
 				return
 			}
 
-			if tc.params.Config.ID == "" {
+			if tc.req.Config.ID == "" {
 				got.Config.ID = ""
 			}
 
-			want := &a2a.TaskPushConfig{Config: tc.params.Config, TaskID: tc.params.TaskID}
+			want := &a2a.TaskPushConfig{Config: tc.req.Config, TaskID: tc.req.TaskID}
 			if want.Config.ID == "" {
 				want.Config.ID = got.Config.ID
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("OnSetTaskPushConfig() mismatch (-want +got):\n%s", diff)
+				t.Errorf("CreateTaskPushConfig() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1615,41 +1742,72 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 	config1 := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push1"}
 	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config1)
 	pn := testutil.NewTestPushSender(t)
-	handler := newTestHandler(WithPushNotifications(ps, pn))
 
 	testCases := []struct {
 		name    string
-		params  *a2a.GetTaskPushConfigRequest
+		req     *a2a.GetTaskPushConfigRequest
 		want    *a2a.TaskPushConfig
+		options []RequestHandlerOption
 		wantErr error
 	}{
 		{
-			name:   "success",
-			params: &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			want:   &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
+			name: "success",
+			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			want: &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
 		},
 		{
 			name:    "non-existent config",
-			params:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
 			wantErr: push.ErrPushConfigNotFound,
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
 		},
 		{
 			name:    "non-existent task",
-			params:  &a2a.GetTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
 			wantErr: push.ErrPushConfigNotFound,
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
+		},
+		{
+			name: "pushNotifications not supported",
+			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+			},
+			wantErr: a2a.ErrInternalError,
+		},
+		{
+			name:    "without capability checks and pushNotifications not configured",
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handler.GetTaskPushConfig(ctx, tc.params)
+			handler := newTestHandler(tc.options...)
+			got, err := handler.GetTaskPushConfig(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
-				t.Errorf("OnGetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
+				t.Errorf("GetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 				return
 			}
 			if tc.wantErr == nil {
 				if diff := cmp.Diff(tc.want, got); diff != "" {
-					t.Errorf("OnGetTaskPushConfig() mismatch (-want +got):\n%s", diff)
+					t.Errorf("GetTaskPushConfig() mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})
@@ -1665,50 +1823,96 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 
 	ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
 	pn := testutil.NewTestPushSender(t)
-	handler := newTestHandler(WithPushNotifications(ps, pn))
 
 	if _, err := ps.Save(ctx, emptyTaskID, &config1); err != nil {
 		t.Fatalf("Setup: Save() for empty task failed: %v", err)
 	}
 	if err := ps.DeleteAll(ctx, emptyTaskID); err != nil {
-		t.Fatalf("Setup: OnDeleteTaskPushConfig() for empty task failed: %v", err)
+		t.Fatalf("Setup: DeleteTaskPushConfig() for empty task failed: %v", err)
 	}
 
 	testCases := []struct {
-		name   string
-		params *a2a.ListTaskPushConfigRequest
-		want   []*a2a.TaskPushConfig
+		name    string
+		req     *a2a.ListTaskPushConfigRequest
+		want    []*a2a.TaskPushConfig
+		options []RequestHandlerOption
+		wantErr error
 	}{
 		{
-			name:   "list existing",
-			params: &a2a.ListTaskPushConfigRequest{TaskID: taskID},
+			name: "list existing",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 			want: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
 		},
 		{
-			name:   "list with empty task",
-			params: &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
-			want:   []*a2a.TaskPushConfig{},
+			name: "list with empty task",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
+			want: []*a2a.TaskPushConfig{},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
 		},
 		{
-			name:   "list non-existent task",
-			params: &a2a.ListTaskPushConfigRequest{TaskID: "non-existent-task"},
-			want:   []*a2a.TaskPushConfig{},
+			name: "list non-existent task",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: "non-existent-task"},
+			want: []*a2a.TaskPushConfig{},
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, pn),
+			},
+		},
+		{
+			name: "pushNotifications not supported",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
+			want: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
+			want: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+			},
+			wantErr: a2a.ErrInternalError,
+		},
+		{
+			name: "without capability checks and pushNotifications not configured",
+			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
+			want: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handler.ListTaskPushConfigs(ctx, tc.params)
-			if err != nil {
-				t.Errorf("OnListTaskPushConfigs() failed: %v", err)
+			handler := newTestHandler(tc.options...)
+			got, err := handler.ListTaskPushConfigs(ctx, tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ListTaskPushConfigs() error = %v, want %v", err, tc.wantErr)
 				return
 			}
-			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("OnListTaskPushConfigs() mismatch (-want +got):\n%s", diff)
+			if tc.wantErr == nil {
+				sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("ListTaskPushConfigs() mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
@@ -1721,30 +1925,69 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	config2 := a2a.PushConfig{ID: "config-2", URL: "https://example.com/push2"}
 
 	testCases := []struct {
-		name       string
-		params     *a2a.DeleteTaskPushConfigRequest
-		wantRemain []*a2a.TaskPushConfig
+		name            string
+		req             *a2a.DeleteTaskPushConfigRequest
+		wantRemain      []*a2a.TaskPushConfig
+		options         []RequestHandlerOption
+		withPushConfigs bool
+		wantErr         error
 	}{
 		{
-			name:       "delete existing",
-			params:     &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
+			name:            "delete existing",
+			req:             &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain:      []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
+			withPushConfigs: true,
 		},
 		{
-			name:   "delete non-existent config",
-			params: &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
+			name: "delete non-existent config",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
 			wantRemain: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
+			withPushConfigs: true,
 		},
 		{
-			name:   "delete from non-existent task",
-			params: &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
+			name: "delete from non-existent task",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
 			wantRemain: []*a2a.TaskPushConfig{
 				{TaskID: taskID, Config: config1},
 				{TaskID: taskID, Config: config2},
 			},
+			withPushConfigs: true,
+		},
+		{
+			name: "pushNotifications not supported",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+		},
+		{
+			name: "pushNotifications supported but not configured",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+			},
+			wantErr: a2a.ErrInternalError,
+		},
+		{
+			name: "without capability checks and pushNotifications not configured",
+			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantRemain: []*a2a.TaskPushConfig{
+				{TaskID: taskID, Config: config1},
+				{TaskID: taskID, Config: config2},
+			},
+			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
 	}
 
@@ -1752,22 +1995,75 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, &config1, &config2)
 			pn := testutil.NewTestPushSender(t)
-			handler := newTestHandler(WithPushNotifications(ps, pn))
-			err := handler.DeleteTaskPushConfig(ctx, tc.params)
-			if err != nil {
-				t.Errorf("OnDeleteTaskPushConfig() failed: %v", err)
+			if tc.withPushConfigs {
+				tc.options = append(tc.options, WithPushNotifications(ps, pn))
+			}
+			handler := newTestHandler(tc.options...)
+			err := handler.DeleteTaskPushConfig(ctx, tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("DeleteTaskPushConfig() error = %v, want %v", err, tc.wantErr)
 				return
 			}
+			if tc.wantErr == nil {
 
-			got, err := handler.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: taskID})
-			if err != nil {
-				t.Errorf("OnListTaskPushConfigs() for verification failed: %v", err)
-				return
+				got, err := handler.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: taskID})
+				if err != nil {
+					t.Errorf("ListTaskPushConfigs() for verification failed: %v", err)
+					return
+				}
+
+				sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+				if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
+					t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
+				}
 			}
+		})
+	}
+}
 
-			sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
-			if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
-				t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
+func TestRequestHandler_RequiredExtensions(t *testing.T) {
+	ctx := t.Context()
+	store := testutil.NewTestTaskStore()
+	agentEvents := []a2a.Event{newAgentMessage("hello")}
+	executor := newEventReplayAgent(agentEvents, nil)
+	extensionURI := "example-ext"
+	extensions := []a2a.AgentExtension{{URI: extensionURI, Required: true}}
+
+	tests := []struct {
+		name           string
+		clientSupports []string
+		wantErr        error
+	}{
+		{
+			name:           "fails when required extension is missing",
+			clientSupports: []string{"other-ext"},
+			wantErr:        a2a.ErrExtensionSupportRequired,
+		},
+		{
+			name:           "succeeds when required extension is declared",
+			clientSupports: []string{extensionURI},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewHandler(
+				executor,
+				WithTaskStore(store),
+				WithCapabilityChecks(&a2a.AgentCapabilities{Extensions: extensions}),
+			)
+
+			params := NewServiceParams(map[string][]string{
+				ExtensionsMetaKey: tt.clientSupports,
+			})
+			newCtx, _ := NewCallContext(ctx, params)
+
+			_, err := handler.SendMessage(newCtx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("ping")),
+			})
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("SendMessage() error = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

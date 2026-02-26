@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -36,6 +37,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+
+	capabilities *a2a.AgentCapabilities
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -87,7 +90,12 @@ func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessa
 func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SendStreamingMessage", req.Tenant)
-		if msg := req.Message; msg != nil {
+		if err := checkRequiredExtensions(h, callCtx); err != nil {
+			yield(nil, err)
+			return
+		}
+		if req.Message != nil {
+			msg := req.Message
 			ctx = h.withLoggerContext(
 				ctx,
 				slog.String("message_id", msg.ID),
@@ -123,6 +131,10 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SubscribeToTask", req.Tenant)
+		if err := checkRequiredExtensions(h, callCtx); err != nil {
+			yield(nil, err)
+			return
+		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
@@ -178,6 +190,9 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 	if res.earlyResponse != nil {
 		return nil
 	}
+	if err := checkRequiredExtensions(h, callCtx); err != nil {
+		return err
+	}
 	err := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
 	var emptyResponse struct{}
 	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
@@ -188,16 +203,7 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	ctx, callCtx := attachMethodCallContext(ctx, "GetExtendedAgentCard", req.Tenant)
 	ctx = h.withLoggerContext(ctx)
-
-	ctx, res := interceptBefore[*a2a.GetExtendedAgentCardRequest, *a2a.AgentCard](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-	response, err := h.Handler.GetExtendedAgentCard(ctx, res.reqOverride)
-	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
 func interceptBefore[Req any, Resp any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
@@ -306,6 +312,26 @@ func doCall[Req any, Resp any](
 	if res.earlyResponse != nil {
 		return *res.earlyResponse, nil
 	}
+	if err := checkRequiredExtensions(h, callCtx); err != nil {
+		var zero Resp
+		return zero, err
+	}
 	response, err := transportCall(ctx, res.reqOverride)
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+}
+
+func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error {
+	if h.capabilities == nil || len(h.capabilities.Extensions) == 0 {
+		return nil
+	}
+	requestedURIs := callCtx.Extensions().RequestedURIs()
+	for _, ext := range h.capabilities.Extensions {
+		if ext.Required {
+			found := slices.Contains(requestedURIs, ext.URI)
+			if !found {
+				return a2a.ErrExtensionSupportRequired
+			}
+		}
+	}
+	return nil
 }

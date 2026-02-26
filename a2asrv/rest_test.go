@@ -130,7 +130,7 @@ func TestREST_RequestRouting(t *testing.T) {
 			transport = NewTenantRESTHandler("/{*}", reqHandler)
 		}
 		server := httptest.NewServer(transport)
-		defer server.Close()
+		t.Cleanup(server.Close)
 
 		for _, tc := range testCases {
 			name := tc.method
@@ -434,7 +434,11 @@ func TestRESTTenant(t *testing.T) {
 			if err != nil {
 				t.Fatalf("server.Client().Do() error = %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
 
 			if tt.wantErr && resp.StatusCode == http.StatusOK {
 				t.Fatal("GetTask() error = nil, want to fail")

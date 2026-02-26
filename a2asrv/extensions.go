@@ -63,7 +63,7 @@ func (e *Extensions) Requested(extension *a2a.AgentExtension) bool {
 	return slices.Contains(e.RequestedURIs(), extension.URI)
 }
 
-// RequestedURIs returns URIs all of all extensions requested by the client.
+// RequestedURIs returns URIs of all extensions requested by the client.
 func (e *Extensions) RequestedURIs() []string {
 	requested, ok := e.callCtx.ServiceParams().Get(ExtensionsMetaKey)
 	if !ok {
