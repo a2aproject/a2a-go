@@ -529,7 +529,6 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 		Status:           toProtoTaskState(request.Status),
 		PageSize:         int32(request.PageSize),
 		PageToken:        request.PageToken,
-		HistoryLength:    int32(*request.HistoryLength),
 		LastUpdatedTime:  lastUpdatedAfter,
 		IncludeArtifacts: request.IncludeArtifacts,
 	}
