@@ -164,7 +164,7 @@ func TestManager_ExecuteRateLimit(t *testing.T) {
 					finished: make(chan struct{}),
 				}
 				go func() {
-					scopedCtx := limiter.WithScope(ctx, ev.scope)
+					scopedCtx := limiter.AttachScope(ctx, ev.scope)
 
 					executor := newExecutor()
 					executor.nextEventTerminal = true

@@ -22,7 +22,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// ServiceParams holds things like auth headers and signatures.
+// ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.
+// The transmission mechanism for these service parameter key-value pairs is defined by the specific protocol binding.
 // In jsonrpc it is passed as HTTP headers, in gRPC it becomes a part of [context.Context].
 // Custom protocol implementations can use [ServiceParams] to access this data and
 // perform the operations necessary for attaching it to the request.
@@ -45,6 +46,17 @@ func (m ServiceParams) Append(key string, vals ...string) {
 		result = append(result, v)
 	}
 	m[strings.ToLower(key)] = result
+}
+
+func (m ServiceParams) clone() ServiceParams {
+	if m == nil {
+		return nil
+	}
+	c := make(ServiceParams, len(m))
+	for k, v := range m {
+		c[k] = slices.Clone(v)
+	}
+	return c
 }
 
 // Request represents a transport-agnostic request to be sent to A2A server.
@@ -81,7 +93,7 @@ type Response struct {
 	Payload any
 }
 
-// CallInterceptor can be attached to an [Client].
+// CallInterceptor can be attached to a [Client].
 // If multiple interceptors are added:
 //   - Before will be executed in the order of attachment sequentially.
 //   - After will be executed in the reverse order sequentially.
@@ -96,33 +108,40 @@ type CallInterceptor interface {
 	After(ctx context.Context, resp *Response) error
 }
 
-// NewServiceParamsInjector creates a [CallInterceptor] which attaches the provided meta to all requests.
-func NewServiceParamsInjector(params ServiceParams) CallInterceptor {
-	return &serviceParamsInjector{inject: params}
-}
+type serviceParamsKeyType struct{}
 
-type serviceParamsInjector struct {
-	PassthroughInterceptor
-	inject ServiceParams
-}
-
-func (mi *serviceParamsInjector) Before(ctx context.Context, req *Request) (context.Context, any, error) {
-	for k, values := range mi.inject {
-		req.ServiceParams.Append(k, values...)
+// AttachServiceParams creates a new context with service parameters attached to it.
+// These parameters will be passed to the [Transport], where implementation is responsible
+// for serializing them according to the protocol binding.
+// [CallInterceptor]-s will be able to modify params before they are passed to the [Transport].
+func AttachServiceParams(ctx context.Context, params ServiceParams) context.Context {
+	existing := serviceParamsCloneFrom(ctx)
+	for k, values := range params {
+		existing.Append(k, values...)
 	}
-	return ctx, nil, nil
+	return context.WithValue(ctx, serviceParamsKeyType{}, existing)
 }
 
-// PassthroughInterceptor can be used by CallInterceptor implementers who don't need all methods.
+func serviceParamsCloneFrom(ctx context.Context) ServiceParams {
+	params, ok := ctx.Value(serviceParamsKeyType{}).(ServiceParams)
+	if !ok {
+		return make(ServiceParams)
+	}
+	return params.clone()
+}
+
+// PassthroughInterceptor can be used by [CallInterceptor] implementers who don't need all methods.
 // The struct can be embedded for providing a no-op implementation.
 type PassthroughInterceptor struct{}
 
 var _ CallInterceptor = (*PassthroughInterceptor)(nil)
 
+// Before implements the [CallInterceptor].
 func (PassthroughInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
 	return ctx, nil, nil
 }
 
+// After implements the [CallInterceptor].
 func (PassthroughInterceptor) After(ctx context.Context, resp *Response) error {
 	return nil
 }

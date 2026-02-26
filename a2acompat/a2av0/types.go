@@ -85,7 +85,7 @@ type message struct {
 	ContextID      string          `json:"contextId,omitempty"`
 	Extensions     []string        `json:"extensions,omitempty"`
 	Metadata       map[string]any  `json:"metadata,omitempty"`
-	Parts          ContentParts    `json:"parts"`
+	Parts          contentParts    `json:"parts"`
 	ReferenceTasks []a2a.TaskID    `json:"referenceTaskIds,omitempty"`
 	Role           a2a.MessageRole `json:"role"`
 	TaskID         a2a.TaskID      `json:"taskId,omitempty"`
@@ -145,7 +145,7 @@ type artifact struct {
 	Extensions  []string       `json:"extensions,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 	Name        string         `json:"name,omitempty"`
-	Parts       ContentParts   `json:"parts"`
+	Parts       contentParts   `json:"parts"`
 }
 
 type taskArtifactUpdateEvent struct {
@@ -174,16 +174,16 @@ func (e taskStatusUpdateEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(withKind{Kind: "status-update", wrapped: wrapped(e)})
 }
 
-type ContentParts []part
+type contentParts []part
 
-func (j ContentParts) MarshalJSON() ([]byte, error) {
+func (j contentParts) MarshalJSON() ([]byte, error) {
 	if j == nil {
 		return []byte("[]"), nil
 	}
 	return json.Marshal([]part(j))
 }
 
-func (j *ContentParts) UnmarshalJSON(b []byte) error {
+func (j *contentParts) UnmarshalJSON(b []byte) error {
 	type typedPart struct {
 		Kind string `json:"kind"`
 	}
@@ -279,7 +279,7 @@ func (p filePart) MarshalJSON() ([]byte, error) {
 
 func (p *filePart) UnmarshalJSON(b []byte) error {
 	type filePartContentUnion struct {
-		FileMeta
+		fileMeta
 		URI   string `json:"uri"`
 		Bytes string `json:"bytes"`
 	}
@@ -301,9 +301,9 @@ func (p *filePart) UnmarshalJSON(b []byte) error {
 
 	res := filePart{Metadata: decoded.Metadata}
 	if len(decoded.File.Bytes) > 0 {
-		res.File = fileBytes{Bytes: decoded.File.Bytes, FileMeta: decoded.File.FileMeta}
+		res.File = fileBytes{Bytes: decoded.File.Bytes, fileMeta: decoded.File.fileMeta}
 	} else {
-		res.File = fileURI{URI: decoded.File.URI, FileMeta: decoded.File.FileMeta}
+		res.File = fileURI{URI: decoded.File.URI, fileMeta: decoded.File.fileMeta}
 	}
 
 	*p = res
@@ -315,18 +315,18 @@ type filePartContent interface{ isFilePartContent() }
 func (fileBytes) isFilePartContent() {}
 func (fileURI) isFilePartContent()   {}
 
-type FileMeta struct {
+type fileMeta struct {
 	MimeType string `json:"mimeType,omitempty"`
 	Name     string `json:"name,omitempty"`
 }
 
 type fileBytes struct {
-	FileMeta
+	fileMeta
 	Bytes string `json:"bytes"`
 }
 
 type fileURI struct {
-	FileMeta
+	fileMeta
 	URI string `json:"uri"`
 }
 

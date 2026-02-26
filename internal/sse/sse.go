@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package sse provides Server-Sent Events (SSE) implementation for A2A.
 package sse
 
 import (
@@ -27,6 +28,7 @@ import (
 )
 
 const (
+	// ContentEventStream is the MIME type for Server-Sent Events.
 	ContentEventStream = "text/event-stream"
 
 	sseIDPrefix   = "id: "
@@ -37,11 +39,13 @@ const (
 	MaxSSETokenSize = 10 * 1024 * 1024 // 10MB
 )
 
+// SSEWriter wraps http.ResponseWriter to provide SSE writing capabilities.
 type SSEWriter struct {
 	writer  http.ResponseWriter
 	flusher http.Flusher
 }
 
+// NewWriter creates a new [SSEWriter].
 func NewWriter(w http.ResponseWriter) (*SSEWriter, error) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -50,6 +54,7 @@ func NewWriter(w http.ResponseWriter) (*SSEWriter, error) {
 	return &SSEWriter{writer: w, flusher: flusher}, nil
 }
 
+// WriteHeaders writes the standard SSE headers.
 func (w *SSEWriter) WriteHeaders() {
 	header := w.writer.Header()
 	header.Set("Content-Type", ContentEventStream)
@@ -59,6 +64,7 @@ func (w *SSEWriter) WriteHeaders() {
 	w.writer.WriteHeader(http.StatusOK)
 }
 
+// WriteKeepAlive writes an SSE comment to keep the connection alive.
 func (w *SSEWriter) WriteKeepAlive(ctx context.Context) error {
 	if _, err := w.writer.Write([]byte(": keep-alive\n\n")); err != nil {
 		return err
@@ -67,6 +73,7 @@ func (w *SSEWriter) WriteKeepAlive(ctx context.Context) error {
 	return nil
 }
 
+// WriteData writes a data block to the SSE stream.
 func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 	eventID := uuid.NewString()
 	if _, err := fmt.Fprintf(w.writer, "%s%s\n", sseIDPrefix, []byte(eventID)); err != nil {
@@ -79,6 +86,7 @@ func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 	return nil
 }
 
+// ParseDataStream returns an iterator over the data blocks in an SSE stream.
 func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		scanner := bufio.NewScanner(body)

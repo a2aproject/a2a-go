@@ -23,8 +23,10 @@ import (
 
 const defaultQueueBufferSize = 32
 
+// MemManagerOption is a functional option for configuring an in-memory event manager.
 type MemManagerOption func(*inMemoryManager)
 
+// WithQueueBufferSize configures the size of the in-memory event queue buffer.
 func WithQueueBufferSize(size int) MemManagerOption {
 	return func(manager *inMemoryManager) {
 		manager.bufferSize = size

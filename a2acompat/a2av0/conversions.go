@@ -119,11 +119,11 @@ func toCompatMessage(m *a2a.Message) *message {
 	}
 }
 
-func toCompatParts(parts a2a.ContentParts) ContentParts {
+func toCompatParts(parts a2a.ContentParts) contentParts {
 	if len(parts) == 0 {
 		return nil
 	}
-	res := make(ContentParts, len(parts))
+	res := make(contentParts, len(parts))
 	for i, p := range parts {
 		switch c := p.Content.(type) {
 		case a2a.Text:
@@ -148,7 +148,7 @@ func toCompatParts(parts a2a.ContentParts) ContentParts {
 		case a2a.Raw:
 			res[i] = filePart{
 				File: fileBytes{
-					FileMeta: FileMeta{
+					fileMeta: fileMeta{
 						MimeType: p.MediaType,
 						Name:     p.Filename,
 					},
@@ -159,7 +159,7 @@ func toCompatParts(parts a2a.ContentParts) ContentParts {
 		case a2a.URL:
 			res[i] = filePart{
 				File: fileURI{
-					FileMeta: FileMeta{
+					fileMeta: fileMeta{
 						MimeType: p.MediaType,
 						Name:     p.Filename,
 					},
@@ -284,9 +284,7 @@ func toCompatCancelTaskRequest(req *a2a.CancelTaskRequest) *taskIDParams {
 	if req == nil {
 		return nil
 	}
-	return &taskIDParams{
-		ID: req.ID,
-	}
+	return &taskIDParams{ID: req.ID, Metadata: req.Metadata}
 }
 
 func toCompatSendMessageRequest(req *a2a.SendMessageRequest) *messageSendParams {
@@ -367,9 +365,7 @@ func toCoreGetTaskRequest(q *taskQueryParams) *a2a.GetTaskRequest {
 }
 
 func toCoreCancelTaskRequest(q *taskIDParams) *a2a.CancelTaskRequest {
-	return &a2a.CancelTaskRequest{
-		ID: q.ID,
-	}
+	return &a2a.CancelTaskRequest{ID: q.ID, Metadata: q.Metadata}
 }
 
 func toCoreSendMessageRequest(p *messageSendParams) (*a2a.SendMessageRequest, error) {
@@ -466,7 +462,7 @@ func toCoreMessage(m *message) (*a2a.Message, error) {
 	}, nil
 }
 
-func toCoreParts(parts ContentParts) (a2a.ContentParts, error) {
+func toCoreParts(parts contentParts) (a2a.ContentParts, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
@@ -639,9 +635,5 @@ func fromCompatTaskPushConfig(comp *taskPushConfig) (*a2a.TaskPushConfig, error)
 	if comp == nil {
 		return nil, nil
 	}
-	return &a2a.TaskPushConfig{
-		TaskID: comp.TaskID,
-		Config: *toCorePushConfig(comp.Config),
-		ID:     comp.Config.ID,
-	}, nil
+	return &a2a.TaskPushConfig{TaskID: comp.TaskID, Config: *toCorePushConfig(comp.Config)}, nil
 }

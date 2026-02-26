@@ -199,13 +199,13 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.
 	return pbconv.FromProtoTaskPushConfig(pbConfig)
 }
 
-func (c *grpcTransport) ListTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	pbReq, err := pbconv.ToProtoListTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
-	pbResp, err := c.client.ListTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq)
+	pbResp, err := c.client.ListTaskPushNotificationConfigs(withGRPCMetadata(ctx, params), pbReq)
 	if err != nil {
 		return nil, grpcutil.FromGRPCError(err)
 	}
@@ -242,8 +242,13 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclie
 	return grpcutil.FromGRPCError(err)
 }
 
-func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams) (*a2a.AgentCard, error) {
-	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), &a2apb.GetExtendedAgentCardRequest{})
+func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	pReq, err := pbconv.ToProtoGetExtendedAgentCardRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), pReq)
 	if err != nil {
 		return nil, grpcutil.FromGRPCError(err)
 	}

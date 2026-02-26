@@ -197,7 +197,7 @@ func TestClusterBackend_Heartbeater(t *testing.T) {
 	}
 	_ = newWorkQueueHandler(cfg)
 
-	ctx := workqueue.WithHeartbeater(t.Context(), heartbeater)
+	ctx := workqueue.AttachHeartbeater(t.Context(), heartbeater)
 	gotResult, gotErr := wq.HandlerFn(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         executor.emitTask.ID,

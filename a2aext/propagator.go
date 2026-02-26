@@ -142,7 +142,8 @@ type serverPropagator struct {
 	ServerPropagatorConfig
 }
 
-// Before extracts valid keys from the incoming request and attaches them to the context
+// Before implements [a2asrv.CallInterceptor].
+// It extracts valid keys from the incoming request and attaches them to the context
 // so the client interceptor can find them later.
 func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	propagatorCtx := &propagatorContext{
@@ -174,7 +175,8 @@ type clientPropagator struct {
 	ClientPropagatorConfig
 }
 
-// Before checks the context for propagated values and injects them into the outgoing request.
+// Before implements [a2aclient.CallInterceptor].
+// It checks the context for propagated values and injects them into the outgoing request.
 func (c *clientPropagator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
 	toPropagate, ok := ctx.Value(propagatorCtxKeyType{}).(*propagatorContext)
 	if !ok {

@@ -410,7 +410,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	got, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{})
+	got, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{}, &a2a.GetExtendedAgentCardRequest{})
 
 	if err != nil {
 		t.Fatalf("GetAgentCard failed: %v", err)
@@ -486,7 +486,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			req := mustDecodeJSONRPC(t, r, "ListTaskPushNotificationConfig")
+			req := mustDecodeJSONRPC(t, r, "ListTaskPushNotificationConfigs")
 
 			resp := newResponse(
 				req,
@@ -498,10 +498,10 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		configs, err := transport.ListTaskPushConfig(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{})
+		configs, err := transport.ListTaskPushConfigs(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{})
 
 		if err != nil {
-			t.Fatalf("ListTaskPushConfig failed: %v", err)
+			t.Fatalf("ListTaskPushConfigs failed: %v", err)
 		}
 
 		if len(configs) != 2 {

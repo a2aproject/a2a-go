@@ -22,10 +22,10 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-// ExecutorContextInterceptor defines an extension point for modifying request contexts
-// that contain the information needed by [AgentExecutor] implementations to process incoming requests.
+// ExecutorContextInterceptor defines an extension point for modifying the information which
+// gets passed to the agent when it is invoked.
 type ExecutorContextInterceptor interface {
-	// Intercept has a chance to modify a RequestContext before it gets passed to AgentExecutor.
+	// Intercept can modify the [ExecutorContext] before it gets passed to the [AgentExecutor].
 	Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error)
 }
 
@@ -58,18 +58,21 @@ type ExecutorContext struct {
 
 var _ a2a.TaskInfoProvider = (*ExecutorContext)(nil)
 
+// TaskInfo returns information used for associating events with a task.
 func (ec *ExecutorContext) TaskInfo() a2a.TaskInfo {
 	return a2a.TaskInfo{TaskID: ec.TaskID, ContextID: ec.ContextID}
 }
 
-// ReferencedTasksLoader implements RequestContextInterceptor. It populates RelatedTasks field of RequestContext
-// with Tasks referenced in the ReferenceTasks field of the Message which triggered the agent execution.
+// ReferencedTasksLoader implements [ExecutorContextInterceptor]. It populates [ExecutorContext.RelatedTasks]
+// with Tasks referenced in the [a2a.Message.ReferenceTasks] of the message which triggered the agent execution.
 type ReferencedTasksLoader struct {
 	Store taskstore.Store
 }
 
 var _ ExecutorContextInterceptor = (*ReferencedTasksLoader)(nil)
 
+// Intercept implements [ExecutorContextInterceptor].
+// It loads referenced tasks from the task store and populates [ExecutorContext.RelatedTasks].
 func (ri *ReferencedTasksLoader) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 	msg := execCtx.Message
 	if msg == nil {

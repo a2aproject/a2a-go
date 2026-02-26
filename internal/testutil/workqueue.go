@@ -18,19 +18,20 @@ import (
 	"context"
 
 	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 )
 
+// TestWorkQueue is a mock of [workqueue.Queue].
 type TestWorkQueue struct {
 	HandlerFn workqueue.HandlerFn
 	Payloads  []*workqueue.Payload
 	WriteErr  error
 
 	WriteFunc           func(context.Context, *workqueue.Payload) (a2a.TaskID, error)
-	RegisterHandlerFunc func(limiter.ConcurrencyConfig, workqueue.HandlerFn)
+	RegisterHandlerFunc func(workqueue.HandlerConfig, workqueue.HandlerFn)
 }
 
+// Write implements [workqueue.Writer] interface.
 func (m *TestWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (a2a.TaskID, error) {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, payload)
@@ -39,7 +40,8 @@ func (m *TestWorkQueue) Write(ctx context.Context, payload *workqueue.Payload) (
 	return payload.TaskID, m.WriteErr
 }
 
-func (m *TestWorkQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, fn workqueue.HandlerFn) {
+// RegisterHandler implements [workqueue.Queue] interface.
+func (m *TestWorkQueue) RegisterHandler(cfg workqueue.HandlerConfig, fn workqueue.HandlerFn) {
 	if m.RegisterHandlerFunc != nil {
 		m.RegisterHandlerFunc(cfg, fn)
 	}

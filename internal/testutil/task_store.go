@@ -31,6 +31,7 @@ type TestTaskStore struct {
 	GetFunc    func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error)
 }
 
+// Create implements [taskstore.TaskStore] interface.
 func (m *TestTaskStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
 	if m.CreateFunc != nil {
 		return m.CreateFunc(ctx, task)
@@ -38,6 +39,7 @@ func (m *TestTaskStore) Create(ctx context.Context, task *a2a.Task) (taskstore.T
 	return m.InMemory.Create(ctx, task)
 }
 
+// Update implements [taskstore.TaskStore] interface.
 func (m *TestTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
 	if m.UpdateFunc != nil {
 		return m.UpdateFunc(ctx, req)
@@ -45,6 +47,7 @@ func (m *TestTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest
 	return m.InMemory.Update(ctx, req)
 }
 
+// Get implements [taskstore.TaskStore] interface.
 func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 	if m.GetFunc != nil {
 		return m.GetFunc(ctx, taskID)

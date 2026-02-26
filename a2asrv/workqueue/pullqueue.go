@@ -19,7 +19,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/log"
 )
 
@@ -70,7 +69,7 @@ func NewPullQueue(rw ReadWriter, cfg *PullQueueConfig) Queue {
 	return &pullQueue{ReadWriter: rw, config: cfg}
 }
 
-func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn HandlerFn) {
+func (q *pullQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
 	go func() {
 		readAttempt := 0
 		ctx := context.Background()
@@ -103,7 +102,7 @@ func (q *pullQueue) RegisterHandler(cfg limiter.ConcurrencyConfig, handlerFn Han
 
 			go func() {
 				if hb, ok := msg.(Heartbeater); ok {
-					ctx = WithHeartbeater(ctx, hb)
+					ctx = AttachHeartbeater(ctx, hb)
 				}
 
 				_, handleErr := handlerFn(ctx, msg.Payload())

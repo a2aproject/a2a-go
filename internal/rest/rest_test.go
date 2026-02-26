@@ -114,7 +114,7 @@ func TestError_ToA2AError(t *testing.T) {
 				"status": 400,
 				"detail": "The Extended Agent Card for this agent is not configured"
 			}`,
-			wantError:  a2a.ErrAuthenticatedExtendedCardNotConfigured,
+			wantError:  a2a.ErrExtendedCardNotConfigured,
 			wantDetail: "The Extended Agent Card for this agent is not configured",
 		},
 		{
@@ -242,7 +242,7 @@ func TestToRESTError(t *testing.T) {
 		},
 		{
 			name:       "Extended Agent Card Not Configured",
-			err:        a2a.ErrAuthenticatedExtendedCardNotConfigured,
+			err:        a2a.ErrExtendedCardNotConfigured,
 			wantStatus: http.StatusBadRequest,
 			wantType:   "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
 			wantTitle:  "Extended Agent Card Not Configured",

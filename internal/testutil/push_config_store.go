@@ -33,6 +33,7 @@ type TestPushConfigStore struct {
 	DeleteAllFunc func(ctx context.Context, taskID a2a.TaskID) error
 }
 
+// Save implements [push.ConfigStore] interface.
 func (m *TestPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
 	if m.SaveFunc != nil {
 		return m.SaveFunc(ctx, taskID, config)
@@ -40,6 +41,7 @@ func (m *TestPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, confi
 	return m.InMemoryPushConfigStore.Save(ctx, taskID, config)
 }
 
+// Get implements [push.ConfigStore] interface.
 func (m *TestPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error) {
 	if m.GetFunc != nil {
 		return m.GetFunc(ctx, taskID, configID)
@@ -47,6 +49,7 @@ func (m *TestPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, config
 	return m.InMemoryPushConfigStore.Get(ctx, taskID, configID)
 }
 
+// List implements [push.ConfigStore] interface.
 func (m *TestPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
 	if m.ListFunc != nil {
 		return m.ListFunc(ctx, taskID)
@@ -54,6 +57,7 @@ func (m *TestPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a
 	return m.InMemoryPushConfigStore.List(ctx, taskID)
 }
 
+// Delete implements [push.ConfigStore] interface.
 func (m *TestPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID, configID string) error {
 	if m.DeleteFunc != nil {
 		return m.DeleteFunc(ctx, taskID, configID)
@@ -61,6 +65,7 @@ func (m *TestPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID, con
 	return m.InMemoryPushConfigStore.Delete(ctx, taskID, configID)
 }
 
+// DeleteAll implements [push.ConfigStore] interface.
 func (m *TestPushConfigStore) DeleteAll(ctx context.Context, taskID a2a.TaskID) error {
 	if m.DeleteAllFunc != nil {
 		return m.DeleteAllFunc(ctx, taskID)

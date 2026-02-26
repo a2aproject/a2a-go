@@ -64,7 +64,7 @@ func NewStaticAgentCardProducer(card *a2a.AgentCard) a2asrv.AgentCardProducer {
 	return &compatProducer{AgentCardProducer: &staticProducer{card: card}}
 }
 
-// NewCompatCardProducer returns a new AgentCardProducer which will modify the agent card
+// NewAgentCardProducer returns a new AgentCardProducer which will modify the agent card
 // to be compatible with the v0.3 protocol clients. This is handled by implementing serialization
 // into a union of v1.0 and v0.3 formats when converting to JSON.
 func NewAgentCardProducer(producer a2asrv.AgentCardProducer) a2asrv.AgentCardProducer {

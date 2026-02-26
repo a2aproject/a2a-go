@@ -9,7 +9,7 @@ version: v2
 inputs:
   - git_repo: https://github.com/a2aproject/A2A.git
     # Update to point to the desired git tag or commit
-    ref: d22ee06d3681df43cdbdf538b6299e160d280cf1
+    ref: 629190aea9fe5838bb712008e6d24156680af197
     subdir: specification
 
 managed:  

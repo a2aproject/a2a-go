@@ -35,6 +35,7 @@ func toProtoMap(meta map[string]any) (*structpb.Struct, error) {
 	return s, nil
 }
 
+// ToProtoSendMessageRequest converts a [a2a.SendMessageRequest] to a [a2apb.SendMessageRequest].
 func ToProtoSendMessageRequest(req *a2a.SendMessageRequest) (*a2apb.SendMessageRequest, error) {
 	// TODO: add validation
 	if req == nil {
@@ -119,6 +120,7 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 	return pConf, nil
 }
 
+// ToProtoGetTaskRequest converts a [a2a.GetTaskRequest] to a [a2apb.GetTaskRequest].
 func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, error) {
 	// TODO: add validation
 	if req == nil {
@@ -132,17 +134,24 @@ func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, erro
 	}, nil
 }
 
+// ToProtoCancelTaskRequest converts a [a2a.CancelTaskRequest] to a [a2apb.CancelTaskRequest].
 func ToProtoCancelTaskRequest(req *a2a.CancelTaskRequest) (*a2apb.CancelTaskRequest, error) {
 	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
+	metadata, err := toProtoMap(req.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	return &a2apb.CancelTaskRequest{
-		Tenant: req.Tenant,
-		Id:     string(req.ID),
+		Tenant:   req.Tenant,
+		Id:       string(req.ID),
+		Metadata: metadata,
 	}, nil
 }
 
+// ToProtoSubscribeToTaskRequest converts a [a2a.SubscribeToTaskRequest] to a [a2apb.SubscribeToTaskRequest].
 func ToProtoSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.SubscribeToTaskRequest, error) {
 	// TODO: add validation
 	if req == nil {
@@ -154,6 +163,7 @@ func ToProtoSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.Subs
 	}, nil
 }
 
+// ToProtoCreateTaskPushConfigRequest converts a [a2a.CreateTaskPushConfigRequest] to a [a2apb.CreateTaskPushNotificationConfigRequest].
 func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
 	// TODO: add validation
 	if config == nil {
@@ -172,6 +182,7 @@ func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest)
 	}, nil
 }
 
+// ToProtoGetTaskPushConfigRequest converts a [a2a.GetTaskPushConfigRequest] to a [a2apb.GetTaskPushNotificationConfigRequest].
 func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.GetTaskPushNotificationConfigRequest, error) {
 	// TODO: add validation
 	if req == nil {
@@ -184,6 +195,7 @@ func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.
 	}, nil
 }
 
+// ToProtoDeleteTaskPushConfigRequest converts a [a2a.DeleteTaskPushConfigRequest] to a [a2apb.DeleteTaskPushNotificationConfigRequest].
 func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*a2apb.DeleteTaskPushNotificationConfigRequest, error) {
 	// TODO: add validation
 	if req == nil {
@@ -196,6 +208,7 @@ func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*
 	}, nil
 }
 
+// ToProtoSendMessageResponse converts a [a2a.SendMessageResult] to a [a2apb.SendMessageResponse].
 func ToProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessageResponse, error) {
 	resp := &a2apb.SendMessageResponse{}
 	switch r := result.(type) {
@@ -217,6 +230,7 @@ func ToProtoSendMessageResponse(result a2a.SendMessageResult) (*a2apb.SendMessag
 	return resp, nil
 }
 
+// ToProtoStreamResponse converts a [a2a.Event] to a [a2apb.StreamResponse].
 func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 	resp := &a2apb.StreamResponse{}
 	switch e := event.(type) {
@@ -464,6 +478,7 @@ func toProtoArtifacts(artifacts []*a2a.Artifact) ([]*a2apb.Artifact, error) {
 	return result, nil
 }
 
+// ToProtoTask converts a [a2a.Task] to a [a2apb.Task].
 func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	// TODO: add validation
 	if task == nil {
@@ -501,6 +516,7 @@ func ToProtoTask(task *a2a.Task) (*a2apb.Task, error) {
 	return result, nil
 }
 
+// ToProtoListTasksRequest converts a [a2a.ListTasksRequest] to a [a2apb.ListTasksRequest].
 func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksRequest, error) {
 	if request == nil {
 		return nil, nil
@@ -525,6 +541,7 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 	}, nil
 }
 
+// ToProtoListTasksResponse converts a [a2a.ListTasksResponse] to a [a2apb.ListTasksResponse].
 func ToProtoListTasksResponse(response *a2a.ListTasksResponse) (*a2apb.ListTasksResponse, error) {
 	// TODO: add validation
 	if response == nil {
@@ -548,6 +565,7 @@ func ToProtoListTasksResponse(response *a2a.ListTasksResponse) (*a2apb.ListTasks
 	return result, nil
 }
 
+// ToProtoTaskPushConfig converts a [a2a.TaskPushConfig] to a [a2apb.TaskPushNotificationConfig].
 func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	// TODO: add validation
 	if config == nil {
@@ -565,13 +583,13 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 
 	return &a2apb.TaskPushNotificationConfig{
 		Tenant:                 config.Tenant,
-		Id:                     string(config.ID),
 		TaskId:                 string(config.TaskID),
 		PushNotificationConfig: pConfig,
 	}, nil
 }
 
-func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+// ToProtoListTaskPushConfigResponse converts a [a2a.ListTaskPushConfigResponse] to a [a2apb.ListTaskPushNotificationConfigResponse].
+func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2apb.ListTaskPushNotificationConfigsResponse, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -583,18 +601,19 @@ func ToProtoListTaskPushConfigResponse(req *a2a.ListTaskPushConfigResponse) (*a2
 		}
 		configs[i] = configProto
 	}
-	return &a2apb.ListTaskPushNotificationConfigResponse{
+	return &a2apb.ListTaskPushNotificationConfigsResponse{
 		Configs:       configs,
 		NextPageToken: req.NextPageToken,
 	}, nil
 }
 
-func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigRequest, error) {
+// ToProtoListTaskPushConfigRequest converts a [a2a.ListTaskPushConfigRequest] to a [a2apb.ListTaskPushNotificationConfigRequest].
+func ToProtoListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) (*a2apb.ListTaskPushNotificationConfigsRequest, error) {
 	// TODO: add validation
 	if req == nil {
 		return nil, nil
 	}
-	return &a2apb.ListTaskPushNotificationConfigRequest{
+	return &a2apb.ListTaskPushNotificationConfigsRequest{
 		Tenant:    req.Tenant,
 		TaskId:    string(req.TaskID),
 		PageSize:  int32(req.PageSize),
@@ -871,6 +890,7 @@ func toProtoAgentCardSignatures(in []a2a.AgentCardSignature) ([]*a2apb.AgentCard
 	return out, nil
 }
 
+// ToProtoAgentCard converts a [a2a.AgentCard] to a [a2apb.AgentCard].
 func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	// TODO: add validation
 	if card == nil {
@@ -912,6 +932,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	return result, nil
 }
 
+// ToProtoGetExtendedAgentCardRequest converts a [a2a.GetExtendedAgentCardRequest] to a [a2apb.GetExtendedAgentCardRequest].
 func ToProtoGetExtendedAgentCardRequest(req *a2a.GetExtendedAgentCardRequest) (*a2apb.GetExtendedAgentCardRequest, error) {
 	if req == nil {
 		return nil, nil

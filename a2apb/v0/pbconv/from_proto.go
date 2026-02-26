@@ -32,6 +32,7 @@ func fromProtoMap(meta *structpb.Struct) map[string]any {
 	return meta.AsMap()
 }
 
+// FromProtoSendMessageRequest converts a [a2apb.SendMessageRequest] to a [a2a.SendMessageRequest].
 func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.SendMessageRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -54,6 +55,7 @@ func FromProtoSendMessageRequest(req *a2apb.SendMessageRequest) (*a2a.SendMessag
 	}, nil
 }
 
+// FromProtoMessage converts a [a2apb.Message] to a [a2a.Message].
 func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	if pMsg == nil {
 		return nil, nil
@@ -181,6 +183,7 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Send
 	return result, nil
 }
 
+// FromProtoGetTaskRequest converts a [a2apb.GetTaskRequest] to a [a2a.GetTaskRequest].
 func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.GetTaskRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -200,6 +203,7 @@ func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.GetTaskRequest, er
 	return request, nil
 }
 
+// FromProtoListTasksRequest converts a [a2apb.ListTasksRequest] to a [a2a.ListTasksRequest].
 func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -227,6 +231,7 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 	}, nil
 }
 
+// FromProtoListTasksResponse converts a [a2apb.ListTasksResponse] to a [a2a.ListTasksResponse].
 func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksResponse, error) {
 	if resp == nil {
 		return nil, nil
@@ -249,6 +254,7 @@ func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksRe
 	}, nil
 }
 
+// FromProtoCreateTaskPushConfigRequest converts a [a2apb.CreateTaskPushNotificationConfigRequest] to a [a2a.CreateTaskPushConfigRequest].
 func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.CreateTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -272,6 +278,7 @@ func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 	return &a2a.CreateTaskPushConfigRequest{TaskID: taskID, Config: *pConf}, nil
 }
 
+// FromProtoGetTaskPushConfigRequest converts a [a2apb.GetTaskPushNotificationConfigRequest] to a [a2a.GetTaskPushConfigRequest].
 func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigRequest) (*a2a.GetTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -290,6 +297,7 @@ func FromProtoGetTaskPushConfigRequest(req *a2apb.GetTaskPushNotificationConfigR
 	return &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: configID}, nil
 }
 
+// FromProtoDeleteTaskPushConfigRequest converts a [a2apb.DeleteTaskPushNotificationConfigRequest] to a [a2a.DeleteTaskPushConfigRequest].
 func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationConfigRequest) (*a2a.DeleteTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
@@ -308,6 +316,7 @@ func FromProtoDeleteTaskPushConfigRequest(req *a2apb.DeleteTaskPushNotificationC
 	return &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: configID}, nil
 }
 
+// FromProtoSendMessageResponse converts a [a2apb.SendMessageResponse] to a [a2a.SendMessageResult].
 func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMessageResult, error) {
 	if resp == nil {
 		return nil, nil
@@ -323,6 +332,7 @@ func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMess
 	}
 }
 
+// FromProtoStreamResponse converts a [a2apb.StreamResponse] to a [a2a.Event].
 func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 	if resp == nil {
 		return nil, nil
@@ -464,6 +474,7 @@ func fromProtoArtifacts(pArtifacts []*a2apb.Artifact) ([]*a2a.Artifact, error) {
 	return result, nil
 }
 
+// FromProtoTask converts a [a2apb.Task] to a [a2a.Task].
 func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	if pTask == nil {
 		return nil, nil
@@ -496,6 +507,7 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	return result, nil
 }
 
+// FromProtoTaskPushConfig converts a [a2apb.TaskPushNotificationConfig] to a [a2a.TaskPushConfig].
 func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2a.TaskPushConfig, error) {
 	if pTaskConfig == nil {
 		return nil, nil
@@ -528,6 +540,7 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 	return &a2a.TaskPushConfig{TaskID: taskID, Config: *config}, nil
 }
 
+// FromProtoListTaskPushConfigRequest converts a [a2apb.ListTaskPushNotificationConfigRequest] to a [a2a.ListTaskPushConfigRequest].
 func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfigRequest) (*a2a.ListTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is nil")
@@ -545,6 +558,7 @@ func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfi
 	}, nil
 }
 
+// FromProtoListTaskPushConfigResponse converts a [a2apb.ListTaskPushNotificationConfigResponse] to a [a2a.ListTaskPushConfigResponse].
 func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigResponse) (*a2a.ListTaskPushConfigResponse, error) {
 	if resp == nil {
 		return nil, fmt.Errorf("response is nil")
@@ -751,6 +765,7 @@ func fromProtoAgentCardSignatures(in []*a2apb.AgentCardSignature) []a2a.AgentCar
 	return out
 }
 
+// FromProtoAgentCard converts a [a2apb.AgentCard] to a [a2a.AgentCard].
 func FromProtoAgentCard(pCard *a2apb.AgentCard) (*a2a.AgentCard, error) {
 	if pCard == nil {
 		return nil, nil

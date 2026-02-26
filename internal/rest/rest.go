@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package rest provides REST protocol constants and error handling for A2A.
 package rest
 
 import (
@@ -23,50 +24,62 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
+// MakeListTasksPath returns the REST path for listing tasks.
 func MakeListTasksPath() string {
 	return "/tasks"
 }
 
+// MakeSendMessagePath returns the REST path for sending a message.
 func MakeSendMessagePath() string {
 	return "/message:send"
 }
 
+// MakeStreamMessagePath returns the REST path for streaming messages.
 func MakeStreamMessagePath() string {
 	return "/message:stream"
 }
 
+// MakeGetExtendedAgentCardPath returns the REST path for getting an extended agent card.
 func MakeGetExtendedAgentCardPath() string {
 	return "/extendedAgentCard"
 }
 
+// MakeGetTaskPath returns the REST path for getting a specific task.
 func MakeGetTaskPath(taskID string) string {
 	return "/tasks/" + taskID
 }
 
+// MakeCancelTaskPath returns the REST path for cancelling a task.
 func MakeCancelTaskPath(taskID string) string {
 	return "/tasks/" + taskID + ":cancel"
 }
 
+// MakeSubscribeTaskPath returns the REST path for subscribing to task updates.
 func MakeSubscribeTaskPath(taskID string) string {
 	return "/tasks/" + taskID + ":subscribe"
 }
 
+// MakeCreatePushConfigPath returns the REST path for creating a push notification config for a task.
 func MakeCreatePushConfigPath(taskID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs"
 }
 
+// MakeGetPushConfigPath returns the REST path for getting a specific push notification config for a task.
 func MakeGetPushConfigPath(taskID, configID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
+// MakeListPushConfigsPath returns the REST path for listing push notification configs for a task.
 func MakeListPushConfigsPath(taskID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs"
 }
 
+// MakeDeletePushConfigPath returns the REST path for deleting a push notification config for a task.
 func MakeDeletePushConfigPath(taskID, configID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
+// Error represents a problem detail as defined in RFC 7807.
 type Error struct {
 	Type      string `json:"type"`
 	Title     string `json:"title"`
@@ -113,7 +126,7 @@ var errToDetails = map[error]errorDetails{
 		uri:    "https://a2a-protocol.org/errors/invalid-agent-response",
 		title:  "Invalid Agent Response",
 	},
-	a2a.ErrAuthenticatedExtendedCardNotConfigured: {
+	a2a.ErrExtendedCardNotConfigured: {
 		status: http.StatusBadRequest,
 		uri:    "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
 		title:  "Extended Agent Card Not Configured",
@@ -163,6 +176,7 @@ func ToA2AError(resp *http.Response) error {
 	return fmt.Errorf("%s: %w", e.Detail, a2aError)
 }
 
+// ToRESTError converts an error and a [a2a.TaskID] to a REST [Error].
 func ToRESTError(err error, taskID a2a.TaskID) *Error {
 	// Default to Internal Server Error
 	e := &Error{
