@@ -1203,7 +1203,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 	}
 }
 
-func TestGrpcHandler_GetAgentCard(t *testing.T) {
+func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 	ctx := t.Context()
 
 	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}

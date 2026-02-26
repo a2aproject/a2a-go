@@ -27,6 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
@@ -81,12 +82,21 @@ type defaultRequestHandler struct {
 	reqContextInterceptors []ExecutorContextInterceptor
 
 	authenticatedCardProducer ExtendedAgentCardProducer
+	capabilities              *a2a.AgentCapabilities
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
 
 // RequestHandlerOption can be used to customize the default [RequestHandler] implementation behavior.
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
+
+// WithCapabilityChecks sets the provided capabilities for the request handler.
+func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.capabilities = capabilities
+		ih.capabilities = capabilities
+	}
+}
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
 // on method invocations. Any injected dependency will be able to access the logger using
@@ -286,6 +296,10 @@ func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMe
 // SendStreamingMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
+		if h.capabilities != nil && !h.capabilities.Streaming {
+			yield(nil, a2a.ErrUnsupportedOperation)
+			return
+		}
 		subscription, err := h.handleSendMessage(ctx, req)
 		if err != nil {
 			yield(nil, err)
@@ -303,6 +317,10 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 // SubscribeToTask implements RequestHandler.
 func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
+		if h.capabilities != nil && !h.capabilities.Streaming {
+			yield(nil, a2a.ErrUnsupportedOperation)
+			return
+		}
 		if req == nil {
 			yield(nil, a2a.ErrInvalidParams)
 			return
@@ -340,8 +358,8 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 
 // GetTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushSender == nil {
-		return nil, a2a.ErrPushNotificationNotSupported
+	if err := checkPushNotificationSupport(h, ctx); err != nil {
+		return nil, err
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
 	if err != nil {
@@ -358,8 +376,8 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 
 // ListTaskPushConfigs implements RequestHandler.
 func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushSender == nil {
-		return nil, a2a.ErrPushNotificationNotSupported
+	if err := checkPushNotificationSupport(h, ctx); err != nil {
+		return nil, err
 	}
 	configs, err := h.pushConfigStore.List(ctx, req.TaskID)
 	if err != nil {
@@ -377,8 +395,8 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 
 // CreateTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	if h.pushConfigStore == nil || h.pushSender == nil {
-		return nil, a2a.ErrPushNotificationNotSupported
+	if err := checkPushNotificationSupport(h, ctx); err != nil {
+		return nil, err
 	}
 
 	saved, err := h.pushConfigStore.Save(ctx, req.TaskID, &req.Config)
@@ -391,14 +409,17 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 // DeleteTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	if h.pushConfigStore == nil || h.pushSender == nil {
-		return a2a.ErrPushNotificationNotSupported
+	if err := checkPushNotificationSupport(h, ctx); err != nil {
+		return err
 	}
 	return h.pushConfigStore.Delete(ctx, req.TaskID, req.ID)
 }
 
 // GetExtendedAgentCard implements RequestHandler.
 func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	if h.capabilities != nil && !h.capabilities.ExtendedAgentCard {
+		return nil, a2a.ErrUnsupportedOperation
+	}
 	if h.authenticatedCardProducer == nil {
 		return nil, a2a.ErrExtendedCardNotConfigured
 	}
@@ -424,4 +445,21 @@ func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (
 	}
 
 	return "", false
+}
+
+func checkPushNotificationSupport(h *defaultRequestHandler, ctx context.Context) error {
+	// With capability checks, PushNootifications not supported
+	if h.capabilities != nil && !h.capabilities.PushNotifications {
+		return a2a.ErrPushNotificationNotSupported
+	}
+	// With capability checks, PushNootifications supported, but not configured
+	if h.capabilities != nil && (h.pushConfigStore == nil || h.pushSender == nil) {
+		log.Error(ctx, "push notifications are enabled but push config store or sender is not configured", a2a.ErrInternalError)
+		return a2a.ErrInternalError
+	}
+	// Without capability checks and PushNootifications are not configured
+	if h.pushConfigStore == nil || h.pushSender == nil {
+		return a2a.ErrPushNotificationNotSupported
+	}
+	return nil
 }
