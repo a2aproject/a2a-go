@@ -19,7 +19,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 func closeSQLRows(ctx context.Context, rows *sql.Rows) {

@@ -18,7 +18,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // ErrTaskAlreadyExists indicates that a task with the provided ID already exists.

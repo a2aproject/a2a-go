@@ -21,12 +21,12 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/eventpipe"
-	"github.com/a2aproject/a2a-go/internal/taskexec"
-	"github.com/a2aproject/a2a-go/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v1/internal/taskexec"
+	"github.com/a2aproject/a2a-go/v1/internal/taskupdate"
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.

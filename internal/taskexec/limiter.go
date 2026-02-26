@@ -19,8 +19,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 var errQuotaOverTheLimited = errors.New("bug: acquireQuotaLocked detected quota over the limit")

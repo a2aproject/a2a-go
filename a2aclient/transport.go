@@ -19,7 +19,7 @@ import (
 	"errors"
 	"iter"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // Transport defines a transport-agnostic interface for making A2A requests.

@@ -1,4 +1,4 @@
-module github.com/a2aproject/a2a-go
+module github.com/a2aproject/a2a-go/v1
 
 go 1.24.4
 
