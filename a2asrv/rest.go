@@ -52,8 +52,8 @@ func NewRESTHandler(handler RequestHandler) http.Handler {
 }
 
 // NewTenantRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
-// It extracts tenant information from the URL path based on a provided template, strips the tenant prefix,
-// and attaches the tenant ID to the request context.
+// It extracts tenant information from the URL path based on the provided template, strips the prefix,
+// and attaches the tenant ID (part inside {}) to the request context.
 // Examples of templates:
 // - "/{*}"
 // - "/locations/*/projects/{*}"
