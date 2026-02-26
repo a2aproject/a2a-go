@@ -167,9 +167,9 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 
 		var events iter.Seq2[a2a.Event, error]
 		switch req.Method {
-		case jsonrpc.MethodTasksResubscribe:
+		case methodTasksResubscribe:
 			events = h.onResubscribeToTask(requestCtx, req.Params)
-		case jsonrpc.MethodMessageStream:
+		case methodMessageStream:
 			events = h.onSendMessageStream(requestCtx, req.Params)
 		default:
 			events = func(yield func(a2a.Event, error) bool) { yield(nil, a2a.ErrMethodNotFound) }
