@@ -16,7 +16,7 @@ package a2asrv
 
 import "time"
 
-// WithKeepAlive enables SSE keep-alive messages at the specified interval.
+// WithTransportKeepAlive enables SSE keep-alive messages at the specified interval.
 // Keep-alive messages prevent API gateways from dropping idle connections.
 // If interval is 0 or negative, keep-alive is disabled (default behavior).
 func WithTransportKeepAlive(interval time.Duration) TransportOption {
@@ -25,7 +25,7 @@ func WithTransportKeepAlive(interval time.Duration) TransportOption {
 	}
 }
 
-// WithPanicHandler sets a custom panic handler for the transport bindings.
+// WithTransportPanicHandler sets a custom panic handler for the transport bindings.
 // This gives the ability to recovery from panic by returning an error to the client.
 func WithTransportPanicHandler(handler func(r any) error) TransportOption {
 	return func(h *TransportConfig) {
