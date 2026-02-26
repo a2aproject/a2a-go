@@ -309,5 +309,5 @@ func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {
 	if len(activated) == 0 {
 		return metadata.MD{}
 	}
-	return metadata.MD{strings.ToLower(a2asrv.ExtensionsMetaKey): activated}
+	return metadata.MD{strings.ToLower(a2a.SvcParamExtensions): activated}
 }

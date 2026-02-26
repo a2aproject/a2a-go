@@ -27,7 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/log"
 )
 
-var tokenHeader = http.CanonicalHeaderKey("X-A2A-Notification-Token")
+var tokenHeader = http.CanonicalHeaderKey("A2A-Notification-Token")
 
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {

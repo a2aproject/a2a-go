@@ -2054,7 +2054,7 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			)
 
 			params := NewServiceParams(map[string][]string{
-				ExtensionsMetaKey: tt.clientSupports,
+				a2a.SvcParamExtensions: tt.clientSupports,
 			})
 			newCtx, _ := NewCallContext(ctx, params)
 

@@ -259,9 +259,15 @@ func withGRPCMetadata(ctx context.Context, params a2aclient.ServiceParams) conte
 	if len(params) == 0 {
 		return ctx
 	}
+	extKey := strings.ToLower(a2a.SvcParamExtensions)
 	meta := metadata.MD{}
 	for k, vals := range params {
-		meta[strings.ToLower(k)] = vals
+		lk := strings.ToLower(k)
+		if lk == extKey {
+			meta["x-"+lk] = vals
+		} else {
+			meta[lk] = vals
+		}
 	}
 	return metadata.NewOutgoingContext(ctx, meta)
 }

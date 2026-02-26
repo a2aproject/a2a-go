@@ -17,6 +17,7 @@ package a2aext
 import (
 	"context"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2aclient"
 )
 
@@ -45,7 +46,7 @@ func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context
 		}
 	}
 	if len(toAppend) > 0 {
-		req.ServiceParams.Append(ServiceParamsKey, toAppend...)
+		req.ServiceParams.Append(a2a.SvcParamExtensions, toAppend...)
 	}
 
 	return ctx, nil, nil

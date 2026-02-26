@@ -107,11 +107,8 @@ func TestActivator(t *testing.T) {
 				t.Fatalf("client.SendMessage() error = %v", err)
 			}
 
-			var gotExtensions []string
-			if vals, ok := gotHeaders[ServiceParamsKey]; ok {
-				gotExtensions = vals
-			}
-			if diff := cmp.Diff(tc.clientSends, gotExtensions); diff != "" {
+			gotExtensions, _ := a2asrv.NewServiceParams(gotHeaders).Get(a2a.SvcParamExtensions)
+			if diff := cmp.Diff(tc.clientSends, gotExtensions, cmpIgnoreHeaderCase()); diff != "" {
 				t.Errorf("wrong extension headers (+got,-want), diff = %s", diff)
 			}
 		})

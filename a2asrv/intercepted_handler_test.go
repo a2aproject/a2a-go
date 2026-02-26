@@ -546,7 +546,7 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 				return nil
 			}
 
-			key := ExtensionsMetaKey
+			key := a2a.SvcParamExtensions
 			wantVal := "test"
 			meta := map[string][]string{key: {wantVal}}
 			ctx, callCtx := NewCallContext(ctx, NewServiceParams(meta))

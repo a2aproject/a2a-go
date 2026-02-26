@@ -17,9 +17,12 @@ package a2av0
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 )
+
+var lowerSvcParamExtensionsKey = strings.ToLower(a2a.SvcParamExtensions)
 
 var coreToCompatTaskState = map[a2a.TaskState]taskState{
 	a2a.TaskStateAuthRequired:  taskStateAuthRequired,

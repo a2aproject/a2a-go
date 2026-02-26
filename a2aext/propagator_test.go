@@ -21,6 +21,7 @@ import (
 	"maps"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -53,15 +54,15 @@ func TestTripleHopPropagation(t *testing.T) {
 				"not-extension":  "qux",
 			},
 			clientReqHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com", "extension2.com"},
-				"x-ignore":       {"ignored"},
+				a2a.SvcParamExtensions: {"extension1.com", "extension2.com"},
+				"x-ignore":             {"ignored"},
 			},
 			wantPropagatedMeta: map[string]any{
 				"extension1.com": "bar",
 				"extension2.com": map[string]any{"nested": "bar"},
 			},
 			wantPropagatedHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com", "extension2.com"},
+				a2a.SvcParamExtensions: {"extension1.com", "extension2.com"},
 			},
 		},
 		{
@@ -143,7 +144,7 @@ func TestTripleHopPropagation(t *testing.T) {
 					"accept-encoding", "content-length", "content-type", "keep-header", "user-agent", "a2a-version",
 				}, k)
 			})
-			if diff := cmp.Diff(tc.wantPropagatedHeaders, gotHeaders, ignoreStdHeaders); diff != "" {
+			if diff := cmp.Diff(tc.wantPropagatedHeaders, gotHeaders, ignoreStdHeaders, cmpIgnoreHeaderCase()); diff != "" {
 				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)
 			}
 		})
@@ -167,7 +168,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
 			clientReqHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com", "extension2.com"},
+				a2a.SvcParamExtensions: {"extension1.com", "extension2.com"},
 			},
 			serverASupports: []string{"extension1.com", "extension2.com"},
 			serverBSupports: []string{"extension1.com", "extension2.com"},
@@ -176,7 +177,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]any{"nested": "bar"},
 			},
 			wantBReceivedHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com", "extension2.com"},
+				a2a.SvcParamExtensions: {"extension1.com", "extension2.com"},
 			},
 		},
 		{
@@ -186,7 +187,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension2.com": map[string]string{"nested": "bar"},
 			},
 			clientReqHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com", "extension2.com"},
+				a2a.SvcParamExtensions: {"extension1.com", "extension2.com"},
 			},
 			serverASupports: []string{"extension1.com", "extension2.com"},
 			serverBSupports: []string{"extension1.com"},
@@ -194,7 +195,7 @@ func TestDefaultPropagation(t *testing.T) {
 				"extension1.com": "bar",
 			},
 			wantBReceivedHeaders: map[string][]string{
-				ServiceParamsKey: {"extension1.com"},
+				a2a.SvcParamExtensions: {"extension1.com"},
 			},
 		},
 	}
@@ -249,11 +250,21 @@ func TestDefaultPropagation(t *testing.T) {
 					"accept-encoding", "content-length", "content-type", "keep-header", "user-agent", "a2a-version",
 				}, k)
 			})
-			if diff := cmp.Diff(tc.wantBReceivedHeaders, gotHeaders, ignoreStdHeaders); diff != "" {
+			if diff := cmp.Diff(tc.wantBReceivedHeaders, gotHeaders, ignoreStdHeaders, cmpIgnoreHeaderCase()); diff != "" {
 				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)
 			}
 		})
 	}
+}
+
+func cmpIgnoreHeaderCase() cmp.Option {
+	return cmp.Transformer("IgnoreHeaderCase", func(h map[string][]string) map[string][]string {
+		normalized := make(map[string][]string, len(h))
+		for k, v := range h {
+			normalized[strings.ToLower(k)] = v
+		}
+		return normalized
+	})
 }
 
 func startServer(t *testing.T, interceptor a2asrv.CallInterceptor, executor a2asrv.AgentExecutor) *a2a.AgentInterface {
