@@ -56,7 +56,7 @@ func WithPanicHandler(handler func(r any) error) JSONRPCHandlerOption {
 	}
 }
 
-// NewJSONRPCHandler creates an [http.Handler] implementation for serving A2A-protocol over JSONRPC.
+// NewJSONRPCHandler creates an [http.Handler] which implements JSONRPC A2A protocol binding.
 func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) http.Handler {
 	h := &jsonrpcHandler{handler: handler}
 	for _, option := range options {
@@ -65,9 +65,10 @@ func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) 
 	return h
 }
 
+// ServeHTTP implements http.Handler.
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, _ = WithCallContext(ctx, NewServiceParams(req.Header))
+	ctx, _ = NewCallContext(ctx, NewServiceParams(req.Header))
 
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
@@ -135,13 +136,13 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	case jsonrpc.MethodPushConfigGet:
 		result, err = h.onGetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigList:
-		result, err = h.onListTaskPushConfig(ctx, req.Params)
+		result, err = h.onListTaskPushConfigs(ctx, req.Params)
 	case jsonrpc.MethodPushConfigSet:
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigDelete:
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodGetExtendedAgentCard:
-		result, err = h.onGetAgentCard(ctx)
+		result, err = h.onGetExtendedAgentCard(ctx, req.Params)
 	case "":
 		err = a2a.ErrInvalidRequest
 	default:
@@ -343,12 +344,12 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return h.handler.GetTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfig(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
 	var params a2a.ListTaskPushConfigRequest
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
-	return h.handler.ListTaskPushConfig(ctx, &params)
+	return h.handler.ListTaskPushConfigs(ctx, &params)
 }
 
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
@@ -367,8 +368,12 @@ func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 	return h.handler.DeleteTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	return h.handler.GetExtendedAgentCard(ctx)
+func (h *jsonrpcHandler) onGetExtendedAgentCard(ctx context.Context, raw json.RawMessage) (*a2a.AgentCard, error) {
+	var params a2a.GetExtendedAgentCardRequest
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, handleUnmarshalError(err)
+	}
+	return h.handler.GetExtendedAgentCard(ctx, &params)
 }
 
 func marshalJSONRPCError(req *jsonrpc.ServerRequest, err error) ([]byte, bool) {

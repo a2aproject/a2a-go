@@ -26,6 +26,7 @@ var (
 	configIDRegex = regexp.MustCompile(`pushNotificationConfigs/([^/]*)`)
 )
 
+// ExtractTaskID extracts the task ID from a resource name.
 func ExtractTaskID(name string) (a2a.TaskID, error) {
 	matches := taskIDRegex.FindStringSubmatch(name)
 	if len(matches) < 2 {
@@ -34,10 +35,12 @@ func ExtractTaskID(name string) (a2a.TaskID, error) {
 	return a2a.TaskID(matches[1]), nil
 }
 
+// MakeTaskName creates a task resource name from a task ID.
 func MakeTaskName(taskID a2a.TaskID) string {
 	return "tasks/" + string(taskID)
 }
 
+// ExtractConfigID extracts the config ID from a resource name.
 func ExtractConfigID(name string) (string, error) {
 	matches := configIDRegex.FindStringSubmatch(name)
 	if len(matches) < 2 {
@@ -46,6 +49,7 @@ func ExtractConfigID(name string) (string, error) {
 	return matches[1], nil
 }
 
+// MakeConfigName creates a config resource name from a task ID and a config ID.
 func MakeConfigName(taskID a2a.TaskID, configID string) string {
 	return MakeTaskName(taskID) + "/pushNotificationConfigs/" + configID
 }

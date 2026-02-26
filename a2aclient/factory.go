@@ -105,7 +105,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
-		baseURL:         selected.endpoint.URL,
+		endpoint:        *selected.endpoint,
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
 	client.card.Store(card)
@@ -134,7 +134,7 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		transport:       conn,
 		interceptors:    f.interceptors,
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
-		baseURL:         selected.endpoint.URL,
+		endpoint:        *selected.endpoint,
 	}, nil
 }
 

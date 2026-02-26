@@ -47,6 +47,7 @@ func NewHandler(handler a2asrv.RequestHandler) *Handler {
 	return &Handler{handler: handler}
 }
 
+// SendMessage implements a2apb.A2AServiceServer.
 func (h *Handler) SendMessage(ctx context.Context, pbReq *a2apb.SendMessageRequest) (*a2apb.SendMessageResponse, error) {
 	req, err := pbconv.FromProtoSendMessageRequest(pbReq)
 	if err != nil {
@@ -70,6 +71,7 @@ func (h *Handler) SendMessage(ctx context.Context, pbReq *a2apb.SendMessageReque
 	return pbRes, nil
 }
 
+// SendStreamingMessage implements a2apb.A2AServiceServer.
 func (h *Handler) SendStreamingMessage(pbReq *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	req, err := pbconv.FromProtoSendMessageRequest(pbReq)
 	if err != nil {
@@ -95,6 +97,7 @@ func (h *Handler) SendStreamingMessage(pbReq *a2apb.SendMessageRequest, stream g
 	return nil
 }
 
+// GetTask implements a2apb.A2AServiceServer.
 func (h *Handler) GetTask(ctx context.Context, pbReq *a2apb.GetTaskRequest) (*a2apb.Task, error) {
 	req, err := pbconv.FromProtoGetTaskRequest(pbReq)
 	if err != nil {
@@ -117,6 +120,7 @@ func (h *Handler) GetTask(ctx context.Context, pbReq *a2apb.GetTaskRequest) (*a2
 	return pbTask, nil
 }
 
+// ListTasks implements a2apb.A2AServiceServer.
 func (h *Handler) ListTasks(ctx context.Context, pbReq *a2apb.ListTasksRequest) (*a2apb.ListTasksResponse, error) {
 	req, err := pbconv.FromProtoListTasksRequest(pbReq)
 	if err != nil {
@@ -139,6 +143,7 @@ func (h *Handler) ListTasks(ctx context.Context, pbReq *a2apb.ListTasksRequest) 
 	return pbResp, nil
 }
 
+// CancelTask implements a2apb.A2AServiceServer.
 func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
 	taskID := a2a.TaskID(pbReq.GetId())
 
@@ -158,6 +163,7 @@ func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest
 	return pbTask, nil
 }
 
+// SubscribeToTask implements a2apb.A2AServiceServer.
 func (h *Handler) SubscribeToTask(pbReq *a2apb.SubscribeToTaskRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
 	taskID := a2a.TaskID(pbReq.GetId())
 
@@ -180,6 +186,7 @@ func (h *Handler) SubscribeToTask(pbReq *a2apb.SubscribeToTaskRequest, stream gr
 	return nil
 }
 
+// CreateTaskPushNotificationConfig implements a2apb.A2AServiceServer.
 func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	req, err := pbconv.FromProtoCreateTaskPushConfigRequest(pbReq)
 	if err != nil {
@@ -202,6 +209,7 @@ func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, pbReq *a
 	return pbConfig, nil
 }
 
+// GetTaskPushNotificationConfig implements a2apb.A2AServiceServer.
 func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.GetTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	req, err := pbconv.FromProtoGetTaskPushConfigRequest(pbReq)
 	if err != nil {
@@ -224,14 +232,15 @@ func (h *Handler) GetTaskPushNotificationConfig(ctx context.Context, pbReq *a2ap
 	return pbConfig, nil
 }
 
-func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.ListTaskPushNotificationConfigRequest) (*a2apb.ListTaskPushNotificationConfigResponse, error) {
+// ListTaskPushNotificationConfigs implements a2apb.A2AServiceServer.
+func (h *Handler) ListTaskPushNotificationConfigs(ctx context.Context, pbReq *a2apb.ListTaskPushNotificationConfigsRequest) (*a2apb.ListTaskPushNotificationConfigsResponse, error) {
 	req, err := pbconv.FromProtoListTaskPushConfigRequest(pbReq)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 
 	ctx, callCtx := withCallContext(ctx)
-	configs, err := h.handler.ListTaskPushConfig(ctx, req)
+	configs, err := h.handler.ListTaskPushConfigs(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -251,8 +260,14 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 	return pbResp, nil
 }
 
+// GetExtendedAgentCard implements a2apb.A2AServiceServer.
 func (h *Handler) GetExtendedAgentCard(ctx context.Context, pbReq *a2apb.GetExtendedAgentCardRequest) (*a2apb.AgentCard, error) {
-	card, err := h.handler.GetExtendedAgentCard(ctx)
+	req, err := pbconv.FromProtoGetExtendedAgentCardRequest(pbReq)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
+	}
+
+	card, err := h.handler.GetExtendedAgentCard(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -263,6 +278,7 @@ func (h *Handler) GetExtendedAgentCard(ctx context.Context, pbReq *a2apb.GetExte
 	return pbCard, nil
 }
 
+// DeleteTaskPushNotificationConfig implements a2apb.A2AServiceServer.
 func (h *Handler) DeleteTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error) {
 	req, err := pbconv.FromProtoDeleteTaskPushConfigRequest(pbReq)
 	if err != nil {
@@ -285,7 +301,7 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.WithCallContext(ctx, svcParams)
+	return a2asrv.NewCallContext(ctx, svcParams)
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {

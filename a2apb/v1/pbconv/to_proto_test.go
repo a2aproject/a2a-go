@@ -439,7 +439,6 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			name: "full config",
 			config: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				ID:     "tc1",
 				Config: a2a.PushConfig{
 					ID:    "c1",
 					URL:   "http://a.com",
@@ -452,7 +451,6 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				Id:     "tc1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:    "c1",
 					Url:   "http://a.com",
@@ -468,12 +466,10 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			name: "config without auth",
 			config: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				ID:     "tc1",
 				Config: a2a.PushConfig{ID: "c1", URL: "http://a.com"},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				Id:     "tc1",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{
 					Id:  "c1",
 					Url: "http://a.com",
@@ -493,7 +489,6 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId:                 "test-task",
-				Id:                     "",
 				PushNotificationConfig: &a2apb.PushNotificationConfig{},
 			},
 		},
@@ -527,13 +522,13 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 	tests := []struct {
 		name    string
 		configs *a2a.ListTaskPushConfigResponse
-		want    *a2apb.ListTaskPushNotificationConfigResponse
+		want    *a2apb.ListTaskPushNotificationConfigsResponse
 		wantErr bool
 	}{
 		{
 			name:    "success",
 			configs: configs,
-			want: &a2apb.ListTaskPushNotificationConfigResponse{
+			want: &a2apb.ListTaskPushNotificationConfigsResponse{
 				Configs:       []*a2apb.TaskPushNotificationConfig{pConf1, pConf2},
 				NextPageToken: "next",
 			},
@@ -541,7 +536,7 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		{
 			name:    "empty slice",
 			configs: &a2a.ListTaskPushConfigResponse{},
-			want: &a2apb.ListTaskPushNotificationConfigResponse{
+			want: &a2apb.ListTaskPushNotificationConfigsResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
 			},
 		},
@@ -556,12 +551,12 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ToProtoListTaskPushConfigResponse(tt.configs)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("toProtoListTaskPushConfig() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("toProtoListTaskPushConfigs() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr {
 				if !proto.Equal(got, tt.want) {
-					t.Errorf("toProtoListTaskPushConfig() got = %v, want %v", got, tt.want)
+					t.Errorf("toProtoListTaskPushConfigs() got = %v, want %v", got, tt.want)
 				}
 			}
 		})

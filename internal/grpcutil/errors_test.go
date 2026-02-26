@@ -85,9 +85,9 @@ func TestToGRPCError(t *testing.T) {
 			want: status.Error(codes.InvalidArgument, a2a.ErrInvalidParams.Error()),
 		},
 		{
-			name: "ErrAuthenticatedExtendedCardNotConfigured",
-			err:  a2a.ErrAuthenticatedExtendedCardNotConfigured,
-			want: status.Error(codes.FailedPrecondition, a2a.ErrAuthenticatedExtendedCardNotConfigured.Error()),
+			name: "ErrExtendedCardNotConfigured",
+			err:  a2a.ErrExtendedCardNotConfigured,
+			want: status.Error(codes.FailedPrecondition, a2a.ErrExtendedCardNotConfigured.Error()),
 		},
 		{
 			name: "ErrInvalidAgentResponse",

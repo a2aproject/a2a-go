@@ -27,33 +27,29 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// --8<-- [start:TaskState]
-// Defines the possible lifecycle states of a Task.
+// Defines the possible lifecycle states of a `Task`.
 type TaskState int32
 
 const (
 	// The task is in an unknown or indeterminate state.
 	TaskState_TASK_STATE_UNSPECIFIED TaskState = 0
-	// Represents the status that acknowledges a task is created.
+	// Indicates that a task has been successfully submitted and acknowledged.
 	TaskState_TASK_STATE_SUBMITTED TaskState = 1
-	// Represents the status that a task is actively being processed.
+	// Indicates that a task is actively being processed by the agent.
 	TaskState_TASK_STATE_WORKING TaskState = 2
-	// Represents the status a task is finished. This is a terminal state.
+	// Indicates that a task has finished successfully. This is a terminal state.
 	TaskState_TASK_STATE_COMPLETED TaskState = 3
-	// Represents the status a task is done but failed. This is a terminal state.
+	// Indicates that a task has finished with an error. This is a terminal state.
 	TaskState_TASK_STATE_FAILED TaskState = 4
-	// Represents the status a task was canceled before it finished.
-	// This is a terminal state.
+	// Indicates that a task was canceled before completion. This is a terminal state.
 	TaskState_TASK_STATE_CANCELED TaskState = 5
-	// Represents the status that the task requires information to complete.
-	// This is an interrupted state.
+	// Indicates that the agent requires additional user input to proceed. This is an interrupted state.
 	TaskState_TASK_STATE_INPUT_REQUIRED TaskState = 6
-	// Represents the status that the agent has decided to not perform the task.
+	// Indicates that the agent has decided to not perform the task.
 	// This may be done during initial task creation or later once an agent
 	// has determined it can't or won't proceed. This is a terminal state.
 	TaskState_TASK_STATE_REJECTED TaskState = 7
-	// Represents the state that some authentication is needed from the upstream
-	// client. This is an interrupted state. Authentication is expected to come out-of-band.
+	// Indicates that authentication is required to proceed. This is an interrupted state.
 	TaskState_TASK_STATE_AUTH_REQUIRED TaskState = 8
 )
 
@@ -110,15 +106,15 @@ func (TaskState) EnumDescriptor() ([]byte, []int) {
 	return file_a2a_proto_rawDescGZIP(), []int{0}
 }
 
-// --8<-- [start:Role]
 // Defines the sender of a message in A2A protocol communication.
 type Role int32
 
 const (
+	// The role is unspecified.
 	Role_ROLE_UNSPECIFIED Role = 0
-	// USER role refers to communication from the client to the server.
+	// The message is from the client to the server.
 	Role_ROLE_USER Role = 1
-	// AGENT role refers to communication from the server to the client.
+	// The message is from the server to the client.
 	Role_ROLE_AGENT Role = 2
 )
 
@@ -163,11 +159,11 @@ func (Role) EnumDescriptor() ([]byte, []int) {
 	return file_a2a_proto_rawDescGZIP(), []int{1}
 }
 
-// --8<-- [start:SendMessageConfiguration]
 // Configuration of a send message request.
 type SendMessageConfiguration struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A list of media types the client is prepared to accept for response parts. Agents SHOULD use this to tailor their output.
+	// A list of media types the client is prepared to accept for response parts.
+	// Agents SHOULD use this to tailor their output.
 	AcceptedOutputModes []string `protobuf:"bytes,1,rep,name=accepted_output_modes,json=acceptedOutputModes,proto3" json:"accepted_output_modes,omitempty"`
 	// Configuration for the agent to send push notifications for task updates.
 	PushNotificationConfig *PushNotificationConfig `protobuf:"bytes,2,opt,name=push_notification_config,json=pushNotificationConfig,proto3" json:"push_notification_config,omitempty"`
@@ -176,7 +172,9 @@ type SendMessageConfiguration struct {
 	// value of zero is a request to not include any messages. The server MUST NOT
 	// return more messages than the provided value, but MAY apply a lower limit.
 	HistoryLength *int32 `protobuf:"varint,3,opt,name=history_length,json=historyLength,proto3,oneof" json:"history_length,omitempty"`
-	// If true, the operation waits until the task reaches a terminal or interrupted state before returning. Default is false.
+	// If `true`, the operation MUST wait until the task reaches a terminal state
+	// (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) or an interrupted state
+	// (`INPUT_REQUIRED`, `AUTH_REQUIRED`) before returning. Default is `false`.
 	Blocking      bool `protobuf:"varint,4,opt,name=blocking,proto3" json:"blocking,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -240,8 +238,7 @@ func (x *SendMessageConfiguration) GetBlocking() bool {
 	return false
 }
 
-// --8<-- [start:Task]
-// Task is the core unit of action for A2A. It has a current status
+// `Task` is the core unit of action for A2A. It has a current status
 // and when results are created for the task they are stored in the
 // artifact. If there are multiple turns for a task, these are stored in
 // history.
@@ -253,12 +250,12 @@ type Task struct {
 	// Unique identifier (e.g. UUID) for the contextual collection of interactions
 	// (tasks and messages). Created by the A2A server.
 	ContextId string `protobuf:"bytes,2,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
-	// The current status of a Task, including state and a message.
+	// The current status of a `Task`, including `state` and a `message`.
 	Status *TaskStatus `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	// A set of output artifacts for a Task.
+	// A set of output artifacts for a `Task`.
 	Artifacts []*Artifact `protobuf:"bytes,4,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
 	// protolint:disable REPEATED_FIELD_NAMES_PLURALIZED
-	// The history of interactions from a task.
+	// The history of interactions from a `Task`.
 	History []*Message `protobuf:"bytes,5,rep,name=history,proto3" json:"history,omitempty"`
 	// protolint:enable REPEATED_FIELD_NAMES_PLURALIZED
 	// A key/value object to store custom metadata about a task.
@@ -339,12 +336,11 @@ func (x *Task) GetMetadata() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:TaskStatus]
 // A container for the status of a task
 type TaskStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The current state of this task.
-	State TaskState `protobuf:"varint,1,opt,name=state,proto3,enum=a2a.v1.TaskState" json:"state,omitempty"`
+	State TaskState `protobuf:"varint,1,opt,name=state,proto3,enum=lf.a2a.v1.TaskState" json:"state,omitempty"`
 	// A message associated with the status.
 	Message *Message `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// ISO 8601 Timestamp when the status was recorded.
@@ -405,8 +401,7 @@ func (x *TaskStatus) GetTimestamp() *timestamppb.Timestamp {
 	return nil
 }
 
-// --8<-- [start:Part]
-// Part represents a container for a section of communication content.
+// `Part` represents a container for a section of communication content.
 // Parts can be purely textual, some sort of file (image, video, etc) or
 // a structured data blob (i.e. JSON).
 type Part struct {
@@ -418,11 +413,11 @@ type Part struct {
 	//	*Part_Url
 	//	*Part_Data
 	Content isPart_Content `protobuf_oneof:"content"`
-	// Optional metadata associated with this part.
+	// Optional. metadata associated with this part.
 	Metadata *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	// An optional name for the file (e.g., "document.pdf").
+	// An optional `filename` for the file (e.g., "document.pdf").
 	Filename string `protobuf:"bytes,6,opt,name=filename,proto3" json:"filename,omitempty"`
-	// The media type (MIME type) of the part content (e.g., "text/plain", "application/json", "image/png").
+	// The `media_type` (MIME type) of the part content (e.g., "text/plain", "application/json", "image/png").
 	// This field is available for all part types.
 	MediaType     string `protobuf:"bytes,7,opt,name=media_type,json=mediaType,proto3" json:"media_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -528,22 +523,22 @@ type isPart_Content interface {
 }
 
 type Part_Text struct {
-	// The string content of the text part.
+	// The string content of the `text` part.
 	Text string `protobuf:"bytes,1,opt,name=text,proto3,oneof"`
 }
 
 type Part_Raw struct {
-	// The raw byte content of a file. In JSON serialization, this is encoded as a base64 string.
+	// The `raw` byte content of a file. In JSON serialization, this is encoded as a base64 string.
 	Raw []byte `protobuf:"bytes,2,opt,name=raw,proto3,oneof"`
 }
 
 type Part_Url struct {
-	// A URL pointing to the file's content.
+	// A `url` pointing to the file's content.
 	Url string `protobuf:"bytes,3,opt,name=url,proto3,oneof"`
 }
 
 type Part_Data struct {
-	// Arbitrary structured data as a JSON value (object, array, string, number, boolean, or null).
+	// Arbitrary structured `data` as a JSON value (object, array, string, number, boolean, or null).
 	Data *structpb.Value `protobuf:"bytes,4,opt,name=data,proto3,oneof"`
 }
 
@@ -555,31 +550,25 @@ func (*Part_Url) isPart_Content() {}
 
 func (*Part_Data) isPart_Content() {}
 
-// --8<-- [start:Message]
-// Message is one unit of communication between client and server. It can be
-// associated with a context and/or a task. For server messages, context_id must
-// be provided, and task_id only if a task was created. For client messages, both
+// `Message` is one unit of communication between client and server. It can be
+// associated with a context and/or a task. For server messages, `context_id` must
+// be provided, and `task_id` only if a task was created. For client messages, both
 // fields are optional, with the caveat that if both are provided, they have to
-// match (the context_id has to be the one that is set on the task). If only
-// task_id is provided, the server will infer context_id from it.
+// match (the `context_id` has to be the one that is set on the task). If only
+// `task_id` is provided, the server will infer `context_id` from it.
 type Message struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The unique identifier (e.g. UUID) of the message. This is required and
-	// created by the message creator.
+	// The unique identifier (e.g. UUID) of the message. This is created by the message creator.
 	MessageId string `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
-	// The context id of the message. This is optional and if set, the message
-	// will be associated with the given context.
+	// Optional. The context id of the message. If set, the message will be associated with the given context.
 	ContextId string `protobuf:"bytes,2,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
-	// The task id of the message. This is optional and if set, the message
-	// will be associated with the given task.
+	// Optional. The task id of the message. If set, the message will be associated with the given task.
 	TaskId string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// Identifies the sender of the message.
-	Role Role `protobuf:"varint,4,opt,name=role,proto3,enum=a2a.v1.Role" json:"role,omitempty"`
-	// protolint:disable REPEATED_FIELD_NAMES_PLURALIZED
+	Role Role `protobuf:"varint,4,opt,name=role,proto3,enum=lf.a2a.v1.Role" json:"role,omitempty"`
 	// Parts is the container of the message content.
 	Parts []*Part `protobuf:"bytes,5,rep,name=parts,proto3" json:"parts,omitempty"`
-	// protolint:enable REPEATED_FIELD_NAMES_PLURALIZED
-	// Any optional metadata to provide along with the message.
+	// Optional. Any metadata to provide along with the message.
 	Metadata *structpb.Struct `protobuf:"bytes,6,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// The URIs of extensions that are present or contributed to this Message.
 	Extensions []string `protobuf:"bytes,7,rep,name=extensions,proto3" json:"extensions,omitempty"`
@@ -675,23 +664,21 @@ func (x *Message) GetReferenceTaskIds() []string {
 	return nil
 }
 
-// --8<-- [start:Artifact]
 // Artifacts represent task outputs.
 type Artifact struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier (e.g. UUID) for the artifact. It must be at least unique
-	// within a task.
+	// Unique identifier (e.g. UUID) for the artifact. It must be unique within a task.
 	ArtifactId string `protobuf:"bytes,1,opt,name=artifact_id,json=artifactId,proto3" json:"artifact_id,omitempty"`
 	// A human readable name for the artifact.
-	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	// A human readable description of the artifact, optional.
-	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Optional. A human readable description of the artifact.
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	// The content of the artifact. Must contain at least one part.
-	Parts []*Part `protobuf:"bytes,5,rep,name=parts,proto3" json:"parts,omitempty"`
-	// Optional metadata included with the artifact.
-	Metadata *structpb.Struct `protobuf:"bytes,6,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Parts []*Part `protobuf:"bytes,4,rep,name=parts,proto3" json:"parts,omitempty"`
+	// Optional. Metadata included with the artifact.
+	Metadata *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// The URIs of extensions that are present or contributed to this Artifact.
-	Extensions    []string `protobuf:"bytes,7,rep,name=extensions,proto3" json:"extensions,omitempty"`
+	Extensions    []string `protobuf:"bytes,6,rep,name=extensions,proto3" json:"extensions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -768,19 +755,17 @@ func (x *Artifact) GetExtensions() []string {
 	return nil
 }
 
-// --8<-- [start:TaskStatusUpdateEvent]
-// An event sent by the agent to notify the client of a change in a task's
-// status.
+// An event sent by the agent to notify the client of a change in a task's status.
 type TaskStatusUpdateEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The id of the task that is changed
+	// The ID of the task that has changed.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// The id of the context that the task belongs to
+	// The ID of the context that the task belongs to.
 	ContextId string `protobuf:"bytes,2,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
 	// The new status of the task.
 	Status *TaskStatus `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	// Optional metadata to associate with the task update.
-	Metadata      *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// Optional. Metadata associated with the task update.
+	Metadata      *structpb.Struct `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -843,14 +828,12 @@ func (x *TaskStatusUpdateEvent) GetMetadata() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:TaskArtifactUpdateEvent]
-// TaskArtifactUpdateEvent represents a task delta where an artifact has
-// been generated.
+// A task delta where an artifact has been generated.
 type TaskArtifactUpdateEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The id of the task for this artifact.
+	// The ID of the task for this artifact.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// The id of the context that this task belongs to.
+	// The ID of the context that this task belongs to.
 	ContextId string `protobuf:"bytes,2,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
 	// The artifact that was generated or updated.
 	Artifact *Artifact `protobuf:"bytes,3,opt,name=artifact,proto3" json:"artifact,omitempty"`
@@ -859,7 +842,7 @@ type TaskArtifactUpdateEvent struct {
 	Append bool `protobuf:"varint,4,opt,name=append,proto3" json:"append,omitempty"`
 	// If true, this is the final chunk of the artifact.
 	LastChunk bool `protobuf:"varint,5,opt,name=last_chunk,json=lastChunk,proto3" json:"last_chunk,omitempty"`
-	// Optional metadata associated with the artifact update.
+	// Optional. Metadata associated with the artifact update.
 	Metadata      *structpb.Struct `protobuf:"bytes,6,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -937,17 +920,16 @@ func (x *TaskArtifactUpdateEvent) GetMetadata() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:PushNotificationConfig]
 // Configuration for setting up push notifications for task updates.
 type PushNotificationConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A unique identifier (e.g. UUID) for this push notification.
+	// A unique identifier (e.g. UUID) for this push notification configuration.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Url to send the notification too
+	// The URL where the notification should be sent.
 	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	// Token unique for this task/session
+	// A token unique for this task or session.
 	Token string `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
-	// Authentication information required to send the notification
+	// Authentication information required to send the notification.
 	Authentication *AuthenticationInfo `protobuf:"bytes,4,opt,name=authentication,proto3" json:"authentication,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1011,12 +993,12 @@ func (x *PushNotificationConfig) GetAuthentication() *AuthenticationInfo {
 	return nil
 }
 
-// --8<-- [start:PushNotificationAuthenticationInfo]
 // Defines authentication details, used for push notifications.
 type AuthenticationInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// HTTP Authentication Scheme from the [IANA registry](https://www.iana.org/assignments/http-authschemes/).
-	// Common values: `Bearer`, `Basic`, `Digest`. Scheme names are case-insensitive per [RFC 9110 Section 11.1](https://www.rfc-editor.org/rfc/rfc9110#section-11.1).
+	// Examples: `Bearer`, `Basic`, `Digest`.
+	// Scheme names are case-insensitive per [RFC 9110 Section 11.1](https://www.rfc-editor.org/rfc/rfc9110#section-11.1).
 	Scheme string `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
 	// Push Notification credentials. Format depends on the scheme (e.g., token for Bearer).
 	Credentials   string `protobuf:"bytes,2,opt,name=credentials,proto3" json:"credentials,omitempty"`
@@ -1068,7 +1050,6 @@ func (x *AuthenticationInfo) GetCredentials() string {
 	return ""
 }
 
-// --8<-- [start:AgentInterface]
 // Declares a combination of a target URL, transport and protocol version for interacting with the agent.
 // This allows agents to expose the same functionality over multiple protocol binding mechanisms.
 type AgentInterface struct {
@@ -1080,7 +1061,7 @@ type AgentInterface struct {
 	// easily extended for other protocol bindings. The core ones officially
 	// supported are `JSONRPC`, `GRPC` and `HTTP+JSON`.
 	ProtocolBinding string `protobuf:"bytes,2,opt,name=protocol_binding,json=protocolBinding,proto3" json:"protocol_binding,omitempty"`
-	// Tenant to be set in the request when calling the agent.
+	// Tenant ID to be used in the request when calling the agent.
 	Tenant string `protobuf:"bytes,3,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The version of the A2A protocol this interface exposes.
 	// Use the latest supported minor version per major version.
@@ -1148,8 +1129,7 @@ func (x *AgentInterface) GetProtocolVersion() string {
 	return ""
 }
 
-// --8<-- [start:AgentCard]
-// AgentCard is a self-describing manifest for an agent. It provides essential
+// A self-describing manifest for an agent. It provides essential
 // metadata including the agent's identity, capabilities, skills, supported
 // communication methods, and security requirements.
 // Next ID: 20
@@ -1162,35 +1142,35 @@ type AgentCard struct {
 	// in understanding its purpose.
 	// Example: "Agent that helps users with recipes and cooking."
 	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	// Ordered list of supported interfaces. First entry is preferred.
-	SupportedInterfaces []*AgentInterface `protobuf:"bytes,19,rep,name=supported_interfaces,json=supportedInterfaces,proto3" json:"supported_interfaces,omitempty"`
+	// Ordered list of supported interfaces. The first entry is preferred.
+	SupportedInterfaces []*AgentInterface `protobuf:"bytes,3,rep,name=supported_interfaces,json=supportedInterfaces,proto3" json:"supported_interfaces,omitempty"`
 	// The service provider of the agent.
 	Provider *AgentProvider `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
 	// The version of the agent.
 	// Example: "1.0.0"
 	Version string `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
-	// A url to provide additional documentation about the agent.
+	// A URL providing additional documentation about the agent.
 	DocumentationUrl *string `protobuf:"bytes,6,opt,name=documentation_url,json=documentationUrl,proto3,oneof" json:"documentation_url,omitempty"`
 	// A2A Capability set supported by the agent.
 	Capabilities *AgentCapabilities `protobuf:"bytes,7,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
 	// The security scheme details used for authenticating with this agent.
 	SecuritySchemes map[string]*SecurityScheme `protobuf:"bytes,8,rep,name=security_schemes,json=securitySchemes,proto3" json:"security_schemes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Security requirements for contacting the agent.
-	SecurityRequirements []*SecurityRequirement `protobuf:"bytes,13,rep,name=security_requirements,json=securityRequirements,proto3" json:"security_requirements,omitempty"`
+	SecurityRequirements []*SecurityRequirement `protobuf:"bytes,9,rep,name=security_requirements,json=securityRequirements,proto3" json:"security_requirements,omitempty"`
 	// protolint:enable REPEATED_FIELD_NAMES_PLURALIZED
 	// The set of interaction modes that the agent supports across all skills.
 	// This can be overridden per skill. Defined as media types.
 	DefaultInputModes []string `protobuf:"bytes,10,rep,name=default_input_modes,json=defaultInputModes,proto3" json:"default_input_modes,omitempty"`
 	// The media types supported as outputs from this agent.
 	DefaultOutputModes []string `protobuf:"bytes,11,rep,name=default_output_modes,json=defaultOutputModes,proto3" json:"default_output_modes,omitempty"`
-	// Skills represent an ability of an agent. It is largely
-	// a descriptive concept but represents a more focused set of behaviors that the
+	// Skills represent the abilities of an agent.
+	// It is largely a descriptive concept but represents a more focused set of behaviors that the
 	// agent is likely to succeed at.
 	Skills []*AgentSkill `protobuf:"bytes,12,rep,name=skills,proto3" json:"skills,omitempty"`
-	// JSON Web Signatures computed for this AgentCard.
-	Signatures []*AgentCardSignature `protobuf:"bytes,17,rep,name=signatures,proto3" json:"signatures,omitempty"`
-	// An optional URL to an icon for the agent.
-	IconUrl       *string `protobuf:"bytes,18,opt,name=icon_url,json=iconUrl,proto3,oneof" json:"icon_url,omitempty"`
+	// JSON Web Signatures computed for this `AgentCard`.
+	Signatures []*AgentCardSignature `protobuf:"bytes,13,rep,name=signatures,proto3" json:"signatures,omitempty"`
+	// Optional. A URL to an icon for the agent.
+	IconUrl       *string `protobuf:"bytes,14,opt,name=icon_url,json=iconUrl,proto3,oneof" json:"icon_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1323,7 +1303,6 @@ func (x *AgentCard) GetIconUrl() string {
 	return ""
 }
 
-// --8<-- [start:AgentProvider]
 // Represents the service provider of an agent.
 type AgentProvider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1381,7 +1360,6 @@ func (x *AgentProvider) GetOrganization() string {
 	return ""
 }
 
-// --8<-- [start:AgentCapabilities]
 // Defines optional capabilities supported by an agent.
 type AgentCapabilities struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1392,7 +1370,7 @@ type AgentCapabilities struct {
 	// A list of protocol extensions supported by the agent.
 	Extensions []*AgentExtension `protobuf:"bytes,3,rep,name=extensions,proto3" json:"extensions,omitempty"`
 	// Indicates if the agent supports providing an extended agent card when authenticated.
-	ExtendedAgentCard *bool `protobuf:"varint,5,opt,name=extended_agent_card,json=extendedAgentCard,proto3,oneof" json:"extended_agent_card,omitempty"`
+	ExtendedAgentCard *bool `protobuf:"varint,4,opt,name=extended_agent_card,json=extendedAgentCard,proto3,oneof" json:"extended_agent_card,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1455,7 +1433,6 @@ func (x *AgentCapabilities) GetExtendedAgentCard() bool {
 	return false
 }
 
-// --8<-- [start:AgentExtension]
 // A declaration of a protocol extension supported by an Agent.
 type AgentExtension struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1465,7 +1442,7 @@ type AgentExtension struct {
 	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	// If true, the client must understand and comply with the extension's requirements.
 	Required bool `protobuf:"varint,3,opt,name=required,proto3" json:"required,omitempty"`
-	// Optional, extension-specific configuration parameters.
+	// Optional. Extension-specific configuration parameters.
 	Params        *structpb.Struct `protobuf:"bytes,4,opt,name=params,proto3" json:"params,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1529,7 +1506,6 @@ func (x *AgentExtension) GetParams() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:AgentSkill]
 // Represents a distinct capability or function that an agent can perform.
 type AgentSkill struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1639,15 +1615,18 @@ func (x *AgentSkill) GetSecurityRequirements() []*SecurityRequirement {
 	return nil
 }
 
-// --8<-- [start:AgentCardSignature]
 // AgentCardSignature represents a JWS signature of an AgentCard.
 // This follows the JSON format of an RFC 7515 JSON Web Signature (JWS).
 type AgentCardSignature struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The protected JWS header for the signature. This is always a
-	// base64url-encoded JSON object. Required.
+	// (-- api-linter: core::0140::reserved-words=disabled
+	//
+	//	aip.dev/not-precedent: Backwards compatibility --)
+	//
+	// Required. The protected JWS header for the signature. This is always a
+	// base64url-encoded JSON object.
 	Protected string `protobuf:"bytes,1,opt,name=protected,proto3" json:"protected,omitempty"`
-	// The computed signature, base64url-encoded. Required.
+	// Required. The computed signature, base64url-encoded.
 	Signature string `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
 	// The unprotected JWS header values.
 	Header        *structpb.Struct `protobuf:"bytes,3,opt,name=header,proto3" json:"header,omitempty"`
@@ -1706,19 +1685,15 @@ func (x *AgentCardSignature) GetHeader() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:TaskPushNotificationConfig]
-// A container associating a push notification configuration with a specific
-// task.
+// A container associating a push notification configuration with a specific task.
 type TaskPushNotificationConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant
-	Tenant string `protobuf:"bytes,4,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The id of the config.
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// The id of the task this config is associated with.
-	TaskId string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// Optional. Tenant ID.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The ID of the task this configuration is associated with.
+	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// The push notification configuration details.
-	PushNotificationConfig *PushNotificationConfig `protobuf:"bytes,2,opt,name=push_notification_config,json=pushNotificationConfig,proto3" json:"push_notification_config,omitempty"`
+	PushNotificationConfig *PushNotificationConfig `protobuf:"bytes,3,opt,name=push_notification_config,json=pushNotificationConfig,proto3" json:"push_notification_config,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1760,13 +1735,6 @@ func (x *TaskPushNotificationConfig) GetTenant() string {
 	return ""
 }
 
-func (x *TaskPushNotificationConfig) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
 func (x *TaskPushNotificationConfig) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
@@ -1782,9 +1750,11 @@ func (x *TaskPushNotificationConfig) GetPushNotificationConfig() *PushNotificati
 }
 
 // protolint:disable REPEATED_FIELD_NAMES_PLURALIZED
+// A list of strings.
 type StringList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	List          []string               `protobuf:"bytes,1,rep,name=list,proto3" json:"list,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The individual string values.
+	List          []string `protobuf:"bytes,1,rep,name=list,proto3" json:"list,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1826,8 +1796,10 @@ func (x *StringList) GetList() []string {
 	return nil
 }
 
+// Defines the security requirements for an agent.
 type SecurityRequirement struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A map of security schemes to the required scopes.
 	Schemes       map[string]*StringList `protobuf:"bytes,1,rep,name=schemes,proto3" json:"schemes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1870,7 +1842,6 @@ func (x *SecurityRequirement) GetSchemes() map[string]*StringList {
 	return nil
 }
 
-// --8<-- [start:SecurityScheme]
 // Defines a security scheme that can be used to secure an agent's endpoints.
 // This is a discriminated union type based on the OpenAPI 3.2 Security Scheme Object.
 // See: https://spec.openapis.org/oas/v3.2.0.html#security-scheme-object
@@ -2009,7 +1980,6 @@ func (*SecurityScheme_OpenIdConnectSecurityScheme) isSecurityScheme_Scheme() {}
 
 func (*SecurityScheme_MtlsSecurityScheme) isSecurityScheme_Scheme() {}
 
-// --8<-- [start:APIKeySecurityScheme]
 // Defines a security scheme using an API key.
 type APIKeySecurityScheme struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2074,7 +2044,6 @@ func (x *APIKeySecurityScheme) GetName() string {
 	return ""
 }
 
-// --8<-- [start:HTTPAuthSecurityScheme]
 // Defines a security scheme using HTTP authentication.
 type HTTPAuthSecurityScheme struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2085,7 +2054,7 @@ type HTTPAuthSecurityScheme struct {
 	// This value should be registered in the IANA Authentication Scheme registry.
 	Scheme string `protobuf:"bytes,2,opt,name=scheme,proto3" json:"scheme,omitempty"`
 	// A hint to the client to identify how the bearer token is formatted (e.g., "JWT").
-	// This is primarily for documentation purposes.
+	// Primarily for documentation purposes.
 	BearerFormat  string `protobuf:"bytes,3,opt,name=bearer_format,json=bearerFormat,proto3" json:"bearer_format,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2142,7 +2111,6 @@ func (x *HTTPAuthSecurityScheme) GetBearerFormat() string {
 	return ""
 }
 
-// --8<-- [start:OAuth2SecurityScheme]
 // Defines a security scheme using OAuth 2.0.
 type OAuth2SecurityScheme struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2150,8 +2118,8 @@ type OAuth2SecurityScheme struct {
 	Description string `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
 	// An object containing configuration information for the supported OAuth 2.0 flows.
 	Flows *OAuthFlows `protobuf:"bytes,2,opt,name=flows,proto3" json:"flows,omitempty"`
-	// URL to the oauth2 authorization server metadata
-	// RFC8414 (https://datatracker.ietf.org/doc/html/rfc8414). TLS is required.
+	// URL to the OAuth2 authorization server metadata [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414).
+	// TLS is required.
 	Oauth2MetadataUrl string `protobuf:"bytes,3,opt,name=oauth2_metadata_url,json=oauth2MetadataUrl,proto3" json:"oauth2_metadata_url,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -2208,14 +2176,12 @@ func (x *OAuth2SecurityScheme) GetOauth2MetadataUrl() string {
 	return ""
 }
 
-// --8<-- [start:OpenIdConnectSecurityScheme]
 // Defines a security scheme using OpenID Connect.
 type OpenIdConnectSecurityScheme struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// An optional description for the security scheme.
 	Description string `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
-	// The OpenID Connect Discovery URL for the OIDC provider's metadata.
-	// See: https://openid.net/specs/openid-connect-discovery-1_0.html
+	// The [OpenID Connect Discovery URL](https://openid.net/specs/openid-connect-discovery-1_0.html) for the OIDC provider's metadata.
 	OpenIdConnectUrl string `protobuf:"bytes,2,opt,name=open_id_connect_url,json=openIdConnectUrl,proto3" json:"open_id_connect_url,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -2265,7 +2231,6 @@ func (x *OpenIdConnectSecurityScheme) GetOpenIdConnectUrl() string {
 	return ""
 }
 
-// --8<-- [start:MutualTLSSecurityScheme]
 // Defines a security scheme using mTLS authentication.
 type MutualTlsSecurityScheme struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2312,7 +2277,6 @@ func (x *MutualTlsSecurityScheme) GetDescription() string {
 	return ""
 }
 
-// --8<-- [start:OAuthFlows]
 // Defines the configuration for the supported OAuth 2.0 flows.
 type OAuthFlows struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2427,11 +2391,15 @@ type OAuthFlows_ClientCredentials struct {
 }
 
 type OAuthFlows_Implicit struct {
+	// Deprecated: Use Authorization Code + PKCE instead.
+	//
 	// Deprecated: Marked as deprecated in a2a.proto.
 	Implicit *ImplicitOAuthFlow `protobuf:"bytes,3,opt,name=implicit,proto3,oneof"`
 }
 
 type OAuthFlows_Password struct {
+	// Deprecated: Use Authorization Code + PKCE or Device Code.
+	//
 	// Deprecated: Marked as deprecated in a2a.proto.
 	Password *PasswordOAuthFlow `protobuf:"bytes,4,opt,name=password,proto3,oneof"`
 }
@@ -2451,7 +2419,6 @@ func (*OAuthFlows_Password) isOAuthFlows_Flow() {}
 
 func (*OAuthFlows_DeviceCode) isOAuthFlows_Flow() {}
 
-// --8<-- [start:AuthorizationCodeOAuthFlow]
 // Defines configuration details for the OAuth 2.0 Authorization Code flow.
 type AuthorizationCodeOAuthFlow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2535,7 +2502,6 @@ func (x *AuthorizationCodeOAuthFlow) GetPkceRequired() bool {
 	return false
 }
 
-// --8<-- [start:ClientCredentialsOAuthFlow]
 // Defines configuration details for the OAuth 2.0 Client Credentials flow.
 type ClientCredentialsOAuthFlow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2600,7 +2566,7 @@ func (x *ClientCredentialsOAuthFlow) GetScopes() map[string]string {
 	return nil
 }
 
-// DEPRECATED
+// Deprecated: Use Authorization Code + PKCE instead.
 type ImplicitOAuthFlow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The authorization URL to be used for this flow. This MUST be in the
@@ -2667,7 +2633,7 @@ func (x *ImplicitOAuthFlow) GetScopes() map[string]string {
 	return nil
 }
 
-// DEPRECATED
+// Deprecated: Use Authorization Code + PKCE or Device Code.
 type PasswordOAuthFlow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The token URL to be used for this flow. This MUST be in the form of a URL.
@@ -2734,7 +2700,6 @@ func (x *PasswordOAuthFlow) GetScopes() map[string]string {
 	return nil
 }
 
-// --8<-- [start:DeviceCodeOAuthFlow]
 // Defines configuration details for the OAuth 2.0 Device Code flow (RFC 8628).
 // This flow is designed for input-constrained devices such as IoT devices,
 // and CLI tools where the user authenticates on a separate device.
@@ -2810,19 +2775,17 @@ func (x *DeviceCodeOAuthFlow) GetScopes() map[string]string {
 	return nil
 }
 
-// /////////// Request Messages ///////////
-// --8<-- [start:SendMessageRequest]
 // Represents a request for the `SendMessage` method.
 type SendMessageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,4,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The message to send to the agent.
-	Message *Message `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Message *Message `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// Configuration for the send request.
-	Configuration *SendMessageConfiguration `protobuf:"bytes,2,opt,name=configuration,proto3" json:"configuration,omitempty"`
+	Configuration *SendMessageConfiguration `protobuf:"bytes,3,opt,name=configuration,proto3" json:"configuration,omitempty"`
 	// A flexible key-value map for passing additional context or parameters.
-	Metadata      *structpb.Struct `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Metadata      *structpb.Struct `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2885,19 +2848,18 @@ func (x *SendMessageRequest) GetMetadata() *structpb.Struct {
 	return nil
 }
 
-// --8<-- [start:GetTaskRequest]
 // Represents a request for the `GetTask` method.
 type GetTaskRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,3,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The resource id of the task.
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The resource ID of the task to retrieve.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	// The maximum number of most recent messages from the task's history to retrieve. An
 	// unset value means the client does not impose any limit. A value of zero is
 	// a request to not include any messages. The server MUST NOT return more
 	// messages than the provided value, but MAY apply a lower limit.
-	HistoryLength *int32 `protobuf:"varint,2,opt,name=history_length,json=historyLength,proto3,oneof" json:"history_length,omitempty"`
+	HistoryLength *int32 `protobuf:"varint,3,opt,name=history_length,json=historyLength,proto3,oneof" json:"history_length,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2953,29 +2915,32 @@ func (x *GetTaskRequest) GetHistoryLength() int32 {
 	return 0
 }
 
-// --8<-- [start:ListTasksRequest]
 // Parameters for listing tasks with optional filtering criteria.
 type ListTasksRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,9,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// Filter tasks by context ID to get tasks from a specific conversation or session.
-	ContextId string `protobuf:"bytes,1,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
+	ContextId string `protobuf:"bytes,2,opt,name=context_id,json=contextId,proto3" json:"context_id,omitempty"`
 	// Filter tasks by their current status state.
-	Status TaskState `protobuf:"varint,2,opt,name=status,proto3,enum=a2a.v1.TaskState" json:"status,omitempty"`
-	// Maximum number of tasks to return. Must be between 1 and 100.
-	// Defaults to 50 if not specified.
-	PageSize *int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// Token for pagination. Use the next_page_token from a previous ListTasksResponse.
-	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	Status TaskState `protobuf:"varint,3,opt,name=status,proto3,enum=lf.a2a.v1.TaskState" json:"status,omitempty"`
+	// The maximum number of tasks to return. The service may return fewer than this value.
+	// If unspecified, at most 50 tasks will be returned.
+	// The minimum value is 1.
+	// The maximum value is 100.
+	PageSize *int32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
+	// A page token, received from a previous `ListTasks` call.
+	// `ListTasksResponse.next_page_token`.
+	// Provide this to retrieve the subsequent page.
+	PageToken string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// The maximum number of messages to include in each task's history.
-	HistoryLength *int32 `protobuf:"varint,5,opt,name=history_length,json=historyLength,proto3,oneof" json:"history_length,omitempty"`
+	HistoryLength *int32 `protobuf:"varint,6,opt,name=history_length,json=historyLength,proto3,oneof" json:"history_length,omitempty"`
 	// Filter tasks which have a status updated after the provided timestamp in ISO 8601 format (e.g., "2023-10-27T10:00:00Z").
 	// Only tasks with a status timestamp time greater than or equal to this value will be returned.
-	StatusTimestampAfter *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=status_timestamp_after,json=statusTimestampAfter,proto3" json:"status_timestamp_after,omitempty"`
+	StatusTimestampAfter *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=status_timestamp_after,json=statusTimestampAfter,proto3" json:"status_timestamp_after,omitempty"`
 	// Whether to include artifacts in the returned tasks.
 	// Defaults to false to reduce payload size.
-	IncludeArtifacts *bool `protobuf:"varint,7,opt,name=include_artifacts,json=includeArtifacts,proto3,oneof" json:"include_artifacts,omitempty"`
+	IncludeArtifacts *bool `protobuf:"varint,8,opt,name=include_artifacts,json=includeArtifacts,proto3,oneof" json:"include_artifacts,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3066,15 +3031,14 @@ func (x *ListTasksRequest) GetIncludeArtifacts() bool {
 	return false
 }
 
-// --8<-- [start:ListTasksResponse]
-// Result object for tasks/list method containing an array of tasks and pagination information.
+// Result object for `ListTasks` method containing an array of tasks and pagination information.
 type ListTasksResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Array of tasks matching the specified criteria.
 	Tasks []*Task `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
-	// Token for retrieving the next page. Empty string if no more results.
+	// A token to retrieve the next page of results, or empty if there are no more results in the list.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	// The size of page requested.
+	// The page size used for this response.
 	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// Total number of tasks available (before pagination).
 	TotalSize     int32 `protobuf:"varint,4,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
@@ -3140,14 +3104,15 @@ func (x *ListTasksResponse) GetTotalSize() int32 {
 	return 0
 }
 
-// --8<-- [start:CancelTaskRequest]
 // Represents a request for the `CancelTask` method.
 type CancelTaskRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The resource id of the task to cancel.
-	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The resource ID of the task to cancel.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// A flexible key-value map for passing additional context or parameters.
+	Metadata      *structpb.Struct `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3196,15 +3161,22 @@ func (x *CancelTaskRequest) GetId() string {
 	return ""
 }
 
-// --8<-- [start:GetTaskPushNotificationConfigRequest]
+func (x *CancelTaskRequest) GetMetadata() *structpb.Struct {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+// Represents a request for the `GetTaskPushNotificationConfig` method.
 type GetTaskPushNotificationConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The parent task resource id.
-	TaskId string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// The resource id of the config to retrieve.
-	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The parent task resource ID.
+	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The resource ID of the configuration to retrieve.
+	Id            string `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3260,16 +3232,15 @@ func (x *GetTaskPushNotificationConfigRequest) GetId() string {
 	return ""
 }
 
-// --8<-- [start:DeleteTaskPushNotificationConfigRequest]
 // Represents a request for the `DeleteTaskPushNotificationConfig` method.
 type DeleteTaskPushNotificationConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The parent task resource id.
-	TaskId string `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// The resource id of the config to delete.
-	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The parent task resource ID.
+	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	// The resource ID of the configuration to delete.
+	Id            string `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3325,18 +3296,15 @@ func (x *DeleteTaskPushNotificationConfigRequest) GetId() string {
 	return ""
 }
 
-// --8<-- [start:CreateTaskPushNotificationConfigRequest]
 // Represents a request for the `CreateTaskPushNotificationConfig` method.
 type CreateTaskPushNotificationConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,4,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The parent task resource id.
-	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// The ID for the new config.
-	ConfigId string `protobuf:"bytes,2,opt,name=config_id,json=configId,proto3" json:"config_id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The parent task resource ID.
+	TaskId string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// The configuration to create.
-	Config        *PushNotificationConfig `protobuf:"bytes,5,opt,name=config,proto3" json:"config,omitempty"`
+	Config        *PushNotificationConfig `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3385,13 +3353,6 @@ func (x *CreateTaskPushNotificationConfigRequest) GetTaskId() string {
 	return ""
 }
 
-func (x *CreateTaskPushNotificationConfigRequest) GetConfigId() string {
-	if x != nil {
-		return x.ConfigId
-	}
-	return ""
-}
-
 func (x *CreateTaskPushNotificationConfigRequest) GetConfig() *PushNotificationConfig {
 	if x != nil {
 		return x.Config
@@ -3399,13 +3360,13 @@ func (x *CreateTaskPushNotificationConfigRequest) GetConfig() *PushNotificationC
 	return nil
 }
 
-// --8<-- [start:SubscribeToTaskRequest]
+// Represents a request for the `SubscribeToTask` method.
 type SubscribeToTaskRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The resource id of the task to subscribe to.
-	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional. Tenant ID, provided as a path parameter.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The resource ID of the task to subscribe to.
+	Id            string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3454,35 +3415,35 @@ func (x *SubscribeToTaskRequest) GetId() string {
 	return ""
 }
 
-// --8<-- [start:ListTaskPushNotificationConfigRequest]
-type ListTaskPushNotificationConfigRequest struct {
+// Represents a request for the `ListTaskPushNotificationConfigs` method.
+type ListTaskPushNotificationConfigsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
+	// Optional. Tenant ID, provided as a path parameter.
 	Tenant string `protobuf:"bytes,4,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The parent task resource id.
+	// The parent task resource ID.
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// The maximum number of configurations to return.
 	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	// A page token received from a previous ListTaskPushNotificationConfigRequest call.
+	// A page token received from a previous `ListTaskPushNotificationConfigsRequest` call.
 	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListTaskPushNotificationConfigRequest) Reset() {
-	*x = ListTaskPushNotificationConfigRequest{}
+func (x *ListTaskPushNotificationConfigsRequest) Reset() {
+	*x = ListTaskPushNotificationConfigsRequest{}
 	mi := &file_a2a_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListTaskPushNotificationConfigRequest) String() string {
+func (x *ListTaskPushNotificationConfigsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListTaskPushNotificationConfigRequest) ProtoMessage() {}
+func (*ListTaskPushNotificationConfigsRequest) ProtoMessage() {}
 
-func (x *ListTaskPushNotificationConfigRequest) ProtoReflect() protoreflect.Message {
+func (x *ListTaskPushNotificationConfigsRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_a2a_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3494,43 +3455,43 @@ func (x *ListTaskPushNotificationConfigRequest) ProtoReflect() protoreflect.Mess
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListTaskPushNotificationConfigRequest.ProtoReflect.Descriptor instead.
-func (*ListTaskPushNotificationConfigRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListTaskPushNotificationConfigsRequest.ProtoReflect.Descriptor instead.
+func (*ListTaskPushNotificationConfigsRequest) Descriptor() ([]byte, []int) {
 	return file_a2a_proto_rawDescGZIP(), []int{41}
 }
 
-func (x *ListTaskPushNotificationConfigRequest) GetTenant() string {
+func (x *ListTaskPushNotificationConfigsRequest) GetTenant() string {
 	if x != nil {
 		return x.Tenant
 	}
 	return ""
 }
 
-func (x *ListTaskPushNotificationConfigRequest) GetTaskId() string {
+func (x *ListTaskPushNotificationConfigsRequest) GetTaskId() string {
 	if x != nil {
 		return x.TaskId
 	}
 	return ""
 }
 
-func (x *ListTaskPushNotificationConfigRequest) GetPageSize() int32 {
+func (x *ListTaskPushNotificationConfigsRequest) GetPageSize() int32 {
 	if x != nil {
 		return x.PageSize
 	}
 	return 0
 }
 
-func (x *ListTaskPushNotificationConfigRequest) GetPageToken() string {
+func (x *ListTaskPushNotificationConfigsRequest) GetPageToken() string {
 	if x != nil {
 		return x.PageToken
 	}
 	return ""
 }
 
-// --8<-- [start:GetExtendedAgentCardRequest]
+// Represents a request for the `GetExtendedAgentCard` method.
 type GetExtendedAgentCardRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional tenant, provided as a path parameter.
+	// Optional. Tenant ID, provided as a path parameter.
 	Tenant        string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -3573,10 +3534,11 @@ func (x *GetExtendedAgentCardRequest) GetTenant() string {
 	return ""
 }
 
-// ////// Response Messages ///////////
-// --8<-- [start:SendMessageResponse]
+// Represents the response for the `SendMessage` method.
 type SendMessageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// The payload of the response.
+	//
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*SendMessageResponse_Task
@@ -3646,10 +3608,12 @@ type isSendMessageResponse_Payload interface {
 }
 
 type SendMessageResponse_Task struct {
+	// The task created or updated by the message.
 	Task *Task `protobuf:"bytes,1,opt,name=task,proto3,oneof"`
 }
 
 type SendMessageResponse_Message struct {
+	// A message from the agent.
 	Message *Message `protobuf:"bytes,2,opt,name=message,proto3,oneof"`
 }
 
@@ -3657,10 +3621,11 @@ func (*SendMessageResponse_Task) isSendMessageResponse_Payload() {}
 
 func (*SendMessageResponse_Message) isSendMessageResponse_Payload() {}
 
-// --8<-- [start:StreamResponse]
 // A wrapper object used in streaming operations to encapsulate different types of response data.
 type StreamResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// The payload of the stream response.
+	//
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*StreamResponse_Task
@@ -3777,34 +3742,32 @@ func (*StreamResponse_StatusUpdate) isStreamResponse_Payload() {}
 
 func (*StreamResponse_ArtifactUpdate) isStreamResponse_Payload() {}
 
-// --8<-- [start:ListTaskPushNotificationConfigResponse]
-// Represents a successful response for the `ListTaskPushNotificationConfig`
+// Represents a successful response for the `ListTaskPushNotificationConfigs`
 // method.
-type ListTaskPushNotificationConfigResponse struct {
+type ListTaskPushNotificationConfigsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The list of push notification configurations.
 	Configs []*TaskPushNotificationConfig `protobuf:"bytes,1,rep,name=configs,proto3" json:"configs,omitempty"`
-	// A token, which can be sent as `page_token` to retrieve the next page.
-	// If this field is omitted, there are no subsequent pages.
+	// A token to retrieve the next page of results, or empty if there are no more results in the list.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListTaskPushNotificationConfigResponse) Reset() {
-	*x = ListTaskPushNotificationConfigResponse{}
+func (x *ListTaskPushNotificationConfigsResponse) Reset() {
+	*x = ListTaskPushNotificationConfigsResponse{}
 	mi := &file_a2a_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListTaskPushNotificationConfigResponse) String() string {
+func (x *ListTaskPushNotificationConfigsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListTaskPushNotificationConfigResponse) ProtoMessage() {}
+func (*ListTaskPushNotificationConfigsResponse) ProtoMessage() {}
 
-func (x *ListTaskPushNotificationConfigResponse) ProtoReflect() protoreflect.Message {
+func (x *ListTaskPushNotificationConfigsResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_a2a_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3816,19 +3779,19 @@ func (x *ListTaskPushNotificationConfigResponse) ProtoReflect() protoreflect.Mes
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListTaskPushNotificationConfigResponse.ProtoReflect.Descriptor instead.
-func (*ListTaskPushNotificationConfigResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListTaskPushNotificationConfigsResponse.ProtoReflect.Descriptor instead.
+func (*ListTaskPushNotificationConfigsResponse) Descriptor() ([]byte, []int) {
 	return file_a2a_proto_rawDescGZIP(), []int{45}
 }
 
-func (x *ListTaskPushNotificationConfigResponse) GetConfigs() []*TaskPushNotificationConfig {
+func (x *ListTaskPushNotificationConfigsResponse) GetConfigs() []*TaskPushNotificationConfig {
 	if x != nil {
 		return x.Configs
 	}
 	return nil
 }
 
-func (x *ListTaskPushNotificationConfigResponse) GetNextPageToken() string {
+func (x *ListTaskPushNotificationConfigsResponse) GetNextPageToken() string {
 	if x != nil {
 		return x.NextPageToken
 	}
@@ -3839,25 +3802,25 @@ var File_a2a_proto protoreflect.FileDescriptor
 
 const file_a2a_proto_rawDesc = "" +
 	"\n" +
-	"\ta2a.proto\x12\x06a2a.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x83\x02\n" +
+	"\ta2a.proto\x12\tlf.a2a.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x86\x02\n" +
 	"\x18SendMessageConfiguration\x122\n" +
-	"\x15accepted_output_modes\x18\x01 \x03(\tR\x13acceptedOutputModes\x12X\n" +
-	"\x18push_notification_config\x18\x02 \x01(\v2\x1e.a2a.v1.PushNotificationConfigR\x16pushNotificationConfig\x12*\n" +
+	"\x15accepted_output_modes\x18\x01 \x03(\tR\x13acceptedOutputModes\x12[\n" +
+	"\x18push_notification_config\x18\x02 \x01(\v2!.lf.a2a.v1.PushNotificationConfigR\x16pushNotificationConfig\x12*\n" +
 	"\x0ehistory_length\x18\x03 \x01(\x05H\x00R\rhistoryLength\x88\x01\x01\x12\x1a\n" +
 	"\bblocking\x18\x04 \x01(\bR\bblockingB\x11\n" +
-	"\x0f_history_length\"\x80\x02\n" +
+	"\x0f_history_length\"\x89\x02\n" +
 	"\x04Task\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\x12\"\n" +
 	"\n" +
-	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x12/\n" +
-	"\x06status\x18\x03 \x01(\v2\x12.a2a.v1.TaskStatusB\x03\xe0A\x02R\x06status\x12.\n" +
-	"\tartifacts\x18\x04 \x03(\v2\x10.a2a.v1.ArtifactR\tartifacts\x12)\n" +
-	"\ahistory\x18\x05 \x03(\v2\x0f.a2a.v1.MessageR\ahistory\x123\n" +
-	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x9f\x01\n" +
+	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x122\n" +
+	"\x06status\x18\x03 \x01(\v2\x15.lf.a2a.v1.TaskStatusB\x03\xe0A\x02R\x06status\x121\n" +
+	"\tartifacts\x18\x04 \x03(\v2\x13.lf.a2a.v1.ArtifactR\tartifacts\x12,\n" +
+	"\ahistory\x18\x05 \x03(\v2\x12.lf.a2a.v1.MessageR\ahistory\x123\n" +
+	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\xa5\x01\n" +
 	"\n" +
-	"TaskStatus\x12,\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x11.a2a.v1.TaskStateB\x03\xe0A\x02R\x05state\x12)\n" +
-	"\amessage\x18\x02 \x01(\v2\x0f.a2a.v1.MessageR\amessage\x128\n" +
+	"TaskStatus\x12/\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x14.lf.a2a.v1.TaskStateB\x03\xe0A\x02R\x05state\x12,\n" +
+	"\amessage\x18\x02 \x01(\v2\x12.lf.a2a.v1.MessageR\amessage\x128\n" +
 	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xed\x01\n" +
 	"\x04Part\x12\x14\n" +
 	"\x04text\x18\x01 \x01(\tH\x00R\x04text\x12\x12\n" +
@@ -3868,50 +3831,50 @@ const file_a2a_proto_rawDesc = "" +
 	"\bfilename\x18\x06 \x01(\tR\bfilename\x12\x1d\n" +
 	"\n" +
 	"media_type\x18\a \x01(\tR\tmediaTypeB\t\n" +
-	"\acontent\"\xb8\x02\n" +
+	"\acontent\"\xbe\x02\n" +
 	"\aMessage\x12\"\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tB\x03\xe0A\x02R\tmessageId\x12\x1d\n" +
 	"\n" +
 	"context_id\x18\x02 \x01(\tR\tcontextId\x12\x17\n" +
-	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12%\n" +
-	"\x04role\x18\x04 \x01(\x0e2\f.a2a.v1.RoleB\x03\xe0A\x02R\x04role\x12'\n" +
-	"\x05parts\x18\x05 \x03(\v2\f.a2a.v1.PartB\x03\xe0A\x02R\x05parts\x123\n" +
+	"\atask_id\x18\x03 \x01(\tR\x06taskId\x12(\n" +
+	"\x04role\x18\x04 \x01(\x0e2\x0f.lf.a2a.v1.RoleB\x03\xe0A\x02R\x04role\x12*\n" +
+	"\x05parts\x18\x05 \x03(\v2\x0f.lf.a2a.v1.PartB\x03\xe0A\x02R\x05parts\x123\n" +
 	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x1e\n" +
 	"\n" +
 	"extensions\x18\a \x03(\tR\n" +
 	"extensions\x12,\n" +
-	"\x12reference_task_ids\x18\b \x03(\tR\x10referenceTaskIds\"\xe4\x01\n" +
+	"\x12reference_task_ids\x18\b \x03(\tR\x10referenceTaskIds\"\xe7\x01\n" +
 	"\bArtifact\x12$\n" +
 	"\vartifact_id\x18\x01 \x01(\tB\x03\xe0A\x02R\n" +
 	"artifactId\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\x12'\n" +
-	"\x05parts\x18\x05 \x03(\v2\f.a2a.v1.PartB\x03\xe0A\x02R\x05parts\x123\n" +
-	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x1e\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12*\n" +
+	"\x05parts\x18\x04 \x03(\v2\x0f.lf.a2a.v1.PartB\x03\xe0A\x02R\x05parts\x123\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x1e\n" +
 	"\n" +
-	"extensions\x18\a \x03(\tR\n" +
-	"extensions\"\xc5\x01\n" +
+	"extensions\x18\x06 \x03(\tR\n" +
+	"extensions\"\xc2\x01\n" +
 	"\x15TaskStatusUpdateEvent\x12\x1c\n" +
 	"\atask_id\x18\x01 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\"\n" +
 	"\n" +
-	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x12/\n" +
-	"\x06status\x18\x03 \x01(\v2\x12.a2a.v1.TaskStatusB\x03\xe0A\x02R\x06status\x123\n" +
-	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadataJ\x04\b\x04\x10\x05\"\xfa\x01\n" +
+	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x122\n" +
+	"\x06status\x18\x03 \x01(\v2\x15.lf.a2a.v1.TaskStatusB\x03\xe0A\x02R\x06status\x123\n" +
+	"\bmetadata\x18\x04 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\xfd\x01\n" +
 	"\x17TaskArtifactUpdateEvent\x12\x1c\n" +
 	"\atask_id\x18\x01 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\"\n" +
 	"\n" +
-	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x121\n" +
-	"\bartifact\x18\x03 \x01(\v2\x10.a2a.v1.ArtifactB\x03\xe0A\x02R\bartifact\x12\x16\n" +
+	"context_id\x18\x02 \x01(\tB\x03\xe0A\x02R\tcontextId\x124\n" +
+	"\bartifact\x18\x03 \x01(\v2\x13.lf.a2a.v1.ArtifactB\x03\xe0A\x02R\bartifact\x12\x16\n" +
 	"\x06append\x18\x04 \x01(\bR\x06append\x12\x1d\n" +
 	"\n" +
 	"last_chunk\x18\x05 \x01(\bR\tlastChunk\x123\n" +
-	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x99\x01\n" +
+	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x9c\x01\n" +
 	"\x16PushNotificationConfig\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x03url\x18\x02 \x01(\tB\x03\xe0A\x02R\x03url\x12\x14\n" +
-	"\x05token\x18\x03 \x01(\tR\x05token\x12B\n" +
-	"\x0eauthentication\x18\x04 \x01(\v2\x1a.a2a.v1.AuthenticationInfoR\x0eauthentication\"S\n" +
+	"\x05token\x18\x03 \x01(\tR\x05token\x12E\n" +
+	"\x0eauthentication\x18\x04 \x01(\v2\x1d.lf.a2a.v1.AuthenticationInfoR\x0eauthentication\"S\n" +
 	"\x12AuthenticationInfo\x12\x1b\n" +
 	"\x06scheme\x18\x01 \x01(\tB\x03\xe0A\x02R\x06scheme\x12 \n" +
 	"\vcredentials\x18\x02 \x01(\tR\vcredentials\"\x9f\x01\n" +
@@ -3919,50 +3882,49 @@ const file_a2a_proto_rawDesc = "" +
 	"\x03url\x18\x01 \x01(\tB\x03\xe0A\x02R\x03url\x12.\n" +
 	"\x10protocol_binding\x18\x02 \x01(\tB\x03\xe0A\x02R\x0fprotocolBinding\x12\x16\n" +
 	"\x06tenant\x18\x03 \x01(\tR\x06tenant\x12.\n" +
-	"\x10protocol_version\x18\x04 \x01(\tB\x03\xe0A\x02R\x0fprotocolVersion\"\x9e\a\n" +
+	"\x10protocol_version\x18\x04 \x01(\tB\x03\xe0A\x02R\x0fprotocolVersion\"\x98\a\n" +
 	"\tAgentCard\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\x02R\x04name\x12%\n" +
-	"\vdescription\x18\x02 \x01(\tB\x03\xe0A\x02R\vdescription\x12N\n" +
-	"\x14supported_interfaces\x18\x13 \x03(\v2\x16.a2a.v1.AgentInterfaceB\x03\xe0A\x02R\x13supportedInterfaces\x121\n" +
-	"\bprovider\x18\x04 \x01(\v2\x15.a2a.v1.AgentProviderR\bprovider\x12\x1d\n" +
+	"\vdescription\x18\x02 \x01(\tB\x03\xe0A\x02R\vdescription\x12Q\n" +
+	"\x14supported_interfaces\x18\x03 \x03(\v2\x19.lf.a2a.v1.AgentInterfaceB\x03\xe0A\x02R\x13supportedInterfaces\x124\n" +
+	"\bprovider\x18\x04 \x01(\v2\x18.lf.a2a.v1.AgentProviderR\bprovider\x12\x1d\n" +
 	"\aversion\x18\x05 \x01(\tB\x03\xe0A\x02R\aversion\x120\n" +
-	"\x11documentation_url\x18\x06 \x01(\tH\x00R\x10documentationUrl\x88\x01\x01\x12B\n" +
-	"\fcapabilities\x18\a \x01(\v2\x19.a2a.v1.AgentCapabilitiesB\x03\xe0A\x02R\fcapabilities\x12Q\n" +
-	"\x10security_schemes\x18\b \x03(\v2&.a2a.v1.AgentCard.SecuritySchemesEntryR\x0fsecuritySchemes\x12P\n" +
-	"\x15security_requirements\x18\r \x03(\v2\x1b.a2a.v1.SecurityRequirementR\x14securityRequirements\x123\n" +
+	"\x11documentation_url\x18\x06 \x01(\tH\x00R\x10documentationUrl\x88\x01\x01\x12E\n" +
+	"\fcapabilities\x18\a \x01(\v2\x1c.lf.a2a.v1.AgentCapabilitiesB\x03\xe0A\x02R\fcapabilities\x12T\n" +
+	"\x10security_schemes\x18\b \x03(\v2).lf.a2a.v1.AgentCard.SecuritySchemesEntryR\x0fsecuritySchemes\x12S\n" +
+	"\x15security_requirements\x18\t \x03(\v2\x1e.lf.a2a.v1.SecurityRequirementR\x14securityRequirements\x123\n" +
 	"\x13default_input_modes\x18\n" +
 	" \x03(\tB\x03\xe0A\x02R\x11defaultInputModes\x125\n" +
-	"\x14default_output_modes\x18\v \x03(\tB\x03\xe0A\x02R\x12defaultOutputModes\x12/\n" +
-	"\x06skills\x18\f \x03(\v2\x12.a2a.v1.AgentSkillB\x03\xe0A\x02R\x06skills\x12:\n" +
+	"\x14default_output_modes\x18\v \x03(\tB\x03\xe0A\x02R\x12defaultOutputModes\x122\n" +
+	"\x06skills\x18\f \x03(\v2\x15.lf.a2a.v1.AgentSkillB\x03\xe0A\x02R\x06skills\x12=\n" +
 	"\n" +
-	"signatures\x18\x11 \x03(\v2\x1a.a2a.v1.AgentCardSignatureR\n" +
+	"signatures\x18\r \x03(\v2\x1d.lf.a2a.v1.AgentCardSignatureR\n" +
 	"signatures\x12\x1e\n" +
-	"\bicon_url\x18\x12 \x01(\tH\x01R\aiconUrl\x88\x01\x01\x1aZ\n" +
+	"\bicon_url\x18\x0e \x01(\tH\x01R\aiconUrl\x88\x01\x01\x1a]\n" +
 	"\x14SecuritySchemesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
-	"\x05value\x18\x02 \x01(\v2\x16.a2a.v1.SecuritySchemeR\x05value:\x028\x01B\x14\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12/\n" +
+	"\x05value\x18\x02 \x01(\v2\x19.lf.a2a.v1.SecuritySchemeR\x05value:\x028\x01B\x14\n" +
 	"\x12_documentation_urlB\v\n" +
-	"\t_icon_urlJ\x04\b\x03\x10\x04J\x04\b\t\x10\n" +
-	"J\x04\b\x0e\x10\x0fJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11\"O\n" +
+	"\t_icon_url\"O\n" +
 	"\rAgentProvider\x12\x15\n" +
 	"\x03url\x18\x01 \x01(\tB\x03\xe0A\x02R\x03url\x12'\n" +
-	"\forganization\x18\x02 \x01(\tB\x03\xe0A\x02R\forganization\"\x9a\x02\n" +
+	"\forganization\x18\x02 \x01(\tB\x03\xe0A\x02R\forganization\"\x97\x02\n" +
 	"\x11AgentCapabilities\x12!\n" +
 	"\tstreaming\x18\x01 \x01(\bH\x00R\tstreaming\x88\x01\x01\x122\n" +
-	"\x12push_notifications\x18\x02 \x01(\bH\x01R\x11pushNotifications\x88\x01\x01\x126\n" +
+	"\x12push_notifications\x18\x02 \x01(\bH\x01R\x11pushNotifications\x88\x01\x01\x129\n" +
 	"\n" +
-	"extensions\x18\x03 \x03(\v2\x16.a2a.v1.AgentExtensionR\n" +
+	"extensions\x18\x03 \x03(\v2\x19.lf.a2a.v1.AgentExtensionR\n" +
 	"extensions\x123\n" +
-	"\x13extended_agent_card\x18\x05 \x01(\bH\x02R\x11extendedAgentCard\x88\x01\x01B\f\n" +
+	"\x13extended_agent_card\x18\x04 \x01(\bH\x02R\x11extendedAgentCard\x88\x01\x01B\f\n" +
 	"\n" +
 	"_streamingB\x15\n" +
 	"\x13_push_notificationsB\x16\n" +
-	"\x14_extended_agent_cardJ\x04\b\x04\x10\x05\"\x91\x01\n" +
+	"\x14_extended_agent_card\"\x91\x01\n" +
 	"\x0eAgentExtension\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
 	"\brequired\x18\x03 \x01(\bR\brequired\x12/\n" +
-	"\x06params\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06params\"\xac\x02\n" +
+	"\x06params\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06params\"\xaf\x02\n" +
 	"\n" +
 	"AgentSkill\x12\x13\n" +
 	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\x12\x17\n" +
@@ -3972,31 +3934,30 @@ const file_a2a_proto_rawDesc = "" +
 	"\bexamples\x18\x05 \x03(\tR\bexamples\x12\x1f\n" +
 	"\vinput_modes\x18\x06 \x03(\tR\n" +
 	"inputModes\x12!\n" +
-	"\foutput_modes\x18\a \x03(\tR\voutputModes\x12P\n" +
-	"\x15security_requirements\x18\b \x03(\v2\x1b.a2a.v1.SecurityRequirementR\x14securityRequirements\"\x8b\x01\n" +
+	"\foutput_modes\x18\a \x03(\tR\voutputModes\x12S\n" +
+	"\x15security_requirements\x18\b \x03(\v2\x1e.lf.a2a.v1.SecurityRequirementR\x14securityRequirements\"\x8b\x01\n" +
 	"\x12AgentCardSignature\x12!\n" +
 	"\tprotected\x18\x01 \x01(\tB\x03\xe0A\x02R\tprotected\x12!\n" +
 	"\tsignature\x18\x02 \x01(\tB\x03\xe0A\x02R\tsignature\x12/\n" +
-	"\x06header\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06header\"\xc6\x01\n" +
+	"\x06header\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06header\"\xb4\x01\n" +
 	"\x1aTaskPushNotificationConfig\x12\x16\n" +
-	"\x06tenant\x18\x04 \x01(\tR\x06tenant\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\x12\x1c\n" +
-	"\atask_id\x18\x03 \x01(\tB\x03\xe0A\x02R\x06taskId\x12]\n" +
-	"\x18push_notification_config\x18\x02 \x01(\v2\x1e.a2a.v1.PushNotificationConfigB\x03\xe0A\x02R\x16pushNotificationConfig\" \n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x1c\n" +
+	"\atask_id\x18\x02 \x01(\tB\x03\xe0A\x02R\x06taskId\x12`\n" +
+	"\x18push_notification_config\x18\x03 \x01(\v2!.lf.a2a.v1.PushNotificationConfigB\x03\xe0A\x02R\x16pushNotificationConfig\" \n" +
 	"\n" +
 	"StringList\x12\x12\n" +
-	"\x04list\x18\x01 \x03(\tR\x04list\"\xa9\x01\n" +
-	"\x13SecurityRequirement\x12B\n" +
-	"\aschemes\x18\x01 \x03(\v2(.a2a.v1.SecurityRequirement.SchemesEntryR\aschemes\x1aN\n" +
+	"\x04list\x18\x01 \x03(\tR\x04list\"\xaf\x01\n" +
+	"\x13SecurityRequirement\x12E\n" +
+	"\aschemes\x18\x01 \x03(\v2+.lf.a2a.v1.SecurityRequirement.SchemesEntryR\aschemes\x1aQ\n" +
 	"\fSchemesEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
-	"\x05value\x18\x02 \x01(\v2\x12.a2a.v1.StringListR\x05value:\x028\x01\"\xe6\x03\n" +
-	"\x0eSecurityScheme\x12U\n" +
-	"\x17api_key_security_scheme\x18\x01 \x01(\v2\x1c.a2a.v1.APIKeySecuritySchemeH\x00R\x14apiKeySecurityScheme\x12[\n" +
-	"\x19http_auth_security_scheme\x18\x02 \x01(\v2\x1e.a2a.v1.HTTPAuthSecuritySchemeH\x00R\x16httpAuthSecurityScheme\x12T\n" +
-	"\x16oauth2_security_scheme\x18\x03 \x01(\v2\x1c.a2a.v1.OAuth2SecuritySchemeH\x00R\x14oauth2SecurityScheme\x12k\n" +
-	"\x1fopen_id_connect_security_scheme\x18\x04 \x01(\v2#.a2a.v1.OpenIdConnectSecuritySchemeH\x00R\x1bopenIdConnectSecurityScheme\x12S\n" +
-	"\x14mtls_security_scheme\x18\x05 \x01(\v2\x1f.a2a.v1.MutualTlsSecuritySchemeH\x00R\x12mtlsSecuritySchemeB\b\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
+	"\x05value\x18\x02 \x01(\v2\x15.lf.a2a.v1.StringListR\x05value:\x028\x01\"\xf5\x03\n" +
+	"\x0eSecurityScheme\x12X\n" +
+	"\x17api_key_security_scheme\x18\x01 \x01(\v2\x1f.lf.a2a.v1.APIKeySecuritySchemeH\x00R\x14apiKeySecurityScheme\x12^\n" +
+	"\x19http_auth_security_scheme\x18\x02 \x01(\v2!.lf.a2a.v1.HTTPAuthSecuritySchemeH\x00R\x16httpAuthSecurityScheme\x12W\n" +
+	"\x16oauth2_security_scheme\x18\x03 \x01(\v2\x1f.lf.a2a.v1.OAuth2SecuritySchemeH\x00R\x14oauth2SecurityScheme\x12n\n" +
+	"\x1fopen_id_connect_security_scheme\x18\x04 \x01(\v2&.lf.a2a.v1.OpenIdConnectSecuritySchemeH\x00R\x1bopenIdConnectSecurityScheme\x12V\n" +
+	"\x14mtls_security_scheme\x18\x05 \x01(\v2\".lf.a2a.v1.MutualTlsSecuritySchemeH\x00R\x12mtlsSecuritySchemeB\b\n" +
 	"\x06scheme\"r\n" +
 	"\x14APIKeySecurityScheme\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1f\n" +
@@ -4005,138 +3966,138 @@ const file_a2a_proto_rawDesc = "" +
 	"\x16HTTPAuthSecurityScheme\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12\x1b\n" +
 	"\x06scheme\x18\x02 \x01(\tB\x03\xe0A\x02R\x06scheme\x12#\n" +
-	"\rbearer_format\x18\x03 \x01(\tR\fbearerFormat\"\x97\x01\n" +
+	"\rbearer_format\x18\x03 \x01(\tR\fbearerFormat\"\x9a\x01\n" +
 	"\x14OAuth2SecurityScheme\x12 \n" +
-	"\vdescription\x18\x01 \x01(\tR\vdescription\x12-\n" +
-	"\x05flows\x18\x02 \x01(\v2\x12.a2a.v1.OAuthFlowsB\x03\xe0A\x02R\x05flows\x12.\n" +
+	"\vdescription\x18\x01 \x01(\tR\vdescription\x120\n" +
+	"\x05flows\x18\x02 \x01(\v2\x15.lf.a2a.v1.OAuthFlowsB\x03\xe0A\x02R\x05flows\x12.\n" +
 	"\x13oauth2_metadata_url\x18\x03 \x01(\tR\x11oauth2MetadataUrl\"s\n" +
 	"\x1bOpenIdConnectSecurityScheme\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x122\n" +
 	"\x13open_id_connect_url\x18\x02 \x01(\tB\x03\xe0A\x02R\x10openIdConnectUrl\";\n" +
 	"\x17MutualTlsSecurityScheme\x12 \n" +
-	"\vdescription\x18\x01 \x01(\tR\vdescription\"\xf8\x02\n" +
+	"\vdescription\x18\x01 \x01(\tR\vdescription\"\x87\x03\n" +
 	"\n" +
-	"OAuthFlows\x12S\n" +
-	"\x12authorization_code\x18\x01 \x01(\v2\".a2a.v1.AuthorizationCodeOAuthFlowH\x00R\x11authorizationCode\x12S\n" +
-	"\x12client_credentials\x18\x02 \x01(\v2\".a2a.v1.ClientCredentialsOAuthFlowH\x00R\x11clientCredentials\x12;\n" +
-	"\bimplicit\x18\x03 \x01(\v2\x19.a2a.v1.ImplicitOAuthFlowB\x02\x18\x01H\x00R\bimplicit\x12;\n" +
-	"\bpassword\x18\x04 \x01(\v2\x19.a2a.v1.PasswordOAuthFlowB\x02\x18\x01H\x00R\bpassword\x12>\n" +
-	"\vdevice_code\x18\x05 \x01(\v2\x1b.a2a.v1.DeviceCodeOAuthFlowH\x00R\n" +
+	"OAuthFlows\x12V\n" +
+	"\x12authorization_code\x18\x01 \x01(\v2%.lf.a2a.v1.AuthorizationCodeOAuthFlowH\x00R\x11authorizationCode\x12V\n" +
+	"\x12client_credentials\x18\x02 \x01(\v2%.lf.a2a.v1.ClientCredentialsOAuthFlowH\x00R\x11clientCredentials\x12>\n" +
+	"\bimplicit\x18\x03 \x01(\v2\x1c.lf.a2a.v1.ImplicitOAuthFlowB\x02\x18\x01H\x00R\bimplicit\x12>\n" +
+	"\bpassword\x18\x04 \x01(\v2\x1c.lf.a2a.v1.PasswordOAuthFlowB\x02\x18\x01H\x00R\bpassword\x12A\n" +
+	"\vdevice_code\x18\x05 \x01(\v2\x1e.lf.a2a.v1.DeviceCodeOAuthFlowH\x00R\n" +
 	"deviceCodeB\x06\n" +
-	"\x04flow\"\xbe\x02\n" +
+	"\x04flow\"\xc1\x02\n" +
 	"\x1aAuthorizationCodeOAuthFlow\x120\n" +
 	"\x11authorization_url\x18\x01 \x01(\tB\x03\xe0A\x02R\x10authorizationUrl\x12 \n" +
 	"\ttoken_url\x18\x02 \x01(\tB\x03\xe0A\x02R\btokenUrl\x12\x1f\n" +
 	"\vrefresh_url\x18\x03 \x01(\tR\n" +
-	"refreshUrl\x12K\n" +
-	"\x06scopes\x18\x04 \x03(\v2..a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x12#\n" +
+	"refreshUrl\x12N\n" +
+	"\x06scopes\x18\x04 \x03(\v21.lf.a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x12#\n" +
 	"\rpkce_required\x18\x05 \x01(\bR\fpkceRequired\x1a9\n" +
 	"\vScopesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe7\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xea\x01\n" +
 	"\x1aClientCredentialsOAuthFlow\x12 \n" +
 	"\ttoken_url\x18\x01 \x01(\tB\x03\xe0A\x02R\btokenUrl\x12\x1f\n" +
 	"\vrefresh_url\x18\x02 \x01(\tR\n" +
-	"refreshUrl\x12K\n" +
-	"\x06scopes\x18\x03 \x03(\v2..a2a.v1.ClientCredentialsOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x1a9\n" +
+	"refreshUrl\x12N\n" +
+	"\x06scopes\x18\x03 \x03(\v21.lf.a2a.v1.ClientCredentialsOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x1a9\n" +
 	"\vScopesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdb\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x01\n" +
 	"\x11ImplicitOAuthFlow\x12+\n" +
 	"\x11authorization_url\x18\x01 \x01(\tR\x10authorizationUrl\x12\x1f\n" +
 	"\vrefresh_url\x18\x02 \x01(\tR\n" +
-	"refreshUrl\x12=\n" +
-	"\x06scopes\x18\x03 \x03(\v2%.a2a.v1.ImplicitOAuthFlow.ScopesEntryR\x06scopes\x1a9\n" +
+	"refreshUrl\x12@\n" +
+	"\x06scopes\x18\x03 \x03(\v2(.lf.a2a.v1.ImplicitOAuthFlow.ScopesEntryR\x06scopes\x1a9\n" +
 	"\vScopesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcb\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xce\x01\n" +
 	"\x11PasswordOAuthFlow\x12\x1b\n" +
 	"\ttoken_url\x18\x01 \x01(\tR\btokenUrl\x12\x1f\n" +
 	"\vrefresh_url\x18\x02 \x01(\tR\n" +
-	"refreshUrl\x12=\n" +
-	"\x06scopes\x18\x03 \x03(\v2%.a2a.v1.PasswordOAuthFlow.ScopesEntryR\x06scopes\x1a9\n" +
+	"refreshUrl\x12@\n" +
+	"\x06scopes\x18\x03 \x03(\v2(.lf.a2a.v1.PasswordOAuthFlow.ScopesEntryR\x06scopes\x1a9\n" +
 	"\vScopesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x98\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9b\x02\n" +
 	"\x13DeviceCodeOAuthFlow\x12=\n" +
 	"\x18device_authorization_url\x18\x01 \x01(\tB\x03\xe0A\x02R\x16deviceAuthorizationUrl\x12 \n" +
 	"\ttoken_url\x18\x02 \x01(\tB\x03\xe0A\x02R\btokenUrl\x12\x1f\n" +
 	"\vrefresh_url\x18\x03 \x01(\tR\n" +
-	"refreshUrl\x12D\n" +
-	"\x06scopes\x18\x04 \x03(\v2'.a2a.v1.DeviceCodeOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x1a9\n" +
+	"refreshUrl\x12G\n" +
+	"\x06scopes\x18\x04 \x03(\v2*.lf.a2a.v1.DeviceCodeOAuthFlow.ScopesEntryB\x03\xe0A\x02R\x06scopes\x1a9\n" +
 	"\vScopesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd9\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdf\x01\n" +
 	"\x12SendMessageRequest\x12\x16\n" +
-	"\x06tenant\x18\x04 \x01(\tR\x06tenant\x12.\n" +
-	"\amessage\x18\x01 \x01(\v2\x0f.a2a.v1.MessageB\x03\xe0A\x02R\amessage\x12F\n" +
-	"\rconfiguration\x18\x02 \x01(\v2 .a2a.v1.SendMessageConfigurationR\rconfiguration\x123\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"|\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x121\n" +
+	"\amessage\x18\x02 \x01(\v2\x12.lf.a2a.v1.MessageB\x03\xe0A\x02R\amessage\x12I\n" +
+	"\rconfiguration\x18\x03 \x01(\v2#.lf.a2a.v1.SendMessageConfigurationR\rconfiguration\x123\n" +
+	"\bmetadata\x18\x04 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"|\n" +
 	"\x0eGetTaskRequest\x12\x16\n" +
-	"\x06tenant\x18\x03 \x01(\tR\x06tenant\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\x12*\n" +
-	"\x0ehistory_length\x18\x02 \x01(\x05H\x00R\rhistoryLength\x88\x01\x01B\x11\n" +
-	"\x0f_history_length\"\x9c\x03\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x13\n" +
+	"\x02id\x18\x02 \x01(\tB\x03\xe0A\x02R\x02id\x12*\n" +
+	"\x0ehistory_length\x18\x03 \x01(\x05H\x00R\rhistoryLength\x88\x01\x01B\x11\n" +
+	"\x0f_history_length\"\x9f\x03\n" +
 	"\x10ListTasksRequest\x12\x16\n" +
-	"\x06tenant\x18\t \x01(\tR\x06tenant\x12\x1d\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x1d\n" +
 	"\n" +
-	"context_id\x18\x01 \x01(\tR\tcontextId\x12)\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x11.a2a.v1.TaskStateR\x06status\x12 \n" +
-	"\tpage_size\x18\x03 \x01(\x05H\x00R\bpageSize\x88\x01\x01\x12\x1d\n" +
+	"context_id\x18\x02 \x01(\tR\tcontextId\x12,\n" +
+	"\x06status\x18\x03 \x01(\x0e2\x14.lf.a2a.v1.TaskStateR\x06status\x12 \n" +
+	"\tpage_size\x18\x04 \x01(\x05H\x00R\bpageSize\x88\x01\x01\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\x12*\n" +
-	"\x0ehistory_length\x18\x05 \x01(\x05H\x01R\rhistoryLength\x88\x01\x01\x12P\n" +
-	"\x16status_timestamp_after\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x14statusTimestampAfter\x120\n" +
-	"\x11include_artifacts\x18\a \x01(\bH\x02R\x10includeArtifacts\x88\x01\x01B\f\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken\x12*\n" +
+	"\x0ehistory_length\x18\x06 \x01(\x05H\x01R\rhistoryLength\x88\x01\x01\x12P\n" +
+	"\x16status_timestamp_after\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x14statusTimestampAfter\x120\n" +
+	"\x11include_artifacts\x18\b \x01(\bH\x02R\x10includeArtifacts\x88\x01\x01B\f\n" +
 	"\n" +
 	"_page_sizeB\x11\n" +
 	"\x0f_history_lengthB\x14\n" +
-	"\x12_include_artifacts\"\xaf\x01\n" +
-	"\x11ListTasksResponse\x12'\n" +
-	"\x05tasks\x18\x01 \x03(\v2\f.a2a.v1.TaskB\x03\xe0A\x02R\x05tasks\x12+\n" +
+	"\x12_include_artifacts\"\xb2\x01\n" +
+	"\x11ListTasksResponse\x12*\n" +
+	"\x05tasks\x18\x01 \x03(\v2\x0f.lf.a2a.v1.TaskB\x03\xe0A\x02R\x05tasks\x12+\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tB\x03\xe0A\x02R\rnextPageToken\x12 \n" +
 	"\tpage_size\x18\x03 \x01(\x05B\x03\xe0A\x02R\bpageSize\x12\"\n" +
 	"\n" +
-	"total_size\x18\x04 \x01(\x05B\x03\xe0A\x02R\ttotalSize\"@\n" +
+	"total_size\x18\x04 \x01(\x05B\x03\xe0A\x02R\ttotalSize\"u\n" +
 	"\x11CancelTaskRequest\x12\x16\n" +
-	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"q\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x13\n" +
+	"\x02id\x18\x02 \x01(\tB\x03\xe0A\x02R\x02id\x123\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"q\n" +
 	"$GetTaskPushNotificationConfigRequest\x12\x16\n" +
-	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x1c\n" +
-	"\atask_id\x18\x03 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"t\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x1c\n" +
+	"\atask_id\x18\x02 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\x13\n" +
+	"\x02id\x18\x03 \x01(\tB\x03\xe0A\x02R\x02id\"t\n" +
 	"'DeleteTaskPushNotificationConfigRequest\x12\x16\n" +
-	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x1c\n" +
-	"\atask_id\x18\x03 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"\xc4\x01\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x1c\n" +
+	"\atask_id\x18\x02 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\x13\n" +
+	"\x02id\x18\x03 \x01(\tB\x03\xe0A\x02R\x02id\"\x9f\x01\n" +
 	"'CreateTaskPushNotificationConfigRequest\x12\x16\n" +
-	"\x06tenant\x18\x04 \x01(\tR\x06tenant\x12\x1c\n" +
-	"\atask_id\x18\x01 \x01(\tB\x03\xe0A\x02R\x06taskId\x12 \n" +
-	"\tconfig_id\x18\x02 \x01(\tB\x03\xe0A\x02R\bconfigId\x12;\n" +
-	"\x06config\x18\x05 \x01(\v2\x1e.a2a.v1.PushNotificationConfigB\x03\xe0A\x02R\x06configJ\x04\b\x03\x10\x04\"E\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x1c\n" +
+	"\atask_id\x18\x02 \x01(\tB\x03\xe0A\x02R\x06taskId\x12>\n" +
+	"\x06config\x18\x03 \x01(\v2!.lf.a2a.v1.PushNotificationConfigB\x03\xe0A\x02R\x06config\"E\n" +
 	"\x16SubscribeToTaskRequest\x12\x16\n" +
-	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x13\n" +
-	"\x02id\x18\x01 \x01(\tB\x03\xe0A\x02R\x02id\"\x99\x01\n" +
-	"%ListTaskPushNotificationConfigRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x13\n" +
+	"\x02id\x18\x02 \x01(\tB\x03\xe0A\x02R\x02id\"\x9a\x01\n" +
+	"&ListTaskPushNotificationConfigsRequest\x12\x16\n" +
 	"\x06tenant\x18\x04 \x01(\tR\x06tenant\x12\x1c\n" +
 	"\atask_id\x18\x01 \x01(\tB\x03\xe0A\x02R\x06taskId\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"5\n" +
 	"\x1bGetExtendedAgentCardRequest\x12\x16\n" +
-	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"q\n" +
-	"\x13SendMessageResponse\x12\"\n" +
-	"\x04task\x18\x01 \x01(\v2\f.a2a.v1.TaskH\x00R\x04task\x12+\n" +
-	"\amessage\x18\x02 \x01(\v2\x0f.a2a.v1.MessageH\x00R\amessageB\t\n" +
-	"\apayload\"\xfe\x01\n" +
-	"\x0eStreamResponse\x12\"\n" +
-	"\x04task\x18\x01 \x01(\v2\f.a2a.v1.TaskH\x00R\x04task\x12+\n" +
-	"\amessage\x18\x02 \x01(\v2\x0f.a2a.v1.MessageH\x00R\amessage\x12D\n" +
-	"\rstatus_update\x18\x03 \x01(\v2\x1d.a2a.v1.TaskStatusUpdateEventH\x00R\fstatusUpdate\x12J\n" +
-	"\x0fartifact_update\x18\x04 \x01(\v2\x1f.a2a.v1.TaskArtifactUpdateEventH\x00R\x0eartifactUpdateB\t\n" +
-	"\apayload\"\x8e\x01\n" +
-	"&ListTaskPushNotificationConfigResponse\x12<\n" +
-	"\aconfigs\x18\x01 \x03(\v2\".a2a.v1.TaskPushNotificationConfigR\aconfigs\x12&\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"w\n" +
+	"\x13SendMessageResponse\x12%\n" +
+	"\x04task\x18\x01 \x01(\v2\x0f.lf.a2a.v1.TaskH\x00R\x04task\x12.\n" +
+	"\amessage\x18\x02 \x01(\v2\x12.lf.a2a.v1.MessageH\x00R\amessageB\t\n" +
+	"\apayload\"\x8a\x02\n" +
+	"\x0eStreamResponse\x12%\n" +
+	"\x04task\x18\x01 \x01(\v2\x0f.lf.a2a.v1.TaskH\x00R\x04task\x12.\n" +
+	"\amessage\x18\x02 \x01(\v2\x12.lf.a2a.v1.MessageH\x00R\amessage\x12G\n" +
+	"\rstatus_update\x18\x03 \x01(\v2 .lf.a2a.v1.TaskStatusUpdateEventH\x00R\fstatusUpdate\x12M\n" +
+	"\x0fartifact_update\x18\x04 \x01(\v2\".lf.a2a.v1.TaskArtifactUpdateEventH\x00R\x0eartifactUpdateB\t\n" +
+	"\apayload\"\x92\x01\n" +
+	"'ListTaskPushNotificationConfigsResponse\x12?\n" +
+	"\aconfigs\x18\x01 \x03(\v2%.lf.a2a.v1.TaskPushNotificationConfigR\aconfigs\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\xf9\x01\n" +
 	"\tTaskState\x12\x1a\n" +
 	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
@@ -4152,25 +4113,24 @@ const file_a2a_proto_rawDesc = "" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tROLE_USER\x10\x01\x12\x0e\n" +
 	"\n" +
-	"ROLE_AGENT\x10\x022\xea\x0e\n" +
+	"ROLE_AGENT\x10\x022\xae\x0f\n" +
 	"\n" +
-	"A2AService\x12}\n" +
-	"\vSendMessage\x12\x1a.a2a.v1.SendMessageRequest\x1a\x1b.a2a.v1.SendMessageResponse\"5\x82\xd3\xe4\x93\x02/:\x01*Z\x1b:\x01*\"\x16/{tenant}/message:send\"\r/message:send\x12\x87\x01\n" +
-	"\x14SendStreamingMessage\x12\x1a.a2a.v1.SendMessageRequest\x1a\x16.a2a.v1.StreamResponse\"9\x82\xd3\xe4\x93\x023:\x01*Z\x1d:\x01*\"\x18/{tenant}/message:stream\"\x0f/message:stream0\x01\x12e\n" +
-	"\aGetTask\x12\x16.a2a.v1.GetTaskRequest\x1a\f.a2a.v1.Task\"4\xdaA\x02id\x82\xd3\xe4\x93\x02)Z\x18\x12\x16/{tenant}/tasks/{id=*}\x12\r/tasks/{id=*}\x12c\n" +
-	"\tListTasks\x12\x18.a2a.v1.ListTasksRequest\x1a\x19.a2a.v1.ListTasksResponse\"!\x82\xd3\xe4\x93\x02\x1bZ\x11\x12\x0f/{tenant}/tasks\x12\x06/tasks\x12z\n" +
+	"A2AService\x12\x83\x01\n" +
+	"\vSendMessage\x12\x1d.lf.a2a.v1.SendMessageRequest\x1a\x1e.lf.a2a.v1.SendMessageResponse\"5\x82\xd3\xe4\x93\x02/:\x01*Z\x1b:\x01*\"\x16/{tenant}/message:send\"\r/message:send\x12\x8d\x01\n" +
+	"\x14SendStreamingMessage\x12\x1d.lf.a2a.v1.SendMessageRequest\x1a\x19.lf.a2a.v1.StreamResponse\"9\x82\xd3\xe4\x93\x023:\x01*Z\x1d:\x01*\"\x18/{tenant}/message:stream\"\x0f/message:stream0\x01\x12k\n" +
+	"\aGetTask\x12\x19.lf.a2a.v1.GetTaskRequest\x1a\x0f.lf.a2a.v1.Task\"4\xdaA\x02id\x82\xd3\xe4\x93\x02)Z\x18\x12\x16/{tenant}/tasks/{id=*}\x12\r/tasks/{id=*}\x12i\n" +
+	"\tListTasks\x12\x1b.lf.a2a.v1.ListTasksRequest\x1a\x1c.lf.a2a.v1.ListTasksResponse\"!\x82\xd3\xe4\x93\x02\x1bZ\x11\x12\x0f/{tenant}/tasks\x12\x06/tasks\x12\x80\x01\n" +
 	"\n" +
-	"CancelTask\x12\x19.a2a.v1.CancelTaskRequest\x1a\f.a2a.v1.Task\"C\x82\xd3\xe4\x93\x02=:\x01*Z\":\x01*\"\x1d/{tenant}/tasks/{id=*}:cancel\"\x14/tasks/{id=*}:cancel\x12\x90\x01\n" +
-	"\x0fSubscribeToTask\x12\x1e.a2a.v1.SubscribeToTaskRequest\x1a\x16.a2a.v1.StreamResponse\"C\x82\xd3\xe4\x93\x02=Z\"\x12 /{tenant}/tasks/{id=*}:subscribe\x12\x17/tasks/{id=*}:subscribe0\x01\x12\x84\x02\n" +
-	" CreateTaskPushNotificationConfig\x12/.a2a.v1.CreateTaskPushNotificationConfigRequest\x1a\".a2a.v1.TaskPushNotificationConfig\"\x8a\x01\xdaA\x0etask_id,config\x82\xd3\xe4\x93\x02s:\x06configZ=:\x06config\"3/{tenant}/tasks/{task_id=*}/pushNotificationConfigs\"*/tasks/{task_id=*}/pushNotificationConfigs\x12\xf8\x01\n" +
-	"\x1dGetTaskPushNotificationConfig\x12,.a2a.v1.GetTaskPushNotificationConfigRequest\x1a\".a2a.v1.TaskPushNotificationConfig\"\x84\x01\xdaA\n" +
-	"task_id,id\x82\xd3\xe4\x93\x02qZ<\x12:/{tenant}/tasks/{task_id=*}/pushNotificationConfigs/{id=*}\x121/tasks/{task_id=*}/pushNotificationConfigs/{id=*}\x12\xf4\x01\n" +
-	"\x1eListTaskPushNotificationConfig\x12-.a2a.v1.ListTaskPushNotificationConfigRequest\x1a..a2a.v1.ListTaskPushNotificationConfigResponse\"s\xdaA\atask_id\x82\xd3\xe4\x93\x02cZ5\x123/{tenant}/tasks/{task_id=*}/pushNotificationConfigs\x12*/tasks/{task_id=*}/pushNotificationConfigs\x12\x89\x01\n" +
-	"\x14GetExtendedAgentCard\x12#.a2a.v1.GetExtendedAgentCardRequest\x1a\x11.a2a.v1.AgentCard\"9\x82\xd3\xe4\x93\x023Z\x1d\x12\x1b/{tenant}/extendedAgentCard\x12\x12/extendedAgentCard\x12\xf2\x01\n" +
-	" DeleteTaskPushNotificationConfig\x12/.a2a.v1.DeleteTaskPushNotificationConfigRequest\x1a\x16.google.protobuf.Empty\"\x84\x01\xdaA\n" +
-	"task_id,id\x82\xd3\xe4\x93\x02qZ<*:/{tenant}/tasks/{task_id=*}/pushNotificationConfigs/{id=*}*1/tasks/{task_id=*}/pushNotificationConfigs/{id=*}Bs\n" +
-	"\n" +
-	"com.a2a.v1B\bA2aProtoP\x01Z\"github.com/a2aproject/a2a-go/a2apb\xa2\x02\x03AXX\xaa\x02\x06A2a.V1\xca\x02\x06A2a\\V1\xe2\x02\x12A2a\\V1\\GPBMetadata\xea\x02\aA2a::V1b\x06proto3"
+	"CancelTask\x12\x1c.lf.a2a.v1.CancelTaskRequest\x1a\x0f.lf.a2a.v1.Task\"C\x82\xd3\xe4\x93\x02=:\x01*Z\":\x01*\"\x1d/{tenant}/tasks/{id=*}:cancel\"\x14/tasks/{id=*}:cancel\x12\x96\x01\n" +
+	"\x0fSubscribeToTask\x12!.lf.a2a.v1.SubscribeToTaskRequest\x1a\x19.lf.a2a.v1.StreamResponse\"C\x82\xd3\xe4\x93\x02=Z\"\x12 /{tenant}/tasks/{id=*}:subscribe\x12\x17/tasks/{id=*}:subscribe0\x01\x12\x8a\x02\n" +
+	" CreateTaskPushNotificationConfig\x122.lf.a2a.v1.CreateTaskPushNotificationConfigRequest\x1a%.lf.a2a.v1.TaskPushNotificationConfig\"\x8a\x01\xdaA\x0etask_id,config\x82\xd3\xe4\x93\x02s:\x06configZ=:\x06config\"3/{tenant}/tasks/{task_id=*}/pushNotificationConfigs\"*/tasks/{task_id=*}/pushNotificationConfigs\x12\xfe\x01\n" +
+	"\x1dGetTaskPushNotificationConfig\x12/.lf.a2a.v1.GetTaskPushNotificationConfigRequest\x1a%.lf.a2a.v1.TaskPushNotificationConfig\"\x84\x01\xdaA\n" +
+	"task_id,id\x82\xd3\xe4\x93\x02qZ<\x12:/{tenant}/tasks/{task_id=*}/pushNotificationConfigs/{id=*}\x121/tasks/{task_id=*}/pushNotificationConfigs/{id=*}\x12\xfd\x01\n" +
+	"\x1fListTaskPushNotificationConfigs\x121.lf.a2a.v1.ListTaskPushNotificationConfigsRequest\x1a2.lf.a2a.v1.ListTaskPushNotificationConfigsResponse\"s\xdaA\atask_id\x82\xd3\xe4\x93\x02cZ5\x123/{tenant}/tasks/{task_id=*}/pushNotificationConfigs\x12*/tasks/{task_id=*}/pushNotificationConfigs\x12\x8f\x01\n" +
+	"\x14GetExtendedAgentCard\x12&.lf.a2a.v1.GetExtendedAgentCardRequest\x1a\x14.lf.a2a.v1.AgentCard\"9\x82\xd3\xe4\x93\x023Z\x1d\x12\x1b/{tenant}/extendedAgentCard\x12\x12/extendedAgentCard\x12\xf5\x01\n" +
+	" DeleteTaskPushNotificationConfig\x122.lf.a2a.v1.DeleteTaskPushNotificationConfigRequest\x1a\x16.google.protobuf.Empty\"\x84\x01\xdaA\n" +
+	"task_id,id\x82\xd3\xe4\x93\x02qZ<*:/{tenant}/tasks/{task_id=*}/pushNotificationConfigs/{id=*}*1/tasks/{task_id=*}/pushNotificationConfigs/{id=*}B\x83\x01\n" +
+	"\rcom.lf.a2a.v1B\bA2aProtoP\x01Z\"github.com/a2aproject/a2a-go/a2apb\xa2\x02\x03LAX\xaa\x02\tLf.A2a.V1\xca\x02\tLf\\A2a\\V1\xe2\x02\x15Lf\\A2a\\V1\\GPBMetadata\xea\x02\vLf::A2a::V1b\x06proto3"
 
 var (
 	file_a2a_proto_rawDescOnce sync.Once
@@ -4187,159 +4147,160 @@ func file_a2a_proto_rawDescGZIP() []byte {
 var file_a2a_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_a2a_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
 var file_a2a_proto_goTypes = []any{
-	(TaskState)(0),                                  // 0: a2a.v1.TaskState
-	(Role)(0),                                       // 1: a2a.v1.Role
-	(*SendMessageConfiguration)(nil),                // 2: a2a.v1.SendMessageConfiguration
-	(*Task)(nil),                                    // 3: a2a.v1.Task
-	(*TaskStatus)(nil),                              // 4: a2a.v1.TaskStatus
-	(*Part)(nil),                                    // 5: a2a.v1.Part
-	(*Message)(nil),                                 // 6: a2a.v1.Message
-	(*Artifact)(nil),                                // 7: a2a.v1.Artifact
-	(*TaskStatusUpdateEvent)(nil),                   // 8: a2a.v1.TaskStatusUpdateEvent
-	(*TaskArtifactUpdateEvent)(nil),                 // 9: a2a.v1.TaskArtifactUpdateEvent
-	(*PushNotificationConfig)(nil),                  // 10: a2a.v1.PushNotificationConfig
-	(*AuthenticationInfo)(nil),                      // 11: a2a.v1.AuthenticationInfo
-	(*AgentInterface)(nil),                          // 12: a2a.v1.AgentInterface
-	(*AgentCard)(nil),                               // 13: a2a.v1.AgentCard
-	(*AgentProvider)(nil),                           // 14: a2a.v1.AgentProvider
-	(*AgentCapabilities)(nil),                       // 15: a2a.v1.AgentCapabilities
-	(*AgentExtension)(nil),                          // 16: a2a.v1.AgentExtension
-	(*AgentSkill)(nil),                              // 17: a2a.v1.AgentSkill
-	(*AgentCardSignature)(nil),                      // 18: a2a.v1.AgentCardSignature
-	(*TaskPushNotificationConfig)(nil),              // 19: a2a.v1.TaskPushNotificationConfig
-	(*StringList)(nil),                              // 20: a2a.v1.StringList
-	(*SecurityRequirement)(nil),                     // 21: a2a.v1.SecurityRequirement
-	(*SecurityScheme)(nil),                          // 22: a2a.v1.SecurityScheme
-	(*APIKeySecurityScheme)(nil),                    // 23: a2a.v1.APIKeySecurityScheme
-	(*HTTPAuthSecurityScheme)(nil),                  // 24: a2a.v1.HTTPAuthSecurityScheme
-	(*OAuth2SecurityScheme)(nil),                    // 25: a2a.v1.OAuth2SecurityScheme
-	(*OpenIdConnectSecurityScheme)(nil),             // 26: a2a.v1.OpenIdConnectSecurityScheme
-	(*MutualTlsSecurityScheme)(nil),                 // 27: a2a.v1.MutualTlsSecurityScheme
-	(*OAuthFlows)(nil),                              // 28: a2a.v1.OAuthFlows
-	(*AuthorizationCodeOAuthFlow)(nil),              // 29: a2a.v1.AuthorizationCodeOAuthFlow
-	(*ClientCredentialsOAuthFlow)(nil),              // 30: a2a.v1.ClientCredentialsOAuthFlow
-	(*ImplicitOAuthFlow)(nil),                       // 31: a2a.v1.ImplicitOAuthFlow
-	(*PasswordOAuthFlow)(nil),                       // 32: a2a.v1.PasswordOAuthFlow
-	(*DeviceCodeOAuthFlow)(nil),                     // 33: a2a.v1.DeviceCodeOAuthFlow
-	(*SendMessageRequest)(nil),                      // 34: a2a.v1.SendMessageRequest
-	(*GetTaskRequest)(nil),                          // 35: a2a.v1.GetTaskRequest
-	(*ListTasksRequest)(nil),                        // 36: a2a.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),                       // 37: a2a.v1.ListTasksResponse
-	(*CancelTaskRequest)(nil),                       // 38: a2a.v1.CancelTaskRequest
-	(*GetTaskPushNotificationConfigRequest)(nil),    // 39: a2a.v1.GetTaskPushNotificationConfigRequest
-	(*DeleteTaskPushNotificationConfigRequest)(nil), // 40: a2a.v1.DeleteTaskPushNotificationConfigRequest
-	(*CreateTaskPushNotificationConfigRequest)(nil), // 41: a2a.v1.CreateTaskPushNotificationConfigRequest
-	(*SubscribeToTaskRequest)(nil),                  // 42: a2a.v1.SubscribeToTaskRequest
-	(*ListTaskPushNotificationConfigRequest)(nil),   // 43: a2a.v1.ListTaskPushNotificationConfigRequest
-	(*GetExtendedAgentCardRequest)(nil),             // 44: a2a.v1.GetExtendedAgentCardRequest
-	(*SendMessageResponse)(nil),                     // 45: a2a.v1.SendMessageResponse
-	(*StreamResponse)(nil),                          // 46: a2a.v1.StreamResponse
-	(*ListTaskPushNotificationConfigResponse)(nil),  // 47: a2a.v1.ListTaskPushNotificationConfigResponse
-	nil,                           // 48: a2a.v1.AgentCard.SecuritySchemesEntry
-	nil,                           // 49: a2a.v1.SecurityRequirement.SchemesEntry
-	nil,                           // 50: a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntry
-	nil,                           // 51: a2a.v1.ClientCredentialsOAuthFlow.ScopesEntry
-	nil,                           // 52: a2a.v1.ImplicitOAuthFlow.ScopesEntry
-	nil,                           // 53: a2a.v1.PasswordOAuthFlow.ScopesEntry
-	nil,                           // 54: a2a.v1.DeviceCodeOAuthFlow.ScopesEntry
+	(TaskState)(0),                                  // 0: lf.a2a.v1.TaskState
+	(Role)(0),                                       // 1: lf.a2a.v1.Role
+	(*SendMessageConfiguration)(nil),                // 2: lf.a2a.v1.SendMessageConfiguration
+	(*Task)(nil),                                    // 3: lf.a2a.v1.Task
+	(*TaskStatus)(nil),                              // 4: lf.a2a.v1.TaskStatus
+	(*Part)(nil),                                    // 5: lf.a2a.v1.Part
+	(*Message)(nil),                                 // 6: lf.a2a.v1.Message
+	(*Artifact)(nil),                                // 7: lf.a2a.v1.Artifact
+	(*TaskStatusUpdateEvent)(nil),                   // 8: lf.a2a.v1.TaskStatusUpdateEvent
+	(*TaskArtifactUpdateEvent)(nil),                 // 9: lf.a2a.v1.TaskArtifactUpdateEvent
+	(*PushNotificationConfig)(nil),                  // 10: lf.a2a.v1.PushNotificationConfig
+	(*AuthenticationInfo)(nil),                      // 11: lf.a2a.v1.AuthenticationInfo
+	(*AgentInterface)(nil),                          // 12: lf.a2a.v1.AgentInterface
+	(*AgentCard)(nil),                               // 13: lf.a2a.v1.AgentCard
+	(*AgentProvider)(nil),                           // 14: lf.a2a.v1.AgentProvider
+	(*AgentCapabilities)(nil),                       // 15: lf.a2a.v1.AgentCapabilities
+	(*AgentExtension)(nil),                          // 16: lf.a2a.v1.AgentExtension
+	(*AgentSkill)(nil),                              // 17: lf.a2a.v1.AgentSkill
+	(*AgentCardSignature)(nil),                      // 18: lf.a2a.v1.AgentCardSignature
+	(*TaskPushNotificationConfig)(nil),              // 19: lf.a2a.v1.TaskPushNotificationConfig
+	(*StringList)(nil),                              // 20: lf.a2a.v1.StringList
+	(*SecurityRequirement)(nil),                     // 21: lf.a2a.v1.SecurityRequirement
+	(*SecurityScheme)(nil),                          // 22: lf.a2a.v1.SecurityScheme
+	(*APIKeySecurityScheme)(nil),                    // 23: lf.a2a.v1.APIKeySecurityScheme
+	(*HTTPAuthSecurityScheme)(nil),                  // 24: lf.a2a.v1.HTTPAuthSecurityScheme
+	(*OAuth2SecurityScheme)(nil),                    // 25: lf.a2a.v1.OAuth2SecurityScheme
+	(*OpenIdConnectSecurityScheme)(nil),             // 26: lf.a2a.v1.OpenIdConnectSecurityScheme
+	(*MutualTlsSecurityScheme)(nil),                 // 27: lf.a2a.v1.MutualTlsSecurityScheme
+	(*OAuthFlows)(nil),                              // 28: lf.a2a.v1.OAuthFlows
+	(*AuthorizationCodeOAuthFlow)(nil),              // 29: lf.a2a.v1.AuthorizationCodeOAuthFlow
+	(*ClientCredentialsOAuthFlow)(nil),              // 30: lf.a2a.v1.ClientCredentialsOAuthFlow
+	(*ImplicitOAuthFlow)(nil),                       // 31: lf.a2a.v1.ImplicitOAuthFlow
+	(*PasswordOAuthFlow)(nil),                       // 32: lf.a2a.v1.PasswordOAuthFlow
+	(*DeviceCodeOAuthFlow)(nil),                     // 33: lf.a2a.v1.DeviceCodeOAuthFlow
+	(*SendMessageRequest)(nil),                      // 34: lf.a2a.v1.SendMessageRequest
+	(*GetTaskRequest)(nil),                          // 35: lf.a2a.v1.GetTaskRequest
+	(*ListTasksRequest)(nil),                        // 36: lf.a2a.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),                       // 37: lf.a2a.v1.ListTasksResponse
+	(*CancelTaskRequest)(nil),                       // 38: lf.a2a.v1.CancelTaskRequest
+	(*GetTaskPushNotificationConfigRequest)(nil),    // 39: lf.a2a.v1.GetTaskPushNotificationConfigRequest
+	(*DeleteTaskPushNotificationConfigRequest)(nil), // 40: lf.a2a.v1.DeleteTaskPushNotificationConfigRequest
+	(*CreateTaskPushNotificationConfigRequest)(nil), // 41: lf.a2a.v1.CreateTaskPushNotificationConfigRequest
+	(*SubscribeToTaskRequest)(nil),                  // 42: lf.a2a.v1.SubscribeToTaskRequest
+	(*ListTaskPushNotificationConfigsRequest)(nil),  // 43: lf.a2a.v1.ListTaskPushNotificationConfigsRequest
+	(*GetExtendedAgentCardRequest)(nil),             // 44: lf.a2a.v1.GetExtendedAgentCardRequest
+	(*SendMessageResponse)(nil),                     // 45: lf.a2a.v1.SendMessageResponse
+	(*StreamResponse)(nil),                          // 46: lf.a2a.v1.StreamResponse
+	(*ListTaskPushNotificationConfigsResponse)(nil), // 47: lf.a2a.v1.ListTaskPushNotificationConfigsResponse
+	nil,                           // 48: lf.a2a.v1.AgentCard.SecuritySchemesEntry
+	nil,                           // 49: lf.a2a.v1.SecurityRequirement.SchemesEntry
+	nil,                           // 50: lf.a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntry
+	nil,                           // 51: lf.a2a.v1.ClientCredentialsOAuthFlow.ScopesEntry
+	nil,                           // 52: lf.a2a.v1.ImplicitOAuthFlow.ScopesEntry
+	nil,                           // 53: lf.a2a.v1.PasswordOAuthFlow.ScopesEntry
+	nil,                           // 54: lf.a2a.v1.DeviceCodeOAuthFlow.ScopesEntry
 	(*structpb.Struct)(nil),       // 55: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil), // 56: google.protobuf.Timestamp
 	(*structpb.Value)(nil),        // 57: google.protobuf.Value
 	(*emptypb.Empty)(nil),         // 58: google.protobuf.Empty
 }
 var file_a2a_proto_depIdxs = []int32{
-	10, // 0: a2a.v1.SendMessageConfiguration.push_notification_config:type_name -> a2a.v1.PushNotificationConfig
-	4,  // 1: a2a.v1.Task.status:type_name -> a2a.v1.TaskStatus
-	7,  // 2: a2a.v1.Task.artifacts:type_name -> a2a.v1.Artifact
-	6,  // 3: a2a.v1.Task.history:type_name -> a2a.v1.Message
-	55, // 4: a2a.v1.Task.metadata:type_name -> google.protobuf.Struct
-	0,  // 5: a2a.v1.TaskStatus.state:type_name -> a2a.v1.TaskState
-	6,  // 6: a2a.v1.TaskStatus.message:type_name -> a2a.v1.Message
-	56, // 7: a2a.v1.TaskStatus.timestamp:type_name -> google.protobuf.Timestamp
-	57, // 8: a2a.v1.Part.data:type_name -> google.protobuf.Value
-	55, // 9: a2a.v1.Part.metadata:type_name -> google.protobuf.Struct
-	1,  // 10: a2a.v1.Message.role:type_name -> a2a.v1.Role
-	5,  // 11: a2a.v1.Message.parts:type_name -> a2a.v1.Part
-	55, // 12: a2a.v1.Message.metadata:type_name -> google.protobuf.Struct
-	5,  // 13: a2a.v1.Artifact.parts:type_name -> a2a.v1.Part
-	55, // 14: a2a.v1.Artifact.metadata:type_name -> google.protobuf.Struct
-	4,  // 15: a2a.v1.TaskStatusUpdateEvent.status:type_name -> a2a.v1.TaskStatus
-	55, // 16: a2a.v1.TaskStatusUpdateEvent.metadata:type_name -> google.protobuf.Struct
-	7,  // 17: a2a.v1.TaskArtifactUpdateEvent.artifact:type_name -> a2a.v1.Artifact
-	55, // 18: a2a.v1.TaskArtifactUpdateEvent.metadata:type_name -> google.protobuf.Struct
-	11, // 19: a2a.v1.PushNotificationConfig.authentication:type_name -> a2a.v1.AuthenticationInfo
-	12, // 20: a2a.v1.AgentCard.supported_interfaces:type_name -> a2a.v1.AgentInterface
-	14, // 21: a2a.v1.AgentCard.provider:type_name -> a2a.v1.AgentProvider
-	15, // 22: a2a.v1.AgentCard.capabilities:type_name -> a2a.v1.AgentCapabilities
-	48, // 23: a2a.v1.AgentCard.security_schemes:type_name -> a2a.v1.AgentCard.SecuritySchemesEntry
-	21, // 24: a2a.v1.AgentCard.security_requirements:type_name -> a2a.v1.SecurityRequirement
-	17, // 25: a2a.v1.AgentCard.skills:type_name -> a2a.v1.AgentSkill
-	18, // 26: a2a.v1.AgentCard.signatures:type_name -> a2a.v1.AgentCardSignature
-	16, // 27: a2a.v1.AgentCapabilities.extensions:type_name -> a2a.v1.AgentExtension
-	55, // 28: a2a.v1.AgentExtension.params:type_name -> google.protobuf.Struct
-	21, // 29: a2a.v1.AgentSkill.security_requirements:type_name -> a2a.v1.SecurityRequirement
-	55, // 30: a2a.v1.AgentCardSignature.header:type_name -> google.protobuf.Struct
-	10, // 31: a2a.v1.TaskPushNotificationConfig.push_notification_config:type_name -> a2a.v1.PushNotificationConfig
-	49, // 32: a2a.v1.SecurityRequirement.schemes:type_name -> a2a.v1.SecurityRequirement.SchemesEntry
-	23, // 33: a2a.v1.SecurityScheme.api_key_security_scheme:type_name -> a2a.v1.APIKeySecurityScheme
-	24, // 34: a2a.v1.SecurityScheme.http_auth_security_scheme:type_name -> a2a.v1.HTTPAuthSecurityScheme
-	25, // 35: a2a.v1.SecurityScheme.oauth2_security_scheme:type_name -> a2a.v1.OAuth2SecurityScheme
-	26, // 36: a2a.v1.SecurityScheme.open_id_connect_security_scheme:type_name -> a2a.v1.OpenIdConnectSecurityScheme
-	27, // 37: a2a.v1.SecurityScheme.mtls_security_scheme:type_name -> a2a.v1.MutualTlsSecurityScheme
-	28, // 38: a2a.v1.OAuth2SecurityScheme.flows:type_name -> a2a.v1.OAuthFlows
-	29, // 39: a2a.v1.OAuthFlows.authorization_code:type_name -> a2a.v1.AuthorizationCodeOAuthFlow
-	30, // 40: a2a.v1.OAuthFlows.client_credentials:type_name -> a2a.v1.ClientCredentialsOAuthFlow
-	31, // 41: a2a.v1.OAuthFlows.implicit:type_name -> a2a.v1.ImplicitOAuthFlow
-	32, // 42: a2a.v1.OAuthFlows.password:type_name -> a2a.v1.PasswordOAuthFlow
-	33, // 43: a2a.v1.OAuthFlows.device_code:type_name -> a2a.v1.DeviceCodeOAuthFlow
-	50, // 44: a2a.v1.AuthorizationCodeOAuthFlow.scopes:type_name -> a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntry
-	51, // 45: a2a.v1.ClientCredentialsOAuthFlow.scopes:type_name -> a2a.v1.ClientCredentialsOAuthFlow.ScopesEntry
-	52, // 46: a2a.v1.ImplicitOAuthFlow.scopes:type_name -> a2a.v1.ImplicitOAuthFlow.ScopesEntry
-	53, // 47: a2a.v1.PasswordOAuthFlow.scopes:type_name -> a2a.v1.PasswordOAuthFlow.ScopesEntry
-	54, // 48: a2a.v1.DeviceCodeOAuthFlow.scopes:type_name -> a2a.v1.DeviceCodeOAuthFlow.ScopesEntry
-	6,  // 49: a2a.v1.SendMessageRequest.message:type_name -> a2a.v1.Message
-	2,  // 50: a2a.v1.SendMessageRequest.configuration:type_name -> a2a.v1.SendMessageConfiguration
-	55, // 51: a2a.v1.SendMessageRequest.metadata:type_name -> google.protobuf.Struct
-	0,  // 52: a2a.v1.ListTasksRequest.status:type_name -> a2a.v1.TaskState
-	56, // 53: a2a.v1.ListTasksRequest.status_timestamp_after:type_name -> google.protobuf.Timestamp
-	3,  // 54: a2a.v1.ListTasksResponse.tasks:type_name -> a2a.v1.Task
-	10, // 55: a2a.v1.CreateTaskPushNotificationConfigRequest.config:type_name -> a2a.v1.PushNotificationConfig
-	3,  // 56: a2a.v1.SendMessageResponse.task:type_name -> a2a.v1.Task
-	6,  // 57: a2a.v1.SendMessageResponse.message:type_name -> a2a.v1.Message
-	3,  // 58: a2a.v1.StreamResponse.task:type_name -> a2a.v1.Task
-	6,  // 59: a2a.v1.StreamResponse.message:type_name -> a2a.v1.Message
-	8,  // 60: a2a.v1.StreamResponse.status_update:type_name -> a2a.v1.TaskStatusUpdateEvent
-	9,  // 61: a2a.v1.StreamResponse.artifact_update:type_name -> a2a.v1.TaskArtifactUpdateEvent
-	19, // 62: a2a.v1.ListTaskPushNotificationConfigResponse.configs:type_name -> a2a.v1.TaskPushNotificationConfig
-	22, // 63: a2a.v1.AgentCard.SecuritySchemesEntry.value:type_name -> a2a.v1.SecurityScheme
-	20, // 64: a2a.v1.SecurityRequirement.SchemesEntry.value:type_name -> a2a.v1.StringList
-	34, // 65: a2a.v1.A2AService.SendMessage:input_type -> a2a.v1.SendMessageRequest
-	34, // 66: a2a.v1.A2AService.SendStreamingMessage:input_type -> a2a.v1.SendMessageRequest
-	35, // 67: a2a.v1.A2AService.GetTask:input_type -> a2a.v1.GetTaskRequest
-	36, // 68: a2a.v1.A2AService.ListTasks:input_type -> a2a.v1.ListTasksRequest
-	38, // 69: a2a.v1.A2AService.CancelTask:input_type -> a2a.v1.CancelTaskRequest
-	42, // 70: a2a.v1.A2AService.SubscribeToTask:input_type -> a2a.v1.SubscribeToTaskRequest
-	41, // 71: a2a.v1.A2AService.CreateTaskPushNotificationConfig:input_type -> a2a.v1.CreateTaskPushNotificationConfigRequest
-	39, // 72: a2a.v1.A2AService.GetTaskPushNotificationConfig:input_type -> a2a.v1.GetTaskPushNotificationConfigRequest
-	43, // 73: a2a.v1.A2AService.ListTaskPushNotificationConfig:input_type -> a2a.v1.ListTaskPushNotificationConfigRequest
-	44, // 74: a2a.v1.A2AService.GetExtendedAgentCard:input_type -> a2a.v1.GetExtendedAgentCardRequest
-	40, // 75: a2a.v1.A2AService.DeleteTaskPushNotificationConfig:input_type -> a2a.v1.DeleteTaskPushNotificationConfigRequest
-	45, // 76: a2a.v1.A2AService.SendMessage:output_type -> a2a.v1.SendMessageResponse
-	46, // 77: a2a.v1.A2AService.SendStreamingMessage:output_type -> a2a.v1.StreamResponse
-	3,  // 78: a2a.v1.A2AService.GetTask:output_type -> a2a.v1.Task
-	37, // 79: a2a.v1.A2AService.ListTasks:output_type -> a2a.v1.ListTasksResponse
-	3,  // 80: a2a.v1.A2AService.CancelTask:output_type -> a2a.v1.Task
-	46, // 81: a2a.v1.A2AService.SubscribeToTask:output_type -> a2a.v1.StreamResponse
-	19, // 82: a2a.v1.A2AService.CreateTaskPushNotificationConfig:output_type -> a2a.v1.TaskPushNotificationConfig
-	19, // 83: a2a.v1.A2AService.GetTaskPushNotificationConfig:output_type -> a2a.v1.TaskPushNotificationConfig
-	47, // 84: a2a.v1.A2AService.ListTaskPushNotificationConfig:output_type -> a2a.v1.ListTaskPushNotificationConfigResponse
-	13, // 85: a2a.v1.A2AService.GetExtendedAgentCard:output_type -> a2a.v1.AgentCard
-	58, // 86: a2a.v1.A2AService.DeleteTaskPushNotificationConfig:output_type -> google.protobuf.Empty
-	76, // [76:87] is the sub-list for method output_type
-	65, // [65:76] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	10, // 0: lf.a2a.v1.SendMessageConfiguration.push_notification_config:type_name -> lf.a2a.v1.PushNotificationConfig
+	4,  // 1: lf.a2a.v1.Task.status:type_name -> lf.a2a.v1.TaskStatus
+	7,  // 2: lf.a2a.v1.Task.artifacts:type_name -> lf.a2a.v1.Artifact
+	6,  // 3: lf.a2a.v1.Task.history:type_name -> lf.a2a.v1.Message
+	55, // 4: lf.a2a.v1.Task.metadata:type_name -> google.protobuf.Struct
+	0,  // 5: lf.a2a.v1.TaskStatus.state:type_name -> lf.a2a.v1.TaskState
+	6,  // 6: lf.a2a.v1.TaskStatus.message:type_name -> lf.a2a.v1.Message
+	56, // 7: lf.a2a.v1.TaskStatus.timestamp:type_name -> google.protobuf.Timestamp
+	57, // 8: lf.a2a.v1.Part.data:type_name -> google.protobuf.Value
+	55, // 9: lf.a2a.v1.Part.metadata:type_name -> google.protobuf.Struct
+	1,  // 10: lf.a2a.v1.Message.role:type_name -> lf.a2a.v1.Role
+	5,  // 11: lf.a2a.v1.Message.parts:type_name -> lf.a2a.v1.Part
+	55, // 12: lf.a2a.v1.Message.metadata:type_name -> google.protobuf.Struct
+	5,  // 13: lf.a2a.v1.Artifact.parts:type_name -> lf.a2a.v1.Part
+	55, // 14: lf.a2a.v1.Artifact.metadata:type_name -> google.protobuf.Struct
+	4,  // 15: lf.a2a.v1.TaskStatusUpdateEvent.status:type_name -> lf.a2a.v1.TaskStatus
+	55, // 16: lf.a2a.v1.TaskStatusUpdateEvent.metadata:type_name -> google.protobuf.Struct
+	7,  // 17: lf.a2a.v1.TaskArtifactUpdateEvent.artifact:type_name -> lf.a2a.v1.Artifact
+	55, // 18: lf.a2a.v1.TaskArtifactUpdateEvent.metadata:type_name -> google.protobuf.Struct
+	11, // 19: lf.a2a.v1.PushNotificationConfig.authentication:type_name -> lf.a2a.v1.AuthenticationInfo
+	12, // 20: lf.a2a.v1.AgentCard.supported_interfaces:type_name -> lf.a2a.v1.AgentInterface
+	14, // 21: lf.a2a.v1.AgentCard.provider:type_name -> lf.a2a.v1.AgentProvider
+	15, // 22: lf.a2a.v1.AgentCard.capabilities:type_name -> lf.a2a.v1.AgentCapabilities
+	48, // 23: lf.a2a.v1.AgentCard.security_schemes:type_name -> lf.a2a.v1.AgentCard.SecuritySchemesEntry
+	21, // 24: lf.a2a.v1.AgentCard.security_requirements:type_name -> lf.a2a.v1.SecurityRequirement
+	17, // 25: lf.a2a.v1.AgentCard.skills:type_name -> lf.a2a.v1.AgentSkill
+	18, // 26: lf.a2a.v1.AgentCard.signatures:type_name -> lf.a2a.v1.AgentCardSignature
+	16, // 27: lf.a2a.v1.AgentCapabilities.extensions:type_name -> lf.a2a.v1.AgentExtension
+	55, // 28: lf.a2a.v1.AgentExtension.params:type_name -> google.protobuf.Struct
+	21, // 29: lf.a2a.v1.AgentSkill.security_requirements:type_name -> lf.a2a.v1.SecurityRequirement
+	55, // 30: lf.a2a.v1.AgentCardSignature.header:type_name -> google.protobuf.Struct
+	10, // 31: lf.a2a.v1.TaskPushNotificationConfig.push_notification_config:type_name -> lf.a2a.v1.PushNotificationConfig
+	49, // 32: lf.a2a.v1.SecurityRequirement.schemes:type_name -> lf.a2a.v1.SecurityRequirement.SchemesEntry
+	23, // 33: lf.a2a.v1.SecurityScheme.api_key_security_scheme:type_name -> lf.a2a.v1.APIKeySecurityScheme
+	24, // 34: lf.a2a.v1.SecurityScheme.http_auth_security_scheme:type_name -> lf.a2a.v1.HTTPAuthSecurityScheme
+	25, // 35: lf.a2a.v1.SecurityScheme.oauth2_security_scheme:type_name -> lf.a2a.v1.OAuth2SecurityScheme
+	26, // 36: lf.a2a.v1.SecurityScheme.open_id_connect_security_scheme:type_name -> lf.a2a.v1.OpenIdConnectSecurityScheme
+	27, // 37: lf.a2a.v1.SecurityScheme.mtls_security_scheme:type_name -> lf.a2a.v1.MutualTlsSecurityScheme
+	28, // 38: lf.a2a.v1.OAuth2SecurityScheme.flows:type_name -> lf.a2a.v1.OAuthFlows
+	29, // 39: lf.a2a.v1.OAuthFlows.authorization_code:type_name -> lf.a2a.v1.AuthorizationCodeOAuthFlow
+	30, // 40: lf.a2a.v1.OAuthFlows.client_credentials:type_name -> lf.a2a.v1.ClientCredentialsOAuthFlow
+	31, // 41: lf.a2a.v1.OAuthFlows.implicit:type_name -> lf.a2a.v1.ImplicitOAuthFlow
+	32, // 42: lf.a2a.v1.OAuthFlows.password:type_name -> lf.a2a.v1.PasswordOAuthFlow
+	33, // 43: lf.a2a.v1.OAuthFlows.device_code:type_name -> lf.a2a.v1.DeviceCodeOAuthFlow
+	50, // 44: lf.a2a.v1.AuthorizationCodeOAuthFlow.scopes:type_name -> lf.a2a.v1.AuthorizationCodeOAuthFlow.ScopesEntry
+	51, // 45: lf.a2a.v1.ClientCredentialsOAuthFlow.scopes:type_name -> lf.a2a.v1.ClientCredentialsOAuthFlow.ScopesEntry
+	52, // 46: lf.a2a.v1.ImplicitOAuthFlow.scopes:type_name -> lf.a2a.v1.ImplicitOAuthFlow.ScopesEntry
+	53, // 47: lf.a2a.v1.PasswordOAuthFlow.scopes:type_name -> lf.a2a.v1.PasswordOAuthFlow.ScopesEntry
+	54, // 48: lf.a2a.v1.DeviceCodeOAuthFlow.scopes:type_name -> lf.a2a.v1.DeviceCodeOAuthFlow.ScopesEntry
+	6,  // 49: lf.a2a.v1.SendMessageRequest.message:type_name -> lf.a2a.v1.Message
+	2,  // 50: lf.a2a.v1.SendMessageRequest.configuration:type_name -> lf.a2a.v1.SendMessageConfiguration
+	55, // 51: lf.a2a.v1.SendMessageRequest.metadata:type_name -> google.protobuf.Struct
+	0,  // 52: lf.a2a.v1.ListTasksRequest.status:type_name -> lf.a2a.v1.TaskState
+	56, // 53: lf.a2a.v1.ListTasksRequest.status_timestamp_after:type_name -> google.protobuf.Timestamp
+	3,  // 54: lf.a2a.v1.ListTasksResponse.tasks:type_name -> lf.a2a.v1.Task
+	55, // 55: lf.a2a.v1.CancelTaskRequest.metadata:type_name -> google.protobuf.Struct
+	10, // 56: lf.a2a.v1.CreateTaskPushNotificationConfigRequest.config:type_name -> lf.a2a.v1.PushNotificationConfig
+	3,  // 57: lf.a2a.v1.SendMessageResponse.task:type_name -> lf.a2a.v1.Task
+	6,  // 58: lf.a2a.v1.SendMessageResponse.message:type_name -> lf.a2a.v1.Message
+	3,  // 59: lf.a2a.v1.StreamResponse.task:type_name -> lf.a2a.v1.Task
+	6,  // 60: lf.a2a.v1.StreamResponse.message:type_name -> lf.a2a.v1.Message
+	8,  // 61: lf.a2a.v1.StreamResponse.status_update:type_name -> lf.a2a.v1.TaskStatusUpdateEvent
+	9,  // 62: lf.a2a.v1.StreamResponse.artifact_update:type_name -> lf.a2a.v1.TaskArtifactUpdateEvent
+	19, // 63: lf.a2a.v1.ListTaskPushNotificationConfigsResponse.configs:type_name -> lf.a2a.v1.TaskPushNotificationConfig
+	22, // 64: lf.a2a.v1.AgentCard.SecuritySchemesEntry.value:type_name -> lf.a2a.v1.SecurityScheme
+	20, // 65: lf.a2a.v1.SecurityRequirement.SchemesEntry.value:type_name -> lf.a2a.v1.StringList
+	34, // 66: lf.a2a.v1.A2AService.SendMessage:input_type -> lf.a2a.v1.SendMessageRequest
+	34, // 67: lf.a2a.v1.A2AService.SendStreamingMessage:input_type -> lf.a2a.v1.SendMessageRequest
+	35, // 68: lf.a2a.v1.A2AService.GetTask:input_type -> lf.a2a.v1.GetTaskRequest
+	36, // 69: lf.a2a.v1.A2AService.ListTasks:input_type -> lf.a2a.v1.ListTasksRequest
+	38, // 70: lf.a2a.v1.A2AService.CancelTask:input_type -> lf.a2a.v1.CancelTaskRequest
+	42, // 71: lf.a2a.v1.A2AService.SubscribeToTask:input_type -> lf.a2a.v1.SubscribeToTaskRequest
+	41, // 72: lf.a2a.v1.A2AService.CreateTaskPushNotificationConfig:input_type -> lf.a2a.v1.CreateTaskPushNotificationConfigRequest
+	39, // 73: lf.a2a.v1.A2AService.GetTaskPushNotificationConfig:input_type -> lf.a2a.v1.GetTaskPushNotificationConfigRequest
+	43, // 74: lf.a2a.v1.A2AService.ListTaskPushNotificationConfigs:input_type -> lf.a2a.v1.ListTaskPushNotificationConfigsRequest
+	44, // 75: lf.a2a.v1.A2AService.GetExtendedAgentCard:input_type -> lf.a2a.v1.GetExtendedAgentCardRequest
+	40, // 76: lf.a2a.v1.A2AService.DeleteTaskPushNotificationConfig:input_type -> lf.a2a.v1.DeleteTaskPushNotificationConfigRequest
+	45, // 77: lf.a2a.v1.A2AService.SendMessage:output_type -> lf.a2a.v1.SendMessageResponse
+	46, // 78: lf.a2a.v1.A2AService.SendStreamingMessage:output_type -> lf.a2a.v1.StreamResponse
+	3,  // 79: lf.a2a.v1.A2AService.GetTask:output_type -> lf.a2a.v1.Task
+	37, // 80: lf.a2a.v1.A2AService.ListTasks:output_type -> lf.a2a.v1.ListTasksResponse
+	3,  // 81: lf.a2a.v1.A2AService.CancelTask:output_type -> lf.a2a.v1.Task
+	46, // 82: lf.a2a.v1.A2AService.SubscribeToTask:output_type -> lf.a2a.v1.StreamResponse
+	19, // 83: lf.a2a.v1.A2AService.CreateTaskPushNotificationConfig:output_type -> lf.a2a.v1.TaskPushNotificationConfig
+	19, // 84: lf.a2a.v1.A2AService.GetTaskPushNotificationConfig:output_type -> lf.a2a.v1.TaskPushNotificationConfig
+	47, // 85: lf.a2a.v1.A2AService.ListTaskPushNotificationConfigs:output_type -> lf.a2a.v1.ListTaskPushNotificationConfigsResponse
+	13, // 86: lf.a2a.v1.A2AService.GetExtendedAgentCard:output_type -> lf.a2a.v1.AgentCard
+	58, // 87: lf.a2a.v1.A2AService.DeleteTaskPushNotificationConfig:output_type -> google.protobuf.Empty
+	77, // [77:88] is the sub-list for method output_type
+	66, // [66:77] is the sub-list for method input_type
+	66, // [66:66] is the sub-list for extension type_name
+	66, // [66:66] is the sub-list for extension extendee
+	0,  // [0:66] is the sub-list for field type_name
 }
 
 func init() { file_a2a_proto_init() }

@@ -22,8 +22,8 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 )
 
-// A2AClient defines a transport-agnostic interface for making A2A requests.
-// Transport implementations are a translation layer between a2a core types and wire formats.
+// Transport defines a transport-agnostic interface for making A2A requests.
+// Implementations are a translation layer between a2a core types and wire formats.
 type Transport interface {
 	// GetTask calls the 'GetTask' protocol method.
 	GetTask(context.Context, ServiceParams, *a2a.GetTaskRequest) (*a2a.Task, error)
@@ -43,34 +43,35 @@ type Transport interface {
 	// SendStreamingMessage calls the 'SendStreamingMessage' protocol method (streaming).
 	SendStreamingMessage(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 
-	// GetTaskPushNotificationConfig calls the `GetTaskPushNotificationConfig` protocol method.
+	// GetTaskPushConfig calls the `GetTaskPushNotificationConfig` protocol method.
 	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// ListTaskPushNotificationConfig calls the `ListTaskPushNotificationConfig` protocol method.
-	ListTaskPushConfig(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
+	// ListTaskPushConfigs calls the `ListTaskPushNotificationConfig` protocol method.
+	ListTaskPushConfigs(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
 
-	// CreateTaskPushNotificationConfig calls the `CreateTaskPushNotificationConfig` protocol method.
+	// CreateTaskPushConfig calls the `CreateTaskPushNotificationConfig` protocol method.
 	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
 
-	// DeleteTaskPushNotificationConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
+	// DeleteTaskPushConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
 	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 
-	// GetExtendedAgentCard resolves the AgentCard.
-	// If extended card is supported calls the 'GetExtendedAgentCard' protocol method.
-	GetExtendedAgentCard(context.Context, ServiceParams) (*a2a.AgentCard, error)
+	// GetExtendedAgentCard calls the 'GetExtendedAgentCard' protocol method.
+	GetExtendedAgentCard(context.Context, ServiceParams, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 
-	// Clean up resources associated with the transport (eg. close a gRPC channel).
+	// Destroy cleans up resources associated with the transport (eg. close a gRPC channel).
 	Destroy() error
 }
 
 // TransportFactory creates an A2A protocol connection to the provided URL.
 type TransportFactory interface {
+	// Create creates an A2A protocol connection to the provided URL.
 	Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 }
 
 // TransportFactoryFn implements TransportFactory.
 type TransportFactoryFn func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error)
 
+// Create implements [TransportFactory] interface.
 func (fn TransportFactoryFn) Create(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
 	return fn(ctx, card, iface)
 }
@@ -113,7 +114,7 @@ func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params Serv
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) ListTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	return nil, errNotImplemented
 }
 
@@ -125,7 +126,7 @@ func (unimplementedTransport) DeleteTaskPushConfig(ctx context.Context, params S
 	return errNotImplemented
 }
 
-func (unimplementedTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams) (*a2a.AgentCard, error) {
+func (unimplementedTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	return nil, errNotImplemented
 }
 

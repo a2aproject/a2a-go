@@ -48,12 +48,12 @@ func (p *promise) signalDone() {
 	close(p.done)
 }
 
-func (r *promise) wait(ctx context.Context) (a2a.SendMessageResult, error) {
+func (p *promise) wait(ctx context.Context) (a2a.SendMessageResult, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-r.done:
-		return r.value, r.err
+	case <-p.done:
+		return p.value, p.err
 	}
 }
 

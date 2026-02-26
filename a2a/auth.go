@@ -45,6 +45,7 @@ type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
 //	}
 type SecurityRequirementsOptions []SecurityRequirements
 
+// MarshalJSON implements json.Marshaler.
 func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {
 	type wrapper struct {
 		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
@@ -56,6 +57,7 @@ func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (rs *SecurityRequirementsOptions) UnmarshalJSON(b []byte) error {
 	type wrapper struct {
 		Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
@@ -83,6 +85,7 @@ type SecuritySchemeScopes []string
 // The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
 type NamedSecuritySchemes map[SecuritySchemeName]SecurityScheme
 
+// MarshalJSON implements json.Marshaler.
 func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 	out := make(map[SecuritySchemeName]any)
 	for name, scheme := range s {
@@ -106,6 +109,7 @@ func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
@@ -197,9 +201,12 @@ type APIKeySecurityScheme struct {
 type APIKeySecuritySchemeLocation string
 
 const (
+	// APIKeySecuritySchemeLocationCookie indicates the API key is passed in a cookie.
 	APIKeySecuritySchemeLocationCookie APIKeySecuritySchemeLocation = "cookie"
+	// APIKeySecuritySchemeLocationHeader indicates the API key is passed in a header.
 	APIKeySecuritySchemeLocationHeader APIKeySecuritySchemeLocation = "header"
-	APIKeySecuritySchemeLocationQuery  APIKeySecuritySchemeLocation = "query"
+	// APIKeySecuritySchemeLocationQuery indicates the API key is passed in a query parameter.
+	APIKeySecuritySchemeLocationQuery APIKeySecuritySchemeLocation = "query"
 )
 
 // HTTPAuthSecurityScheme defines a security scheme using HTTP authentication.
@@ -245,16 +252,23 @@ type OAuth2SecurityScheme struct {
 	Oauth2MetadataURL string `json:"oauth2MetadataUrl,omitempty" yaml:"oauth2MetadataUrl,omitempty" mapstructure:"oauth2MetadataUrl,omitempty"`
 }
 
+// OAuthFlowName defines the set of possible OAuth 2.0 flow names.
 type OAuthFlowName string
 
 const (
+	// AuthorizationCodeOAuthFlowName is the name for the Authorization Code flow.
 	AuthorizationCodeOAuthFlowName OAuthFlowName = "authorizationCode"
+	// ClientCredentialsOAuthFlowName is the name for the Client Credentials flow.
 	ClientCredentialsOAuthFlowName OAuthFlowName = "clientCredentials"
-	ImplicitOAuthFlowName          OAuthFlowName = "implicit"
-	PasswordOAuthFlowName          OAuthFlowName = "password"
-	DeviceCodeOAuthFlowName        OAuthFlowName = "deviceCode"
+	// ImplicitOAuthFlowName is the name for the Implicit flow.
+	ImplicitOAuthFlowName OAuthFlowName = "implicit"
+	// PasswordOAuthFlowName is the name for the Resource Owner Password flow.
+	PasswordOAuthFlowName OAuthFlowName = "password"
+	// DeviceCodeOAuthFlowName is the name for the Device Code flow.
+	DeviceCodeOAuthFlowName OAuthFlowName = "deviceCode"
 )
 
+// MarshalJSON implements json.Marshaler.
 func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	type wrapper struct {
 		Description       string                `json:"description,omitempty"`
@@ -279,6 +293,7 @@ func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wrapped)
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
 	type wrapper struct {
 		Description       string                            `json:"description,omitempty"`
@@ -409,14 +424,15 @@ type PasswordOAuthFlow struct {
 	// RefreshURL is an optional URL to be used for obtaining refresh tokens. This MUST be a URL.
 	RefreshURL string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty" mapstructure:"refreshUrl,omitempty"`
 
-	// Scopes are the available scopes for the OAuth2 security scheme. A map between the scope
-	// name and a short description for it.
+	// Scopes are the available scopes for the OAuth2 security scheme.
+	// A map between the scope name and a short description for it.
 	Scopes map[string]string `json:"scopes" yaml:"scopes" mapstructure:"scopes"`
 
 	// TokenURL is the token URL to be used for this flow. This MUST be a URL.
 	TokenURL string `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
 }
 
+// DeviceCodeOAuthFlow defines configuration details for the OAuth 2.0 Device Code flow.
 type DeviceCodeOAuthFlow struct {
 	// DeviceAuthorizationURL is the device authorization URL to be used for this flow. This MUST be a URL.
 	DeviceAuthorizationURL string `json:"deviceAuthorizationUrl" yaml:"deviceAuthorizationUrl" mapstructure:"deviceAuthorizationUrl"`

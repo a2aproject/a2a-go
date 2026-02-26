@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -36,6 +37,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+
+	capabilities *a2a.AgentCapabilities
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -46,32 +49,36 @@ type interceptBeforeResult[Req any, Resp any] struct {
 
 var _ RequestHandler = (*InterceptedHandler)(nil)
 
+// GetTask implements RequestHandler.
 func (h *InterceptedHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetTask")
+	ctx, callCtx := attachMethodCallContext(ctx, "GetTask")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 	}
 	return doCall(ctx, callCtx, h, req, h.Handler.GetTask)
 }
 
+// ListTasks implements RequestHandler.
 func (h *InterceptedHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "ListTasks")
+	ctx, callCtx := attachMethodCallContext(ctx, "ListTasks")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx)
 	}
 	return doCall(ctx, callCtx, h, req, h.Handler.ListTasks)
 }
 
+// CancelTask implements RequestHandler.
 func (h *InterceptedHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "CancelTask")
+	ctx, callCtx := attachMethodCallContext(ctx, "CancelTask")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 	}
 	return doCall(ctx, callCtx, h, req, h.Handler.CancelTask)
 }
 
+// SendMessage implements RequestHandler.
 func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "SendMessage")
+	ctx, callCtx := attachMethodCallContext(ctx, "SendMessage")
 	if req != nil && req.Message != nil {
 		msg := req.Message
 		ctx = h.withLoggerContext(
@@ -86,9 +93,14 @@ func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessa
 	return doCall(ctx, callCtx, h, req, h.Handler.SendMessage)
 }
 
+// SendStreamingMessage implements RequestHandler.
 func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx, callCtx := withMethodCallContext(ctx, "SendStreamingMessage")
+		ctx, callCtx := attachMethodCallContext(ctx, "SendStreamingMessage")
+		if err := checkRequiredExtensions(h, callCtx); err != nil {
+			yield(nil, err)
+			return
+		}
 		if req != nil && req.Message != nil {
 			msg := req.Message
 			ctx = h.withLoggerContext(
@@ -122,9 +134,14 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 	}
 }
 
+// SubscribeToTask implements RequestHandler.
 func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		ctx, callCtx := withMethodCallContext(ctx, "SubscribeToTask")
+		ctx, callCtx := attachMethodCallContext(ctx, "SubscribeToTask")
+		if err := checkRequiredExtensions(h, callCtx); err != nil {
+			yield(nil, err)
+			return
+		}
 		if req != nil {
 			ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
 		}
@@ -150,32 +167,36 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 	}
 }
 
+// GetTaskPushConfig implements RequestHandler.
 func (h *InterceptedHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "GetTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
 	return doCall(ctx, callCtx, h, req, h.Handler.GetTaskPushConfig)
 }
 
-func (h *InterceptedHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "ListTaskPushConfig")
+// ListTaskPushConfigs implements RequestHandler.
+func (h *InterceptedHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+	ctx, callCtx := attachMethodCallContext(ctx, "ListTaskPushConfigs")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
-	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfig)
+	return doCall(ctx, callCtx, h, req, h.Handler.ListTaskPushConfigs)
 }
 
+// CreateTaskPushConfig implements RequestHandler.
 func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "CreateTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "CreateTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
 	return doCall(ctx, callCtx, h, req, h.Handler.CreateTaskPushConfig)
 }
 
+// DeleteTaskPushConfig implements RequestHandler.
 func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	ctx, callCtx := withMethodCallContext(ctx, "DeleteTaskPushConfig")
+	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig")
 	if req != nil {
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	}
@@ -186,26 +207,20 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 	if res.earlyResponse != nil {
 		return nil
 	}
+	if err := checkRequiredExtensions(h, callCtx); err != nil {
+		return err
+	}
 	err := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
 	var emptyResponse struct{}
 	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
 	return errOverride
 }
 
-func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context) (*a2a.AgentCard, error) {
-	ctx, callCtx := withMethodCallContext(ctx, "GetExtendedAgentCard")
+// GetExtendedAgentCard implements RequestHandler.
+func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	ctx, callCtx := attachMethodCallContext(ctx, "GetExtendedAgentCard")
 	ctx = h.withLoggerContext(ctx)
-
-	var req *struct{}
-	ctx, res := interceptBefore[*struct{}, *a2a.AgentCard](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		return nil, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-	response, err := h.Handler.GetExtendedAgentCard(ctx)
-	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
 func interceptBefore[Req any, Resp any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
@@ -284,15 +299,15 @@ func (h *InterceptedHandler) withLoggerContext(ctx context.Context, attrs ...any
 	}
 	requestID := uuid.NewString()
 	withAttrs := logger.WithGroup("a2a").With(attrs...).With(slog.String("request_id", requestID))
-	return log.WithLogger(ctx, withAttrs)
+	return log.AttachLogger(ctx, withAttrs)
 }
 
-// withMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
+// attachMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
 // was passed by a transport implementation or initializes a new CallContext with the provided method.
-func withMethodCallContext(ctx context.Context, method string) (context.Context, *CallContext) {
+func attachMethodCallContext(ctx context.Context, method string) (context.Context, *CallContext) {
 	callCtx, ok := CallContextFrom(ctx)
 	if !ok {
-		ctx, callCtx = WithCallContext(ctx, nil)
+		ctx, callCtx = NewCallContext(ctx, nil)
 	}
 	callCtx.method = method
 	return ctx, callCtx
@@ -310,6 +325,26 @@ func doCall[Req any, Resp any](
 	if res.earlyResponse != nil {
 		return *res.earlyResponse, nil
 	}
+	if err := checkRequiredExtensions(h, callCtx); err != nil {
+		var zero Resp
+		return zero, err
+	}
 	response, err := transportCall(ctx, res.reqOverride)
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+}
+
+func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error {
+	if h.capabilities == nil || len(h.capabilities.Extensions) == 0 {
+		return nil
+	}
+	requestedURIs := callCtx.Extensions().RequestedURIs()
+	for _, ext := range h.capabilities.Extensions {
+		if ext.Required {
+			found := slices.Contains(requestedURIs, ext.URI)
+			if !found {
+				return a2a.ErrExtensionSupportRequired
+			}
+		}
+	}
+	return nil
 }

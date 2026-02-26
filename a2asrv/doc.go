@@ -15,20 +15,20 @@
 /*
 Package a2asrv provides a configurable A2A protocol server implementation.
 
-The default implementation can be created using NewRequestHandler. The function takes a single required
+The default implementation can be created using [NewHandler]. The function takes a single required
 [AgentExecutor] dependency and a variable number of [RequestHandlerOption]-s used to customize handler behavior.
 
 AgentExecutor implementation is responsible for invoking the agent, translating its outputs
-to a2a core types and writing them to the provided [eventqueue.Queue]. A2A server will be reading
-data from the queue, processing it and notifying connected clients.
+to a2a core types and emitting them for processing. A2A server stack will handle task
+state modification, persistence and notification dispatch to registered push endpoint and
+connected clients.
 
 RequestHandler is transport-agnostic and needs to be wrapped in a transport-specific translation layer
-like [github.com/a2aproject/a2a-go/a2agrpc.Handler]. JSONRPC transport implementation can be created using NewJSONRPCHandler function
-and registered with the standard [http.Server]:
+like [NewJSONRPCHandler]. JSONRPC transport implementation can be registered with the standard [http.Server]:
 
 	handler := a2asrv.NewHandler(
 		agentExecutor,
-		a2asrv.WithTaskStore(customDB),
+		task.WithTaskStore(customDB),
 		a2asrv.WithPushNotifications(configStore, sender),
 		a2asrv.WithCallInterceptor(customMiddleware),
 		...

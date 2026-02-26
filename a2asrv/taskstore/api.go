@@ -25,6 +25,8 @@ import (
 var ErrTaskAlreadyExists = errors.New("task already exists")
 
 // ErrConcurrentModification indicates that optimistic concurrency control failed.
+// Task store implementations MUST return it when the provided [UpdateRequest.PrevVersion]
+// does not match the latest stored task version.
 var ErrConcurrentModification = errors.New("concurrent modification")
 
 // TaskVersion is a version of the task stored on the server.
@@ -62,13 +64,14 @@ type StoredTask struct {
 type UpdateRequest struct {
 	// Task represents the desired state of the task in the store.
 	Task *a2a.Task
-	// Event is the event that triggered the update.
+	// Event is the event that triggered the update. It can be a user message which is added to task history.
 	Event a2a.Event
 	// PrevVersion is the version of the task before the update. It is passed for detecting concurrent udpates.
-	// If the provided version does not match the latest task version the update request must be rejected with [ErrConcurrentModification].
+	// If the provided version does not match the latest task version the update request MUST be rejected with [ErrConcurrentModification].
 	PrevVersion TaskVersion
 }
 
+// Store is an interface the server stack uses for storing and retrieving tasks.
 type Store interface {
 	// Create creates a new task. It should return [ErrTaskAlreadyExists] if a task with the provided ID already exists.
 	Create(ctx context.Context, task *a2a.Task) (TaskVersion, error)

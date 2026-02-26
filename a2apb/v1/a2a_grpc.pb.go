@@ -22,47 +22,53 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	A2AService_SendMessage_FullMethodName                      = "/a2a.v1.A2AService/SendMessage"
-	A2AService_SendStreamingMessage_FullMethodName             = "/a2a.v1.A2AService/SendStreamingMessage"
-	A2AService_GetTask_FullMethodName                          = "/a2a.v1.A2AService/GetTask"
-	A2AService_ListTasks_FullMethodName                        = "/a2a.v1.A2AService/ListTasks"
-	A2AService_CancelTask_FullMethodName                       = "/a2a.v1.A2AService/CancelTask"
-	A2AService_SubscribeToTask_FullMethodName                  = "/a2a.v1.A2AService/SubscribeToTask"
-	A2AService_CreateTaskPushNotificationConfig_FullMethodName = "/a2a.v1.A2AService/CreateTaskPushNotificationConfig"
-	A2AService_GetTaskPushNotificationConfig_FullMethodName    = "/a2a.v1.A2AService/GetTaskPushNotificationConfig"
-	A2AService_ListTaskPushNotificationConfig_FullMethodName   = "/a2a.v1.A2AService/ListTaskPushNotificationConfig"
-	A2AService_GetExtendedAgentCard_FullMethodName             = "/a2a.v1.A2AService/GetExtendedAgentCard"
-	A2AService_DeleteTaskPushNotificationConfig_FullMethodName = "/a2a.v1.A2AService/DeleteTaskPushNotificationConfig"
+	A2AService_SendMessage_FullMethodName                      = "/lf.a2a.v1.A2AService/SendMessage"
+	A2AService_SendStreamingMessage_FullMethodName             = "/lf.a2a.v1.A2AService/SendStreamingMessage"
+	A2AService_GetTask_FullMethodName                          = "/lf.a2a.v1.A2AService/GetTask"
+	A2AService_ListTasks_FullMethodName                        = "/lf.a2a.v1.A2AService/ListTasks"
+	A2AService_CancelTask_FullMethodName                       = "/lf.a2a.v1.A2AService/CancelTask"
+	A2AService_SubscribeToTask_FullMethodName                  = "/lf.a2a.v1.A2AService/SubscribeToTask"
+	A2AService_CreateTaskPushNotificationConfig_FullMethodName = "/lf.a2a.v1.A2AService/CreateTaskPushNotificationConfig"
+	A2AService_GetTaskPushNotificationConfig_FullMethodName    = "/lf.a2a.v1.A2AService/GetTaskPushNotificationConfig"
+	A2AService_ListTaskPushNotificationConfigs_FullMethodName  = "/lf.a2a.v1.A2AService/ListTaskPushNotificationConfigs"
+	A2AService_GetExtendedAgentCard_FullMethodName             = "/lf.a2a.v1.A2AService/GetExtendedAgentCard"
+	A2AService_DeleteTaskPushNotificationConfig_FullMethodName = "/lf.a2a.v1.A2AService/DeleteTaskPushNotificationConfig"
 )
 
 // A2AServiceClient is the client API for A2AService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// A2AService defines the operations of the A2A protocol.
+// Provides operations for interacting with agents using the A2A protocol.
 type A2AServiceClient interface {
-	// Send a message to the agent.
+	// Sends a message to an agent.
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
-	// SendStreamingMessage is a streaming version of SendMessage.
+	// Sends a streaming message to an agent, allowing for real-time interaction and status updates.
+	// Streaming version of `SendMessage`
 	SendStreamingMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
-	// Get the current state of a task from the agent.
+	// Gets the latest state of a task.
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	// List tasks with optional filtering and pagination.
+	// Lists tasks that match the specified filter.
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
-	// Cancel a task.
+	// Cancels a task in progress.
 	CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	// SubscribeToTask allows subscribing to task updates for tasks not in terminal state.
-	// Returns UnsupportedOperationError if task is in terminal state (completed, failed, canceled, rejected).
+	// Subscribes to task updates for tasks not in a terminal state.
+	// Returns `UnsupportedOperationError` if the task is already in a terminal state (completed, failed, canceled, rejected).
 	SubscribeToTask(ctx context.Context, in *SubscribeToTaskRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamResponse], error)
-	// Create a push notification config for a task.
+	// (-- api-linter: client-libraries::4232::required-fields=disabled
+	//
+	//	api-linter: core::0133::method-signature=disabled
+	//	aip.dev/not-precedent: method_signature preserved for backwards compatibility --)
+	//
+	// Creates a push notification config for a task.
 	CreateTaskPushNotificationConfig(ctx context.Context, in *CreateTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error)
-	// Get a push notification config for a task.
+	// Gets a push notification config for a task.
 	GetTaskPushNotificationConfig(ctx context.Context, in *GetTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error)
 	// Get a list of push notifications configured for a task.
-	ListTaskPushNotificationConfig(ctx context.Context, in *ListTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*ListTaskPushNotificationConfigResponse, error)
-	// GetExtendedAgentCard returns the extended agent card for authenticated agents.
+	ListTaskPushNotificationConfigs(ctx context.Context, in *ListTaskPushNotificationConfigsRequest, opts ...grpc.CallOption) (*ListTaskPushNotificationConfigsResponse, error)
+	// Gets the extended agent card for the authenticated agent.
 	GetExtendedAgentCard(ctx context.Context, in *GetExtendedAgentCardRequest, opts ...grpc.CallOption) (*AgentCard, error)
-	// Delete a push notification config for a task.
+	// Deletes a push notification config for a task.
 	DeleteTaskPushNotificationConfig(ctx context.Context, in *DeleteTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
@@ -172,10 +178,10 @@ func (c *a2AServiceClient) GetTaskPushNotificationConfig(ctx context.Context, in
 	return out, nil
 }
 
-func (c *a2AServiceClient) ListTaskPushNotificationConfig(ctx context.Context, in *ListTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*ListTaskPushNotificationConfigResponse, error) {
+func (c *a2AServiceClient) ListTaskPushNotificationConfigs(ctx context.Context, in *ListTaskPushNotificationConfigsRequest, opts ...grpc.CallOption) (*ListTaskPushNotificationConfigsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListTaskPushNotificationConfigResponse)
-	err := c.cc.Invoke(ctx, A2AService_ListTaskPushNotificationConfig_FullMethodName, in, out, cOpts...)
+	out := new(ListTaskPushNotificationConfigsResponse)
+	err := c.cc.Invoke(ctx, A2AService_ListTaskPushNotificationConfigs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -206,30 +212,36 @@ func (c *a2AServiceClient) DeleteTaskPushNotificationConfig(ctx context.Context,
 // All implementations must embed UnimplementedA2AServiceServer
 // for forward compatibility.
 //
-// A2AService defines the operations of the A2A protocol.
+// Provides operations for interacting with agents using the A2A protocol.
 type A2AServiceServer interface {
-	// Send a message to the agent.
+	// Sends a message to an agent.
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
-	// SendStreamingMessage is a streaming version of SendMessage.
+	// Sends a streaming message to an agent, allowing for real-time interaction and status updates.
+	// Streaming version of `SendMessage`
 	SendStreamingMessage(*SendMessageRequest, grpc.ServerStreamingServer[StreamResponse]) error
-	// Get the current state of a task from the agent.
+	// Gets the latest state of a task.
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
-	// List tasks with optional filtering and pagination.
+	// Lists tasks that match the specified filter.
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
-	// Cancel a task.
+	// Cancels a task in progress.
 	CancelTask(context.Context, *CancelTaskRequest) (*Task, error)
-	// SubscribeToTask allows subscribing to task updates for tasks not in terminal state.
-	// Returns UnsupportedOperationError if task is in terminal state (completed, failed, canceled, rejected).
+	// Subscribes to task updates for tasks not in a terminal state.
+	// Returns `UnsupportedOperationError` if the task is already in a terminal state (completed, failed, canceled, rejected).
 	SubscribeToTask(*SubscribeToTaskRequest, grpc.ServerStreamingServer[StreamResponse]) error
-	// Create a push notification config for a task.
+	// (-- api-linter: client-libraries::4232::required-fields=disabled
+	//
+	//	api-linter: core::0133::method-signature=disabled
+	//	aip.dev/not-precedent: method_signature preserved for backwards compatibility --)
+	//
+	// Creates a push notification config for a task.
 	CreateTaskPushNotificationConfig(context.Context, *CreateTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error)
-	// Get a push notification config for a task.
+	// Gets a push notification config for a task.
 	GetTaskPushNotificationConfig(context.Context, *GetTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error)
 	// Get a list of push notifications configured for a task.
-	ListTaskPushNotificationConfig(context.Context, *ListTaskPushNotificationConfigRequest) (*ListTaskPushNotificationConfigResponse, error)
-	// GetExtendedAgentCard returns the extended agent card for authenticated agents.
+	ListTaskPushNotificationConfigs(context.Context, *ListTaskPushNotificationConfigsRequest) (*ListTaskPushNotificationConfigsResponse, error)
+	// Gets the extended agent card for the authenticated agent.
 	GetExtendedAgentCard(context.Context, *GetExtendedAgentCardRequest) (*AgentCard, error)
-	// Delete a push notification config for a task.
+	// Deletes a push notification config for a task.
 	DeleteTaskPushNotificationConfig(context.Context, *DeleteTaskPushNotificationConfigRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedA2AServiceServer()
 }
@@ -265,8 +277,8 @@ func (UnimplementedA2AServiceServer) CreateTaskPushNotificationConfig(context.Co
 func (UnimplementedA2AServiceServer) GetTaskPushNotificationConfig(context.Context, *GetTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTaskPushNotificationConfig not implemented")
 }
-func (UnimplementedA2AServiceServer) ListTaskPushNotificationConfig(context.Context, *ListTaskPushNotificationConfigRequest) (*ListTaskPushNotificationConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListTaskPushNotificationConfig not implemented")
+func (UnimplementedA2AServiceServer) ListTaskPushNotificationConfigs(context.Context, *ListTaskPushNotificationConfigsRequest) (*ListTaskPushNotificationConfigsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTaskPushNotificationConfigs not implemented")
 }
 func (UnimplementedA2AServiceServer) GetExtendedAgentCard(context.Context, *GetExtendedAgentCardRequest) (*AgentCard, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetExtendedAgentCard not implemented")
@@ -425,20 +437,20 @@ func _A2AService_GetTaskPushNotificationConfig_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _A2AService_ListTaskPushNotificationConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListTaskPushNotificationConfigRequest)
+func _A2AService_ListTaskPushNotificationConfigs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTaskPushNotificationConfigsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(A2AServiceServer).ListTaskPushNotificationConfig(ctx, in)
+		return srv.(A2AServiceServer).ListTaskPushNotificationConfigs(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: A2AService_ListTaskPushNotificationConfig_FullMethodName,
+		FullMethod: A2AService_ListTaskPushNotificationConfigs_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(A2AServiceServer).ListTaskPushNotificationConfig(ctx, req.(*ListTaskPushNotificationConfigRequest))
+		return srv.(A2AServiceServer).ListTaskPushNotificationConfigs(ctx, req.(*ListTaskPushNotificationConfigsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -483,7 +495,7 @@ func _A2AService_DeleteTaskPushNotificationConfig_Handler(srv interface{}, ctx c
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var A2AService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "a2a.v1.A2AService",
+	ServiceName: "lf.a2a.v1.A2AService",
 	HandlerType: (*A2AServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -511,8 +523,8 @@ var A2AService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _A2AService_GetTaskPushNotificationConfig_Handler,
 		},
 		{
-			MethodName: "ListTaskPushNotificationConfig",
-			Handler:    _A2AService_ListTaskPushNotificationConfig_Handler,
+			MethodName: "ListTaskPushNotificationConfigs",
+			Handler:    _A2AService_ListTaskPushNotificationConfigs_Handler,
 		},
 		{
 			MethodName: "GetExtendedAgentCard",

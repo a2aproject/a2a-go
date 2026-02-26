@@ -24,9 +24,6 @@ type TaskPushConfig struct {
 
 	// TaskID is the ID of the task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
-
-	// ID is the ID of the push notification configuration.
-	ID string `json:"id" yaml:"id" mapstructure:"id"`
 }
 
 // GetTaskPushConfigRequest defines request for fetching a specific push notification configuration for a task.
@@ -56,6 +53,7 @@ type ListTaskPushConfigRequest struct {
 	PageToken string `json:"pageToken,omitempty" yaml:"pageToken,omitempty" mapstructure:"pageToken,omitempty"`
 }
 
+// ListTaskPushConfigResponse defines the response for a request to list push notification configurations.
 type ListTaskPushConfigResponse struct {
 	// Configs is a list of push notification configurations for the task.
 	Configs []*TaskPushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`

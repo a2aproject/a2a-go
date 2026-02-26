@@ -35,6 +35,7 @@ type TestEventQueue struct {
 var _ eventqueue.Reader = (*TestEventQueue)(nil)
 var _ eventqueue.Writer = (*TestEventQueue)(nil)
 
+// Read implements [eventqueue.Reader] interface.
 func (m *TestEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) {
 	if m.ReadFunc != nil {
 		return m.ReadFunc(ctx)
@@ -43,6 +44,7 @@ func (m *TestEventQueue) Read(ctx context.Context) (*eventqueue.Message, error) 
 	return &eventqueue.Message{Event: event, TaskVersion: taskstore.TaskVersionMissing}, err
 }
 
+// Write implements [eventqueue.Writer] interface.
 func (m *TestEventQueue) Write(ctx context.Context, msg *eventqueue.Message) error {
 	if m.WriteFunc != nil {
 		return m.WriteFunc(ctx, msg)
@@ -50,6 +52,7 @@ func (m *TestEventQueue) Write(ctx context.Context, msg *eventqueue.Message) err
 	return m.pipe.Writer.Write(ctx, msg.Event)
 }
 
+// Close implements [eventqueue.Reader] and [eventqueue.Writer] interfaces.
 func (m *TestEventQueue) Close() error {
 	if m.CloseFunc != nil {
 		return m.CloseFunc()
@@ -66,7 +69,7 @@ func (m *TestEventQueue) SetReadOverride(event a2a.Event, err error) *TestEventQ
 	return m
 }
 
-// SetReadOverride overrides Read execution with an option to provide a version.
+// SetReadVersionedOverride overrides Read execution with an option to provide a version.
 func (m *TestEventQueue) SetReadVersionedOverride(event a2a.Event, version taskstore.TaskVersion, err error) *TestEventQueue {
 	m.ReadFunc = func(ctx context.Context) (*eventqueue.Message, error) {
 		return &eventqueue.Message{Event: event, TaskVersion: version}, err

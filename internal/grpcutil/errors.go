@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package grpcutil provides gRPC utility functions for A2A.
 package grpcutil
 
 import (
@@ -44,7 +45,7 @@ var errorMappings = []struct {
 	{codes.DeadlineExceeded, context.DeadlineExceeded, "INTERNAL_ERROR"},
 
 	// Secondary mappings (only used for ToGRPCError)
-	{codes.FailedPrecondition, a2a.ErrAuthenticatedExtendedCardNotConfigured, "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
+	{codes.FailedPrecondition, a2a.ErrExtendedCardNotConfigured, "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
 	{codes.Unimplemented, a2a.ErrPushNotificationNotSupported, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
 	{codes.Unimplemented, a2a.ErrMethodNotFound, "METHOD_NOT_FOUND"},
 	{codes.InvalidArgument, a2a.ErrUnsupportedContentType, "UNSUPPORTED_CONTENT_TYPE"},

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package jsonrpc provides JSON-RPC 2.0 protocol implementation for A2A.
 package jsonrpc
 
 import (
@@ -38,12 +39,12 @@ const (
 	MethodTasksResubscribe     = "SubscribeToTask"
 	MethodPushConfigGet        = "GetTaskPushNotificationConfig"
 	MethodPushConfigSet        = "CreateTaskPushNotificationConfig"
-	MethodPushConfigList       = "ListTaskPushNotificationConfig" // TODO: should be pluralized?
+	MethodPushConfigList       = "ListTaskPushNotificationConfigs"
 	MethodPushConfigDelete     = "DeleteTaskPushNotificationConfig"
 	MethodGetExtendedAgentCard = "GetExtendedAgentCard"
 )
 
-// jsonrpcError represents a JSON-RPC 2.0 error object.
+// Error represents a JSON-RPC 2.0 error object.
 // TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
 // This needs to be implemented across all transports (currently not in grpc either).
 type Error struct {
@@ -73,11 +74,12 @@ var codeToError = map[int]error{
 	-32004: a2a.ErrUnsupportedOperation,
 	-32005: a2a.ErrUnsupportedContentType,
 	-32006: a2a.ErrInvalidAgentResponse,
-	-32007: a2a.ErrAuthenticatedExtendedCardNotConfigured,
+	-32007: a2a.ErrExtendedCardNotConfigured,
 	-31401: a2a.ErrUnauthenticated,
 	-31403: a2a.ErrUnauthorized,
 }
 
+// ToA2AError converts a JSON-RPC error to an [a2a.Error].
 func (e *Error) ToA2AError() error {
 	err, ok := codeToError[e.Code]
 	if !ok {
@@ -96,6 +98,7 @@ func (e *Error) ToA2AError() error {
 	return result
 }
 
+// ToJSONRPCError converts an error to a JSON-RPC [Error].
 func ToJSONRPCError(err error) *Error {
 	jsonrpcErr := &Error{}
 	if errors.As(err, &jsonrpcErr) {
@@ -134,6 +137,7 @@ func ToJSONRPCError(err error) *Error {
 	}
 }
 
+// IsValidID checks if the given ID is valid for a JSON-RPC request.
 func IsValidID(id any) bool {
 	if id == nil {
 		return true
@@ -146,6 +150,7 @@ func IsValidID(id any) bool {
 	}
 }
 
+// ServerRequest represents a JSON-RPC 2.0 server request.
 type ServerRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
@@ -153,6 +158,7 @@ type ServerRequest struct {
 	ID      any             `json:"id"`
 }
 
+// ServerResponse represents a JSON-RPC 2.0 server response.
 type ServerResponse struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      any    `json:"id"`
@@ -160,6 +166,7 @@ type ServerResponse struct {
 	Error   *Error `json:"error,omitempty"`
 }
 
+// ClientRequest represents a JSON-RPC 2.0 client request.
 type ClientRequest struct {
 	JSONRPC string `json:"jsonrpc"`
 	Method  string `json:"method"`
@@ -167,6 +174,7 @@ type ClientRequest struct {
 	ID      string `json:"id"`
 }
 
+// ClientResponse represents a JSON-RPC 2.0 client response.
 type ClientResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      string          `json:"id"`

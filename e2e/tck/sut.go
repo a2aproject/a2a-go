@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main provides a TCK core agent implementation for testing.
 package main
 
 import (

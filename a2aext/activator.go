@@ -31,6 +31,8 @@ type activator struct {
 	extensionURI []string
 }
 
+// Before implements [a2aclient.CallInterceptor].
+// It checks if the server supports any of the configured extensions and appends them to the request ServiceParams.
 func (c *activator) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
 	if req.Card == nil || len(req.Card.Capabilities.Extensions) == 0 {
 		return ctx, nil, nil

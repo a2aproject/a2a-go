@@ -40,7 +40,9 @@ func newWorkQueueHandler(cfg *DistributedManagerConfig) *workQueueHandler {
 		factory:      cfg.Factory,
 		panicHandler: cfg.PanicHandler,
 	}
-	cfg.WorkQueue.RegisterHandler(cfg.ConcurrencyConfig, backend.handle)
+	cfg.WorkQueue.RegisterHandler(workqueue.HandlerConfig{
+		Limiter: cfg.ConcurrencyConfig,
+	}, backend.handle)
 	return backend
 }
 

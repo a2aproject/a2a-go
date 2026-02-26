@@ -39,6 +39,7 @@ type ExponentialReadBackoff struct {
 	MaxDelay time.Duration
 }
 
+// NextDelay implements [ReadRetryPolicy] interface.
 func (e *ExponentialReadBackoff) NextDelay(attempt int) time.Duration {
 	delay := float64(e.BaseDelay) * math.Pow(2.0, float64(attempt))
 	if delay > float64(e.MaxDelay) {

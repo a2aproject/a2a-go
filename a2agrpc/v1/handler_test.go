@@ -222,11 +222,7 @@ func (m *mockRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 		if _, ok := m.pushConfigs[req.TaskID]; !ok {
 			m.pushConfigs[req.TaskID] = make(map[string]*a2a.TaskPushConfig)
 		}
-		taskPushConfig := &a2a.TaskPushConfig{
-			TaskID: req.TaskID,
-			ID:     req.Config.ID,
-			Config: req.Config,
-		}
+		taskPushConfig := &a2a.TaskPushConfig{TaskID: req.TaskID, Config: req.Config}
 		m.pushConfigs[req.TaskID][req.Config.ID] = taskPushConfig
 		return taskPushConfig, nil
 	}
@@ -246,7 +242,7 @@ func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) ListTaskPushConfig(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
 	m.capturedListTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
@@ -925,7 +921,6 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				Id:                     "test-config",
 				TaskId:                 string(taskID),
 				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config", Url: "https://example.com"},
 			},
@@ -1068,15 +1063,15 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		req        *a2apb.ListTaskPushNotificationConfigRequest
-		want       *a2apb.ListTaskPushNotificationConfigResponse
+		req        *a2apb.ListTaskPushNotificationConfigsRequest
+		want       *a2apb.ListTaskPushNotificationConfigsResponse
 		wantParams *a2a.ListTaskPushConfigRequest
 		wantErr    codes.Code
 	}{
 		{
 			name: "success",
-			req:  &a2apb.ListTaskPushNotificationConfigRequest{TaskId: string(taskID)},
-			want: &a2apb.ListTaskPushNotificationConfigResponse{
+			req:  &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: string(taskID)},
+			want: &a2apb.ListTaskPushNotificationConfigsResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{
 					{
 						TaskId:                 string(taskID),
@@ -1092,7 +1087,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 		},
 		{
 			name:    "handler error",
-			req:     &a2apb.ListTaskPushNotificationConfigRequest{TaskId: "handler-error"},
+			req:     &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: "handler-error"},
 			wantErr: codes.Internal,
 		},
 	}
@@ -1100,7 +1095,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedListTaskPushConfigRequest = nil
-			resp, err := client.ListTaskPushNotificationConfig(ctx, tt.req)
+			resp, err := client.ListTaskPushNotificationConfigs(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
 					t.Fatal("ListTaskPushNotificationConfig() expected error, got nil")
@@ -1126,7 +1121,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 					t.Fatalf("ListTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)
 				}
 				if tt.wantParams != nil && !reflect.DeepEqual(mockHandler.capturedListTaskPushConfigRequest, tt.wantParams) {
-					t.Errorf("OnListTaskPushConfig() request got = %v, want %v", mockHandler.capturedListTaskPushConfigRequest, tt.wantParams)
+					t.Errorf("OnListTaskPushConfigs() request got = %v, want %v", mockHandler.capturedListTaskPushConfigRequest, tt.wantParams)
 				}
 			}
 		})
@@ -1208,7 +1203,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 	}
 }
 
-func TestGrpcHandler_GetAgentCard(t *testing.T) {
+func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 	ctx := t.Context()
 
 	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
@@ -1225,13 +1220,13 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		cardProducer a2asrv.AgentCardProducer
+		cardProducer a2asrv.ExtendedAgentCardProducer
 		want         *a2apb.AgentCard
 		wantErr      codes.Code
 	}{
 		{
 			name: "success",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return a2aCard, nil
 			}),
 			want: pCard,
@@ -1243,14 +1238,14 @@ func TestGrpcHandler_GetAgentCard(t *testing.T) {
 		},
 		{
 			name: "producer returns nil card",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return nil, nil
 			}),
 			want: &a2apb.AgentCard{},
 		},
 		{
 			name: "producer fails",
-			cardProducer: a2asrv.AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+			cardProducer: a2asrv.ExtendedAgentCardProducerFn(func(context.Context, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 				return badCard, nil
 			}),
 			wantErr: codes.Internal,

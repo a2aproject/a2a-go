@@ -53,7 +53,7 @@ func TestToCompatParts_PrimitiveData(t *testing.T) {
 
 func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 	val := "hello"
-	compatParts := ContentParts{
+	compatParts := contentParts{
 		dataPart{
 			Data:     map[string]any{"value": val},
 			Metadata: map[string]any{"data_part_compat": true},
