@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
 )
 
 // TestPushConfigStore is a mock of push.PushConfigStore.

@@ -24,11 +24,11 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/internal/jsonrpc"
-	"github.com/a2aproject/a2a-go/internal/sse"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/v1/internal/sse"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 type jsonrpcHandler struct {
@@ -159,9 +159,9 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 
 		var events iter.Seq2[a2a.Event, error]
 		switch req.Method {
-		case jsonrpc.MethodTasksResubscribe:
+		case methodTasksResubscribe:
 			events = h.onResubscribeToTask(requestCtx, req.Params)
-		case jsonrpc.MethodMessageStream:
+		case methodMessageStream:
 			events = h.onSendMessageStream(requestCtx, req.Params)
 		default:
 			events = func(yield func(a2a.Event, error) bool) { yield(nil, a2a.ErrMethodNotFound) }

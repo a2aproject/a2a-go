@@ -18,7 +18,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // ExtensionsMetaKey is the default extensions key for extensions metadata passed with a request or in a response.

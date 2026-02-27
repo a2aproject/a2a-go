@@ -17,7 +17,7 @@ package a2aext
 import (
 	"context"
 
-	"github.com/a2aproject/a2a-go/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
 )
 
 // NewActivator creates an [a2aclient.CallInterceptor] which requests extension activation

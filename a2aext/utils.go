@@ -17,7 +17,7 @@ package a2aext
 import (
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 func isExtensionSupported(card *a2a.AgentCard, extURI string) bool {

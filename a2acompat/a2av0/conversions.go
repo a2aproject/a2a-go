@@ -18,7 +18,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 var coreToCompatTaskState = map[a2a.TaskState]taskState{

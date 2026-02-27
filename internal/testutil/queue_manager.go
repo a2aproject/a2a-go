@@ -17,8 +17,8 @@ package testutil
 import (
 	"context"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
 )
 
 // TestQueueManager is a mock of eventqueue.Manager

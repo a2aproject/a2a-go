@@ -30,5 +30,5 @@
 //
 // [Sequence diagram].
 //
-// [Sequence diagram]: https://github.com/a2aproject/a2a-go/docs/diagrams/task-execution/task_execution.png
+// [Sequence diagram]: https://github.com/a2aproject/a2a-go/v1/docs/diagrams/task-execution/task_execution.png
 package taskexec

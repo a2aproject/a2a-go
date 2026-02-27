@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package push provides a basic implementation of push notification functionality.
-// To enable push notifications in the default server implementation, [github.com/a2aproject/a2a-go/a2asrv.WithPushNotifications] function
+// To enable push notifications in the default server implementation, [github.com/a2aproject/a2a-go/v1/a2asrv.WithPushNotifications] function
 // should be used:
 //
 //	sender := push.NewHTTPPushSender()

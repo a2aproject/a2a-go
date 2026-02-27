@@ -27,11 +27,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
-	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 var compatTestBinPath string

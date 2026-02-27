@@ -18,7 +18,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // ErrConcurrencyLimitExceeded is returned new work acceptance violates the configured concurrency limit.

@@ -25,10 +25,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/rest"
-	"github.com/a2aproject/a2a-go/internal/sse"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/internal/rest"
+	"github.com/a2aproject/a2a-go/v1/internal/sse"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 // RESTTransport implemetns Transport using RESTful HTTP API.
@@ -231,8 +231,8 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 	if req.PageToken != "" {
 		query.Add("pageToken", string(req.PageToken))
 	}
-	if req.HistoryLength != 0 {
-		query.Add("historyLength", strconv.Itoa(req.HistoryLength))
+	if req.HistoryLength != nil {
+		query.Add("historyLength", strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
 		query.Add("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))
