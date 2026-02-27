@@ -51,11 +51,6 @@ func NewTaskStore(old legacysrv.TaskStore) taskstore.Store {
 	return &taskStoreAdapter{old}
 }
 
-// NewClient adapts a legacy client to the v1 client interface.
-func NewClient(old *legacyclient.Client) *a2aclient.Client {
-	return nil
-}
-
 type srvInterceptorAdapter struct {
 	legacysrv.CallInterceptor
 }

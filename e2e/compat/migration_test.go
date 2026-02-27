@@ -35,138 +35,37 @@ import (
 	legacyqueue "github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-// mockLegacyAgentExecutor implements legacy legacysrv.AgentExecutor interface.
-type mockLegacyAgentExecutor struct {
-	t *testing.T
-}
-
-func (e *mockLegacyAgentExecutor) Execute(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
-	e.t.Logf("mockLegacyAgentExecutor.Execute called with message: %+v", reqCtx.Message)
-	for i, p := range reqCtx.Message.Parts {
-		e.t.Logf("Part %d: %T %+v", i, p, p)
-		if textPart, ok := p.(legacya2a.TextPart); ok {
-			e.t.Logf("TextPart: %q", textPart.Text)
-			if textPart.Text == "ping" {
-				response := &legacya2a.Message{
-					Role: legacya2a.MessageRoleAgent,
-					Parts: legacya2a.ContentParts{
-						legacya2a.TextPart{Text: "pong"},
-					},
-					TaskID: reqCtx.TaskID,
-				}
-				e.t.Logf("Writing pong response")
-				return q.Write(ctx, response)
-			}
-		}
-	}
-	e.t.Logf("No ping found in message parts")
-	return fmt.Errorf("expected ping message")
-}
-
-func (e *mockLegacyAgentExecutor) Cancel(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
-	return nil
-}
-
-// mockLegacyTaskStore implements legacy legacysrv.TaskStore interface.
-type mockLegacyTaskStore struct {
-	t     *testing.T
-	tasks map[legacya2a.TaskID]*legacya2a.Task
-}
-
-func (s *mockLegacyTaskStore) Save(ctx context.Context, task *legacya2a.Task, event legacya2a.Event, prev legacya2a.TaskVersion) (legacya2a.TaskVersion, error) {
-	s.t.Logf("mockLegacyTaskStore.Save called for task %v", task.ID)
-	if s.tasks == nil {
-		s.tasks = make(map[legacya2a.TaskID]*legacya2a.Task)
-	}
-	s.tasks[task.ID] = task
-	return 1, nil
-}
-
-func (s *mockLegacyTaskStore) Get(ctx context.Context, taskID legacya2a.TaskID) (*legacya2a.Task, legacya2a.TaskVersion, error) {
-	s.t.Logf("mockLegacyTaskStore.Get called for task %v", taskID)
-	task, ok := s.tasks[taskID]
-	if !ok {
-		return nil, 0, legacya2a.ErrTaskNotFound
-	}
-	return task, 1, nil
-}
-
-func (s *mockLegacyTaskStore) List(ctx context.Context, req *legacya2a.ListTasksRequest) (*legacya2a.ListTasksResponse, error) {
-	return &legacya2a.ListTasksResponse{}, nil
-}
-
-// mockLegacyInterceptor implements legacy legacysrv.CallInterceptor interface.
-type mockLegacyInterceptor struct {
-	t      *testing.T
-	called bool
-}
-
-func (i *mockLegacyInterceptor) Before(ctx context.Context, callCtx *legacysrv.CallContext, req *legacysrv.Request) (context.Context, error) {
-	i.t.Logf("mockLegacyInterceptor.Before called")
-	i.called = true
-	return ctx, nil
-}
-
-func (i *mockLegacyInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
-	i.t.Logf("mockLegacyInterceptor.After called")
-	return nil
-}
-
-// modifyingLegacyInterceptor modifies request in Before and response in After.
-type modifyingLegacyInterceptor struct {
-	t *testing.T
-}
-
-func (i *modifyingLegacyInterceptor) Before(ctx context.Context, callCtx *legacysrv.CallContext, req *legacysrv.Request) (context.Context, error) {
-	i.t.Logf("modifyingLegacyInterceptor.Before called")
-	if sendParams, ok := req.Payload.(*legacya2a.MessageSendParams); ok {
-		for i, p := range sendParams.Message.Parts {
-			if textPart, ok := p.(legacya2a.TextPart); ok {
-				if textPart.Text == "ping" {
-					sendParams.Message.Parts[i] = legacya2a.TextPart{Text: "ping-modified"}
-				}
-			}
-		}
-	}
-	return ctx, nil
-}
-
-func (i *modifyingLegacyInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
-	i.t.Logf("modifyingLegacyInterceptor.After called")
-	if msg, ok := resp.Payload.(*legacya2a.Message); ok {
-		for i, p := range msg.Parts {
-			if textPart, ok := p.(legacya2a.TextPart); ok {
-				if textPart.Text == "pong" {
-					msg.Parts[i] = legacya2a.TextPart{Text: "pong-modified"}
-				}
-			}
-		}
-	}
-	return ctx.Err()
-}
-
 func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	t.Parallel()
 
 	// 1. Initialize legacy components
-	legacyExecutor := &mockLegacyAgentExecutor{t: t}
+	legacyExecutor := &testLegacyExecutor{
+		executeFn: func(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
+			for _, p := range reqCtx.Message.Parts {
+				if textPart, ok := p.(legacya2a.TextPart); ok {
+					if textPart.Text == "ping" {
+						response := &legacya2a.Message{
+							Role:   legacya2a.MessageRoleAgent,
+							Parts:  legacya2a.ContentParts{legacya2a.TextPart{Text: "pong"}},
+							TaskID: reqCtx.TaskID,
+						}
+						return q.Write(ctx, response)
+					}
+				}
+			}
+			return fmt.Errorf("expected ping message")
+		},
+	}
 	legacyStore := &mockLegacyTaskStore{t: t, tasks: make(map[legacya2a.TaskID]*legacya2a.Task)}
 
 	// 2. Wrap them using migration adapters
 	executor := a2av0.NewAgentExecutor(legacyExecutor)
 	store := a2av0.NewTaskStore(legacyStore)
 
-	// 3. Create v1 interceptor from legacy interceptor
-	interceptor := &mockLegacyInterceptor{t: t}
-	v1Interceptor := a2av0.NewServerInterceptor(interceptor)
+	// 3. Create v1 handler with adapted backends
+	handler := a2asrv.NewHandler(executor, a2asrv.WithTaskStore(store))
 
-	// 4. Create v1 handler with adapted backends
-	handler := a2asrv.NewHandler(executor,
-		a2asrv.WithTaskStore(store),
-		a2asrv.WithCallInterceptors(v1Interceptor),
-	)
-
-	// 5. Start v1 server
+	// 4. Start v1 server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
@@ -195,7 +94,7 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	}()
 	defer srv.Shutdown(context.Background())
 
-	// 6. Use v1 client to call the server
+	// 5. Use v1 client to call the server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -237,10 +136,37 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	if !foundPong {
 		t.Errorf("wanted pong, got %v", msg.Parts)
 	}
+}
 
-	if !interceptor.called {
-		t.Errorf("interceptor was not called")
+// modifyingLegacyInterceptor modifies request in Before and response in After.
+type modifyingLegacyInterceptor struct {
+	t *testing.T
+}
+
+func (i *modifyingLegacyInterceptor) Before(ctx context.Context, callCtx *legacysrv.CallContext, req *legacysrv.Request) (context.Context, error) {
+	if sendParams, ok := req.Payload.(*legacya2a.MessageSendParams); ok {
+		for i, p := range sendParams.Message.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "ping" {
+					sendParams.Message.Parts[i] = legacya2a.TextPart{Text: "ping-modified"}
+				}
+			}
+		}
 	}
+	return ctx, nil
+}
+
+func (i *modifyingLegacyInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
+	if msg, ok := resp.Payload.(*legacya2a.Message); ok {
+		for i, p := range msg.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "pong" {
+					msg.Parts[i] = legacya2a.TextPart{Text: "pong-modified"}
+				}
+			}
+		}
+	}
+	return ctx.Err()
 }
 
 func TestMigration_InterceptorModifications(t *testing.T) {
@@ -248,7 +174,26 @@ func TestMigration_InterceptorModifications(t *testing.T) {
 
 	// 1. Initialize legacy components
 	// The executor now expects "ping-modified"
-	legacyExecutor := &legacyModifyingExecutor{t: t}
+	legacyExecutor := &testLegacyExecutor{
+		executeFn: func(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
+			found := false
+			for _, p := range reqCtx.Message.Parts {
+				if tp, ok := p.(legacya2a.TextPart); ok && tp.Text == "ping-modified" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("expected ping-modified, got %+v", reqCtx.Message.Parts)
+			}
+
+			return q.Write(ctx, &legacya2a.Message{
+				Role:   legacya2a.MessageRoleAgent,
+				Parts:  legacya2a.ContentParts{legacya2a.TextPart{Text: "pong"}},
+				TaskID: reqCtx.TaskID,
+			})
+		},
+	}
 	executor := a2av0.NewAgentExecutor(legacyExecutor)
 
 	// 2. Create v1 interceptor from modifying legacy interceptor
@@ -316,35 +261,6 @@ func TestMigration_InterceptorModifications(t *testing.T) {
 	}
 }
 
-type legacyModifyingExecutor struct {
-	t *testing.T
-}
-
-func (e *legacyModifyingExecutor) Execute(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
-	found := false
-	for _, p := range reqCtx.Message.Parts {
-		if tp, ok := p.(legacya2a.TextPart); ok && tp.Text == "ping-modified" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("expected ping-modified, got %+v", reqCtx.Message.Parts)
-	}
-
-	return q.Write(ctx, &legacya2a.Message{
-		Role: legacya2a.MessageRoleAgent,
-		Parts: legacya2a.ContentParts{
-			legacya2a.TextPart{Text: "pong"},
-		},
-		TaskID: reqCtx.TaskID,
-	})
-}
-
-func (e *legacyModifyingExecutor) Cancel(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
-	return nil
-}
-
 type legacyModifyingClientInterceptor struct {
 	t *testing.T
 }
@@ -383,7 +299,37 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	t.Parallel()
 
 	// 1. Setup server that checks for X-Modified
-	handler := a2asrv.NewHandler(&checkingExecutor{t: t, expectedText: "ping-client-modified"})
+	executor := &testExecutor{
+		executeFn: func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				callCtx, ok := a2asrv.CallContextFrom(ctx)
+				if !ok {
+					yield(nil, fmt.Errorf("no call context"))
+					return
+				}
+				modified, ok := callCtx.ServiceParams().Get("X-Modified")
+				if !ok || len(modified) == 0 || modified[0] != "true" {
+					yield(nil, fmt.Errorf("X-Modified not set or not true: %v", modified))
+					return
+				}
+
+				found := false
+				for _, p := range execCtx.Message.Parts {
+					if p.Text() == "ping-client-modified" {
+						found = true
+						break
+					}
+				}
+				if !found {
+					yield(nil, fmt.Errorf("expected ping-client-modified, got %+v", execCtx.Message.Parts))
+					return
+				}
+
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("pong")), nil)
+			}
+		},
+	}
+	handler := a2asrv.NewHandler(executor)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -398,7 +344,9 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	go func() {
 		_ = srv.Serve(listener)
 	}()
-	defer srv.Shutdown(context.Background())
+	defer t.Cleanup(func() {
+		_ = srv.Shutdown(context.Background())
+	})
 
 	// 2. Setup v1 client with legacy interceptor
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -445,40 +393,54 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	}
 }
 
-type checkingExecutor struct {
-	t            *testing.T
-	expectedText string
+// testLegacyExecutor implements legacy legacysrv.AgentExecutor interface.
+type testLegacyExecutor struct {
+	executeFn func(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error
 }
 
-func (e *checkingExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		callCtx, ok := a2asrv.CallContextFrom(ctx)
-		if !ok {
-			yield(nil, fmt.Errorf("no call context"))
-			return
-		}
-		modified, ok := callCtx.ServiceParams().Get("X-Modified")
-		if !ok || len(modified) == 0 || modified[0] != "true" {
-			yield(nil, fmt.Errorf("X-Modified not set or not true: %v", modified))
-			return
-		}
-
-		found := false
-		for _, p := range execCtx.Message.Parts {
-			if p.Text() == e.expectedText {
-				found = true
-				break
-			}
-		}
-		if !found {
-			yield(nil, fmt.Errorf("expected %s, got %+v", e.expectedText, execCtx.Message.Parts))
-			return
-		}
-
-		yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("pong")), nil)
-	}
+func (e *testLegacyExecutor) Execute(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
+	return e.executeFn(ctx, reqCtx, q)
 }
 
-func (e *checkingExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+func (e *testLegacyExecutor) Cancel(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
 	return nil
+}
+
+// testExecutor implements a2asrv.AgentExecutor interface.
+type testExecutor struct {
+	executeFn func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
+}
+
+func (e *testExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return e.executeFn(ctx, execCtx)
+}
+
+func (e *testExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return nil
+}
+
+// mockLegacyTaskStore implements legacy legacysrv.TaskStore interface.
+type mockLegacyTaskStore struct {
+	t     *testing.T
+	tasks map[legacya2a.TaskID]*legacya2a.Task
+}
+
+func (s *mockLegacyTaskStore) Save(ctx context.Context, task *legacya2a.Task, event legacya2a.Event, prev legacya2a.TaskVersion) (legacya2a.TaskVersion, error) {
+	if s.tasks == nil {
+		s.tasks = make(map[legacya2a.TaskID]*legacya2a.Task)
+	}
+	s.tasks[task.ID] = task
+	return 1, nil
+}
+
+func (s *mockLegacyTaskStore) Get(ctx context.Context, taskID legacya2a.TaskID) (*legacya2a.Task, legacya2a.TaskVersion, error) {
+	task, ok := s.tasks[taskID]
+	if !ok {
+		return nil, 0, legacya2a.ErrTaskNotFound
+	}
+	return task, 1, nil
+}
+
+func (s *mockLegacyTaskStore) List(ctx context.Context, req *legacya2a.ListTasksRequest) (*legacya2a.ListTasksResponse, error) {
+	return &legacya2a.ListTasksResponse{}, nil
 }

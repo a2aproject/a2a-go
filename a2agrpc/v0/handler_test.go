@@ -25,9 +25,9 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/a2aproject/a2a-go/v1/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/a2aproject/a2a-go/v1/a2apb/v0/pbconv"
 	"github.com/a2aproject/a2a-go/v1/a2asrv"
 	"google.golang.org/grpc"
