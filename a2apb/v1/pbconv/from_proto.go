@@ -282,11 +282,12 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		IncludeArtifacts:     req.GetIncludeArtifacts(),
 	}
 
-	if req.HistoryLength != nil && *req.HistoryLength >= 0 {
-		hl := int(*req.HistoryLength)
-		listTasksRequest.HistoryLength = hl
+	if req.HistoryLength != nil {
+		if *req.HistoryLength >= 0 {
+			hl := int(*req.HistoryLength)
+			listTasksRequest.HistoryLength = &hl
+		}
 	}
-
 	return &listTasksRequest, nil
 }
 

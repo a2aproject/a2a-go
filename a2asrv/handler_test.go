@@ -1195,7 +1195,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 		{
 			name:  "get task with negative HistoryLength",
 			query: &a2a.GetTaskRequest{ID: existingTaskID, HistoryLength: ptr(-1)},
-			want:  &a2a.Task{ID: existingTaskID, History: make([]*a2a.Message, 0)},
+			want:  &a2a.Task{ID: existingTaskID, History: history},
 		},
 	}
 
@@ -1265,8 +1265,19 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
+			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: utils.Ptr(2), StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
+		},
+		{
+			name: "with HistoryLength 0",
+			givenTasks: []*a2a.Task{
+				{ID: id1, History: []*a2a.Message{{ID: "test-message-1"}, {ID: "test-message-2"}, {ID: "test-message-3"}}},
+				{ID: id2, History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}},
+				{ID: id3, History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}},
+			},
+			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, History: []*a2a.Message{}}, {ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}, TotalSize: 3, PageSize: 50},
 			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
