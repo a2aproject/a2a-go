@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1-alpha.2](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.2...v1.0.1-alpha.2) (2026-02-27)
+
+
+### Bug Fixes
+
+* a2a part metadata handling ([#249](https://github.com/a2aproject/a2a-go/issues/249)) ([7bd24a2](https://github.com/a2aproject/a2a-go/commit/7bd24a21e2d9cffad86ec7ba915abcef389ba93f))
+
 ## [1.0.0-alpha.3](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-02-27)
 
 ### Bug Fixes
