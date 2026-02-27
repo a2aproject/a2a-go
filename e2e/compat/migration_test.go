@@ -17,6 +17,7 @@ package compat_test
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net"
 	"net/http"
 	"testing"
@@ -29,6 +30,7 @@ import (
 	"github.com/a2aproject/a2a-go/v1/a2asrv"
 
 	legacya2a "github.com/a2aproject/a2a-go/a2a"
+	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
 	legacysrv "github.com/a2aproject/a2a-go/a2asrv"
 	legacyqueue "github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
@@ -108,6 +110,39 @@ func (i *mockLegacyInterceptor) Before(ctx context.Context, callCtx *legacysrv.C
 func (i *mockLegacyInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
 	i.t.Logf("mockLegacyInterceptor.After called")
 	return nil
+}
+
+// modifyingLegacyInterceptor modifies request in Before and response in After.
+type modifyingLegacyInterceptor struct {
+	t *testing.T
+}
+
+func (i *modifyingLegacyInterceptor) Before(ctx context.Context, callCtx *legacysrv.CallContext, req *legacysrv.Request) (context.Context, error) {
+	i.t.Logf("modifyingLegacyInterceptor.Before called")
+	if sendParams, ok := req.Payload.(*legacya2a.MessageSendParams); ok {
+		for i, p := range sendParams.Message.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "ping" {
+					sendParams.Message.Parts[i] = legacya2a.TextPart{Text: "ping-modified"}
+				}
+			}
+		}
+	}
+	return ctx, nil
+}
+
+func (i *modifyingLegacyInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
+	i.t.Logf("modifyingLegacyInterceptor.After called")
+	if msg, ok := resp.Payload.(*legacya2a.Message); ok {
+		for i, p := range msg.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "pong" {
+					msg.Parts[i] = legacya2a.TextPart{Text: "pong-modified"}
+				}
+			}
+		}
+	}
+	return ctx.Err()
 }
 
 func TestMigration_V1ServerLegacyBackends(t *testing.T) {
@@ -206,4 +241,244 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	if !interceptor.called {
 		t.Errorf("interceptor was not called")
 	}
+}
+
+func TestMigration_InterceptorModifications(t *testing.T) {
+	t.Parallel()
+
+	// 1. Initialize legacy components
+	// The executor now expects "ping-modified"
+	legacyExecutor := &legacyModifyingExecutor{t: t}
+	executor := a2av0.NewAgentExecutor(legacyExecutor)
+
+	// 2. Create v1 interceptor from modifying legacy interceptor
+	interceptor := &modifyingLegacyInterceptor{t: t}
+	v1Interceptor := a2av0.NewServerInterceptor(interceptor)
+
+	// 3. Create v1 handler
+	handler := a2asrv.NewHandler(executor,
+		a2asrv.WithCallInterceptors(v1Interceptor),
+	)
+
+	// 4. Start v1 server
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	mux := http.NewServeMux()
+	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler, a2av0.JSONRPCHandlerConfig{}))
+
+	srv := &http.Server{Handler: mux}
+	go func() {
+		_ = srv.Serve(listener)
+	}()
+	defer srv.Shutdown(context.Background())
+
+	// 5. Use v1 client
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	jsonCompatFactory := a2av0.NewJSONRPCTransportFactory(a2av0.JSONRPCTransportConfig{})
+	factory := a2aclient.NewFactory(
+		a2aclient.WithCompatTransport(a2av0.Version, a2a.TransportProtocolJSONRPC, jsonCompatFactory),
+	)
+	client, err := factory.CreateFromEndpoints(ctx, []*a2a.AgentInterface{
+		{
+			URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+			ProtocolBinding: a2a.TransportProtocolJSONRPC,
+			ProtocolVersion: a2av0.Version,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	req := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("ping")),
+	}
+	resp, err := client.SendMessage(ctx, req)
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	msg := resp.(*a2a.Message)
+	foundPongModified := false
+	for _, p := range msg.Parts {
+		if p.Text() == "pong-modified" {
+			foundPongModified = true
+			break
+		}
+	}
+	if !foundPongModified {
+		t.Errorf("wanted pong-modified, got %v", msg.Parts)
+	}
+}
+
+type legacyModifyingExecutor struct {
+	t *testing.T
+}
+
+func (e *legacyModifyingExecutor) Execute(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
+	found := false
+	for _, p := range reqCtx.Message.Parts {
+		if tp, ok := p.(legacya2a.TextPart); ok && tp.Text == "ping-modified" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("expected ping-modified, got %+v", reqCtx.Message.Parts)
+	}
+
+	return q.Write(ctx, &legacya2a.Message{
+		Role: legacya2a.MessageRoleAgent,
+		Parts: legacya2a.ContentParts{
+			legacya2a.TextPart{Text: "pong"},
+		},
+		TaskID: reqCtx.TaskID,
+	})
+}
+
+func (e *legacyModifyingExecutor) Cancel(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyqueue.Queue) error {
+	return nil
+}
+
+type legacyModifyingClientInterceptor struct {
+	t *testing.T
+}
+
+func (i *legacyModifyingClientInterceptor) Before(ctx context.Context, req *legacyclient.Request) (context.Context, error) {
+	if req.Meta == nil {
+		req.Meta = make(map[string][]string)
+	}
+	req.Meta["X-Modified"] = []string{"true"}
+	if sendParams, ok := req.Payload.(*legacya2a.MessageSendParams); ok {
+		for i, p := range sendParams.Message.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "ping" {
+					sendParams.Message.Parts[i] = legacya2a.TextPart{Text: "ping-client-modified"}
+				}
+			}
+		}
+	}
+	return ctx, nil
+}
+
+func (i *legacyModifyingClientInterceptor) After(ctx context.Context, resp *legacyclient.Response) error {
+	if msg, ok := resp.Payload.(*legacya2a.Message); ok {
+		for i, p := range msg.Parts {
+			if textPart, ok := p.(legacya2a.TextPart); ok {
+				if textPart.Text == "pong" {
+					msg.Parts[i] = legacya2a.TextPart{Text: "pong-client-modified"}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func TestMigration_ClientInterceptorModifications(t *testing.T) {
+	t.Parallel()
+
+	// 1. Setup server that checks for X-Modified
+	handler := a2asrv.NewHandler(&checkingExecutor{t: t, expectedText: "ping-client-modified"})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	mux := http.NewServeMux()
+	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler, a2av0.JSONRPCHandlerConfig{}))
+
+	srv := &http.Server{Handler: mux}
+	go func() {
+		_ = srv.Serve(listener)
+	}()
+	defer srv.Shutdown(context.Background())
+
+	// 2. Setup v1 client with legacy interceptor
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	legacyInterceptor := &legacyModifyingClientInterceptor{t: t}
+	v1Interceptor := a2av0.NewClientInterceptor(legacyInterceptor)
+
+	jsonCompatFactory := a2av0.NewJSONRPCTransportFactory(a2av0.JSONRPCTransportConfig{})
+	factory := a2aclient.NewFactory(
+		a2aclient.WithCompatTransport(a2av0.Version, a2a.TransportProtocolJSONRPC, jsonCompatFactory),
+		a2aclient.WithCallInterceptors(v1Interceptor),
+	)
+	client, err := factory.CreateFromEndpoints(ctx, []*a2a.AgentInterface{
+		{
+			URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+			ProtocolBinding: a2a.TransportProtocolJSONRPC,
+			ProtocolVersion: a2av0.Version,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	// 3. Send message
+	req := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("ping")),
+	}
+	resp, err := client.SendMessage(ctx, req)
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	msg := resp.(*a2a.Message)
+	foundPongModified := false
+	for _, p := range msg.Parts {
+		if p.Text() == "pong-client-modified" {
+			foundPongModified = true
+			break
+		}
+	}
+	if !foundPongModified {
+		t.Errorf("wanted pong-client-modified, got %v", msg.Parts)
+	}
+}
+
+type checkingExecutor struct {
+	t            *testing.T
+	expectedText string
+}
+
+func (e *checkingExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		callCtx, ok := a2asrv.CallContextFrom(ctx)
+		if !ok {
+			yield(nil, fmt.Errorf("no call context"))
+			return
+		}
+		modified, ok := callCtx.ServiceParams().Get("X-Modified")
+		if !ok || len(modified) == 0 || modified[0] != "true" {
+			yield(nil, fmt.Errorf("X-Modified not set or not true: %v", modified))
+			return
+		}
+
+		found := false
+		for _, p := range execCtx.Message.Parts {
+			if p.Text() == e.expectedText {
+				found = true
+				break
+			}
+		}
+		if !found {
+			yield(nil, fmt.Errorf("expected %s, got %+v", e.expectedText, execCtx.Message.Parts))
+			return
+		}
+
+		yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("pong")), nil)
+	}
+}
+
+func (e *checkingExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return nil
 }

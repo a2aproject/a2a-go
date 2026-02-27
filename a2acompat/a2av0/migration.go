@@ -67,6 +67,13 @@ func (s *srvInterceptorAdapter) Before(ctx context.Context, callCtx *a2asrv.Call
 	if err != nil {
 		return newCtx, nil, err
 	}
+	if legacyReq.Payload != nil {
+		v1Payload, v1Err := toV1Payload(legacyReq.Payload)
+		if v1Err != nil {
+			return newCtx, nil, v1Err
+		}
+		req.Payload = v1Payload
+	}
 	return newCtx, nil, nil
 }
 
@@ -80,7 +87,7 @@ func (s *srvInterceptorAdapter) After(ctx context.Context, callCtx *a2asrv.CallC
 	}
 
 	if legacyResp.Payload != nil {
-		v1Payload, v1Err := ToV1Event(legacyResp.Payload.(legacya2a.Event))
+		v1Payload, v1Err := toV1Payload(legacyResp.Payload)
 		if v1Err != nil {
 			return v1Err
 		}
@@ -101,6 +108,16 @@ func (s *clientInterceptorAdapter) Before(ctx context.Context, req *a2aclient.Re
 	if err != nil {
 		return newCtx, nil, err
 	}
+	if legacyReq.Payload != nil {
+		v1Payload, v1Err := toV1Payload(legacyReq.Payload)
+		if v1Err != nil {
+			return newCtx, nil, v1Err
+		}
+		req.Payload = v1Payload
+	}
+	if legacyReq.Meta != nil {
+		maps.Copy(req.ServiceParams, legacyReq.Meta)
+	}
 	// No early response in legacy client interceptor before
 	return newCtx, nil, nil
 }
@@ -114,11 +131,14 @@ func (s *clientInterceptorAdapter) After(ctx context.Context, resp *a2aclient.Re
 	// Copy back potential changes from legacyResp to resp
 	resp.Err = legacyResp.Err
 	if legacyResp.Payload != nil {
-		v1Payload, v1Err := ToV1Event(legacyResp.Payload.(legacya2a.Event))
+		v1Payload, v1Err := toV1Payload(legacyResp.Payload)
 		if v1Err != nil {
 			return v1Err
 		}
 		resp.Payload = v1Payload
+	}
+	if legacyResp.Meta != nil {
+		maps.Copy(resp.ServiceParams, legacyResp.Meta)
 	}
 	return nil
 }
@@ -259,25 +279,42 @@ func toLegacyRequest(v1 *a2asrv.Request) *legacysrv.Request {
 	if v1 == nil {
 		return nil
 	}
-	var legacyPayload any
-	if v1.Payload != nil {
-		legacyPayload = fromV1Payload(v1.Payload)
-	}
-	return &legacysrv.Request{Payload: legacyPayload}
+	return &legacysrv.Request{Payload: fromV1Payload(v1.Payload)}
 }
 
 func toLegacyResponse(v1 *a2asrv.Response) *legacysrv.Response {
 	if v1 == nil {
 		return nil
 	}
-	var legacyPayload legacya2a.Event
-	if v1.Payload != nil {
-		legacyPayload, _ = FromV1Event(v1.Payload.(a2a.Event))
+	return &legacysrv.Response{Payload: fromV1Payload(v1.Payload), Err: v1.Err}
+}
+
+func toV1Payload(legacyPayload any) (any, error) {
+	if legacyPayload == nil {
+		return nil, nil
 	}
-	return &legacysrv.Response{Payload: legacyPayload, Err: v1.Err}
+	switch v := legacyPayload.(type) {
+	case *legacya2a.TaskQueryParams:
+		return ToV1GetTaskRequest(v), nil
+	case *legacya2a.ListTasksRequest:
+		return ToV1ListTasksRequest(v), nil
+	case *legacya2a.TaskIDParams:
+		return ToV1CancelTaskRequest(v), nil
+	case *legacya2a.MessageSendParams:
+		return ToV1SendMessageRequest(v)
+	case *legacya2a.ListTasksResponse:
+		return ToV1ListTasksResponse(v)
+	case legacya2a.Event:
+		return ToV1Event(v)
+	default:
+		return legacyPayload, nil
+	}
 }
 
 func fromV1Payload(payload any) any {
+	if payload == nil {
+		return nil
+	}
 	switch v := payload.(type) {
 	case *a2a.GetTaskRequest:
 		return FromV1GetTaskRequest(v)
@@ -287,6 +324,11 @@ func fromV1Payload(payload any) any {
 		return FromV1CancelTaskRequest(v)
 	case *a2a.SendMessageRequest:
 		return FromV1SendMessageRequest(v)
+	case *a2a.ListTasksResponse:
+		return FromV1ListTasksResponse(v)
+	case a2a.Event:
+		legacy, _ := FromV1Event(v)
+		return legacy
 	default:
 		return payload
 	}
