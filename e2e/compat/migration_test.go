@@ -186,7 +186,7 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	cardProducer := a2av0.NewStaticAgentCardProducer(card)
 
 	mux := http.NewServeMux()
-	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler, a2av0.JSONRPCHandlerConfig{}))
+	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
 
 	srv := &http.Server{Handler: mux}
@@ -268,7 +268,7 @@ func TestMigration_InterceptorModifications(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	mux := http.NewServeMux()
-	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler, a2av0.JSONRPCHandlerConfig{}))
+	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
 
 	srv := &http.Server{Handler: mux}
 	go func() {
@@ -392,7 +392,7 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	mux := http.NewServeMux()
-	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler, a2av0.JSONRPCHandlerConfig{}))
+	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
 
 	srv := &http.Server{Handler: mux}
 	go func() {
