@@ -817,6 +817,14 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 		res.URL = card.SupportedInterfaces[0].URL
 		res.PreferredTransport = a2alegacy.TransportProtocol(card.SupportedInterfaces[0].ProtocolBinding)
 		res.ProtocolVersion = string(card.SupportedInterfaces[0].ProtocolVersion)
+
+		res.AdditionalInterfaces = make([]a2alegacy.AgentInterface, len(card.SupportedInterfaces))
+		for i, iface := range card.SupportedInterfaces {
+			res.AdditionalInterfaces[i] = a2alegacy.AgentInterface{
+				URL:       iface.URL,
+				Transport: a2alegacy.TransportProtocol(iface.ProtocolBinding),
+			}
+		}
 	}
 	return res
 }
@@ -851,14 +859,35 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 	for i, s := range card.Signatures {
 		res.Signatures[i] = a2a.AgentCardSignature(s)
 	}
+	var ifaces []*a2a.AgentInterface
 	if card.URL != "" {
-		res.SupportedInterfaces = []*a2a.AgentInterface{
-			{
-				URL:             card.URL,
-				ProtocolBinding: a2a.TransportProtocol(card.PreferredTransport),
-				ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
-			},
+		iface := &a2a.AgentInterface{
+			URL:             card.URL,
+			ProtocolBinding: a2a.TransportProtocol(card.PreferredTransport),
+			ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
+		}
+		if iface.ProtocolVersion == "" {
+			iface.ProtocolVersion = a2a.ProtocolVersion(Version)
+		}
+		ifaces = append(ifaces, iface)
+	}
+	for _, ai := range card.AdditionalInterfaces {
+		// Avoid duplicates if main URL is also in AdditionalInterfaces
+		exists := false
+		for _, existing := range ifaces {
+			if existing.URL == ai.URL && string(existing.ProtocolBinding) == string(ai.Transport) {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			ifaces = append(ifaces, &a2a.AgentInterface{
+				URL:             ai.URL,
+				ProtocolBinding: a2a.TransportProtocol(ai.Transport),
+				ProtocolVersion: a2a.ProtocolVersion(Version),
+			})
 		}
 	}
+	res.SupportedInterfaces = ifaces
 	return res
 }
