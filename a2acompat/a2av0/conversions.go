@@ -15,219 +15,488 @@
 package a2av0
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 
+	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
-var coreToCompatTaskState = map[a2a.TaskState]taskState{
-	a2a.TaskStateAuthRequired:  taskStateAuthRequired,
-	a2a.TaskStateCanceled:      taskStateCanceled,
-	a2a.TaskStateCompleted:     taskStateCompleted,
-	a2a.TaskStateFailed:        taskStateFailed,
-	a2a.TaskStateInputRequired: taskStateInputRequired,
-	a2a.TaskStateRejected:      taskStateRejected,
-	a2a.TaskStateSubmitted:     taskStateSubmitted,
-	a2a.TaskStateUnknown:       taskStateUnknown,
-	a2a.TaskStateWorking:       taskStateWorking,
+var v1ToLegacyTaskState = map[a2a.TaskState]a2alegacy.TaskState{
+	a2a.TaskStateAuthRequired:  a2alegacy.TaskStateAuthRequired,
+	a2a.TaskStateCanceled:      a2alegacy.TaskStateCanceled,
+	a2a.TaskStateCompleted:     a2alegacy.TaskStateCompleted,
+	a2a.TaskStateFailed:        a2alegacy.TaskStateFailed,
+	a2a.TaskStateInputRequired: a2alegacy.TaskStateInputRequired,
+	a2a.TaskStateRejected:      a2alegacy.TaskStateRejected,
+	a2a.TaskStateSubmitted:     a2alegacy.TaskStateSubmitted,
+	a2a.TaskStateUnknown:       a2alegacy.TaskStateUnknown,
+	a2a.TaskStateWorking:       a2alegacy.TaskStateWorking,
 }
 
-var compatToCoreTaskState map[taskState]a2a.TaskState
+var legacyToV1TaskState map[a2alegacy.TaskState]a2a.TaskState
 
 func init() {
-	compatToCoreTaskState = make(map[taskState]a2a.TaskState, len(coreToCompatTaskState))
-	for k, v := range coreToCompatTaskState {
-		compatToCoreTaskState[v] = k
+	legacyToV1TaskState = make(map[a2alegacy.TaskState]a2a.TaskState, len(v1ToLegacyTaskState))
+	for k, v := range v1ToLegacyTaskState {
+		legacyToV1TaskState[v] = k
 	}
 }
 
-func toCompatTaskState(s a2a.TaskState) taskState {
-	if mapped, ok := coreToCompatTaskState[s]; ok {
-		return mapped
-	}
-	return taskStateUnspecified
-}
-
-func fromCompatTaskState(s taskState) a2a.TaskState {
-	if mapped, ok := compatToCoreTaskState[s]; ok {
+// ToV1TaskState converts a legacy task state to a v1 task state.
+func ToV1TaskState(s a2alegacy.TaskState) a2a.TaskState {
+	if mapped, ok := legacyToV1TaskState[s]; ok {
 		return mapped
 	}
 	return a2a.TaskStateUnspecified
 }
 
-func toCompatEvent(e a2a.Event) (event, error) {
+// FromV1TaskState converts a v1 task state to a legacy task state.
+func FromV1TaskState(s a2a.TaskState) a2alegacy.TaskState {
+	if mapped, ok := v1ToLegacyTaskState[s]; ok {
+		return mapped
+	}
+	return a2alegacy.TaskStateUnspecified
+}
+
+// ToV1Event converts a legacy event to a v1 event.
+func ToV1Event(comp a2alegacy.Event) (a2a.Event, error) {
+	if comp == nil {
+		return nil, nil
+	}
+	switch v := comp.(type) {
+	case *a2alegacy.Message:
+		return ToV1Message(v)
+	case *a2alegacy.Task:
+		return ToV1Task(v)
+	case *a2alegacy.TaskStatusUpdateEvent:
+		return ToV1TaskStatusUpdateEvent(v)
+	case *a2alegacy.TaskArtifactUpdateEvent:
+		return ToV1TaskArtifactUpdateEvent(v)
+	default:
+		return nil, fmt.Errorf("unknown legacy event kind %T", comp)
+	}
+}
+
+// FromV1Event converts a v1 event to a legacy event.
+func FromV1Event(e a2a.Event) (a2alegacy.Event, error) {
 	if e == nil {
 		return nil, nil
 	}
 	switch v := e.(type) {
 	case *a2a.Message:
-		return toCompatMessage(v), nil
+		return FromV1Message(v), nil
 	case *a2a.Task:
-		return toCompatTask(v), nil
+		return FromV1Task(v), nil
 	case *a2a.TaskStatusUpdateEvent:
-		return toCompatTaskStatusUpdateEvent(v), nil
+		return FromV1TaskStatusUpdateEvent(v), nil
 	case *a2a.TaskArtifactUpdateEvent:
-		return toCompatTaskArtifactUpdateEvent(v), nil
+		return FromV1TaskArtifactUpdateEvent(v), nil
 	default:
 		return nil, fmt.Errorf("unknown event type %T", e)
 	}
 }
 
-func toCompatTask(t *a2a.Task) *task {
+// ToV1Task converts a legacy task to a v1 task.
+func ToV1Task(t *a2alegacy.Task) (*a2a.Task, error) {
 	if t == nil {
-		return nil
+		return nil, nil
 	}
-	res := &task{
-		ID:        t.ID,
+	var msg *a2a.Message
+	if t.Status.Message != nil {
+		var err error
+		msg, err = ToV1Message(t.Status.Message)
+		if err != nil {
+			return nil, err
+		}
+	}
+	res := &a2a.Task{
+		ID:        a2a.TaskID(t.ID),
 		ContextID: t.ContextID,
 		Metadata:  t.Metadata,
-		Status: taskStatus{
-			Message:   toCompatMessage(t.Status.Message),
-			State:     toCompatTaskState(t.Status.State),
+		Status: a2a.TaskStatus{
+			Message:   msg,
+			State:     ToV1TaskState(t.Status.State),
 			Timestamp: t.Status.Timestamp,
 		},
 	}
 	if len(t.Artifacts) > 0 {
-		res.Artifacts = make([]*artifact, len(t.Artifacts))
+		res.Artifacts = make([]*a2a.Artifact, len(t.Artifacts))
 		for i, a := range t.Artifacts {
-			res.Artifacts[i] = toCompatArtifact(a)
+			var err error
+			res.Artifacts[i], err = ToV1Artifact(a)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if len(t.History) > 0 {
-		res.History = make([]*message, len(t.History))
+		res.History = make([]*a2a.Message, len(t.History))
 		for i, m := range t.History {
-			res.History[i] = toCompatMessage(m)
+			var err error
+			res.History[i], err = ToV1Message(m)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return res, nil
+}
+
+// FromV1Task converts a v1 task to a legacy task.
+func FromV1Task(t *a2a.Task) *a2alegacy.Task {
+	if t == nil {
+		return nil
+	}
+	res := &a2alegacy.Task{
+		ID:        a2alegacy.TaskID(t.ID),
+		ContextID: t.ContextID,
+		Metadata:  t.Metadata,
+		Status: a2alegacy.TaskStatus{
+			Message:   FromV1Message(t.Status.Message),
+			State:     FromV1TaskState(t.Status.State),
+			Timestamp: t.Status.Timestamp,
+		},
+	}
+	if len(t.Artifacts) > 0 {
+		res.Artifacts = make([]*a2alegacy.Artifact, len(t.Artifacts))
+		for i, a := range t.Artifacts {
+			res.Artifacts[i] = FromV1Artifact(a)
+		}
+	}
+	if len(t.History) > 0 {
+		res.History = make([]*a2alegacy.Message, len(t.History))
+		for i, m := range t.History {
+			res.History[i] = FromV1Message(m)
 		}
 	}
 	return res
 }
 
-func toCompatMessage(m *a2a.Message) *message {
+// ToV1Message converts a legacy message to a v1 message.
+func ToV1Message(m *a2alegacy.Message) (*a2a.Message, error) {
 	if m == nil {
-		return nil
+		return nil, nil
 	}
-	return &message{
+	parts, err := ToV1Parts(m.Parts)
+	if err != nil {
+		return nil, err
+	}
+	return &a2a.Message{
 		ID:             m.ID,
 		ContextID:      m.ContextID,
 		Extensions:     m.Extensions,
 		Metadata:       m.Metadata,
-		Parts:          toCompatParts(m.Parts),
-		ReferenceTasks: m.ReferenceTasks,
-		Role:           m.Role,
-		TaskID:         m.TaskID,
-	}
+		Parts:          parts,
+		ReferenceTasks: toV1TaskIDs(m.ReferenceTasks),
+		Role:           a2a.MessageRole(m.Role),
+		TaskID:         a2a.TaskID(m.TaskID),
+	}, nil
 }
 
-func toCompatParts(parts a2a.ContentParts) contentParts {
-	if len(parts) == 0 {
+func toV1TaskIDs(ids []a2alegacy.TaskID) []a2a.TaskID {
+	if ids == nil {
 		return nil
 	}
-	res := make(contentParts, len(parts))
-	for i, p := range parts {
-		switch c := p.Content.(type) {
-		case a2a.Text:
-			res[i] = textPart{
-				Text:     string(c),
-				Metadata: p.Metadata,
-			}
-		case a2a.Data:
-			val := c.Value
-			// Compatibility mode: wrap non-map values to avoid crashing old clients that expect a map.
-			if _, ok := val.(map[string]any); !ok {
-				val = map[string]any{"value": val}
-				if p.Metadata == nil {
-					p.Metadata = make(map[string]any)
-				}
-				p.Metadata["data_part_compat"] = true
-			}
-			res[i] = dataPart{
-				Data:     val,
-				Metadata: p.Metadata,
-			}
-		case a2a.Raw:
-			res[i] = filePart{
-				File: fileBytes{
-					fileMeta: fileMeta{
-						MimeType: p.MediaType,
-						Name:     p.Filename,
-					},
-					Bytes: base64.StdEncoding.EncodeToString(c),
-				},
-				Metadata: p.Metadata,
-			}
-		case a2a.URL:
-			res[i] = filePart{
-				File: fileURI{
-					fileMeta: fileMeta{
-						MimeType: p.MediaType,
-						Name:     p.Filename,
-					},
-					URI: string(c),
-				},
-				Metadata: p.Metadata,
-			}
-		}
+	res := make([]a2a.TaskID, len(ids))
+	for i, id := range ids {
+		res[i] = a2a.TaskID(id)
 	}
 	return res
 }
 
-func toCompatArtifact(a *a2a.Artifact) *artifact {
-	if a == nil {
+func fromV1TaskIDs(ids []a2a.TaskID) []a2alegacy.TaskID {
+	if ids == nil {
 		return nil
 	}
-	return &artifact{
-		ID:          a.ID,
+	res := make([]a2alegacy.TaskID, len(ids))
+	for i, id := range ids {
+		res[i] = a2alegacy.TaskID(id)
+	}
+	return res
+}
+
+// FromV1Message converts a v1 message to a legacy message.
+func FromV1Message(m *a2a.Message) *a2alegacy.Message {
+	if m == nil {
+		return nil
+	}
+	return &a2alegacy.Message{
+		ID:             m.ID,
+		ContextID:      m.ContextID,
+		Extensions:     m.Extensions,
+		Metadata:       m.Metadata,
+		Parts:          FromV1Parts(m.Parts),
+		ReferenceTasks: fromV1TaskIDs(m.ReferenceTasks),
+		Role:           a2alegacy.MessageRole(m.Role),
+		TaskID:         a2alegacy.TaskID(m.TaskID),
+	}
+}
+
+// ToV1Part converts a legacy part to a v1 part.
+func ToV1Part(p a2alegacy.Part) *a2a.Part {
+	switch c := p.(type) {
+	case a2alegacy.TextPart:
+		return &a2a.Part{
+			Content:  a2a.Text(c.Text),
+			Metadata: c.Metadata,
+		}
+	case a2alegacy.DataPart:
+		var val any = c.Data
+		if compat, ok := c.Metadata["data_part_compat"].(bool); ok && compat {
+			val = c.Data["value"]
+			delete(c.Metadata, "data_part_compat")
+		}
+		return &a2a.Part{
+			Content:  a2a.Data{Value: val},
+			Metadata: c.Metadata,
+		}
+	case a2alegacy.FilePart:
+		switch f := c.File.(type) {
+		case a2alegacy.FileBytes:
+			bytes, err := base64.StdEncoding.DecodeString(f.Bytes)
+			if err != nil {
+				bytes = []byte(f.Bytes)
+				log.Warn(context.Background(), "failed to decode base64 content", "error", err)
+			}
+			return &a2a.Part{
+				Content:   a2a.Raw(bytes),
+				Metadata:  c.Metadata,
+				MediaType: f.MimeType,
+				Filename:  f.Name,
+			}
+		case a2alegacy.FileURI:
+			return &a2a.Part{
+				Content:   a2a.URL(f.URI),
+				Metadata:  c.Metadata,
+				MediaType: f.MimeType,
+				Filename:  f.Name,
+			}
+		default:
+			log.Warn(context.Background(), fmt.Sprintf("unknown file type %T", f))
+			return &a2a.Part{Content: a2a.Data{Value: f}, Metadata: c.Metadata}
+		}
+	default:
+		log.Warn(context.Background(), fmt.Sprintf("unknown part type %T", c))
+		return &a2a.Part{Content: a2a.Data{Value: c}, Metadata: p.Meta()}
+	}
+}
+
+// ToV1Parts converts legacy content parts to v1 content parts.
+func ToV1Parts(parts a2alegacy.ContentParts) (a2a.ContentParts, error) {
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	res := make(a2a.ContentParts, len(parts))
+	for i, p := range parts {
+		res[i] = ToV1Part(p)
+	}
+	return res, nil
+}
+
+// FromV1Part converts a v1 part to a legacy part.
+func FromV1Part(p *a2a.Part) a2alegacy.Part {
+	switch c := p.Content.(type) {
+	case a2a.Text:
+		return a2alegacy.TextPart{
+			Text:     string(c),
+			Metadata: p.Metadata,
+		}
+	case a2a.Data:
+		val := c.Value
+		// Compatibility mode: wrap non-map values to avoid crashing old clients that expect a map.
+		if _, ok := val.(map[string]any); !ok {
+			val = map[string]any{"value": val}
+			if p.Metadata == nil {
+				p.Metadata = make(map[string]any)
+			}
+			p.Metadata["data_part_compat"] = true
+		}
+		return a2alegacy.DataPart{
+			Data:     val.(map[string]any),
+			Metadata: p.Metadata,
+		}
+	case a2a.Raw:
+		return a2alegacy.FilePart{
+			File: a2alegacy.FileBytes{
+				FileMeta: a2alegacy.FileMeta{
+					MimeType: p.MediaType,
+					Name:     p.Filename,
+				},
+				Bytes: base64.StdEncoding.EncodeToString(c),
+			},
+			Metadata: p.Metadata,
+		}
+	case a2a.URL:
+		return a2alegacy.FilePart{
+			File: a2alegacy.FileURI{
+				FileMeta: a2alegacy.FileMeta{
+					MimeType: p.MediaType,
+					Name:     p.Filename,
+				},
+				URI: string(c),
+			},
+			Metadata: p.Metadata,
+		}
+	default:
+		return a2alegacy.DataPart{
+			Data:     map[string]any{"value": p},
+			Metadata: p.Metadata,
+		}
+	}
+}
+
+// FromV1Parts converts v1 content parts to legacy content parts.
+func FromV1Parts(parts a2a.ContentParts) a2alegacy.ContentParts {
+	if len(parts) == 0 {
+		return nil
+	}
+	res := make(a2alegacy.ContentParts, len(parts))
+	for i, p := range parts {
+		res[i] = FromV1Part(p)
+	}
+	return res
+}
+
+// ToV1Artifact converts a legacy artifact to a v1 artifact.
+func ToV1Artifact(a *a2alegacy.Artifact) (*a2a.Artifact, error) {
+	if a == nil {
+		return nil, nil
+	}
+	parts, err := ToV1Parts(a.Parts)
+	if err != nil {
+		return nil, err
+	}
+	return &a2a.Artifact{
+		ID:          a2a.ArtifactID(a.ID),
 		Description: a.Description,
 		Extensions:  a.Extensions,
 		Metadata:    a.Metadata,
 		Name:        a.Name,
-		Parts:       toCompatParts(a.Parts),
+		Parts:       parts,
+	}, nil
+}
+
+// FromV1Artifact converts a v1 artifact to a legacy artifact.
+func FromV1Artifact(a *a2a.Artifact) *a2alegacy.Artifact {
+	if a == nil {
+		return nil
+	}
+	return &a2alegacy.Artifact{
+		ID:          a2alegacy.ArtifactID(a.ID),
+		Description: a.Description,
+		Extensions:  a.Extensions,
+		Metadata:    a.Metadata,
+		Name:        a.Name,
+		Parts:       FromV1Parts(a.Parts),
 	}
 }
 
-func toCompatTaskStatusUpdateEvent(e *a2a.TaskStatusUpdateEvent) *taskStatusUpdateEvent {
+// ToV1TaskStatusUpdateEvent converts a legacy task status update event to a v1 event.
+func ToV1TaskStatusUpdateEvent(e *a2alegacy.TaskStatusUpdateEvent) (*a2a.TaskStatusUpdateEvent, error) {
+	if e == nil {
+		return nil, nil
+	}
+	msg, err := ToV1Message(e.Status.Message)
+	if err != nil {
+		return nil, err
+	}
+	return &a2a.TaskStatusUpdateEvent{
+		ContextID: e.ContextID,
+		Status: a2a.TaskStatus{
+			Message:   msg,
+			State:     ToV1TaskState(e.Status.State),
+			Timestamp: e.Status.Timestamp,
+		},
+		TaskID:   a2a.TaskID(e.TaskID),
+		Metadata: e.Metadata,
+	}, nil
+}
+
+// FromV1TaskStatusUpdateEvent converts a v1 task status update event to a legacy event.
+func FromV1TaskStatusUpdateEvent(e *a2a.TaskStatusUpdateEvent) *a2alegacy.TaskStatusUpdateEvent {
 	if e == nil {
 		return nil
 	}
-	return &taskStatusUpdateEvent{
+	return &a2alegacy.TaskStatusUpdateEvent{
 		ContextID: e.ContextID,
 		Final:     e.Status.State.Terminal(),
-		Status: taskStatus{
-			Message:   toCompatMessage(e.Status.Message),
-			State:     toCompatTaskState(e.Status.State),
+		Status: a2alegacy.TaskStatus{
+			Message:   FromV1Message(e.Status.Message),
+			State:     FromV1TaskState(e.Status.State),
 			Timestamp: e.Status.Timestamp,
 		},
-		TaskID:   e.TaskID,
+		TaskID:   a2alegacy.TaskID(e.TaskID),
 		Metadata: e.Metadata,
 	}
 }
 
-func toCompatTaskArtifactUpdateEvent(e *a2a.TaskArtifactUpdateEvent) *taskArtifactUpdateEvent {
+// ToV1TaskArtifactUpdateEvent converts a legacy task artifact update event to a v1 event.
+func ToV1TaskArtifactUpdateEvent(e *a2alegacy.TaskArtifactUpdateEvent) (*a2a.TaskArtifactUpdateEvent, error) {
+	if e == nil {
+		return nil, nil
+	}
+	artifact, err := ToV1Artifact(e.Artifact)
+	if err != nil {
+		return nil, err
+	}
+	return &a2a.TaskArtifactUpdateEvent{
+		Append:    e.Append,
+		Artifact:  artifact,
+		ContextID: e.ContextID,
+		LastChunk: e.LastChunk,
+		TaskID:    a2a.TaskID(e.TaskID),
+		Metadata:  e.Metadata,
+	}, nil
+}
+
+// FromV1TaskArtifactUpdateEvent converts a v1 task artifact update event to a legacy event.
+func FromV1TaskArtifactUpdateEvent(e *a2a.TaskArtifactUpdateEvent) *a2alegacy.TaskArtifactUpdateEvent {
 	if e == nil {
 		return nil
 	}
-	return &taskArtifactUpdateEvent{
+	return &a2alegacy.TaskArtifactUpdateEvent{
 		Append:    e.Append,
-		Artifact:  toCompatArtifact(e.Artifact),
+		Artifact:  FromV1Artifact(e.Artifact),
 		ContextID: e.ContextID,
 		LastChunk: e.LastChunk,
-		TaskID:    e.TaskID,
+		TaskID:    a2alegacy.TaskID(e.TaskID),
 		Metadata:  e.Metadata,
 	}
 }
 
-func toCompatPushConfig(c *a2a.PushConfig) *pushConfig {
-	if c == nil {
-		return nil
-	}
-	res := &pushConfig{
+// ToV1PushConfig converts a legacy push config to a v1 push config.
+func ToV1PushConfig(c a2alegacy.PushConfig) *a2a.PushConfig {
+	res := &a2a.PushConfig{
 		ID:    c.ID,
 		Token: c.Token,
 		URL:   c.URL,
 	}
 	if c.Auth != nil {
-		res.Auth = &pushAuthInfo{
+		res.Auth = &a2a.PushAuthInfo{
+			Credentials: c.Auth.Credentials,
+		}
+		if len(c.Auth.Schemes) > 0 {
+			res.Auth.Scheme = c.Auth.Schemes[0]
+		}
+	}
+	return res
+}
+
+// FromV1PushConfig converts a v1 push config to a legacy push config.
+func FromV1PushConfig(c *a2a.PushConfig) *a2alegacy.PushConfig {
+	if c == nil {
+		return nil
+	}
+	res := &a2alegacy.PushConfig{
+		ID:    c.ID,
+		Token: c.Token,
+		URL:   c.URL,
+	}
+	if c.Auth != nil {
+		res.Auth = &a2alegacy.PushAuthInfo{
 			Credentials: c.Auth.Credentials,
 			Schemes:     []string{c.Auth.Scheme},
 		}
@@ -235,31 +504,31 @@ func toCompatPushConfig(c *a2a.PushConfig) *pushConfig {
 	return res
 }
 
-func toCompatTaskPushConfig(c *a2a.TaskPushConfig) (*taskPushConfig, error) {
+// ToV1TaskPushConfig converts a legacy task push config to a v1 task push config.
+func ToV1TaskPushConfig(comp *a2alegacy.TaskPushConfig) (*a2a.TaskPushConfig, error) {
+	if comp == nil {
+		return nil, nil
+	}
+	return &a2a.TaskPushConfig{TaskID: a2a.TaskID(comp.TaskID), Config: *ToV1PushConfig(comp.Config)}, nil
+}
+
+// FromV1TaskPushConfig converts a v1 task push config to a legacy task push config.
+func FromV1TaskPushConfig(c *a2a.TaskPushConfig) (*a2alegacy.TaskPushConfig, error) {
 	if c == nil {
 		return nil, nil
 	}
-	res := &taskPushConfig{
-		Config: pushConfig{
-			ID:    c.Config.ID,
-			Token: c.Config.Token,
-			URL:   c.Config.URL,
-		},
-		TaskID: c.TaskID,
-	}
-	if c.Config.Auth != nil {
-		res.Config.Auth = &pushAuthInfo{
-			Credentials: c.Config.Auth.Credentials,
-			Schemes:     []string{c.Config.Auth.Scheme},
-		}
+	res := &a2alegacy.TaskPushConfig{
+		Config: *FromV1PushConfig(&c.Config),
+		TaskID: a2alegacy.TaskID(c.TaskID),
 	}
 	return res, nil
 }
 
-func toCompatTaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*taskPushConfig, error) {
-	var res []*taskPushConfig
+// FromV1TaskPushConfigs converts multiple v1 task push configs to legacy task push configs.
+func FromV1TaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*a2alegacy.TaskPushConfig, error) {
+	var res []*a2alegacy.TaskPushConfig
 	for _, c := range cs {
-		comp, err := toCompatTaskPushConfig(c)
+		comp, err := FromV1TaskPushConfig(c)
 		if err != nil {
 			return nil, err
 		}
@@ -270,106 +539,41 @@ func toCompatTaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*taskPushConfig, error
 	return res, nil
 }
 
-func toCompatGetTaskRequest(req *a2a.GetTaskRequest) *taskQueryParams {
-	if req == nil {
-		return nil
-	}
-	return &taskQueryParams{
-		ID:            req.ID,
-		HistoryLength: req.HistoryLength,
-	}
-}
-
-func toCompatCancelTaskRequest(req *a2a.CancelTaskRequest) *taskIDParams {
-	if req == nil {
-		return nil
-	}
-	return &taskIDParams{ID: req.ID, Metadata: req.Metadata}
-}
-
-func toCompatSendMessageRequest(req *a2a.SendMessageRequest) *messageSendParams {
-	if req == nil {
-		return nil
-	}
-	res := &messageSendParams{
-		Message:  toCompatMessage(req.Message),
-		Metadata: req.Metadata,
-	}
-	if req.Config != nil {
-		res.Config = &messageSendConfig{
-			AcceptedOutputModes: req.Config.AcceptedOutputModes,
-			Blocking:            req.Config.Blocking,
-			HistoryLength:       req.Config.HistoryLength,
-		}
-		if req.Config.PushConfig != nil {
-			res.Config.PushConfig = toCompatPushConfig(req.Config.PushConfig)
-		}
-	}
-	return res
-}
-
-func toCompatSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) *taskIDParams {
-	if req == nil {
-		return nil
-	}
-	return &taskIDParams{
-		ID: req.ID,
-	}
-}
-
-func toCompatGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) *getTaskPushConfigParams {
-	if req == nil {
-		return nil
-	}
-	return &getTaskPushConfigParams{
-		TaskID:   req.TaskID,
-		ConfigID: req.ID,
-	}
-}
-
-func toCompatListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) *listTaskPushConfigParams {
-	if req == nil {
-		return nil
-	}
-	return &listTaskPushConfigParams{
-		TaskID: req.TaskID,
-	}
-}
-
-func toCompatCreateTaskPushConfigRequest(req *a2a.CreateTaskPushConfigRequest) *taskPushConfig {
-	if req == nil {
-		return nil
-	}
-	cfg := toCompatPushConfig(&req.Config)
-	if cfg == nil {
-		cfg = &pushConfig{}
-	}
-	return &taskPushConfig{TaskID: req.TaskID, Config: *cfg}
-}
-
-func toCompatDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) *deleteTaskPushConfigParams {
-	if req == nil {
-		return nil
-	}
-	return &deleteTaskPushConfigParams{
-		TaskID:   req.TaskID,
-		ConfigID: req.ID,
-	}
-}
-
-func toCoreGetTaskRequest(q *taskQueryParams) *a2a.GetTaskRequest {
+// ToV1GetTaskRequest converts a legacy get task request to a v1 request.
+func ToV1GetTaskRequest(q *a2alegacy.TaskQueryParams) *a2a.GetTaskRequest {
 	return &a2a.GetTaskRequest{
-		ID:            q.ID,
+		ID:            a2a.TaskID(q.ID),
 		HistoryLength: q.HistoryLength,
 	}
 }
 
-func toCoreCancelTaskRequest(q *taskIDParams) *a2a.CancelTaskRequest {
-	return &a2a.CancelTaskRequest{ID: q.ID, Metadata: q.Metadata}
+// FromV1GetTaskRequest converts a v1 get task request to a legacy request.
+func FromV1GetTaskRequest(req *a2a.GetTaskRequest) *a2alegacy.TaskQueryParams {
+	if req == nil {
+		return nil
+	}
+	return &a2alegacy.TaskQueryParams{
+		ID:            a2alegacy.TaskID(req.ID),
+		HistoryLength: req.HistoryLength,
+	}
 }
 
-func toCoreSendMessageRequest(p *messageSendParams) (*a2a.SendMessageRequest, error) {
-	msg, err := toCoreMessage(p.Message)
+// ToV1CancelTaskRequest converts a legacy cancel task request to a v1 request.
+func ToV1CancelTaskRequest(q *a2alegacy.TaskIDParams) *a2a.CancelTaskRequest {
+	return &a2a.CancelTaskRequest{ID: a2a.TaskID(q.ID), Metadata: q.Metadata}
+}
+
+// FromV1CancelTaskRequest converts a v1 cancel task request to a legacy request.
+func FromV1CancelTaskRequest(req *a2a.CancelTaskRequest) *a2alegacy.TaskIDParams {
+	if req == nil {
+		return nil
+	}
+	return &a2alegacy.TaskIDParams{ID: a2alegacy.TaskID(req.ID), Metadata: req.Metadata}
+}
+
+// ToV1SendMessageRequest converts a legacy send message request to a v1 request.
+func ToV1SendMessageRequest(p *a2alegacy.MessageSendParams) (*a2a.SendMessageRequest, error) {
+	msg, err := ToV1Message(p.Message)
 	if err != nil {
 		return nil, err
 	}
@@ -384,256 +588,122 @@ func toCoreSendMessageRequest(p *messageSendParams) (*a2a.SendMessageRequest, er
 			HistoryLength:       p.Config.HistoryLength,
 		}
 		if p.Config.PushConfig != nil {
-			req.Config.PushConfig = toCorePushConfig(*p.Config.PushConfig)
+			req.Config.PushConfig = ToV1PushConfig(*p.Config.PushConfig)
 		}
 	}
 	return req, nil
 }
 
-func toCoreSubscribeToTaskRequest(q *taskIDParams) *a2a.SubscribeToTaskRequest {
-	return &a2a.SubscribeToTaskRequest{
-		ID: q.ID,
+// FromV1SendMessageRequest converts a v1 send message request to a legacy request.
+func FromV1SendMessageRequest(req *a2a.SendMessageRequest) *a2alegacy.MessageSendParams {
+	if req == nil {
+		return nil
 	}
-}
-
-func toCoreGetTaskPushConfigRequest(p *getTaskPushConfigParams) *a2a.GetTaskPushConfigRequest {
-	return &a2a.GetTaskPushConfigRequest{
-		TaskID: p.TaskID,
-		ID:     p.ConfigID,
+	res := &a2alegacy.MessageSendParams{
+		Message:  FromV1Message(req.Message),
+		Metadata: req.Metadata,
 	}
-}
-
-func toCoreListTaskPushConfigRequest(p *listTaskPushConfigParams) *a2a.ListTaskPushConfigRequest {
-	return &a2a.ListTaskPushConfigRequest{
-		TaskID: p.TaskID,
-	}
-}
-
-func toCoreCreateTaskPushConfigRequest(p *taskPushConfig) *a2a.CreateTaskPushConfigRequest {
-	return &a2a.CreateTaskPushConfigRequest{
-		TaskID: p.TaskID,
-		Config: *toCorePushConfig(p.Config),
-	}
-}
-
-func toCoreDeleteTaskPushConfigRequest(p *deleteTaskPushConfigParams) *a2a.DeleteTaskPushConfigRequest {
-	return &a2a.DeleteTaskPushConfigRequest{
-		TaskID: p.TaskID,
-		ID:     p.ConfigID,
-	}
-}
-
-func toCorePushConfig(c pushConfig) *a2a.PushConfig {
-	res := &a2a.PushConfig{
-		ID:    c.ID,
-		Token: c.Token,
-		URL:   c.URL,
-	}
-	if c.Auth != nil {
-		scheme := ""
-		if len(c.Auth.Schemes) > 0 {
-			scheme = c.Auth.Schemes[0]
+	if req.Config != nil {
+		res.Config = &a2alegacy.MessageSendConfig{
+			AcceptedOutputModes: req.Config.AcceptedOutputModes,
+			Blocking:            req.Config.Blocking,
+			HistoryLength:       req.Config.HistoryLength,
 		}
-		res.Auth = &a2a.PushAuthInfo{
-			Credentials: c.Auth.Credentials,
-			Scheme:      scheme,
+		if req.Config.PushConfig != nil {
+			res.Config.PushConfig = FromV1PushConfig(req.Config.PushConfig)
 		}
 	}
 	return res
 }
 
-func toCoreMessage(m *message) (*a2a.Message, error) {
-	if m == nil {
-		return nil, nil
-	}
-	parts, err := toCoreParts(m.Parts)
-	if err != nil {
-		return nil, err
-	}
-	return &a2a.Message{
-		ID:             m.ID,
-		ContextID:      m.ContextID,
-		Extensions:     m.Extensions,
-		Metadata:       m.Metadata,
-		Parts:          parts,
-		ReferenceTasks: m.ReferenceTasks,
-		Role:           m.Role,
-		TaskID:         m.TaskID,
-	}, nil
-}
-
-func toCoreParts(parts contentParts) (a2a.ContentParts, error) {
-	if len(parts) == 0 {
-		return nil, nil
-	}
-	res := make(a2a.ContentParts, len(parts))
-	for i, p := range parts {
-		switch c := p.(type) {
-		case textPart:
-			res[i] = &a2a.Part{
-				Content:  a2a.Text(c.Text),
-				Metadata: c.Metadata,
-			}
-		case dataPart:
-			val := c.Data
-			if compat, ok := c.Metadata["data_part_compat"].(bool); ok && compat {
-				if m, ok := val.(map[string]any); ok {
-					val = m["value"]
-					delete(c.Metadata, "data_part_compat")
-				}
-			}
-			res[i] = &a2a.Part{
-				Content:  a2a.Data{Value: val},
-				Metadata: c.Metadata,
-			}
-		case filePart:
-			switch f := c.File.(type) {
-			case fileBytes:
-				bytes, err := base64.StdEncoding.DecodeString(f.Bytes)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 content: %w", err)
-				}
-				res[i] = &a2a.Part{
-					Content:   a2a.Raw(bytes),
-					Metadata:  c.Metadata,
-					MediaType: f.MimeType,
-					Filename:  f.Name,
-				}
-			case fileURI:
-				res[i] = &a2a.Part{
-					Content:   a2a.URL(f.URI),
-					Metadata:  c.Metadata,
-					MediaType: f.MimeType,
-					Filename:  f.Name,
-				}
-			}
-		}
-	}
-	return res, nil
-}
-
-func fromCompatEvent(comp event) (a2a.Event, error) {
-	if comp == nil {
-		return nil, nil
-	}
-	switch v := comp.(type) {
-	case *message:
-		return toCoreMessage(v)
-	case *task:
-		return fromCompatTask(v)
-	case *taskStatusUpdateEvent:
-		return fromCompatTaskStatusUpdateEvent(v)
-	case *taskArtifactUpdateEvent:
-		return fromCompatTaskArtifactUpdateEvent(v)
-	default:
-		return nil, fmt.Errorf("unknown task event compat kind %T", comp)
+// ToV1SubscribeToTaskRequest converts a legacy subscribe to task request to a v1 request.
+func ToV1SubscribeToTaskRequest(q *a2alegacy.TaskIDParams) *a2a.SubscribeToTaskRequest {
+	return &a2a.SubscribeToTaskRequest{
+		ID: a2a.TaskID(q.ID),
 	}
 }
 
-func fromCompatTask(t *task) (*a2a.Task, error) {
-	if t == nil {
-		return nil, nil
+// FromV1SubscribeToTaskRequest converts a v1 subscribe to task request to a legacy request.
+func FromV1SubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) *a2alegacy.TaskIDParams {
+	if req == nil {
+		return nil
 	}
-	var msg *a2a.Message
-	if t.Status.Message != nil {
-		var err error
-		msg, err = toCoreMessage(t.Status.Message)
-		if err != nil {
-			return nil, err
-		}
+	return &a2alegacy.TaskIDParams{
+		ID: a2alegacy.TaskID(req.ID),
 	}
-	res := &a2a.Task{
-		ID:        t.ID,
-		ContextID: t.ContextID,
-		Metadata:  t.Metadata,
-		Status: a2a.TaskStatus{
-			Message:   msg,
-			State:     fromCompatTaskState(t.Status.State),
-			Timestamp: t.Status.Timestamp,
-		},
-	}
-	if len(t.Artifacts) > 0 {
-		res.Artifacts = make([]*a2a.Artifact, len(t.Artifacts))
-		for i, a := range t.Artifacts {
-			var err error
-			res.Artifacts[i], err = fromCompatArtifact(a)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	if len(t.History) > 0 {
-		res.History = make([]*a2a.Message, len(t.History))
-		for i, m := range t.History {
-			var err error
-			res.History[i], err = toCoreMessage(m)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return res, nil
 }
 
-func fromCompatArtifact(a *artifact) (*a2a.Artifact, error) {
-	if a == nil {
-		return nil, nil
+// ToV1GetTaskPushConfigRequest converts a legacy get task push config request to a v1 request.
+func ToV1GetTaskPushConfigRequest(p *a2alegacy.GetTaskPushConfigParams) *a2a.GetTaskPushConfigRequest {
+	return &a2a.GetTaskPushConfigRequest{
+		TaskID: a2a.TaskID(p.TaskID),
+		ID:     p.ConfigID,
 	}
-	parts, err := toCoreParts(a.Parts)
-	if err != nil {
-		return nil, err
-	}
-	return &a2a.Artifact{
-		ID:          a.ID,
-		Description: a.Description,
-		Extensions:  a.Extensions,
-		Metadata:    a.Metadata,
-		Name:        a.Name,
-		Parts:       parts,
-	}, nil
 }
 
-func fromCompatTaskStatusUpdateEvent(e *taskStatusUpdateEvent) (*a2a.TaskStatusUpdateEvent, error) {
-	if e == nil {
-		return nil, nil
+// FromV1GetTaskPushConfigRequest converts a v1 get task push config request to a legacy request.
+func FromV1GetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) *a2alegacy.GetTaskPushConfigParams {
+	if req == nil {
+		return nil
 	}
-	msg, err := toCoreMessage(e.Status.Message)
-	if err != nil {
-		return nil, err
+	return &a2alegacy.GetTaskPushConfigParams{
+		TaskID:   a2alegacy.TaskID(req.TaskID),
+		ConfigID: req.ID,
 	}
-	return &a2a.TaskStatusUpdateEvent{
-		ContextID: e.ContextID,
-		Status: a2a.TaskStatus{
-			Message:   msg,
-			State:     fromCompatTaskState(e.Status.State),
-			Timestamp: e.Status.Timestamp,
-		},
-		TaskID:   e.TaskID,
-		Metadata: e.Metadata,
-	}, nil
 }
 
-func fromCompatTaskArtifactUpdateEvent(e *taskArtifactUpdateEvent) (*a2a.TaskArtifactUpdateEvent, error) {
-	if e == nil {
-		return nil, nil
+// ToV1ListTaskPushConfigRequest converts a legacy list task push config request to a v1 request.
+func ToV1ListTaskPushConfigRequest(p *a2alegacy.ListTaskPushConfigParams) *a2a.ListTaskPushConfigRequest {
+	return &a2a.ListTaskPushConfigRequest{
+		TaskID: a2a.TaskID(p.TaskID),
 	}
-	artifact, err := fromCompatArtifact(e.Artifact)
-	if err != nil {
-		return nil, err
-	}
-	return &a2a.TaskArtifactUpdateEvent{
-		Append:    e.Append,
-		Artifact:  artifact,
-		ContextID: e.ContextID,
-		LastChunk: e.LastChunk,
-		TaskID:    e.TaskID,
-		Metadata:  e.Metadata,
-	}, nil
 }
 
-func fromCompatTaskPushConfig(comp *taskPushConfig) (*a2a.TaskPushConfig, error) {
-	if comp == nil {
-		return nil, nil
+// FromV1ListTaskPushConfigRequest converts a v1 list task push config request to a legacy request.
+func FromV1ListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) *a2alegacy.ListTaskPushConfigParams {
+	if req == nil {
+		return nil
 	}
-	return &a2a.TaskPushConfig{TaskID: comp.TaskID, Config: *toCorePushConfig(comp.Config)}, nil
+	return &a2alegacy.ListTaskPushConfigParams{
+		TaskID: a2alegacy.TaskID(req.TaskID),
+	}
+}
+
+// ToV1CreateTaskPushConfigRequest converts a legacy create task push config request to a v1 request.
+func ToV1CreateTaskPushConfigRequest(p *a2alegacy.TaskPushConfig) *a2a.CreateTaskPushConfigRequest {
+	return &a2a.CreateTaskPushConfigRequest{
+		TaskID: a2a.TaskID(p.TaskID),
+		Config: *ToV1PushConfig(p.Config),
+	}
+}
+
+// FromV1CreateTaskPushConfigRequest converts a v1 create task push config request to a legacy request.
+func FromV1CreateTaskPushConfigRequest(req *a2a.CreateTaskPushConfigRequest) *a2alegacy.TaskPushConfig {
+	if req == nil {
+		return nil
+	}
+	cfg := FromV1PushConfig(&req.Config)
+	if cfg == nil {
+		cfg = &a2alegacy.PushConfig{}
+	}
+	return &a2alegacy.TaskPushConfig{TaskID: a2alegacy.TaskID(req.TaskID), Config: *cfg}
+}
+
+// ToV1DeleteTaskPushConfigRequest converts a legacy delete task push config request to a v1 request.
+func ToV1DeleteTaskPushConfigRequest(p *a2alegacy.DeleteTaskPushConfigParams) *a2a.DeleteTaskPushConfigRequest {
+	return &a2a.DeleteTaskPushConfigRequest{
+		TaskID: a2a.TaskID(p.TaskID),
+		ID:     p.ConfigID,
+	}
+}
+
+// FromV1DeleteTaskPushConfigRequest converts a v1 delete task push config request to a legacy request.
+func FromV1DeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) *a2alegacy.DeleteTaskPushConfigParams {
+	if req == nil {
+		return nil
+	}
+	return &a2alegacy.DeleteTaskPushConfigParams{
+		TaskID:   a2alegacy.TaskID(req.TaskID),
+		ConfigID: req.ID,
+	}
 }

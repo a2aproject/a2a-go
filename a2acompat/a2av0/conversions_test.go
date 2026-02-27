@@ -24,7 +24,7 @@ import (
 func TestToCompatParts_PrimitiveData(t *testing.T) {
 	val := "hello"
 	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := toCompatParts(parts)
+	compatParts := FromV1Parts(parts)
 
 	if len(compatParts) != 1 {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))
@@ -36,10 +36,7 @@ func TestToCompatParts_PrimitiveData(t *testing.T) {
 	}
 
 	// Verify it's wrapped in a map
-	m, ok := dp.Data.(map[string]any)
-	if !ok {
-		t.Fatalf("Expected map[string]any, got %T", dp.Data)
-	}
+	m := dp.Data
 
 	if m["value"] != val {
 		t.Errorf("Expected value %q, got %v", val, m["value"])
@@ -60,7 +57,7 @@ func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 		},
 	}
 
-	coreParts, err := toCoreParts(compatParts)
+	coreParts, err := ToV1Parts(compatParts)
 	if err != nil {
 		t.Fatalf("toCoreParts failed: %v", err)
 	}
@@ -83,7 +80,7 @@ func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 func TestToCompatParts_MapDataNoWrap(t *testing.T) {
 	val := map[string]any{"key": "value"}
 	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := toCompatParts(parts)
+	compatParts := FromV1Parts(parts)
 
 	if len(compatParts) != 1 {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))

@@ -28,7 +28,7 @@ import (
 // NewAgentCardParser returns a parser that can parse agent cards in v0.3 format into v1.0 format.
 func NewAgentCardParser() agentcard.Parser {
 	return func(b []byte) (*a2a.AgentCard, error) {
-		var compatCard agentCard
+		var compatCard agentCardCompat
 		if err := json.Unmarshal(b, &compatCard); err != nil {
 			return nil, err
 		}
@@ -95,12 +95,12 @@ func (p *compatProducer) CardJSON(ctx context.Context) ([]byte, error) {
 	return json.MarshalIndent(compatCard, "", "  ")
 }
 
-func toCompatCard(card *a2a.AgentCard) (*agentCard, error) {
+func toCompatCard(card *a2a.AgentCard) (*agentCardCompat, error) {
 	preferredInterface, additionalInterfaces, err := mapToCompatInterfaces(card)
 	if err != nil {
 		return nil, err
 	}
-	return &agentCard{
+	return &agentCardCompat{
 		DefaultInputModes:    card.DefaultInputModes,
 		DefaultOutputModes:   card.DefaultOutputModes,
 		Description:          card.Description,
@@ -239,7 +239,7 @@ func mapToCompatSecurity(req a2a.SecurityRequirementsOptions) []securityRequirem
 	return out
 }
 
-func mapFromCompatSecurity(card agentCard) a2a.SecurityRequirementsOptions {
+func mapFromCompatSecurity(card agentCardCompat) a2a.SecurityRequirementsOptions {
 	if len(card.SecurityRequirements) > 0 {
 		return card.SecurityRequirements
 	}
@@ -250,7 +250,7 @@ func mapFromCompatSecurity(card agentCard) a2a.SecurityRequirementsOptions {
 	return out
 }
 
-func mapFromCompatInterfaces(card agentCard) []*a2a.AgentInterface {
+func mapFromCompatInterfaces(card agentCardCompat) []*a2a.AgentInterface {
 	if len(card.SupportedInterfaces) > 0 {
 		return card.SupportedInterfaces
 	}
@@ -313,7 +313,7 @@ func mapToCompatSkills(skills []a2a.AgentSkill) []agentSkill {
 	return result
 }
 
-type agentCard struct {
+type agentCardCompat struct {
 	// The same as v1.0
 	DefaultInputModes  []string                 `json:"defaultInputModes"`
 	DefaultOutputModes []string                 `json:"defaultOutputModes"`
