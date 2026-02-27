@@ -527,18 +527,19 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 		lastUpdatedAfter = timestamppb.New(*request.StatusTimestampAfter)
 	}
 	pageSize := int32(request.PageSize)
-	historyLength := proto.Int32(int32(request.HistoryLength))
-
-	return &a2apb.ListTasksRequest{
+	pbReq := &a2apb.ListTasksRequest{
 		Tenant:               request.Tenant,
 		ContextId:            request.ContextID,
 		Status:               toProtoTaskState(request.Status),
 		PageSize:             &pageSize,
 		PageToken:            request.PageToken,
-		HistoryLength:        historyLength,
 		StatusTimestampAfter: lastUpdatedAfter,
 		IncludeArtifacts:     proto.Bool(request.IncludeArtifacts),
-	}, nil
+	}
+	if request.HistoryLength != nil {
+		pbReq.HistoryLength = proto.Int32(int32(*request.HistoryLength))
+	}
+	return pbReq, nil
 }
 
 // ToProtoListTasksResponse converts a [a2a.ListTasksResponse] to a [a2apb.ListTasksResponse].

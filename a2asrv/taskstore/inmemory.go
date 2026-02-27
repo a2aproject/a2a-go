@@ -169,6 +169,7 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 
 // List implements [Store] interface.
 func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	const defaultPageSize = 50
 	userName, err := s.config.Authenticator(ctx)
 	if userName == "" || err != nil {
 		return nil, a2a.ErrUnauthenticated
@@ -176,12 +177,9 @@ func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.Li
 
 	pageSize := req.PageSize
 	if pageSize == 0 {
-		pageSize = 50
+		pageSize = defaultPageSize
 	} else if pageSize < 1 || pageSize > 100 {
 		return nil, fmt.Errorf("page size must be between 1 and 100 inclusive, got %d: %w", pageSize, a2a.ErrInvalidRequest)
-	}
-	if req.HistoryLength < 0 {
-		return nil, fmt.Errorf("history length must be non-negative integer, got %d: %w", req.HistoryLength, a2a.ErrInvalidRequest)
 	}
 	s.mu.RLock()
 	filteredTasks := filterTasks(s.tasks, userName, req)
@@ -277,13 +275,20 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 
 func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
 	var result []*a2a.Task
+	const defaultMaxHistoryLength = 100
 	for _, storedTask := range tasks {
 		taskCopy, err := utils.DeepCopy(storedTask.task)
 		if err != nil {
 			return nil, err
 		}
-		if req.HistoryLength > 0 && len(taskCopy.History) > req.HistoryLength {
-			taskCopy.History = taskCopy.History[len(taskCopy.History)-req.HistoryLength:]
+		historyLength := defaultMaxHistoryLength
+		if req.HistoryLength != nil {
+			historyLength = *req.HistoryLength
+		}
+		if historyLength == 0 {
+			taskCopy.History = []*a2a.Message{}
+		} else if historyLength > 0 && len(taskCopy.History) > historyLength {
+			taskCopy.History = taskCopy.History[len(taskCopy.History)-historyLength:]
 		}
 		if !req.IncludeArtifacts {
 			taskCopy.Artifacts = nil

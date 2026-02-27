@@ -228,9 +228,9 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 	if req.HistoryLength != nil {
 		historyLength := *req.HistoryLength
 
-		if historyLength <= 0 {
+		if historyLength == 0 {
 			task.History = []*a2a.Message{}
-		} else if historyLength < len(task.History) {
+		} else if historyLength > 0 && historyLength < len(task.History) {
 			task.History = task.History[len(task.History)-historyLength:]
 		}
 	}

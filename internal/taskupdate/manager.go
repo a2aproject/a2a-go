@@ -16,6 +16,7 @@ package taskupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -26,30 +27,32 @@ import (
 	"github.com/a2aproject/a2a-go/v1/log"
 )
 
+const maxCancelationAttempts = 10
+
 // Manager is used for processing [a2a.Event] related to an [a2a.Task]. It updates
 // the Task accordingly and uses [taskstore.Store] to store the new state.
 type Manager struct {
-	taskInfo  a2a.TaskInfo
-	lastSaved *taskstore.StoredTask
-	store     taskstore.Store
+	taskInfo   a2a.TaskInfo
+	lastStored *taskstore.StoredTask
+	store      taskstore.Store
 }
 
 // NewManager is a [Manager] constructor function.
 func NewManager(store taskstore.Store, info a2a.TaskInfo, task *taskstore.StoredTask) *Manager {
 	return &Manager{
-		taskInfo:  info,
-		lastSaved: task,
-		store:     store,
+		taskInfo:   info,
+		lastStored: task,
+		store:      store,
 	}
 }
 
 // SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
 func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*taskstore.StoredTask, error) {
-	if mgr.lastSaved == nil {
+	if mgr.lastStored == nil {
 		return nil, fmt.Errorf("execution failed before a task was created: %w", cause)
 	}
 
-	task := *mgr.lastSaved.Task // copy to update task status
+	task := *mgr.lastStored.Task // copy to update task status
 
 	// do not store cause.Error() as part of status to not disclose the cause to clients
 	task.Status = a2a.TaskStatus{State: a2a.TaskStateFailed}
@@ -59,13 +62,13 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause er
 	}
 
 	log.Info(ctx, "task moved to failed state", "cause", cause.Error())
-	return mgr.lastSaved, nil
+	return mgr.lastStored, nil
 }
 
 // Process validates the event associated with the managed [a2a.Task] and integrates the new state into it.
 func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.StoredTask, error) {
 	if _, ok := event.(*a2a.Message); ok {
-		if mgr.lastSaved != nil {
+		if mgr.lastStored != nil {
 			return nil, fmt.Errorf("message not allowed after task was stored: %w", a2a.ErrInvalidAgentResponse)
 		}
 		return nil, nil
@@ -78,7 +81,7 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		return mgr.saveTask(ctx, v, event)
 	}
 
-	if mgr.lastSaved == nil {
+	if mgr.lastStored == nil {
 		return nil, fmt.Errorf("first event must be a Task or a message: %w", a2a.ErrInvalidAgentResponse)
 	}
 
@@ -104,7 +107,7 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 }
 
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*taskstore.StoredTask, error) {
-	task := mgr.lastSaved.Task
+	task := mgr.lastStored.Task
 
 	// The copy is required because the event will be passed to subscriber goroutines, while
 	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
@@ -142,44 +145,77 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*taskstore.StoredTask, error) {
-	task, err := utils.DeepCopy(mgr.lastSaved.Task)
+	lastStored, err := utils.DeepCopy(mgr.lastStored)
 	if err != nil {
 		return nil, err
 	}
 
-	if task.Status.Message != nil {
-		task.History = append(task.History, task.Status.Message)
-	}
-
-	if event.Metadata != nil {
-		if task.Metadata == nil {
-			task.Metadata = make(map[string]any)
+	for range maxCancelationAttempts {
+		task := lastStored.Task
+		if task.Status.Message != nil {
+			task.History = append(task.History, task.Status.Message)
 		}
-		maps.Copy(task.Metadata, event.Metadata)
+		if event.Metadata != nil {
+			if task.Metadata == nil {
+				task.Metadata = make(map[string]any)
+			}
+			maps.Copy(task.Metadata, event.Metadata)
+		}
+		task.Status = event.Status
+
+		vt, err := mgr.saveVersionedTask(ctx, task, event, lastStored.Version)
+		if err == nil {
+			return vt, nil
+		}
+
+		if !errors.Is(err, a2a.ErrConcurrentTaskModification) || event.Status.State != a2a.TaskStateCanceled {
+			return nil, err
+		}
+
+		storedTask, getErr := mgr.store.Get(ctx, event.TaskID)
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get task: %w", getErr)
+		}
+
+		if storedTask.Task.Status.State == a2a.TaskStateCanceled {
+			mgr.lastStored = storedTask
+			return mgr.lastStored, nil
+		}
+		if storedTask.Task.Status.State.Terminal() {
+			return nil, fmt.Errorf("task moved to %q before it could be cancelled", storedTask.Task.Status.State)
+		}
+
+		lastStored = storedTask
 	}
 
-	task.Status = event.Status
-
-	return mgr.saveTask(ctx, task, event)
+	return nil, fmt.Errorf("max task cancelation attempts reached")
 }
 
 func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*taskstore.StoredTask, error) {
+	version := taskstore.TaskVersionMissing
+	if mgr.lastStored != nil {
+		version = mgr.lastStored.Version
+	}
+	return mgr.saveVersionedTask(ctx, task, event, version)
+}
+
+func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion taskstore.TaskVersion) (*taskstore.StoredTask, error) {
 	var version taskstore.TaskVersion
 	var err error
-	if mgr.lastSaved == nil {
+	if mgr.lastStored == nil {
 		version, err = mgr.store.Create(ctx, task)
 	} else {
 		version, err = mgr.store.Update(ctx, &taskstore.UpdateRequest{
 			Task:        task,
 			Event:       event,
-			PrevVersion: mgr.lastSaved.Version,
+			PrevVersion: prevVersion,
 		})
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
-	mgr.lastSaved = &taskstore.StoredTask{Task: task, Version: version}
-	return mgr.lastSaved, nil
+	mgr.lastStored = &taskstore.StoredTask{Task: task, Version: version}
+	return mgr.lastStored, nil
 }
 
 func (mgr *Manager) validate(provider a2a.TaskInfoProvider) error {
