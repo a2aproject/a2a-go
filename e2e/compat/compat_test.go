@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package compat
+package compat_test
 
 import (
 	"context"
@@ -20,9 +20,6 @@ import (
 	"iter"
 	"net"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -32,52 +29,66 @@ import (
 	"github.com/a2aproject/a2a-go/v1/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/v1/a2asrv"
+
+	legacycore "github.com/a2aproject/a2a-go/a2a"
+	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
+	legacyagentcard "github.com/a2aproject/a2a-go/a2aclient/agentcard"
+	legacysrv "github.com/a2aproject/a2a-go/a2asrv"
+	legacyeventqueue "github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 )
 
-var compatTestBinPath string
-
-func TestMain(m *testing.M) {
-	os.Exit(compileSUTAndRun(m))
-}
+// compat_test.go refactored to use legacy SDK in-process.
 
 func TestCompat_OldClientNewServer(t *testing.T) {
-	binPath := compatTestBinPath
-
 	port, stop := startNewServer(t)
 	defer stop()
 
 	addr := fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	cmd := exec.Command(binPath, "client", addr)
-	out, err := cmd.CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	card, err := legacyagentcard.DefaultResolver.Resolve(ctx, addr)
 	if err != nil {
-		t.Fatalf("Old client failed against new server: %v\nOutput: %s", err, out)
+		t.Fatalf("failed to resolve AgentCard: %v", err)
+	}
+
+	client, err := legacyclient.NewFromCard(ctx, card)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	msg := legacycore.NewMessage(legacycore.MessageRoleUser, legacycore.TextPart{Text: "ping"})
+	req := &legacycore.MessageSendParams{
+		Message: msg,
+	}
+
+	resp, err := client.SendMessage(ctx, req)
+	if err != nil {
+		t.Fatalf("Old client failed against new server: %v", err)
+	}
+
+	respMsg, ok := resp.(*legacycore.Message)
+	if !ok {
+		t.Fatalf("expected Message response, got: %T", resp)
+	}
+
+	found := false
+	for _, p := range respMsg.Parts {
+		if tp, ok := p.(legacycore.TextPart); ok && tp.Text == "pong" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("unexpected response message parts: %+v", respMsg.Parts)
 	}
 }
 
 func TestCompat_NewClientOldServer(t *testing.T) {
-	binPath := compatTestBinPath
-
-	cmd := exec.Command(binPath, "server")
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
-
-	var port int
-	if _, err := fmt.Fscanf(stdout, "%d\n", &port); err != nil {
-		t.Fatalf("failed to read port from server: %v", err)
-	}
+	port, stop := startOldServer(t)
+	defer stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -118,32 +129,62 @@ func TestCompat_NewClientOldServer(t *testing.T) {
 	}
 }
 
-func compileSUTAndRun(m *testing.M) int {
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "a2a-compat-test-")
+func startOldServer(t *testing.T) (port int, stop func()) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
-		return 1
+		t.Fatalf("failed to listen: %v", err)
 	}
-	defer func() {
-		_ = os.RemoveAll(tmpDir)
+
+	port = listener.Addr().(*net.TCPAddr).Port
+
+	agentCard := &legacycore.AgentCard{
+		Name:               "Legacy Test Agent",
+		Description:        "Legacy Agent for compatibility tests",
+		URL:                fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+		PreferredTransport: legacycore.TransportProtocolJSONRPC,
+		DefaultInputModes:  []string{"text"},
+		DefaultOutputModes: []string{"text"},
+		Capabilities:       legacycore.AgentCapabilities{Streaming: false},
+	}
+
+	executor := &legacyAgentExecutor{}
+	requestHandler := legacysrv.NewHandler(executor)
+	jsonRpcHandler := legacysrv.NewJSONRPCHandler(requestHandler)
+	mux := http.NewServeMux()
+
+	mux.Handle("/invoke", jsonRpcHandler)
+	mux.Handle(legacysrv.WellKnownAgentCardPath, legacysrv.NewStaticAgentCardHandler(agentCard))
+
+	srv := &http.Server{Handler: mux}
+
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			t.Errorf("legacy server error: %v", err)
+		}
 	}()
 
-	compatTestBinPath = filepath.Join(tmpDir, "compat-test-bin")
-
-	wd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get working directory: %v\n", err)
-		return 1
+	return port, func() {
+		_ = srv.Shutdown(context.Background())
 	}
+}
 
-	cmd := exec.Command("go", "build", "-o", compatTestBinPath, ".")
-	cmd.Dir = filepath.Join(wd, "v0_3")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to build compat-test binary: %v\n%s\n", err, out)
-		return 1
+type legacyAgentExecutor struct{}
+
+func (*legacyAgentExecutor) Execute(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyeventqueue.Queue) error {
+	for _, p := range reqCtx.Message.Parts {
+		if textPart, ok := p.(legacycore.TextPart); ok {
+			if textPart.Text == "ping" {
+				response := legacycore.NewMessage(legacycore.MessageRoleAgent, legacycore.TextPart{Text: "pong"})
+				return q.Write(ctx, response)
+			}
+		}
 	}
-	return m.Run()
+	return fmt.Errorf("expected ping message")
+}
+
+func (*legacyAgentExecutor) Cancel(ctx context.Context, reqCtx *legacysrv.RequestContext, q legacyeventqueue.Queue) error {
+	return nil
 }
 
 type testAgentExecutor struct {

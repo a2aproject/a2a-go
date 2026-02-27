@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2aclient"
 	"github.com/a2aproject/a2a-go/v1/internal/jsonrpc"
@@ -180,7 +181,7 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, params a2aclient.Ser
 		return nil, err
 	}
 
-	compatEvent, err := unmarshalEventJSON(result)
+	compatEvent, err := a2alegacy.UnmarshalEventJSON(result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 	}
@@ -219,7 +220,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 				return
 			}
 
-			compatEvent, err := unmarshalEventJSON(result)
+			compatEvent, err := a2alegacy.UnmarshalEventJSON(result)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -252,7 +253,7 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, params a2aclient.Service
 		return nil, err
 	}
 
-	var compatTask task
+	var compatTask a2alegacy.Task
 	if err := json.Unmarshal(result, &compatTask); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
@@ -277,7 +278,7 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, params a2aclient.Serv
 		return nil, err
 	}
 
-	var compatTask task
+	var compatTask a2alegacy.Task
 	if err := json.Unmarshal(result, &compatTask); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
@@ -304,7 +305,7 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclie
 		return nil, err
 	}
 
-	var compatConfig taskPushConfig
+	var compatConfig a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -324,7 +325,7 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2acl
 		return nil, err
 	}
 
-	var compatConfigs []*taskPushConfig
+	var compatConfigs []*a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfigs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
@@ -349,7 +350,7 @@ func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2ac
 		return nil, err
 	}
 
-	var compatConfig taskPushConfig
+	var compatConfig a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}

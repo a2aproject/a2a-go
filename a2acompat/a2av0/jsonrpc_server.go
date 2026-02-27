@@ -262,8 +262,8 @@ func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpc.ServerRequest, ss
 	}
 }
 
-func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*task, error) {
-	var query taskQueryParams
+func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a2alegacy.Task, error) {
+	var query a2alegacy.TaskQueryParams
 	if err := json.Unmarshal(raw, &query); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -274,8 +274,8 @@ func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*t
 	return FromV1Task(compatTask), nil
 }
 
-func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) (*task, error) {
-	var id taskIDParams
+func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) (*a2alegacy.Task, error) {
+	var id a2alegacy.TaskIDParams
 	if err := json.Unmarshal(raw, &id); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -286,8 +286,8 @@ func (h *jsonrpcHandler) onCancelTask(ctx context.Context, raw json.RawMessage) 
 	return FromV1Task(compatTask), nil
 }
 
-func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage) (sendMessageResult, error) {
-	var message messageSendParams
+func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage) (a2alegacy.SendMessageResult, error) {
+	var message a2alegacy.MessageSendParams
 	if err := json.Unmarshal(raw, &message); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -303,12 +303,12 @@ func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage)
 	if err != nil || compEvent == nil {
 		return nil, err
 	}
-	return compEvent.(sendMessageResult), nil
+	return compEvent.(a2alegacy.SendMessageResult), nil
 }
 
 func (h *jsonrpcHandler) onResubscribeToTask(ctx context.Context, raw json.RawMessage) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		var id taskIDParams
+		var id a2alegacy.TaskIDParams
 		if err := json.Unmarshal(raw, &id); err != nil {
 			yield(nil, handleUnmarshalError(err))
 			return
@@ -323,7 +323,7 @@ func (h *jsonrpcHandler) onResubscribeToTask(ctx context.Context, raw json.RawMe
 
 func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMessage) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		var message messageSendParams
+		var message a2alegacy.MessageSendParams
 		if err := json.Unmarshal(raw, &message); err != nil {
 			yield(nil, handleUnmarshalError(err))
 			return
@@ -342,8 +342,8 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 
 }
 
-func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*taskPushConfig, error) {
-	var params getTaskPushConfigParams
+func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {
+	var params a2alegacy.GetTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -354,8 +354,8 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return FromV1TaskPushConfig(config)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*taskPushConfig, error) {
-	var params listTaskPushConfigParams
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2alegacy.TaskPushConfig, error) {
+	var params a2alegacy.ListTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -366,8 +366,8 @@ func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.Raw
 	return FromV1TaskPushConfigs(configs)
 }
 
-func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*taskPushConfig, error) {
-	var params taskPushConfig
+func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {
+	var params a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
@@ -379,14 +379,14 @@ func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMe
 }
 
 func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.RawMessage) error {
-	var params deleteTaskPushConfigParams
+	var params a2alegacy.DeleteTaskPushConfigParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return handleUnmarshalError(err)
 	}
 	return h.handler.DeleteTaskPushConfig(ctx, ToV1DeleteTaskPushConfigRequest(&params))
 }
 
-func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2alegacy.AgentCard, error) {
+func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*agentCardCompat, error) {
 	card, err := h.handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
 		return nil, err

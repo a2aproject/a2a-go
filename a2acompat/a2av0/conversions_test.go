@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"testing"
 
+	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
@@ -30,9 +31,9 @@ func TestToCompatParts_PrimitiveData(t *testing.T) {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))
 	}
 
-	dp, ok := compatParts[0].(dataPart)
+	dp, ok := compatParts[0].(a2alegacy.DataPart)
 	if !ok {
-		t.Fatalf("Expected dataPart, got %T", compatParts[0])
+		t.Fatalf("Expected DataPart, got %T", compatParts[0])
 	}
 
 	// Verify it's wrapped in a map
@@ -50,8 +51,8 @@ func TestToCompatParts_PrimitiveData(t *testing.T) {
 
 func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 	val := "hello"
-	compatParts := contentParts{
-		dataPart{
+	compatParts := a2alegacy.ContentParts{
+		a2alegacy.DataPart{
 			Data:     map[string]any{"value": val},
 			Metadata: map[string]any{"data_part_compat": true},
 		},
@@ -86,9 +87,9 @@ func TestToCompatParts_MapDataNoWrap(t *testing.T) {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))
 	}
 
-	dp, ok := compatParts[0].(dataPart)
+	dp, ok := compatParts[0].(a2alegacy.DataPart)
 	if !ok {
-		t.Fatalf("Expected dataPart, got %T", compatParts[0])
+		t.Fatalf("Expected DataPart, got %T", compatParts[0])
 	}
 
 	// Verify it's NOT wrapped
