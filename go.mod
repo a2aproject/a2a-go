@@ -3,6 +3,7 @@ module github.com/a2aproject/a2a-go/v1
 go 1.24.4
 
 require (
+	github.com/a2aproject/a2a-go v0.3.7
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -16,7 +17,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/a2aproject/a2a-go v0.3.7 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
