@@ -24,12 +24,10 @@ import (
 	legacya2a "github.com/a2aproject/a2a-go/a2a"
 	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
 	legacysrv "github.com/a2aproject/a2a-go/a2asrv"
-	legacyqueue "github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 
 	"github.com/a2aproject/a2a-go/v1/a2a"
 	"github.com/a2aproject/a2a-go/v1/a2aclient"
 	"github.com/a2aproject/a2a-go/v1/a2asrv"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
 )
 
@@ -41,16 +39,6 @@ func NewServerInterceptor(old legacysrv.CallInterceptor) a2asrv.CallInterceptor 
 // NewClientInterceptor adapts a legacy client call interceptor to the v1 interceptor interface.
 func NewClientInterceptor(old legacyclient.CallInterceptor) a2aclient.CallInterceptor {
 	return &clientInterceptorAdapter{old}
-}
-
-// NewQueueManager adapts a legacy queue manager to the v1 manager interface.
-func NewQueueManager(old legacyqueue.Manager) eventqueue.Manager {
-	return &queueManagerAdapter{old}
-}
-
-// NewQueue adapts a legacy queue to v1 reader and writer interfaces.
-func NewQueue(old legacyqueue.Queue) (eventqueue.Reader, eventqueue.Writer) {
-	return &queueAdapter{old}, &queueAdapter{old}
 }
 
 // NewAgentExecutor adapts a legacy agent executor to the v1 executor interface.
@@ -135,58 +123,6 @@ func (s *clientInterceptorAdapter) After(ctx context.Context, resp *a2aclient.Re
 	return nil
 }
 
-type queueManagerAdapter struct {
-	legacyqueue.Manager
-}
-
-func (q *queueManagerAdapter) CreateReader(ctx context.Context, taskID a2a.TaskID) (eventqueue.Reader, error) {
-	legacyQueue, err := q.Manager.GetOrCreate(ctx, legacya2a.TaskID(taskID))
-	if err != nil {
-		return nil, err
-	}
-	return &queueAdapter{legacyQueue}, nil
-}
-
-func (q *queueManagerAdapter) CreateWriter(ctx context.Context, taskID a2a.TaskID) (eventqueue.Writer, error) {
-	legacyQueue, err := q.Manager.GetOrCreate(ctx, legacya2a.TaskID(taskID))
-	if err != nil {
-		return nil, err
-	}
-	return &queueAdapter{legacyQueue}, nil
-}
-
-func (q *queueManagerAdapter) Destroy(ctx context.Context, taskID a2a.TaskID) error {
-	return q.Manager.Destroy(ctx, legacya2a.TaskID(taskID))
-}
-
-type queueAdapter struct {
-	legacyqueue.Queue
-}
-
-func (q *queueAdapter) Read(ctx context.Context) (*eventqueue.Message, error) {
-	ev, version, err := q.Queue.Read(ctx)
-	if err != nil {
-		return nil, err
-	}
-	v1Event, err := ToV1Event(ev)
-	if err != nil {
-		return nil, err
-	}
-	return &eventqueue.Message{Event: v1Event, TaskVersion: taskstore.TaskVersion(version), Protocol: Version}, nil
-}
-
-func (q *queueAdapter) Write(ctx context.Context, msg *eventqueue.Message) error {
-	legacyEvent, err := FromV1Event(msg.Event)
-	if err != nil {
-		return err
-	}
-	return q.Queue.WriteVersioned(ctx, legacyEvent, legacya2a.TaskVersion(msg.TaskVersion))
-}
-
-func (q *queueAdapter) Close() error {
-	return q.Queue.Close()
-}
-
 type executorAdapter struct {
 	legacysrv.AgentExecutor
 }
@@ -259,12 +195,20 @@ func (s *taskStoreAdapter) Update(ctx context.Context, update *taskstore.UpdateR
 		return taskstore.TaskVersionMissing, err
 	}
 	version, err := s.TaskStore.Save(ctx, legacyTask, legacyEvent, legacya2a.TaskVersion(update.PrevVersion))
+	if err != nil {
+		if errors.Is(err, legacya2a.ErrConcurrentTaskModification) {
+			return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+		}
+	}
 	return taskstore.TaskVersion(version), err
 }
 
 func (s *taskStoreAdapter) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
 	task, version, err := s.TaskStore.Get(ctx, legacya2a.TaskID(taskID))
 	if err != nil {
+		if errors.Is(err, legacya2a.ErrTaskNotFound) {
+			return nil, a2a.ErrTaskNotFound
+		}
 		return nil, err
 	}
 	v1Task, err := ToV1Task(task)
@@ -330,10 +274,7 @@ func toLegacyResponse(v1 *a2asrv.Response) *legacysrv.Response {
 	if v1.Payload != nil {
 		legacyPayload, _ = FromV1Event(v1.Payload.(a2a.Event))
 	}
-	return &legacysrv.Response{
-		Payload: legacyPayload,
-		Err:     v1.Err,
-	}
+	return &legacysrv.Response{Payload: legacyPayload, Err: v1.Err}
 }
 
 func fromV1Payload(payload any) any {
@@ -371,9 +312,7 @@ func toLegacyClientResponse(v1 *a2aclient.Response) *legacyclient.Response {
 		return nil
 	}
 	m := make(map[string][]string)
-	for k, v := range v1.ServiceParams {
-		m[k] = v
-	}
+	maps.Copy(m, v1.ServiceParams)
 	return &legacyclient.Response{
 		Method:  v1.Method,
 		BaseURL: v1.BaseURL,
