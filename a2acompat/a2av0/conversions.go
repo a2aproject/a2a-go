@@ -707,3 +707,158 @@ func FromV1DeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) *a2
 		ConfigID: req.ID,
 	}
 }
+
+// FromV1ListTasksRequest converts a v1 list tasks request to a legacy request.
+func FromV1ListTasksRequest(req *a2a.ListTasksRequest) *a2alegacy.ListTasksRequest {
+	if req == nil {
+		return nil
+	}
+	var historyLength int
+	if req.HistoryLength != nil {
+		historyLength = *req.HistoryLength
+	}
+	return &a2alegacy.ListTasksRequest{
+		ContextID:        req.ContextID,
+		Status:           FromV1TaskState(req.Status),
+		PageSize:         req.PageSize,
+		PageToken:        req.PageToken,
+		HistoryLength:    historyLength,
+		LastUpdatedAfter: req.StatusTimestampAfter,
+		IncludeArtifacts: req.IncludeArtifacts,
+	}
+}
+
+// ToV1ListTasksRequest converts a legacy list tasks request to a v1 request.
+func ToV1ListTasksRequest(req *a2alegacy.ListTasksRequest) *a2a.ListTasksRequest {
+	if req == nil {
+		return nil
+	}
+	return &a2a.ListTasksRequest{
+		ContextID:            req.ContextID,
+		Status:               ToV1TaskState(req.Status),
+		PageSize:             req.PageSize,
+		PageToken:            req.PageToken,
+		HistoryLength:        &req.HistoryLength,
+		StatusTimestampAfter: req.LastUpdatedAfter,
+		IncludeArtifacts:     req.IncludeArtifacts,
+	}
+}
+
+// ToV1ListTasksResponse converts a legacy list tasks response to a v1 response.
+func ToV1ListTasksResponse(resp *a2alegacy.ListTasksResponse) (*a2a.ListTasksResponse, error) {
+	if resp == nil {
+		return nil, nil
+	}
+	tasks := make([]*a2a.Task, len(resp.Tasks))
+	for i, t := range resp.Tasks {
+		var err error
+		tasks[i], err = ToV1Task(t)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &a2a.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     resp.TotalSize,
+		PageSize:      resp.PageSize,
+		NextPageToken: resp.NextPageToken,
+	}, nil
+}
+
+// FromV1ListTasksResponse converts a v1 list tasks response to a legacy response.
+func FromV1ListTasksResponse(resp *a2a.ListTasksResponse) *a2alegacy.ListTasksResponse {
+	if resp == nil {
+		return nil
+	}
+	tasks := make([]*a2alegacy.Task, len(resp.Tasks))
+	for i, t := range resp.Tasks {
+		tasks[i] = FromV1Task(t)
+	}
+	return &a2alegacy.ListTasksResponse{
+		Tasks:         tasks,
+		TotalSize:     resp.TotalSize,
+		PageSize:      resp.PageSize,
+		NextPageToken: resp.NextPageToken,
+	}
+}
+
+// FromV1AgentCard converts a v1 agent card to a legacy agent card.
+func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
+	if card == nil {
+		return nil
+	}
+	// Simplified conversion, focusing on common fields.
+	// For full conversion, more complex mapping of interfaces/security is needed.
+	res := &a2alegacy.AgentCard{
+		DefaultInputModes:  card.DefaultInputModes,
+		DefaultOutputModes: card.DefaultOutputModes,
+		Description:        card.Description,
+		DocumentationURL:   card.DocumentationURL,
+		IconURL:            card.IconURL,
+		Name:               card.Name,
+		Provider:           (*a2alegacy.AgentProvider)(card.Provider),
+		Signatures:         make([]a2alegacy.AgentCardSignature, len(card.Signatures)),
+		Version:            card.Version,
+		Capabilities: a2alegacy.AgentCapabilities{
+			PushNotifications: card.Capabilities.PushNotifications,
+			Streaming:         card.Capabilities.Streaming,
+		},
+	}
+	if len(card.Capabilities.Extensions) > 0 {
+		res.Capabilities.Extensions = make([]a2alegacy.AgentExtension, len(card.Capabilities.Extensions))
+		for i, e := range card.Capabilities.Extensions {
+			res.Capabilities.Extensions[i] = a2alegacy.AgentExtension(e)
+		}
+	}
+	for i, s := range card.Signatures {
+		res.Signatures[i] = a2alegacy.AgentCardSignature(s)
+	}
+	if len(card.SupportedInterfaces) > 0 {
+		res.URL = card.SupportedInterfaces[0].URL
+		res.PreferredTransport = a2alegacy.TransportProtocol(card.SupportedInterfaces[0].ProtocolBinding)
+		res.ProtocolVersion = string(card.SupportedInterfaces[0].ProtocolVersion)
+	}
+	return res
+}
+
+// ToV1AgentCard converts a legacy agent card to a v1 agent card.
+func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
+	if card == nil {
+		return nil
+	}
+	res := &a2a.AgentCard{
+		DefaultInputModes:  card.DefaultInputModes,
+		DefaultOutputModes: card.DefaultOutputModes,
+		Description:        card.Description,
+		DocumentationURL:   card.DocumentationURL,
+		IconURL:            card.IconURL,
+		Name:               card.Name,
+		Provider:           (*a2a.AgentProvider)(card.Provider),
+		Signatures:         make([]a2a.AgentCardSignature, len(card.Signatures)),
+		Version:            card.Version,
+		Capabilities: a2a.AgentCapabilities{
+			PushNotifications: card.Capabilities.PushNotifications,
+			Streaming:         card.Capabilities.Streaming,
+			ExtendedAgentCard: card.SupportsAuthenticatedExtendedCard,
+		},
+	}
+	if len(card.Capabilities.Extensions) > 0 {
+		res.Capabilities.Extensions = make([]a2a.AgentExtension, len(card.Capabilities.Extensions))
+		for i, e := range card.Capabilities.Extensions {
+			res.Capabilities.Extensions[i] = a2a.AgentExtension(e)
+		}
+	}
+	for i, s := range card.Signatures {
+		res.Signatures[i] = a2a.AgentCardSignature(s)
+	}
+	if card.URL != "" {
+		res.SupportedInterfaces = []*a2a.AgentInterface{
+			{
+				URL:             card.URL,
+				ProtocolBinding: a2a.TransportProtocol(card.PreferredTransport),
+				ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
+			},
+		}
+	}
+	return res
+}
