@@ -19,7 +19,6 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -647,7 +646,9 @@ func (p Part) MarshalJSON() ([]byte, error) {
 		m["mediaType"] = p.MediaType
 	}
 
-	maps.Copy(m, p.Metadata)
+	if len(p.Metadata) > 0 {
+		m["metadata"] = p.Metadata
+	}
 
 	return json.Marshal(m)
 }
@@ -685,11 +686,8 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		p.MediaType = mediaType
 		delete(raw, "mediaType")
 	}
-	if len(raw) > 0 {
-		p.Metadata = make(map[string]any)
-		for k, v := range raw {
-			p.Metadata[k] = v
-		}
+	if m, ok := raw["metadata"].(map[string]any); ok {
+		p.Metadata = m
 	}
 	return nil
 }

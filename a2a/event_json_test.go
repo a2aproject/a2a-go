@@ -77,6 +77,18 @@ func TestEventMarshalJSON(t *testing.T) {
 			wantSubstrings: []string{`"artifactUpdate":`, `"taskId":"task-123"`},
 		},
 		{
+			name: "WithMetadata",
+			event: &TaskArtifactUpdateEvent{
+				TaskID:    "task-123",
+				ContextID: "ctx-123",
+				Artifact: &Artifact{
+					ID:    "art-123",
+					Parts: ContentParts{&Part{Content: Text("result"), Metadata: map[string]any{"text": "bar"}}},
+				},
+			},
+			wantSubstrings: []string{`"metadata":{"text":"bar"}`},
+		},
+		{
 			name:      "Unknown Type Error",
 			event:     &customEvent{&Message{ID: "oops"}},
 			wantError: true,

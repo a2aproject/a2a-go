@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.0-alpha.3](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-02-27)
+
+### Bug Fixes
+
+* `a2a.Part` metadata handling fixed.
+
 ## [1.0.0-alpha.2](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha...v1.0.0-alpha.2) (2026-02-27)
 
 Versioning is introduced on the SDK level, the new version is `github.com/a2aproject/a2a-go/v1`.
@@ -105,7 +111,7 @@ For an example backward-compatibility setup refer to [e2e/compat](https://github
 * add opt-in keep-alive. Fixes [#168](https://github.com/a2aproject/a2a-go/issues/168) ([#171](https://github.com/a2aproject/a2a-go/issues/171)) ([64880fc](https://github.com/a2aproject/a2a-go/commit/64880fcf19e58c8237905206b191ff08b6aaa365))
 * reflect origin if provided when serving public agentcard ([#183](https://github.com/a2aproject/a2a-go/issues/183)) ([535bb1f](https://github.com/a2aproject/a2a-go/commit/535bb1f014c243eb69d5b0ab370fa883ca0fc8cf)), closes [#174](https://github.com/a2aproject/a2a-go/issues/174)
 
->>>>>>> main
+
 ## [0.3.5](https://github.com/a2aproject/a2a-go/compare/v0.3.4...v0.3.5) (2026-01-23)
 
 
