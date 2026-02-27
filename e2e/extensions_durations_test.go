@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package e2e
+package e2e_test
 
 import (
 	"context"
@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2aext"
-	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2aext"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil/testexecutor"
 )
 
 // durationsExtension if requested instructs a server to time call execution duration.

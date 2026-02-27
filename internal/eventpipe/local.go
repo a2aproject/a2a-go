@@ -18,8 +18,8 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
 )
 
 const defaultBufferSize = 1024

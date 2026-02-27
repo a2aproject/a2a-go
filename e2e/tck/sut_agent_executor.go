@@ -19,8 +19,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 type SUTAgentExecutor struct{}
@@ -30,7 +30,7 @@ func (c *SUTAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executor
 		task := execCtx.StoredTask
 
 		if task == nil {
-			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateSubmitted, nil), nil) {
+			if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
 				return
 			}
 		}

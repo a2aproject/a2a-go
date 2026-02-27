@@ -1,7 +1,92 @@
 # Changelog
 
-<<<<<<< HEAD
-=======
+## [1.0.1-alpha](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha...v1.0.1-alpha) (2026-02-27)
+
+Versioning is introduced on the SDK level, the new version is `github.com/a2aproject/a2a-go/v1`.
+
+### Features
+
+* gRPC protocol binding uses standard `google.rpc.ErrorInfo` for error details.
+* `a2asrv.NewTenantRESTHandler` provides a utility for setting up multi-tenant deplyments.
+* `a2a.Task` snapshot is emitted as the first event on task resubscription.
+* `REST` transport supports configurable keep-alive and panic recovery for SSE connections.
+* `a2asrv.WithCapabilityChecks` handler option rejecting requests for which no support is declared in `a2a.AgentCapabilities`.
+* `a2acompat` works against the old `github.com/a2aproject/a2a-go` library and provides adapters for common dependencies.
+* Compatibility handling of extensions header. 
+
+### Bug Fixes
+
+* JSONRPC handler request scope is not terminated when panic is recovered during SSE streaming.
+* Correct `HistoryLength` handling for 0 and nil cases.
+
+## [1.0.0-alpha](https://github.com/a2aproject/a2a-go/compare/v0.3.7...v1.0.0-alpha) (2026-02-23)
+
+### Features
+Implements A2A spec [1.0-rc revision](https://github.com/a2aproject/A2A/blob/629190aea9fe5838bb712008e6d24156680af197/specification/a2a.proto) with JSONRPC and gRPC protocol bindings.
+
+### Non-breaking changes
+
+* `a2aclient.Factory` implements protocol version negotiation.
+* New errors added: `ExtensionSupportRequiredError` and `VersionNotSupportedError`.
+* Client sends `A2A-Version` header.
+* ListTasks RPC implementation.
+* `a2a` package provides `Part` constructor functions.
+
+### Spec-specific breaking changes
+
+In addition to breaking core type changes updates:
+
+* Agent output validations: task must be the first event emitted by AgentExecutor, artifact parts must be non-empty. 
+* `Final` field removed from `TaskStatusUpdateEvent`, state is used to determine whether event is final.
+* RPCs renamed: TaskSubscription -> SubscribeToTask, GetAgentCard -> GetExtendedAgentCard.
+* JSONRPC uses the same method naming as gRPC.
+
+### SDK breaking changes:
+
+For motivation behind some of the changes refer to [the change announcement](https://github.com/a2aproject/a2a-go/discussions/205).
+
+* `a2asrv.AgentExecutor` changes: `Execute` and `Cancel` now return `iter.Seq2[a2a.Event, error]` instead of writing events to a queue.
+* `a2asrv/taskstore` package gets introduced with `TaskStore` interface and the the default in-memory implementation.
+* `a2a.TaskVersion` gets moved to `a2asrv/taskstore`.
+* `TaskStore.Save` method gets replaced with separate `Create` and `Update` methods.
+* `TaskStore.Update` is called with `a2a.Event` set to user `a2a.Message` on task history update.
+* `TaskStore.Get` return types is `taskstore.StoredTask` which is (task, version) pair.
+* `eventqueue.Queue` gets replaced with separate `eventqueue.Reader` and `eventqueue.Writer`. `eventqueue.Manager` methods updated appropriately.
+* `eventqueue.Message` gets introduced for grouping `a2a.Task`, `taskstore.TaskVersion` and `a2a.ProtocolVersion`. 
+* `a2aclient.CallInterceptor` and `a2asrv.CallInterceptor` can now return a value from `Before` to return a result without performing the actual call.
+* `a2aclient.WithInterceptors` gets renamed to `a2aclient.WithCallInterceptors` and `a2asrv.WithCallInterceptor` gets renamed to `a2asrv.WithCallInterceptors` and takes vararg so that methods are consistent with each other.
+* `a2asrv.User` get changed from an interface to a struct with an `Attributes map[string]any` field.
+* `a2asrv.RequestContext` gets renamed into `a2asrv.ExecutorContext`. `User` and `ServiceParams` are added to the struct, these should be used intead of `CallContext`.
+* `a2asrv.ReqMeta` and `a2aclient.CallMeta` are renamed to `ServiceParams`.
+* `a2asrv.PushSender` and `a2asrv.PushConfigStore` are moved to `a2asrv/push`.
+* `a2aclient.ServiceParams` are now passed explicitly to `a2aclient.Transport`.
+* Methods which attach something to `context.Context` start with `Attach` prefix, methods used to create constructor-function options start with `With`. 
+* `a2aclient.NewStaticServiceParamsInjector` replaced with `a2aclient.AttachServiceParams` for sending request headers.
+* gRPC transport for `a2aclient` was moved to `a2agrpc` package. This removes gRPC as the mandatory dependency from the client.  
+
+### v0.3 compatibility:
+
+Backward compatibility implementation as discussed in [A2A spec repo](https://github.com/a2aproject/A2A/discussions/1416) is provided by `github.com/a2aproject/a2a-go/a2acompat/a2av0` package.
+
+`a2agrpc` and `a2apb` are versioned, where `v0` contains mappers from `v0.3.6` types to core types, and `v1` implements the latest protocol version.
+
+For an example backward-compatibility setup refer to [e2e/compat](https://github.com/a2aproject/a2a-go/blob/release/spec-v1/e2e/compat/compat_test.go).
+
+## [0.3.7](https://github.com/a2aproject/a2a-go/compare/v0.3.6...v0.3.7) (2026-02-20)
+
+
+### Features
+
+* implement tasks/list RPC ([#210](https://github.com/a2aproject/a2a-go/issues/210)) ([6e04698](https://github.com/a2aproject/a2a-go/commit/6e04698e63d4cb7d67a2aed700babd9bd6664b51))
+* retry cancelations ([#222](https://github.com/a2aproject/a2a-go/issues/222)) ([3057474](https://github.com/a2aproject/a2a-go/commit/30574743207ae68a96588fc81926ad7de3d9887e))
+
+
+### Bug Fixes
+
+* handle internal error: tck failure ([#186](https://github.com/a2aproject/a2a-go/issues/186)) ([b55fbfd](https://github.com/a2aproject/a2a-go/commit/b55fbfd6417fb48a89dd838611f35a6899d17e12))
+* **sse:** support data: prefix without space ([#188](https://github.com/a2aproject/a2a-go/issues/188)) ([6657a6d](https://github.com/a2aproject/a2a-go/commit/6657a6dc3b6872d425f03d6f340b7c1a82c55810)), closes [#162](https://github.com/a2aproject/a2a-go/issues/162)
+
+
 ## [0.3.6](https://github.com/a2aproject/a2a-go/compare/v0.3.5...v0.3.6) (2026-01-30)
 
 

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 func parseProtocol(in string) (a2a.TransportProtocol, a2a.ProtocolVersion) {
@@ -246,5 +246,29 @@ func TestFactory_TransportSelection(t *testing.T) {
 				t.Fatalf("CreateFromEndpoints() client.protocolVersion = %q, want %q", client.protocolVersion, tc.wantClientVersion)
 			}
 		})
+	}
+}
+
+func TestFactory_Tenant(t *testing.T) {
+	ctx := t.Context()
+	factory := NewFactory(WithTransport(a2a.TransportProtocolJSONRPC, TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
+		return unimplementedTransport{}, nil
+	})))
+	iface := a2a.NewAgentInterface("https://agent.com", a2a.TransportProtocolJSONRPC)
+	iface.Tenant = "my-tenant"
+
+	client, err := factory.CreateFromEndpoints(ctx, []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("CreateFromEndpoints() error = %v, want nil", err)
+	}
+	decorator, ok := client.transport.(*tenantTransportDecorator)
+	if !ok {
+		t.Fatalf("client.transport type = %T, want *tenantTransportDecorator", client.transport)
+	}
+	if decorator.tenant != "my-tenant" {
+		t.Errorf("decorator.tenant = %q, want %q", decorator.tenant, "my-tenant")
+	}
+	if _, ok := decorator.base.(unimplementedTransport); !ok {
+		t.Errorf("decorator.base type = %T, want unimplementedTransport", decorator.base)
 	}
 }

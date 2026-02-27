@@ -21,8 +21,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/log"
 
 	"golang.org/x/mod/semver"
 )
@@ -163,6 +163,11 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 	if len(failures) > 0 {
 		log.Info(ctx, "some transports failed to connect", "failures", failures)
 	}
+
+	if selected.endpoint.Tenant != "" {
+		transport = &tenantTransportDecorator{base: transport, tenant: selected.endpoint.Tenant}
+	}
+
 	return transport, selected, nil
 }
 

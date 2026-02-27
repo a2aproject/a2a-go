@@ -20,9 +20,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
 

@@ -27,12 +27,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/jsonrpc"
-	"github.com/a2aproject/a2a-go/internal/sse"
-	"github.com/a2aproject/a2a-go/internal/testutil"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/v1/internal/sse"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -296,7 +296,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 	agentTimeout := 20 * time.Millisecond
 	testCases := []struct {
 		name        string
-		option      JSONRPCHandlerOption
+		option      TransportOption
 		wantEnabled bool
 	}{
 		{
@@ -305,15 +305,15 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 		},
 		{
 			name:   "zero for disabled",
-			option: WithKeepAlive(0),
+			option: WithTransportKeepAlive(0),
 		},
 		{
 			name:   "negative for disabled",
-			option: WithKeepAlive(-1),
+			option: WithTransportKeepAlive(-1),
 		},
 		{
 			name:        "positive for enabled",
-			option:      WithKeepAlive(5 * time.Millisecond),
+			option:      WithTransportKeepAlive(5 * time.Millisecond),
 			wantEnabled: true,
 		},
 	}
@@ -334,7 +334,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 				},
 			}
 
-			opts := []JSONRPCHandlerOption{}
+			opts := []TransportOption{}
 			if tc.option != nil {
 				opts = append(opts, tc.option)
 			}

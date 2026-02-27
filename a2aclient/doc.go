@@ -32,7 +32,7 @@ using either package-level functions or [Factory] methods.
 
 	// or
 
-	card, err :=  agentcard.DefaultResolved.Resolve(ctx, url)
+	card, err :=  agentcard.DefaultResolver.Resolve(ctx, url)
 	if err != nil {
 		log.Fatalf("Failed to resolve an AgentCard: %v", err)
 	}

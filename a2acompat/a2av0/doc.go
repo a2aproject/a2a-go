@@ -15,7 +15,7 @@
 // Package a2av0 contains 0.3-compatible agent card type definition.
 package a2av0
 
-import "github.com/a2aproject/a2a-go/a2a"
+import "github.com/a2aproject/a2a-go/v1/a2a"
 
 // Version is the protocol version which SDK implements.
 const Version a2a.ProtocolVersion = "0.3"

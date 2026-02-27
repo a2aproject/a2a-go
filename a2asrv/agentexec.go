@@ -21,12 +21,12 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/eventpipe"
-	"github.com/a2aproject/a2a-go/internal/taskexec"
-	"github.com/a2aproject/a2a-go/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v1/internal/taskexec"
+	"github.com/a2aproject/a2a-go/v1/internal/taskupdate"
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
@@ -138,6 +138,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.ctx.User = callCtx.User
 		execCtx.ctx.ServiceParams = callCtx.ServiceParams()
+		execCtx.ctx.Tenant = callCtx.Tenant()
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
@@ -215,6 +216,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			TaskID:     storedTask.ID,
 			ContextID:  storedTask.ContextID,
 			Metadata:   params.Metadata,
+			Tenant:     params.Tenant,
 		},
 		task: &taskstore.StoredTask{
 			Task:    storedTask,
@@ -259,6 +261,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.User = callCtx.User
 		execCtx.ServiceParams = callCtx.ServiceParams()
+		execCtx.Tenant = callCtx.Tenant()
 	}
 
 	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}

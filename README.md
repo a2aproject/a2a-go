@@ -30,10 +30,10 @@
 Requires Go `1.24.4` or newer:
 
 ```bash
-go get github.com/a2aproject/a2a-go
+go get github.com/a2aproject/a2a-go/v1
 ```
 
-Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
+Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v1) for a full documentation.
 
 ## Examples
 
@@ -59,6 +59,10 @@ For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github
     // or
 
     jsonrpcHandler := a2asrv.NewJSONRPCHandler(requestHandler)
+
+    // or
+
+    restHandler := a2asrv.NewRESTHandler(requestHandler)
     ```
 
 3. Register handler with a server, for example:
@@ -69,6 +73,11 @@ For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github
     server := grpc.NewServer()
     grpcHandler.RegisterWith(server)
     err := server.Serve(listener)
+
+    // or
+
+    http.Handle("/", jsonrpcHandler)
+    err := http.ListenAndServe(":8080", nil)
     ```
 
 ### Client 
@@ -91,7 +100,7 @@ For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/git
 3. The connection is now open and can be used to send requests to a server:
 
     ```go
-    msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "..."})
+    msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("..."))
     resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: msg})
     ```
 

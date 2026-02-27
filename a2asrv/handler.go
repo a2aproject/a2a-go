@@ -20,14 +20,14 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/internal/taskexec"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v1/internal/taskexec"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
@@ -100,7 +100,7 @@ func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOpt
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
 // on method invocations. Any injected dependency will be able to access the logger using
-// [github.com/a2aproject/a2a-go/log] package-level functions.
+// [github.com/a2aproject/a2a-go/v1/log] package-level functions.
 // If not provided, defaults to slog.Default().
 func WithLogger(logger *slog.Logger) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
@@ -204,6 +204,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
 			Factory:           execFactory,
+			TaskStore:         h.taskStore,
 			PanicHandler:      h.panicHandler,
 		})
 	}
@@ -227,9 +228,9 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 	if req.HistoryLength != nil {
 		historyLength := *req.HistoryLength
 
-		if historyLength <= 0 {
+		if historyLength == 0 {
 			task.History = []*a2a.Message{}
-		} else if historyLength < len(task.History) {
+		} else if historyLength > 0 && historyLength < len(task.History) {
 			task.History = task.History[len(task.History)-historyLength:]
 		}
 	}
@@ -248,7 +249,7 @@ func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTask
 
 // CancelTask implements RequestHandler.
 func (h *defaultRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	if req == nil {
+	if req == nil || req.ID == "" {
 		return nil, a2a.ErrInvalidParams
 	}
 

@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
+	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
 	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
@@ -220,15 +220,21 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		status = fromProtoTaskState(req.GetStatus())
 	}
 
-	return &a2a.ListTasksRequest{
+	request := &a2a.ListTasksRequest{
 		ContextID:            req.GetContextId(),
 		Status:               status,
 		PageSize:             int(req.GetPageSize()),
 		PageToken:            req.GetPageToken(),
-		HistoryLength:        int(req.GetHistoryLength()),
 		StatusTimestampAfter: lastUpdatedAfter,
 		IncludeArtifacts:     req.GetIncludeArtifacts(),
-	}, nil
+	}
+
+	if req.HistoryLength > 0 {
+		hl := int(req.HistoryLength)
+		request.HistoryLength = &hl
+	}
+
+	return request, nil
 }
 
 // FromProtoListTasksResponse converts a [a2apb.ListTasksResponse] to a [a2a.ListTasksResponse].

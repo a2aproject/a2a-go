@@ -17,8 +17,8 @@ package a2asrv
 import (
 	"context"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
 )
 
 type callContextKeyType struct{}
@@ -47,6 +47,9 @@ type CallContext struct {
 	// User can be set by authentication middleware to provide information about
 	// the user who initiated the request.
 	User *User
+
+	// tenant is an optional ID of the agent owner.
+	tenant string
 }
 
 // Method returns the name of the RequestHandler method which is being executed.
@@ -57,6 +60,11 @@ func (cc *CallContext) Method() string {
 // ServiceParams returns metadata of the request which created the call context.
 func (cc *CallContext) ServiceParams() *ServiceParams {
 	return cc.svcParams
+}
+
+// Tenant returns the tenant ID of the current call context.
+func (cc *CallContext) Tenant() string {
+	return cc.tenant
 }
 
 // Extensions returns a struct which provides an API for working with extensions in the current call context.

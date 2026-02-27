@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
@@ -50,7 +50,7 @@ func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
 
 func TestJSONRPC_ServerExtensionsFrom(t *testing.T) {
 	mock := &mockExtensionHandler{}
-	handler := NewJSONRPCHandler(mock, JSONRPCHandlerConfig{})
+	handler := NewJSONRPCHandler(mock)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 

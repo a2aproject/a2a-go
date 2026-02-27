@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package e2e
+package e2e_test
 
 import (
 	"context"
@@ -22,11 +22,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
-	"github.com/a2aproject/a2a-go/a2asrv"
-	"github.com/a2aproject/a2a-go/internal/testutil/testexecutor"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -113,9 +113,12 @@ func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 		}),
 	)
 
-	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler, a2asrv.WithPanicHandler(func(r any) error {
-		return a2a.ErrInternalError
-	})))
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(
+		reqHandler,
+		a2asrv.WithTransportPanicHandler(func(r any) error {
+			return a2a.ErrInternalError
+		}),
+	))
 	client := mustCreateClient(t, newAgentCard(server.URL))
 
 	var gotErr error

@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/limiter"
 )
 
 func TestManager_ExecuteRateLimit(t *testing.T) {

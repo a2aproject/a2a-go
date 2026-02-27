@@ -20,12 +20,12 @@ import (
 	"iter"
 	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
-	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
-	"github.com/a2aproject/a2a-go/internal/grpcutil"
+	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
+	"github.com/a2aproject/a2a-go/v1/a2apb/v0/pbconv"
+	"github.com/a2aproject/a2a-go/v1/internal/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -93,7 +93,7 @@ func (c *grpcTransport) ListTasks(ctx context.Context, params a2aclient.ServiceP
 
 	pbResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pbReq)
 	if err != nil {
-		return nil, err
+		return nil, grpcutil.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoListTasksResponse(pbResp)
