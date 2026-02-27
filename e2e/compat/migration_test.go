@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -65,18 +65,15 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	// 3. Create v1 handler with adapted backends
 	handler := a2asrv.NewHandler(executor, a2asrv.WithTaskStore(store))
 
-	// 4. Start v1 server
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	mux := http.NewServeMux()
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
 
 	card := &a2a.AgentCard{
 		Name: "Migration Test Agent",
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
-				URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+				URL:             ts.URL + "/invoke",
 				ProtocolBinding: a2a.TransportProtocolJSONRPC,
 				ProtocolVersion: a2av0.Version,
 			},
@@ -84,22 +81,15 @@ func TestMigration_V1ServerLegacyBackends(t *testing.T) {
 	}
 	cardProducer := a2av0.NewStaticAgentCardProducer(card)
 
-	mux := http.NewServeMux()
 	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
-
-	srv := &http.Server{Handler: mux}
-	go func() {
-		_ = srv.Serve(listener)
-	}()
-	defer srv.Shutdown(context.Background())
 
 	// 5. Use v1 client to call the server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	resolver := agentcard.Resolver{CardParser: a2av0.NewAgentCardParser()}
-	resolvedCard, err := resolver.Resolve(ctx, fmt.Sprintf("http://127.0.0.1:%d", port))
+	resolvedCard, err := resolver.Resolve(ctx, ts.URL)
 	if err != nil {
 		t.Fatalf("failed to resolve card: %v", err)
 	}
@@ -205,21 +195,10 @@ func TestMigration_InterceptorModifications(t *testing.T) {
 		a2asrv.WithCallInterceptors(v1Interceptor),
 	)
 
-	// 4. Start v1 server
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-
 	mux := http.NewServeMux()
 	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
-
-	srv := &http.Server{Handler: mux}
-	go func() {
-		_ = srv.Serve(listener)
-	}()
-	defer srv.Shutdown(context.Background())
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
 
 	// 5. Use v1 client
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -231,7 +210,7 @@ func TestMigration_InterceptorModifications(t *testing.T) {
 	)
 	client, err := factory.CreateFromEndpoints(ctx, []*a2a.AgentInterface{
 		{
-			URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+			URL:             ts.URL + "/invoke",
 			ProtocolBinding: a2a.TransportProtocolJSONRPC,
 			ProtocolVersion: a2av0.Version,
 		},
@@ -331,22 +310,10 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	}
 	handler := a2asrv.NewHandler(executor)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-
 	mux := http.NewServeMux()
 	mux.Handle("/invoke", a2av0.NewJSONRPCHandler(handler))
-
-	srv := &http.Server{Handler: mux}
-	go func() {
-		_ = srv.Serve(listener)
-	}()
-	defer t.Cleanup(func() {
-		_ = srv.Shutdown(context.Background())
-	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
 
 	// 2. Setup v1 client with legacy interceptor
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -362,7 +329,7 @@ func TestMigration_ClientInterceptorModifications(t *testing.T) {
 	)
 	client, err := factory.CreateFromEndpoints(ctx, []*a2a.AgentInterface{
 		{
-			URL:             fmt.Sprintf("http://127.0.0.1:%d/invoke", port),
+			URL:             ts.URL + "/invoke",
 			ProtocolBinding: a2a.TransportProtocolJSONRPC,
 			ProtocolVersion: a2av0.Version,
 		},
