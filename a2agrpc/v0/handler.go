@@ -18,17 +18,17 @@ import (
 	"context"
 	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
-	"github.com/a2aproject/a2a-go/internal/grpcutil"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2apb/v0"
+	"github.com/a2aproject/a2a-go/v1/internal/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/a2aproject/a2a-go/a2apb/v0/pbconv"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2apb/v0/pbconv"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 // Handler implements protobuf translation layer and delegates the actual method handling to [a2asrv.RequestHandler].

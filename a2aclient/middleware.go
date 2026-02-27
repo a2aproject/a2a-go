@@ -19,7 +19,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.

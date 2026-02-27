@@ -23,8 +23,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 // ErrStatusNotOK is an error returned by Resolver when HTTP request returned a non-OK status.

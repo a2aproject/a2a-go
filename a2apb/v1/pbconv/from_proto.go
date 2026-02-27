@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v1"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2apb/v1"
 	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
@@ -282,11 +282,12 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		IncludeArtifacts:     req.GetIncludeArtifacts(),
 	}
 
-	if req.HistoryLength != nil && *req.HistoryLength >= 0 {
-		hl := int(*req.HistoryLength)
-		listTasksRequest.HistoryLength = hl
+	if req.HistoryLength != nil {
+		if *req.HistoryLength >= 0 {
+			hl := int(*req.HistoryLength)
+			listTasksRequest.HistoryLength = &hl
+		}
 	}
-
 	return &listTasksRequest, nil
 }
 

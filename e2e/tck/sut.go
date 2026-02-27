@@ -23,18 +23,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2agrpc/v1"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2agrpc/v1"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
 
-type intercepter struct {
-	a2asrv.PassthroughCallInterceptor
-}
+type intercepter struct{}
+type msgContextKeyType struct{}
 
 func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	if callCtx.Method() == "OnSendMessage" {
@@ -46,8 +46,18 @@ func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, r
 			blocking := false
 			sendParams.Config.Blocking = &blocking
 		}
+		return context.WithValue(ctx, msgContextKeyType{}, sendParams.Message.ID), nil, nil
 	}
 	return ctx, nil, nil
+}
+
+func (i *intercepter) After(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error {
+	id, ok := ctx.Value(msgContextKeyType{}).(string)
+	if ok && (strings.Contains(id, "continuation") || strings.Contains(id, "test-history-message-")) {
+		resp.Payload = a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Execution in progress"))
+		resp.Err = nil
+	}
+	return nil
 }
 
 func main() {

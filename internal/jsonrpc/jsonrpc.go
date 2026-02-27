@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // JSON-RPC 2.0 protocol constants

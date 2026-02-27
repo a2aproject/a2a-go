@@ -21,14 +21,15 @@ import (
 	"iter"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/testutil"
-	"github.com/a2aproject/a2a-go/internal/utils"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil"
+	"github.com/a2aproject/a2a-go/v1/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -1194,7 +1195,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 		{
 			name:  "get task with negative HistoryLength",
 			query: &a2a.GetTaskRequest{ID: existingTaskID, HistoryLength: ptr(-1)},
-			want:  &a2a.Task{ID: existingTaskID, History: make([]*a2a.Message, 0)},
+			want:  &a2a.Task{ID: existingTaskID, History: history},
 		},
 	}
 
@@ -1264,8 +1265,19 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: 2, StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
+			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: utils.Ptr(2), StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
+		},
+		{
+			name: "with HistoryLength 0",
+			givenTasks: []*a2a.Task{
+				{ID: id1, History: []*a2a.Message{{ID: "test-message-1"}, {ID: "test-message-2"}, {ID: "test-message-3"}}},
+				{ID: id2, History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}},
+				{ID: id3, History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}},
+			},
+			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, History: []*a2a.Message{}}, {ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}, TotalSize: 3, PageSize: 50},
 			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
@@ -1394,38 +1406,48 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	ctx := t.Context()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	wantEvents := []a2a.Event{
-		newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Starting"),
+	ts := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+
+	userMsg := newUserMessage(taskSeed, "Work")
+	missedStatusUpdate := newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Starting")
+	executorEvents := []a2a.Event{
+		missedStatusUpdate,
 		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
 		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done"),
 	}
-
-	ts := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	executor := newEventReplayAgent(wantEvents, nil)
+	wantEvents := append([]a2a.Event{
+		&a2a.Task{
+			ID:        taskSeed.ID,
+			ContextID: taskSeed.ContextID,
+			History:   []*a2a.Message{userMsg},
+			Status:    missedStatusUpdate.Status,
+		},
+	}, executorEvents[1:]...)
+	executor := newEventReplayAgent(executorEvents, nil)
 	handler := NewHandler(executor, WithTaskStore(ts))
-	executionStarted := make(chan struct{})
+	firstEventConsumed := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
-			close(executionStarted)
-			time.Sleep(10 * time.Millisecond)
+			var once sync.Once
 			for event, err := range originalExecuteFunc(ctx, execCtx) {
 				if !yield(event, err) {
 					return
 				}
+				once.Do(func() { time.Sleep(10 * time.Millisecond) })
 			}
 		}
 	}
 
 	go func() {
-		for range handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{
-			Message: newUserMessage(taskSeed, "Work"),
-		}) {
+		var once sync.Once
+		for range handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: userMsg}) {
+			once.Do(func() { close(firstEventConsumed) })
 			// Events have to be consumed to prevent a deadlock.
 		}
 	}()
 
-	<-executionStarted
+	<-firstEventConsumed
 
 	seq := handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID})
 	gotEvents, err := collectEvents(seq)
