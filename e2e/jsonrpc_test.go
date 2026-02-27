@@ -113,9 +113,12 @@ func TestJSONRPC_RequestScopeStreamingPanic(t *testing.T) {
 		}),
 	)
 
-	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(reqHandler, a2asrv.WithPanicHandler(func(r any) error {
-		return a2a.ErrInternalError
-	})))
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(
+		reqHandler,
+		a2asrv.WithTransportPanicHandler(func(r any) error {
+			return a2a.ErrInternalError
+		}),
+	))
 	client := mustCreateClient(t, newAgentCard(server.URL))
 
 	var gotErr error

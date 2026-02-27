@@ -163,6 +163,11 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 	if len(failures) > 0 {
 		log.Info(ctx, "some transports failed to connect", "failures", failures)
 	}
+
+	if selected.endpoint.Tenant != "" {
+		transport = &tenantTransportDecorator{base: transport, tenant: selected.endpoint.Tenant}
+	}
+
 	return transport, selected, nil
 }
 

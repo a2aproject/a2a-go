@@ -138,6 +138,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.ctx.User = callCtx.User
 		execCtx.ctx.ServiceParams = callCtx.ServiceParams()
+		execCtx.ctx.Tenant = callCtx.Tenant()
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
@@ -215,6 +216,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			TaskID:     storedTask.ID,
 			ContextID:  storedTask.ContextID,
 			Metadata:   params.Metadata,
+			Tenant:     params.Tenant,
 		},
 		task: &taskstore.StoredTask{
 			Task:    storedTask,
@@ -259,6 +261,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	if callCtx, ok := CallContextFrom(ctx); ok {
 		execCtx.User = callCtx.User
 		execCtx.ServiceParams = callCtx.ServiceParams()
+		execCtx.Tenant = callCtx.Tenant()
 	}
 
 	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}

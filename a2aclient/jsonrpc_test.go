@@ -644,3 +644,31 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 		t.Errorf("got wrong details (+got,-want) diff = %s", diff)
 	}
 }
+
+func TestJSONRPCTransport_Tenant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := mustDecodeJSONRPC(t, r, "ListTasks")
+		params, ok := req.Params.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map[string]any params, got %T", req.Params)
+		}
+		if params["tenant"] != "my-tenant" {
+			t.Errorf("expected tenant my-tenant, got %v", params["tenant"])
+		}
+
+		resp := newResponse(req, json.RawMessage(`{"tasks":[]}`))
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC)
+	iface.Tenant = "my-tenant"
+	transport := NewJSONRPCTransport(iface.URL, nil)
+	// Apply decorator manually as we are bypassing the factory
+	transport = &tenantTransportDecorator{base: transport, tenant: iface.Tenant}
+
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+}

@@ -249,7 +249,7 @@ func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTask
 
 // CancelTask implements RequestHandler.
 func (h *defaultRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	if req == nil {
+	if req == nil || req.ID == "" {
 		return nil, a2a.ErrInvalidParams
 	}
 

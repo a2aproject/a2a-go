@@ -296,7 +296,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 	agentTimeout := 20 * time.Millisecond
 	testCases := []struct {
 		name        string
-		option      JSONRPCHandlerOption
+		option      TransportOption
 		wantEnabled bool
 	}{
 		{
@@ -305,15 +305,15 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 		},
 		{
 			name:   "zero for disabled",
-			option: WithKeepAlive(0),
+			option: WithTransportKeepAlive(0),
 		},
 		{
 			name:   "negative for disabled",
-			option: WithKeepAlive(-1),
+			option: WithTransportKeepAlive(-1),
 		},
 		{
 			name:        "positive for enabled",
-			option:      WithKeepAlive(5 * time.Millisecond),
+			option:      WithTransportKeepAlive(5 * time.Millisecond),
 			wantEnabled: true,
 		},
 	}
@@ -334,7 +334,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 				},
 			}
 
-			opts := []JSONRPCHandlerOption{}
+			opts := []TransportOption{}
 			if tc.option != nil {
 				opts = append(opts, tc.option)
 			}

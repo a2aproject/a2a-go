@@ -108,40 +108,58 @@ func TestREST_RequestRouting(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	lastCalledMethod := make(chan string, 1)
+	lastCallCtx := make(chan *CallContext, 1)
 	interceptor := &mockInterceptor{
 		beforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-			lastCalledMethod <- callCtx.Method()
+			lastCallCtx <- callCtx
 			return ctx, nil, nil
 		},
 	}
+
 	reqHandler := NewHandler(
 		&mockAgentExecutor{},
 		WithCallInterceptors(interceptor),
 		WithExtendedAgentCard(&a2a.AgentCard{}),
 	)
 
-	server := httptest.NewServer(NewRESTHandler(reqHandler))
+	for _, tenant := range []string{"", "my-tenant"} {
+		var transport http.Handler
+		if tenant == "" {
+			transport = NewRESTHandler(reqHandler)
+		} else {
+			transport = NewTenantRESTHandler("/{*}", reqHandler)
+		}
+		server := httptest.NewServer(transport)
+		t.Cleanup(server.Close)
 
-	client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{
-		a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON),
-	})
-	if err != nil {
-		t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.method, func(t *testing.T) {
-			_, _ = tc.call(ctx, client)
-			select {
-			case calledMethod := <-lastCalledMethod:
-				if calledMethod != tc.method {
-					t.Fatalf("wrong method called: got %q, want %q", calledMethod, tc.method)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatalf("Routing failed")
+		for _, tc := range testCases {
+			name := tc.method
+			if tenant != "" {
+				name += " (with tenant)"
 			}
-		})
+			t.Run(name, func(t *testing.T) {
+				iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+				if tenant != "" {
+					iface.Tenant = tenant
+				}
+				client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{iface})
+				if err != nil {
+					t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+				}
+				_, _ = tc.call(ctx, client)
+				select {
+				case callCtx := <-lastCallCtx:
+					if callCtx.Tenant() != tenant {
+						t.Fatalf("callCtx.Tenant() = %q, want %q", callCtx.Tenant(), tenant)
+					}
+					if callCtx.Method() != tc.method {
+						t.Fatalf("callCtx.Method() = %q, want %q", callCtx.Method(), tc.method)
+					}
+				case <-time.After(1 * time.Second):
+					t.Fatalf("Routing failed")
+				}
+			})
+		}
 	}
 }
 
@@ -163,7 +181,7 @@ func TestREST_Validations(t *testing.T) {
 		name    string
 		methods []string
 		path    string
-		body    interface{}
+		body    any
 	}{
 		{
 			name:    "SendMessage",
@@ -348,4 +366,105 @@ func TestREST_InvalidPayloads(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRESTTenant(t *testing.T) {
+	tid := a2a.NewTaskID()
+	tests := []struct {
+		name       string
+		template   string
+		path       string
+		wantTenant string
+		wantErr    bool
+	}{
+		{
+			name:       "simple",
+			template:   "/{*}",
+			path:       "/my-tenant/tasks/" + string(tid),
+			wantTenant: "my-tenant",
+		},
+		{
+			name:       "complex with tenant",
+			template:   "/locations/*/projects/{*}",
+			path:       "/locations/us-central1/projects/my-project/tasks/" + string(tid),
+			wantTenant: "my-project",
+		},
+		{
+			name:       "multi-segment capture",
+			template:   "{/locations/*/projects/*}",
+			path:       "/locations/us-central1/projects/my-project/tasks/" + string(tid),
+			wantTenant: "locations/us-central1/projects/my-project",
+		},
+		{
+			name:       "trailing slash",
+			template:   "/{*}",
+			path:       "/my-tenant/tasks/" + string(tid),
+			wantTenant: "my-tenant",
+		},
+		{
+			name:     "no match",
+			template: "/fixed/{*}",
+			path:     "/other/my-tenant/tasks/" + string(tid),
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			gotTenant := ""
+			task := &a2a.Task{ID: tid, ContextID: a2a.NewContextID()}
+			store := testutil.NewTestTaskStore().WithTasks(t, task)
+			interceptor := &testInterceptor{
+				BeforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+					gotTenant = callCtx.Tenant()
+					return ctx, nil, nil
+				},
+			}
+			handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store), WithCallInterceptors(interceptor))
+			server := httptest.NewServer(NewTenantRESTHandler(tt.template, handler))
+			defer server.Close()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+tt.path, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if tt.wantErr && resp.StatusCode == http.StatusOK {
+				t.Fatal("GetTask() error = nil, want to fail")
+			}
+			if tt.wantErr {
+				return
+			}
+			if resp.StatusCode != http.StatusOK {
+				errBody, _ := io.ReadAll(resp.Body)
+				t.Errorf("got %d, want 200 OK. Error: %s", resp.StatusCode, string(errBody))
+			}
+			if gotTenant != tt.wantTenant {
+				t.Errorf("got tenant %q, want %q", gotTenant, tt.wantTenant)
+			}
+		})
+	}
+}
+
+type testInterceptor struct {
+	PassthroughCallInterceptor
+	BeforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
+}
+
+func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+	if i.BeforeFn != nil {
+		return i.BeforeFn(ctx, callCtx, req)
+	}
+	return ctx, nil, nil
 }

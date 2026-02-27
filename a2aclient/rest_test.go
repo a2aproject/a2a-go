@@ -17,6 +17,7 @@ package a2aclient
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v1/a2a"
@@ -36,7 +37,7 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"},"history":[{"state":"COMPLETED"},{"state":"WORKING"}]}`))
 	}))
 	defer server.Close()
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 	historyLength := 2
 	task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{
 		ID:            "task-123",
@@ -83,7 +84,7 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 	wantResult := &a2a.ListTasksResponse{
 		Tasks: []*a2a.Task{
 			{
@@ -128,7 +129,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"CANCELED"}}`))
 	}))
 	defer server.Close()
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.CancelTaskRequest{
 		ID: "task-123",
@@ -157,7 +158,7 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`))
 	}))
 	defer server.Close()
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	result, err := transport.SendMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
@@ -204,8 +205,7 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	events := []a2a.Event{}
 	for event, err := range transport.SubscribeToTask(t.Context(), ServiceParams{}, &a2a.SubscribeToTaskRequest{
@@ -258,8 +258,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	events := []a2a.Event{}
 	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
@@ -299,8 +298,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	config, err := transport.GetTaskPushConfig(t.Context(), ServiceParams{}, &a2a.GetTaskPushConfigRequest{
 		TaskID: a2a.TaskID("task-123"),
@@ -338,8 +336,7 @@ func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 		]`))
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	configs, err := transport.ListTaskPushConfigs(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{
 		TaskID: a2a.TaskID("task-123"),
@@ -372,8 +369,7 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.CreateTaskPushConfigRequest{
 		TaskID: "task-123",
@@ -407,8 +403,7 @@ func TestRESTTransport_DeleteTaskPushConfig(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	err := transport.DeleteTaskPushConfig(t.Context(), ServiceParams{}, &a2a.DeleteTaskPushConfigRequest{
 		TaskID: a2a.TaskID("task-123"),
@@ -433,8 +428,7 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 		_, _ = w.Write([]byte(`{"supportedInterfaces":[{"url":"http://example.com"}], "name": "Test agent", "description":"test"}`))
 	}))
 	defer server.Close()
-
-	transport := NewRESTTransport(server.URL, server.Client())
+	transport := newRESTTransport(t, server)
 
 	card, err := transport.GetExtendedAgentCard(t.Context(), ServiceParams{}, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
@@ -447,4 +441,34 @@ func TestRESTTransport_GetAgentCard(t *testing.T) {
 	if card.Description != "test" {
 		t.Errorf("got card Description %s, want test", card.Description)
 	}
+}
+
+func TestRESTTransport_Tenant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/my-tenant/tasks" {
+			t.Errorf("expected path /my-tenant/tasks, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tasks":[]}`))
+	}))
+	defer server.Close()
+	transport := newRESTTransport(t, server)
+	transport = &tenantTransportDecorator{
+		base:   transport,
+		tenant: "my-tenant",
+	}
+
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+}
+
+func newRESTTransport(t *testing.T, server *httptest.Server) Transport {
+	t.Helper()
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", server.URL, err)
+	}
+	return NewRESTTransport(u, server.Client())
 }

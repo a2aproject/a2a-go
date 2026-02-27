@@ -31,36 +31,15 @@ import (
 )
 
 type jsonrpcHandler struct {
-	handler           RequestHandler
-	keepAliveInterval time.Duration
-	panicHandler      func(r any) error
-}
-
-// JSONRPCHandlerOption is a functional option for configuring the JSONRPC handler.
-type JSONRPCHandlerOption func(*jsonrpcHandler)
-
-// WithKeepAlive enables SSE keep-alive messages at the specified interval.
-// Keep-alive messages prevent API gateways from dropping idle connections.
-// If interval is 0 or negative, keep-alive is disabled (default behavior).
-func WithKeepAlive(interval time.Duration) JSONRPCHandlerOption {
-	return func(h *jsonrpcHandler) {
-		h.keepAliveInterval = interval
-	}
-}
-
-// WithPanicHandler sets a custom panic handler for the JSONRPC handler.
-// This gives the ability to recovery from panic by returning an error to the client.
-func WithPanicHandler(handler func(r any) error) JSONRPCHandlerOption {
-	return func(h *jsonrpcHandler) {
-		h.panicHandler = handler
-	}
+	handler RequestHandler
+	cfg     *TransportConfig
 }
 
 // NewJSONRPCHandler creates an [http.Handler] which implements JSONRPC A2A protocol binding.
-func NewJSONRPCHandler(handler RequestHandler, options ...JSONRPCHandlerOption) http.Handler {
-	h := &jsonrpcHandler{handler: handler}
+func NewJSONRPCHandler(handler RequestHandler, options ...TransportOption) http.Handler {
+	h := &jsonrpcHandler{handler: handler, cfg: &TransportConfig{}}
 	for _, option := range options {
-		option(h)
+		option(h.cfg)
 	}
 	return h
 }
@@ -107,10 +86,10 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
 	defer func() {
 		if r := recover(); r != nil {
-			if h.panicHandler == nil {
+			if h.cfg.PanicHandler == nil {
 				panic(r)
 			}
-			err := h.panicHandler(r)
+			err := h.cfg.PanicHandler(r)
 			if err != nil {
 				h.writeJSONRPCError(ctx, rw, err, req.ID)
 				return
@@ -179,6 +158,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			if r := recover(); r != nil {
 				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
+				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
 			}
 		}()
@@ -198,8 +178,8 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	// Set up keep-alive ticker if enabled (interval > 0)
 	var keepAliveTicker *time.Ticker
 	var keepAliveChan <-chan time.Time
-	if h.keepAliveInterval > 0 {
-		keepAliveTicker = time.NewTicker(h.keepAliveInterval)
+	if h.cfg.KeepAliveInterval > 0 {
+		keepAliveTicker = time.NewTicker(h.cfg.KeepAliveInterval)
 		defer keepAliveTicker.Stop()
 		keepAliveChan = keepAliveTicker.C
 	}
@@ -209,18 +189,19 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		case <-ctx.Done():
 			return
 		case err := <-panicChan:
-			if h.panicHandler == nil {
+			if h.cfg.PanicHandler == nil {
 				panic(err)
 			}
-			data, ok := marshalJSONRPCError(req, h.panicHandler(err))
+			data, ok := marshalJSONRPCError(req, h.cfg.PanicHandler(err))
 			if !ok {
 				log.Error(ctx, "failed to marshal error response", err)
 				return
 			}
 			if err := sseWriter.WriteData(ctx, data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
-				return
 			}
+			// Prevent the handler from hanging
+			return
 		case <-keepAliveChan:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
