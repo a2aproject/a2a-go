@@ -18,26 +18,28 @@ import (
 	"reflect"
 	"testing"
 
-	a2alegacy "github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/a2a"
 )
 
 func TestToCompatParts_PrimitiveData(t *testing.T) {
 	val := "hello"
 	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := FromV1Parts(parts)
+	compatParts := toCompatParts(parts)
 
 	if len(compatParts) != 1 {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))
 	}
 
-	dp, ok := compatParts[0].(a2alegacy.DataPart)
+	dp, ok := compatParts[0].(dataPart)
 	if !ok {
-		t.Fatalf("Expected DataPart, got %T", compatParts[0])
+		t.Fatalf("Expected dataPart, got %T", compatParts[0])
 	}
 
 	// Verify it's wrapped in a map
-	m := dp.Data
+	m, ok := dp.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("Expected map[string]any, got %T", dp.Data)
+	}
 
 	if m["value"] != val {
 		t.Errorf("Expected value %q, got %v", val, m["value"])
@@ -51,14 +53,14 @@ func TestToCompatParts_PrimitiveData(t *testing.T) {
 
 func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 	val := "hello"
-	compatParts := a2alegacy.ContentParts{
-		a2alegacy.DataPart{
+	compatParts := contentParts{
+		dataPart{
 			Data:     map[string]any{"value": val},
 			Metadata: map[string]any{"data_part_compat": true},
 		},
 	}
 
-	coreParts, err := ToV1Parts(compatParts)
+	coreParts, err := toCoreParts(compatParts)
 	if err != nil {
 		t.Fatalf("toCoreParts failed: %v", err)
 	}
@@ -81,15 +83,15 @@ func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 func TestToCompatParts_MapDataNoWrap(t *testing.T) {
 	val := map[string]any{"key": "value"}
 	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := FromV1Parts(parts)
+	compatParts := toCompatParts(parts)
 
 	if len(compatParts) != 1 {
 		t.Fatalf("Expected 1 part, got %d", len(compatParts))
 	}
 
-	dp, ok := compatParts[0].(a2alegacy.DataPart)
+	dp, ok := compatParts[0].(dataPart)
 	if !ok {
-		t.Fatalf("Expected DataPart, got %T", compatParts[0])
+		t.Fatalf("Expected dataPart, got %T", compatParts[0])
 	}
 
 	// Verify it's NOT wrapped

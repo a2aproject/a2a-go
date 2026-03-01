@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/log"
+	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/log"
 )
 
 type promise struct {
