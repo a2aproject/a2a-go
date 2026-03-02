@@ -123,3 +123,22 @@ Before starting work on a new feature or significant change, please open an issu
 ## 📄 License
 
 This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for more details.
+
+
+## Installation
+
+```bash
+# Installation instructions
+```
+
+
+## Usage
+
+```python
+# Usage examples
+```
+
+
+## Contributing
+
+Contributions are welcome!
