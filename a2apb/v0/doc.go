@@ -12,22 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package eventqueue
-
-import (
-	"context"
-
-	"github.com/a2aproject/a2a-go/a2a"
-)
-
-// Manager manages event queues for tasks.
-type Manager interface {
-	// CreateReader creates a new event reader for the specified task.
-	CreateReader(ctx context.Context, taskID a2a.TaskID) (Reader, error)
-
-	// CreateWriter creates a new event writer for the specified task.
-	CreateWriter(ctx context.Context, taskID a2a.TaskID) (Writer, error)
-
-	// Destroy closes the event queue for the specified task and frees all associates resources.
-	Destroy(ctx context.Context, taskID a2a.TaskID) error
-}
+// Package a2apb contains types and interfaces generated from published
+// official A2A .proto 0.3 specification.
+package a2apb
