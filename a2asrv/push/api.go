@@ -24,7 +24,7 @@ import (
 // about task state changes to external endpoints.
 type Sender interface {
 	// SendPush sends a push notification containing the latest task state. If an error is returned execution is stopped.
-	SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
+	SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error
 }
 
 // ConfigStore manages push notification configurations for tasks.

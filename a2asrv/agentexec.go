@@ -360,6 +360,10 @@ func newProcessor(updateManager *taskupdate.Manager, store push.ConfigStore, sen
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
+	if err := p.sendPushNotifications(ctx, event); err != nil {
+		return p.setTaskFailed(ctx, event, err)
+	}
+
 	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
 	if msg, ok := event.(*a2a.Message); ok {
 		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
@@ -371,10 +375,6 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	}
 
 	task := versioned.Task
-	if err := p.sendPushNotifications(ctx, task); err != nil {
-		return p.setTaskFailed(ctx, event, err)
-	}
-
 	if task.Status.State == a2a.TaskStateUnknown {
 		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
 	}
@@ -413,19 +413,20 @@ func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, err erro
 	}, nil
 }
 
-func (p *processor) sendPushNotifications(ctx context.Context, task *a2a.Task) error {
+func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) error {
 	if p.pushSender == nil || p.pushConfigStore == nil {
 		return nil
 	}
+	taskID := event.TaskInfo().TaskID
 
-	configs, err := p.pushConfigStore.List(ctx, task.ID)
+	configs, err := p.pushConfigStore.List(ctx, taskID)
 	if err != nil {
 		return err
 	}
 
 	// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
 	for _, config := range configs {
-		if err := p.pushSender.SendPush(ctx, config, task); err != nil {
+		if err := p.pushSender.SendPush(ctx, config, event); err != nil {
 			return err
 		}
 	}
