@@ -417,17 +417,7 @@ func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) 
 	if p.pushSender == nil || p.pushConfigStore == nil {
 		return nil
 	}
-	var taskID a2a.TaskID
-	switch e := event.(type) {
-	case *a2a.Task:
-		taskID = e.ID
-	case *a2a.TaskStatusUpdateEvent:
-		taskID = e.TaskID
-	case *a2a.TaskArtifactUpdateEvent:
-		taskID = e.TaskID
-	case *a2a.Message:
-		taskID = e.TaskID
-	}
+	taskID := event.TaskInfo().TaskID
 
 	configs, err := p.pushConfigStore.List(ctx, taskID)
 	if err != nil {

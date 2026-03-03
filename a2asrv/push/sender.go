@@ -61,17 +61,7 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
 // to the URL specified in the push configuration.
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
-	var taskID a2a.TaskID
-	switch e := event.(type) {
-	case *a2a.Task:
-		taskID = e.ID
-	case *a2a.TaskStatusUpdateEvent:
-		taskID = e.TaskID
-	case *a2a.TaskArtifactUpdateEvent:
-		taskID = e.TaskID
-	case *a2a.Message:
-		taskID = e.TaskID
-	}
+	taskID := event.TaskInfo().TaskID
 	if taskID == "" {
 		return s.handleError(ctx, fmt.Errorf("failed to send push: event of type %T has no task ID", event))
 	}
