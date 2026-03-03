@@ -58,9 +58,8 @@ func TestNewHTTPPushSender(t *testing.T) {
 
 func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	ctx := context.Background()
-	task := &a2a.Task{ID: "test-task", ContextID: "test-context"}
 
-	var receivedTask a2a.Task
+	var received a2a.StreamResponse
 	var receivedHeaders http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedHeaders = r.Header
@@ -69,7 +68,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 			http.Error(w, "can't read body", http.StatusBadRequest)
 			return
 		}
-		if err := json.Unmarshal(body, &receivedTask); err != nil {
+		if err := json.Unmarshal(body, &received); err != nil {
 			http.Error(w, "can't unmarshal body", http.StatusBadRequest)
 			return
 		}
@@ -77,78 +76,105 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Run("success with token", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: server.URL, Token: "test-token"}
-		sender := NewHTTPPushSender(nil)
+	tc := []struct {
+		name  string
+		event a2a.Event
+	}{
+		{
+			name:  "task",
+			event: &a2a.Task{ID: "test-task", ContextID: "test-context"},
+		},
+		{
+			name:  "message",
+			event: &a2a.Message{ID: "test-message", TaskID: "test-task", Parts: a2a.ContentParts{a2a.NewTextPart("test")}, Role: a2a.MessageRoleUser},
+		},
+		{
+			name:  "status update",
+			event: &a2a.TaskStatusUpdateEvent{ContextID: "test-context", TaskID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+		},
+		{
+			name:  "artifact update",
+			event: &a2a.TaskArtifactUpdateEvent{ContextID: "test-context", TaskID: "test-task", Artifact: &a2a.Artifact{ID: "test-artifact", Parts: a2a.ContentParts{a2a.NewTextPart("test")}}},
+		},
+	}
 
-		err := sender.SendPush(ctx, config, task)
-		if err != nil {
-			t.Fatalf("SendPush() failed: %v", err)
-		}
+	for _, tt := range tc {
+		t.Run(tt.name+" success with token", func(t *testing.T) {
+			config := &a2a.PushConfig{URL: server.URL, Token: "test-token"}
+			sender := NewHTTPPushSender(nil)
 
-		if diff := cmp.Diff(task, &receivedTask); diff != "" {
-			t.Errorf("Received task mismatch (-want +got):\n%s", diff)
-		}
-		if got := receivedHeaders.Get("Content-Type"); got != "application/json" {
-			t.Errorf("Content-Type header = %q, want %q", got, "application/json")
-		}
-		if got := receivedHeaders.Get(tokenHeader); got != "test-token" {
-			t.Errorf("%q header = %q, want %q", tokenHeader, got, "test-token")
-		}
-	})
+			err := sender.SendPush(ctx, config, tt.event)
+			if err != nil {
+				t.Fatalf("SendPush() failed: %v", err)
+			}
+			if diff := cmp.Diff(tt.event, received.Event); diff != "" {
+				t.Errorf("Received task mismatch (-want +got):\n%s", diff)
+			}
+			if got := receivedHeaders.Get("Content-Type"); got != "application/json" {
+				t.Errorf("Content-Type header = %q, want %q", got, "application/json")
+			}
+			if got := receivedHeaders.Get(tokenHeader); got != "test-token" {
+				t.Errorf("%q header = %q, want %q", tokenHeader, got, "test-token")
+			}
+		})
 
-	t.Run("success with bearer auth", func(t *testing.T) {
-		config := &a2a.PushConfig{
-			URL: server.URL,
-			Auth: &a2a.PushAuthInfo{
-				Scheme:      "Bearer",
-				Credentials: "my-bearer-token",
-			},
-		}
-		sender := NewHTTPPushSender(nil)
+		t.Run(tt.name+" success with bearer auth", func(t *testing.T) {
+			config := &a2a.PushConfig{
+				URL: server.URL,
+				Auth: &a2a.PushAuthInfo{
+					Scheme:      "Bearer",
+					Credentials: "my-bearer-token",
+				},
+			}
+			sender := NewHTTPPushSender(nil)
 
-		err := sender.SendPush(ctx, config, task)
-		if err != nil {
-			t.Fatalf("SendPush() failed: %v", err)
-		}
+			err := sender.SendPush(ctx, config, tt.event)
+			if err != nil {
+				t.Fatalf("SendPush() failed: %v", err)
+			}
 
-		if got := receivedHeaders.Get("Authorization"); got != "Bearer my-bearer-token" {
-			t.Errorf("Authorization header = %q, want %q", got, "Bearer my-bearer-token")
-		}
-	})
+			if got := receivedHeaders.Get("Authorization"); got != "Bearer my-bearer-token" {
+				t.Errorf("Authorization header = %q, want %q", got, "Bearer my-bearer-token")
+			}
+		})
 
-	t.Run("success with basic auth", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Basic", Credentials: "dXNlcjpwYXNz"}}
-		sender := NewHTTPPushSender(nil)
+		t.Run(tt.name+" success with basic auth", func(t *testing.T) {
+			config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Basic", Credentials: "dXNlcjpwYXNz"}}
+			sender := NewHTTPPushSender(nil)
 
-		err := sender.SendPush(ctx, config, task)
-		if err != nil {
-			t.Fatalf("SendPush() failed: %v", err)
-		}
+			err := sender.SendPush(ctx, config, tt.event)
+			if err != nil {
+				t.Fatalf("SendPush() failed: %v", err)
+			}
 
-		if got := receivedHeaders.Get("Authorization"); got != "Basic dXNlcjpwYXNz" {
-			t.Errorf("Authorization header = %q, want %q", got, "Basic dXNlcjpwYXNz")
-		}
-	})
+			if got := receivedHeaders.Get("Authorization"); got != "Basic dXNlcjpwYXNz" {
+				t.Errorf("Authorization header = %q, want %q", got, "Basic dXNlcjpwYXNz")
+			}
+		})
 
-	t.Run("success without token", func(t *testing.T) {
-		config := &a2a.PushConfig{URL: server.URL}
-		sender := NewHTTPPushSender(nil)
+		t.Run(tt.name+" success without token", func(t *testing.T) {
+			config := &a2a.PushConfig{URL: server.URL}
+			sender := NewHTTPPushSender(nil)
 
-		err := sender.SendPush(ctx, config, task)
-		if err != nil {
-			t.Fatalf("SendPush() failed: %v", err)
-		}
+			err := sender.SendPush(ctx, config, tt.event)
+			if err != nil {
+				t.Fatalf("SendPush() failed: %v", err)
+			}
 
-		if _, ok := receivedHeaders[tokenHeader]; ok {
-			t.Error("%w header should not be set", tokenHeader)
-		}
-	})
+			if _, ok := receivedHeaders[tokenHeader]; ok {
+				t.Error("%w header should not be set", tokenHeader)
+			}
+		})
+	}
 }
 
 func TestHTTPPushSender_SendPushError(t *testing.T) {
 	ctx := context.Background()
 	task := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+	message := &a2a.Message{ID: "test-message", TaskID: "test-task", Parts: a2a.ContentParts{a2a.NewTextPart("test")}, Role: a2a.MessageRoleUser}
+	statusUpdate := &a2a.TaskStatusUpdateEvent{ContextID: "test-context", TaskID: "test-task", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	artifactUpdate := &a2a.TaskArtifactUpdateEvent{ContextID: "test-context", TaskID: "test-task", Artifact: &a2a.Artifact{ID: "test-artifact", Parts: a2a.ContentParts{a2a.NewTextPart("test")}}}
+	events := []a2a.Event{task, message, statusUpdate, artifactUpdate}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if token := r.Header.Get(tokenHeader); token == "fail" {
@@ -162,32 +188,43 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		task    *a2a.Task
+		event   []a2a.Event
 		config  *a2a.PushConfig
 		wantErr string
 	}{
 		{
-			name:    "json marshal fails",
-			task:    &a2a.Task{Metadata: map[string]any{"a": make(chan int)}},
+			name: "json marshal fails",
+			event: []a2a.Event{
+				&a2a.Task{ID: "test-task", Metadata: map[string]any{"a": make(chan int)}},
+				&a2a.Message{ID: "test-message", TaskID: "test-task", Metadata: map[string]any{"a": func() {}}},
+				&a2a.TaskStatusUpdateEvent{ContextID: "test-context", TaskID: "test-task", Metadata: map[string]any{"a": make(chan int)}},
+				&a2a.TaskArtifactUpdateEvent{ContextID: "test-context", TaskID: "test-task", Metadata: map[string]any{"a": func() {}}},
+			},
 			wantErr: "failed to serialize event to JSON",
 		},
 		{
 			name:    "invalid request URL",
-			task:    task,
+			event:   events,
 			config:  &a2a.PushConfig{URL: "::"},
 			wantErr: "failed to create HTTP request",
 		},
 		{
 			name:    "http client fails",
-			task:    task,
+			event:   events,
 			config:  &a2a.PushConfig{URL: "http://localhost:1"},
 			wantErr: "failed to send push notification",
 		},
 		{
 			name:    "non-success status code",
-			task:    task,
+			event:   events,
 			config:  failedPushConfig,
 			wantErr: "push notification endpoint returned non-success status: 500 Internal Server Error",
+		},
+		{
+			name:    "missing task id",
+			event:   []a2a.Event{&a2a.Message{ID: "test-message", Parts: a2a.ContentParts{a2a.NewTextPart("test")}, Role: a2a.MessageRoleUser}},
+			config:  &a2a.PushConfig{URL: server.URL},
+			wantErr: "has no task ID",
 		},
 	}
 
@@ -199,13 +236,15 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: failOnError})
-				err := sender.SendPush(ctx, tc.config, tc.task)
-				if failOnError {
-					if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-						t.Errorf("SendPush() error = %v, want error containing %s", err, tc.wantErr)
+				for _, event := range tc.event {
+					err := sender.SendPush(ctx, tc.config, event)
+					if failOnError {
+						if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+							t.Errorf("SendPush() error = %v, want error containing %s", err, tc.wantErr)
+						}
+					} else if err != nil {
+						t.Errorf("SendPush() error = %v, want nil when failOnError false", err)
 					}
-				} else if err != nil {
-					t.Errorf("SendPush() error = %v, want nil when failOnError false", err)
 				}
 			})
 		}
@@ -226,14 +265,18 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 		config := &a2a.PushConfig{URL: slowServer.URL}
 		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
 
-		err := sender.SendPush(canceledCtx, config, task)
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("SendPush() error = %v, want context.Canceled", err)
+		for _, event := range events {
+			err := sender.SendPush(canceledCtx, config, event)
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("SendPush() error = %v, want context.Canceled", err)
+			}
 		}
 
 		sender = NewHTTPPushSender(nil)
-		if err := sender.SendPush(canceledCtx, config, task); err != nil {
-			t.Errorf("SendPush() error = %v, want nil when FailOnError false", err)
+		for _, event := range events {
+			if err := sender.SendPush(canceledCtx, config, event); err != nil {
+				t.Errorf("SendPush() error = %v, want nil when FailOnError false", err)
+			}
 		}
 	})
 }

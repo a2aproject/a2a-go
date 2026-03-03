@@ -26,28 +26,28 @@ import (
 type TestPushSender struct {
 	*push.HTTPPushSender
 
-	PushedTasks   []*a2a.Task
+	PushedEvents  []a2a.Event
 	PushedConfigs []*a2a.PushConfig
 
-	SendPushFunc func(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error
+	SendPushFunc func(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error
 }
 
 // SendPush calls the underlying SendPushFunc if it's set. If not,
 // it calls the embedded HTTPPushSender's SendPush method.
-func (m *TestPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
+func (m *TestPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
 	m.PushedConfigs = append(m.PushedConfigs, config)
-	m.PushedTasks = append(m.PushedTasks, task)
+	m.PushedEvents = append(m.PushedEvents, event)
 
 	if m.SendPushFunc != nil {
-		return m.SendPushFunc(ctx, config, task)
+		return m.SendPushFunc(ctx, config, event)
 	}
 
-	return m.HTTPPushSender.SendPush(ctx, config, task)
+	return m.HTTPPushSender.SendPush(ctx, config, event)
 }
 
 // SetSendPushError overrides SendPush execution with given error
 func (m *TestPushSender) SetSendPushError(err error) *TestPushSender {
-	m.SendPushFunc = func(ctx context.Context, config *a2a.PushConfig, task *a2a.Task) error {
+	m.SendPushFunc = func(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
 		return err
 	}
 	return m
@@ -58,7 +58,7 @@ func NewTestPushSender(t *testing.T) *TestPushSender {
 	return &TestPushSender{
 		HTTPPushSender: push.NewHTTPPushSender(nil),
 
-		PushedTasks:   make([]*a2a.Task, 0),
+		PushedEvents:  make([]a2a.Event, 0),
 		PushedConfigs: make([]*a2a.PushConfig, 0),
 	}
 }

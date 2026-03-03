@@ -690,17 +690,21 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	msg := newUserMessage(taskSeed, "Done")
 	input := &a2a.SendMessageRequest{
-		Message: newUserMessage(taskSeed, "work"),
+		Message: msg,
 		Config: &a2a.SendMessageConfig{
 			PushConfig: pushConfig,
 		},
 	}
 	agentEvents := []a2a.Event{
-		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+		newTaskWithStatus(taskSeed, a2a.TaskStateSubmitted, "Hello"),
+		newArtifactEvent(taskSeed, "artifact-id", a2a.NewTextPart("hello")),
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Work"),
+		newUserMessage(taskSeed, "Done"),
 	}
-	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
-	wantResult.History = []*a2a.Message{input.Message}
+	wantResult := msg
+	wantPushCount := len(agentEvents)
 
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
 	executor := newEventReplayAgent(agentEvents, nil)
@@ -709,6 +713,7 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
 
 	result, err := handler.SendMessage(ctx, input)
+
 	if err != nil {
 		t.Fatalf("SendMessage() failed: %v", err)
 	}
@@ -719,8 +724,28 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	if err != nil || len(saved) != 1 {
 		t.Fatalf("expected push config to be saved, but got %v, %v", saved, err)
 	}
-	if len(pn.PushedConfigs) != 1 {
-		t.Fatal("expected push notification to be sent, but got %w: ", pn.PushedConfigs)
+	if len(pn.PushedConfigs) != len(agentEvents) {
+		t.Fatalf("expected %d push configs, but got %d", len(agentEvents), len(pn.PushedConfigs))
+	}
+	if len(pn.PushedEvents) != wantPushCount {
+		t.Fatalf("SendMessage() expected %d push notifications, but got %#v", wantPushCount, pn.PushedEvents)
+	}
+
+	hasArtifact, hasStatusUpdate, hasTask, hasMessage := false, false, false, false
+	for _, event := range pn.PushedEvents {
+		switch event.(type) {
+		case *a2a.TaskArtifactUpdateEvent:
+			hasArtifact = true
+		case *a2a.TaskStatusUpdateEvent:
+			hasStatusUpdate = true
+		case *a2a.Task:
+			hasTask = true
+		case *a2a.Message:
+			hasMessage = true
+		}
+	}
+	if !hasArtifact || !hasStatusUpdate || !hasTask || !hasMessage {
+		t.Fatalf("SendMessage() expected artifact and status update events, but got %v", pn.PushedEvents)
 	}
 }
 
