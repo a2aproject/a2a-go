@@ -128,13 +128,13 @@ func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, erro
 	}
 
 	result := &a2apb.GetTaskRequest{
-		Tenant:        req.Tenant,
-		Id:            string(req.ID),
+		Tenant: req.Tenant,
+		Id:     string(req.ID),
 	}
 
 	if req.HistoryLength != nil {
 		result.HistoryLength = proto.Int32(int32(*req.HistoryLength))
-	}	
+	}
 
 	return result, nil
 }
