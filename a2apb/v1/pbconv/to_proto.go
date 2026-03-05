@@ -127,18 +127,16 @@ func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, erro
 		return nil, nil
 	}
 
-	pbReq := &a2apb.GetTaskRequest{
+	result := &a2apb.GetTaskRequest{
 		Tenant:        req.Tenant,
 		Id:            string(req.ID),
-		//HistoryLength: proto.Int32(int32(*req.HistoryLength)),
-	}, nil
+	}
 
-	//only set HistoryLength if it's provided (not nil)
 	if req.HistoryLength != nil {
-		pbReq.HistoryLength = proto.Int32(int32(*req.HistoryLength))
+		result.HistoryLength = proto.Int32(int32(*req.HistoryLength))
 	}	
 
-	return pbReq, nil
+	return result, nil
 }
 
 // ToProtoCancelTaskRequest converts a [a2a.CancelTaskRequest] to a [a2apb.CancelTaskRequest].
