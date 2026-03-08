@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 // NewAgentCardParser returns a parser that can parse agent cards in v0.3 format into v1.0 format.

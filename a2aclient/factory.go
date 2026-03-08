@@ -21,8 +21,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/log"
 
 	"golang.org/x/mod/semver"
 )

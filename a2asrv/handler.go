@@ -20,14 +20,14 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
-	"github.com/a2aproject/a2a-go/a2asrv/push"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/internal/taskexec"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v1/internal/taskexec"
+	"github.com/a2aproject/a2a-go/v1/log"
 )
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
@@ -100,7 +100,7 @@ func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOpt
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
 // on method invocations. Any injected dependency will be able to access the logger using
-// [github.com/a2aproject/a2a-go/log] package-level functions.
+// [github.com/a2aproject/a2a-go/v1/log] package-level functions.
 // If not provided, defaults to slog.Default().
 func WithLogger(logger *slog.Logger) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {

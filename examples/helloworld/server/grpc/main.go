@@ -24,9 +24,9 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2agrpc/v1"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2agrpc/v1"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )

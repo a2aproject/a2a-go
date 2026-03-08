@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2a"
 )
 
 // MakeListTasksPath returns the REST path for listing tasks.

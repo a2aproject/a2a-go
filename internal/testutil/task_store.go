@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
 )
 
 // TestTaskStore is a mock of TaskStore

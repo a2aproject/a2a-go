@@ -27,11 +27,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/rest"
-	"github.com/a2aproject/a2a-go/internal/testutil"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2aclient"
+	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v1/internal/rest"
+	"github.com/a2aproject/a2a-go/v1/internal/testutil"
 )
 
 func TestREST_RequestRouting(t *testing.T) {

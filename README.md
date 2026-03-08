@@ -30,7 +30,7 @@
 Requires Go `1.24.4` or newer:
 
 ```bash
-go get github.com/a2aproject/a2a-go
+go get github.com/a2aproject/a2a-go@v0.3.7
 ```
 
 Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
@@ -59,10 +59,6 @@ For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github
     // or
 
     jsonrpcHandler := a2asrv.NewJSONRPCHandler(requestHandler)
-
-    // or
-
-    restHandler := a2asrv.NewRESTHandler(requestHandler)
     ```
 
 3. Register handler with a server, for example:
@@ -100,7 +96,7 @@ For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/git
 3. The connection is now open and can be used to send requests to a server:
 
     ```go
-    msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NextTextPart("..."))
+    msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "..."})
     resp, err := client.SendMessage(ctx, &a2a.MessageSendParams{Message: msg})
     ```
 

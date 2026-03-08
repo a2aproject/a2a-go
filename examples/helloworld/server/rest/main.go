@@ -26,8 +26,8 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v1/a2asrv"
 )
 
 // agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
@@ -100,7 +100,7 @@ func main() {
 	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
 	requestHandler := a2asrv.NewHandler(&agentExecutor{})
 
-	// Mount REST handler directly at root so /... paths match its internal routes
+	// Mount REST handler directly at root so /v1/... paths match its internal routes
 	mux := http.NewServeMux()
 	mux.Handle("/", a2asrv.NewRESTHandler(requestHandler))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(agentCard))
