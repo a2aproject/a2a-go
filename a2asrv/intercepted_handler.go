@@ -23,8 +23,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // InterceptedHandler implements [RequestHandler]. It can be used to attach call interceptors and initialize

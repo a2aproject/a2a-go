@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 )
 
 // TestPushSender is a mock of push.Sender.

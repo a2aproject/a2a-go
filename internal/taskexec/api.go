@@ -18,9 +18,9 @@ import (
 	"context"
 	"iter"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v1/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 )
 
 // Manager provides an API for executing and canceling tasks.

@@ -21,11 +21,11 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/a2apb"
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2aclient"
-	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/v1/a2apb/v0/pbconv"
-	"github.com/a2aproject/a2a-go/v1/internal/grpcutil"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbconv"
+	"github.com/a2aproject/a2a-go/v2/internal/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

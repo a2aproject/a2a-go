@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 type storedTask struct {

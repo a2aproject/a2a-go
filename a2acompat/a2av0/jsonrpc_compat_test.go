@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2aclient"
-	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 func TestJSONRPC_ClientHeaderCompat(t *testing.T) {

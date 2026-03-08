@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 func TestToCompatParts_PrimitiveData(t *testing.T) {

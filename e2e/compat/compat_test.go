@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2aclient"
-	"github.com/a2aproject/a2a-go/v1/a2aclient/agentcard"
-	"github.com/a2aproject/a2a-go/v1/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/v1/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
 	legacycore "github.com/a2aproject/a2a-go/a2a"
 	legacyclient "github.com/a2aproject/a2a-go/a2aclient"

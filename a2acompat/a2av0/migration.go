@@ -25,10 +25,10 @@ import (
 	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
 	legacysrv "github.com/a2aproject/a2a-go/a2asrv"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2aclient"
-	"github.com/a2aproject/a2a-go/v1/a2asrv"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
 // NewServerInterceptor adapts a legacy server call interceptor to the v1 interceptor interface.

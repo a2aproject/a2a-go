@@ -21,8 +21,8 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/uuid"
 )
 

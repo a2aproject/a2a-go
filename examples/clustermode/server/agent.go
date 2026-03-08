@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2asrv"
-	"github.com/a2aproject/a2a-go/v1/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 type agentExecutor struct {

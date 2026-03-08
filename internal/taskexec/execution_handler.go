@@ -23,11 +23,11 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/v1/internal/eventpipe"
-	"github.com/a2aproject/a2a-go/v1/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 type executionHandler struct {

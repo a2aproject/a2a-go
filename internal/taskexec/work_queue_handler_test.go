@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/v1/a2a"
-	"github.com/a2aproject/a2a-go/v1/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/v1/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
