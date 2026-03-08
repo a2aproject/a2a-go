@@ -458,7 +458,7 @@ func FromV1TaskStatusUpdateEvent(e *a2a.TaskStatusUpdateEvent) *a2alegacy.TaskSt
 	}
 	return &a2alegacy.TaskStatusUpdateEvent{
 		ContextID: e.ContextID,
-		Final:     e.Status.State.Terminal(),
+		Final:     e.Status.State.Terminal() || e.Status.State == a2a.TaskStateInputRequired,
 		Status: a2alegacy.TaskStatus{
 			Message:   FromV1Message(e.Status.Message),
 			State:     FromV1TaskState(e.Status.State),
