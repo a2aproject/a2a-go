@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.1-alpha.3](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.3...v1.0.1-alpha.3) (2026-03-08)
+
+
+### Bug Fixes
+
+* GetTaskRequest nil pointer assignment check ([#258](https://github.com/a2aproject/a2a-go/issues/258)) ([440bb79](https://github.com/a2aproject/a2a-go/commit/440bb793d8fb2e4a6cde8c2cfb43ff4c5235943b))
+* update pushsender ([#256](https://github.com/a2aproject/a2a-go/issues/256)) ([5f7a594](https://github.com/a2aproject/a2a-go/commit/5f7a594a85a1653ba8d41a7fc0f0924cef8f6b3d))
+
+
+### Documentation
+
+* add example tests a2a ([#240](https://github.com/a2aproject/a2a-go/issues/240)) ([4fe08a9](https://github.com/a2aproject/a2a-go/commit/4fe08a95d47e2c85e642775a3eac2a363ecdb323))
+
 ## [1.0.0-alpha.3](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-02-27)
 
 ### Bug Fixes
