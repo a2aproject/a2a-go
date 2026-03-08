@@ -181,7 +181,11 @@ func ExampleResolver_Resolve() {
 			a2a.NewAgentInterface("http://localhost:8080", a2a.TransportProtocolJSONRPC),
 		},
 	}
-	cardBytes, _ := json.Marshal(card)
+	cardBytes, err := json.Marshal(card)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
