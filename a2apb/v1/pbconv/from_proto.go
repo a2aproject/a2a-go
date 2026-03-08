@@ -475,8 +475,10 @@ func fromProtoParts(pParts []*a2apb.Part) (a2a.ContentParts, error) {
 }
 
 func fromProtoTaskState(state a2apb.TaskState) a2a.TaskState {
-	if name, ok := a2apb.TaskState_name[int32(state)]; ok {
-		return a2a.TaskState(name)
+	if state != a2apb.TaskState_TASK_STATE_UNSPECIFIED {
+		if name, ok := a2apb.TaskState_name[int32(state)]; ok {
+			return a2a.TaskState(name)
+		}
 	}
 	return a2a.TaskStateUnspecified
 }

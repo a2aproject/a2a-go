@@ -293,6 +293,11 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		want  a2apb.TaskState
 	}{
 		{
+			name:  "unspecified",
+			state: a2a.TaskStateUnspecified,
+			want:  a2apb.TaskState_TASK_STATE_UNSPECIFIED,
+		},
+		{
 			name:  string(a2a.TaskStateAuthRequired),
 			state: a2a.TaskStateAuthRequired,
 			want:  a2apb.TaskState_TASK_STATE_AUTH_REQUIRED,
