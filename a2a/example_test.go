@@ -29,7 +29,7 @@ func ExampleNewMessage() {
 	fmt.Println("Parts count:", len(msg.Parts))
 	fmt.Println("Has ID:", msg.ID != "")
 	// Output:
-	// Role: user
+	// Role: ROLE_USER
 	// Parts count: 1
 	// Has ID: true
 }
@@ -46,7 +46,7 @@ func ExampleNewMessageForTask() {
 	fmt.Println("TaskID:", msg.TaskID)
 	fmt.Println("ContextID:", msg.ContextID)
 	// Output:
-	// Role: agent
+	// Role: ROLE_AGENT
 	// TaskID: task-abc
 	// ContextID: ctx-123
 }
@@ -115,7 +115,7 @@ func ExampleStreamResponse_UnmarshalJSON() {
 }
 
 func ExampleStreamResponse_UnmarshalJSON_message() {
-	jsonData := []byte(`{"message":{"messageId":"msg-42","role":"user","parts":[{"kind":"text","text":"hello"}]}}`)
+	jsonData := []byte(`{"message":{"messageId":"msg-42","role":"ROLE_USER","parts":[{"kind":"text","text":"hello"}]}}`)
 
 	var sr a2a.StreamResponse
 	if err := json.Unmarshal(jsonData, &sr); err != nil {
@@ -129,7 +129,7 @@ func ExampleStreamResponse_UnmarshalJSON_message() {
 	fmt.Println("Text:", msg.Parts[0].Text())
 	// Output:
 	// ID: msg-42
-	// Role: user
+	// Role: ROLE_USER
 	// Text: hello
 }
 
@@ -207,7 +207,7 @@ func ExampleStreamResponse_MarshalJSON_message() {
 	fmt.Println("role:", inner["role"])
 	// Output:
 	// Has message key: true
-	// role: user
+	// role: ROLE_USER
 }
 
 func ExampleStreamResponse_MarshalJSON_task() {

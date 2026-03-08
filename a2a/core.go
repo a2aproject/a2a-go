@@ -153,10 +153,34 @@ const (
 	// MessageRoleUnspecified is an unspecified message role.
 	MessageRoleUnspecified MessageRole = ""
 	// MessageRoleAgent is an agent message role.
-	MessageRoleAgent MessageRole = "agent"
+	MessageRoleAgent MessageRole = "ROLE_AGENT"
 	// MessageRoleUser is a user message role.
-	MessageRoleUser MessageRole = "user"
+	MessageRoleUser MessageRole = "ROLE_USER"
 )
+
+func (mr MessageRole) String() string {
+	if mr == MessageRoleUnspecified {
+		return "ROLE_UNSPECIFIED"
+	}
+	return string(mr)
+}
+
+func (mr MessageRole) MarshalJSON() ([]byte, error) {
+	return json.Marshal(mr.String())
+}
+
+func (mr *MessageRole) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "ROLE_UNSPECIFIED" {
+		*mr = MessageRoleUnspecified
+		return nil
+	}
+	*mr = MessageRole(s)
+	return nil
+}
 
 // NewMessageID generates a new random message identifier.
 func NewMessageID() string {
@@ -270,6 +294,30 @@ const (
 	// TaskStateWorking means The agent is actively working on the task.
 	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )
+
+func (ts TaskState) String() string {
+	if ts == TaskStateUnspecified {
+		return "TASK_STATE_UNSPECIFIED"
+	}
+	return string(ts)
+}
+
+func (ts TaskState) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ts.String())
+}
+
+func (ts *TaskState) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "TASK_STATE_UNSPECIFIED" {
+		*ts = TaskStateUnspecified
+		return nil
+	}
+	*ts = TaskState(s)
+	return nil
+}
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
 // changes to the Task are permitted.

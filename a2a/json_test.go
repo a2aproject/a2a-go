@@ -265,7 +265,7 @@ func TestAgentCardParsing(t *testing.T) {
 
 func TestTaskState_Codec(t *testing.T) {
 	stateToLabel := map[TaskState]string{
-		TaskStateUnspecified:   "",
+		TaskStateUnspecified:   "TASK_STATE_UNSPECIFIED",
 		TaskStateAuthRequired:  "TASK_STATE_AUTH_REQUIRED",
 		TaskStateCanceled:      "TASK_STATE_CANCELED",
 		TaskStateCompleted:     "TASK_STATE_COMPLETED",
@@ -293,6 +293,33 @@ func TestTaskState_Codec(t *testing.T) {
 		}
 		if got != state {
 			t.Errorf("got %s, want %s", got, state)
+		}
+	}
+}
+
+func TestMessageRole_Codec(t *testing.T) {
+	roleToLabel := map[MessageRole]string{
+		MessageRoleUnspecified: "ROLE_UNSPECIFIED",
+		MessageRoleAgent:       "ROLE_AGENT",
+		MessageRoleUser:        "ROLE_USER",
+	}
+
+	for role, label := range roleToLabel {
+		bytes, err := json.Marshal(role)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+		expectedJSON := `"` + label + `"`
+		if string(bytes) != expectedJSON {
+			t.Errorf("got %s, want %s", bytes, expectedJSON)
+		}
+
+		var got MessageRole
+		if err := json.Unmarshal([]byte(expectedJSON), &got); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if got != role {
+			t.Errorf("got %s, want %s", got, role)
 		}
 	}
 }

@@ -130,7 +130,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 	}{
 		{
 			name:     "Message",
-			json:     `{"message":{"messageId":"msg-123","role":"user","parts":[{"kind":"text","text":"hello"}]}}`,
+			json:     `{"message":{"messageId":"msg-123","role":"ROLE_USER","parts":[{"kind":"text","text":"hello"}]}}`,
 			wantType: "*a2a.Message",
 			checkFunc: func(t *testing.T, event Event) {
 				msg, ok := event.(*Message)
@@ -141,7 +141,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 					t.Errorf("got ID %s, want msg-123", msg.ID)
 				}
 				if msg.Role != MessageRoleUser {
-					t.Errorf("got role %s, want user", msg.Role)
+					t.Errorf("got role %s, want ROLE_USER", msg.Role)
 				}
 			},
 		},

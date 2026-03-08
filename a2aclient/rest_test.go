@@ -244,7 +244,7 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		events := []string{
 			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`,
 			``,
-			`data: {"message":{"messageId":"msg-1","role":"agent","parts":[{"text":"Processing..."}]}}`,
+			`data: {"message":{"messageId":"msg-1","role":"ROLE_AGENT","parts":[{"text":"Processing..."}]}}`,
 			``,
 			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}`,
 			``,
