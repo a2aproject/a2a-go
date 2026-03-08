@@ -674,9 +674,9 @@ func TestJSONRPCTransport_Tenant(t *testing.T) {
 }
 func TestJSONRPCTransport_Serialization(t *testing.T) {
 	tests := []struct {
-		name       string
-		role       a2a.MessageRole
-		wantJSON   string
+		name     string
+		role     a2a.MessageRole
+		wantJSON string
 	}{
 		{
 			name:     "ROLE_USER",

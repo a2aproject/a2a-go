@@ -158,6 +158,7 @@ const (
 	MessageRoleUser MessageRole = "ROLE_USER"
 )
 
+// String implements fmt.Stringer.
 func (mr MessageRole) String() string {
 	if mr == MessageRoleUnspecified {
 		return "ROLE_UNSPECIFIED"
@@ -165,10 +166,12 @@ func (mr MessageRole) String() string {
 	return string(mr)
 }
 
+// MarshalJSON implements json.Marshaler.
 func (mr MessageRole) MarshalJSON() ([]byte, error) {
 	return json.Marshal(mr.String())
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (mr *MessageRole) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
@@ -295,6 +298,7 @@ const (
 	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )
 
+// String implements fmt.Stringer.
 func (ts TaskState) String() string {
 	if ts == TaskStateUnspecified {
 		return "TASK_STATE_UNSPECIFIED"
@@ -302,10 +306,12 @@ func (ts TaskState) String() string {
 	return string(ts)
 }
 
+// MarshalJSON implements json.Marshaler.
 func (ts TaskState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ts.String())
 }
 
+// UnmarshalJSON implements json.Unmarshaler.
 func (ts *TaskState) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {

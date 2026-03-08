@@ -70,11 +70,38 @@ var coreToCompatTaskState = map[a2a.TaskState]taskState{
 
 var compatToCoreTaskState map[taskState]a2a.TaskState
 
+var coreToCompatRole = map[a2a.MessageRole]role{
+	a2a.MessageRoleAgent:       roleAgent,
+	a2a.MessageRoleUser:        roleUser,
+	a2a.MessageRoleUnspecified: roleUnspecified,
+}
+
+var compatToCoreRole map[role]a2a.MessageRole
+
 func init() {
 	compatToCoreTaskState = make(map[taskState]a2a.TaskState, len(coreToCompatTaskState))
 	for k, v := range coreToCompatTaskState {
 		compatToCoreTaskState[v] = k
 	}
+
+	compatToCoreRole = make(map[role]a2a.MessageRole, len(coreToCompatRole))
+	for k, v := range coreToCompatRole {
+		compatToCoreRole[v] = k
+	}
+}
+
+func toCompatRole(r a2a.MessageRole) role {
+	if mapped, ok := coreToCompatRole[r]; ok {
+		return mapped
+	}
+	return roleUnspecified
+}
+
+func fromCompatRole(r role) a2a.MessageRole {
+	if mapped, ok := compatToCoreRole[r]; ok {
+		return mapped
+	}
+	return a2a.MessageRoleUnspecified
 }
 
 func toCompatTaskState(s a2a.TaskState) taskState {
@@ -149,7 +176,7 @@ func toCompatMessage(m *a2a.Message) *message {
 		Metadata:       m.Metadata,
 		Parts:          toCompatParts(m.Parts),
 		ReferenceTasks: m.ReferenceTasks,
-		Role:           m.Role,
+		Role:           toCompatRole(m.Role),
 		TaskID:         m.TaskID,
 	}
 }
@@ -492,7 +519,7 @@ func toCoreMessage(m *message) (*a2a.Message, error) {
 		Metadata:       m.Metadata,
 		Parts:          parts,
 		ReferenceTasks: m.ReferenceTasks,
-		Role:           m.Role,
+		Role:           fromCompatRole(m.Role),
 		TaskID:         m.TaskID,
 	}, nil
 }
