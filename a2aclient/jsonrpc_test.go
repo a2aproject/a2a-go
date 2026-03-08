@@ -61,7 +61,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`),
+			json.RawMessage(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -155,7 +155,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -175,7 +175,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 	if task.Status.State != a2a.TaskStateCompleted {
-		t.Errorf("got status %s, want completed", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_COMPLETED", task.Status.State)
 	}
 }
 
@@ -188,8 +188,8 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 			json.RawMessage(
 				`{
 						"tasks":[
-							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"COMPLETED"}},
-							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"WORKING"}}
+							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}},
+							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"TASK_STATE_WORKING"}}
 						],
 						"totalSize": 2,
 						"pageSize": 10,
@@ -272,11 +272,11 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 
 		// Send multiple SSE events
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}}`,
 			``,
 			`data: {"jsonrpc":"2.0","id":"test","result":{"message":{"messageId":"msg-1","role":"agent","parts":[{"text":"Processing..."}]}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}}`,
 			``,
 		}
 
@@ -354,9 +354,9 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 
 		// Send task updates via SSE
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}}`,
 			``,
 		}
 
@@ -435,7 +435,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"CANCELED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -452,7 +452,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("got status %s, want canceled", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
 	}
 }
 
@@ -579,7 +579,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))

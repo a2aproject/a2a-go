@@ -147,7 +147,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 		},
 		{
 			name:     "Task",
-			json:     `{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`,
+			json:     `{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`,
 			wantType: "*a2a.Task",
 			checkFunc: func(t *testing.T, event Event) {
 				task, ok := event.(*Task)
@@ -164,7 +164,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 		},
 		{
 			name:     "TaskStatusUpdateEvent",
-			json:     `{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"WORKING"}}}`,
+			json:     `{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"TASK_STATE_WORKING"}}}`,
 			wantType: "*a2a.TaskStatusUpdateEvent",
 			checkFunc: func(t *testing.T, event Event) {
 				statusUpdate, ok := event.(*TaskStatusUpdateEvent)

@@ -475,26 +475,10 @@ func fromProtoParts(pParts []*a2apb.Part) (a2a.ContentParts, error) {
 }
 
 func fromProtoTaskState(state a2apb.TaskState) a2a.TaskState {
-	switch state {
-	case a2apb.TaskState_TASK_STATE_AUTH_REQUIRED:
-		return a2a.TaskStateAuthRequired
-	case a2apb.TaskState_TASK_STATE_CANCELED:
-		return a2a.TaskStateCanceled
-	case a2apb.TaskState_TASK_STATE_COMPLETED:
-		return a2a.TaskStateCompleted
-	case a2apb.TaskState_TASK_STATE_FAILED:
-		return a2a.TaskStateFailed
-	case a2apb.TaskState_TASK_STATE_INPUT_REQUIRED:
-		return a2a.TaskStateInputRequired
-	case a2apb.TaskState_TASK_STATE_REJECTED:
-		return a2a.TaskStateRejected
-	case a2apb.TaskState_TASK_STATE_SUBMITTED:
-		return a2a.TaskStateSubmitted
-	case a2apb.TaskState_TASK_STATE_WORKING:
-		return a2a.TaskStateWorking
-	default:
-		return a2a.TaskStateUnspecified
+	if name, ok := a2apb.TaskState_name[int32(state)]; ok {
+		return a2a.TaskState(name)
 	}
+	return a2a.TaskStateUnspecified
 }
 
 func fromProtoTaskStatus(pStatus *a2apb.TaskStatus) (a2a.TaskStatus, error) {

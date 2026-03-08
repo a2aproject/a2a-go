@@ -334,7 +334,7 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		},
 		{
 			name:  "unknown",
-			state: "unknown",
+			state: a2a.TaskStateUnknown,
 			want:  a2apb.TaskState_TASK_STATE_UNSPECIFIED,
 		},
 	}
@@ -342,6 +342,11 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := toProtoTaskState(tt.state); got != tt.want {
 				t.Errorf("toProtoTaskState() = %v, want %v", got, tt.want)
+			}
+			if tt.state != a2a.TaskStateUnknown { // unknown is runtime-only state
+				if got := fromProtoTaskState(tt.want); got != tt.state {
+					t.Errorf("fromProtoTaskState() = %v, want %v", got, tt.state)
+				}
 			}
 		})
 	}

@@ -34,7 +34,7 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"},"history":[{"state":"COMPLETED"},{"state":"WORKING"}]}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"},"history":[{"state":"TASK_STATE_COMPLETED"},{"state":"TASK_STATE_WORKING"}]}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
@@ -55,7 +55,7 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		t.Errorf("got history length %d, want %d", len(task.History), historyLength)
 	}
 	if task.Status.State != a2a.TaskStateCompleted {
-		t.Errorf("got status %s, want completed", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_COMPLETED", task.Status.State)
 	}
 }
 
@@ -72,8 +72,8 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 		_, _ = w.Write([]byte(
 			`{
 					"tasks":[
-						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"COMPLETED"}},
-						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"WORKING"}}
+						{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}},
+						{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"TASK_STATE_WORKING"}}
 					], 
 					"totalSize": 2, 
 					"pageSize": 50, 
@@ -126,7 +126,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"CANCELED"}}`))
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
@@ -140,7 +140,7 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("got status %s, want canceled", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
 	}
 }
 
@@ -155,7 +155,7 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`))
+		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
@@ -191,9 +191,9 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 
 		events := []string{
-			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`,
 			``,
-			`data: {"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"COMPLETED"}}}`,
+			`data: {"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"TASK_STATE_COMPLETED"}}}`,
 			``,
 		}
 
@@ -242,11 +242,11 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 
 		events := []string{
-			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`,
 			``,
 			`data: {"message":{"messageId":"msg-1","role":"agent","parts":[{"text":"Processing..."}]}}`,
 			``,
-			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}`,
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}`,
 			``,
 		}
 

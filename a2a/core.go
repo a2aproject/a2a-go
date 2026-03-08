@@ -252,23 +252,23 @@ const (
 	// TaskStateUnspecified represents a missing TaskState value.
 	TaskStateUnspecified TaskState = ""
 	// TaskStateAuthRequired means the task requires authentication to proceed.
-	TaskStateAuthRequired TaskState = "AUTH_REQUIRED"
+	TaskStateAuthRequired TaskState = "TASK_STATE_AUTH_REQUIRED"
 	// TaskStateCanceled means the task has been canceled by the user.
-	TaskStateCanceled TaskState = "CANCELED"
+	TaskStateCanceled TaskState = "TASK_STATE_CANCELED"
 	// TaskStateCompleted means the task has been successfully completed.
-	TaskStateCompleted TaskState = "COMPLETED"
+	TaskStateCompleted TaskState = "TASK_STATE_COMPLETED"
 	// TaskStateFailed means the task failed due to an error during execution.
-	TaskStateFailed TaskState = "FAILED"
+	TaskStateFailed TaskState = "TASK_STATE_FAILED"
 	// TaskStateInputRequired means the task is paused and waiting for input from the user.
-	TaskStateInputRequired TaskState = "INPUT_REQUIRED"
+	TaskStateInputRequired TaskState = "TASK_STATE_INPUT_REQUIRED"
 	// TaskStateRejected means the task was rejected by the agent and was not started.
-	TaskStateRejected TaskState = "REJECTED"
+	TaskStateRejected TaskState = "TASK_STATE_REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
-	TaskStateSubmitted TaskState = "SUBMITTED"
+	TaskStateSubmitted TaskState = "TASK_STATE_SUBMITTED"
 	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "UNKNOWN"
+	TaskStateUnknown TaskState = "TASK_STATE_UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
-	TaskStateWorking TaskState = "WORKING"
+	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further

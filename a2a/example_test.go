@@ -61,7 +61,7 @@ func ExampleNewSubmittedTask() {
 	fmt.Println("Has ContextID:", task.ContextID != "")
 	fmt.Println("History length:", len(task.History))
 	// Output:
-	// State: SUBMITTED
+	// State: TASK_STATE_SUBMITTED
 	// Has TaskID: true
 	// Has ContextID: true
 	// History length: 1
@@ -82,17 +82,17 @@ func ExampleTaskState_Terminal() {
 		fmt.Printf("%-16s terminal=%v\n", s, s.Terminal())
 	}
 	// Output:
-	// SUBMITTED        terminal=false
-	// WORKING          terminal=false
-	// COMPLETED        terminal=true
-	// CANCELED         terminal=true
-	// FAILED           terminal=true
-	// INPUT_REQUIRED   terminal=false
-	// REJECTED         terminal=true
+	// TASK_STATE_SUBMITTED terminal=false
+	// TASK_STATE_WORKING terminal=false
+	// TASK_STATE_COMPLETED terminal=true
+	// TASK_STATE_CANCELED terminal=true
+	// TASK_STATE_FAILED terminal=true
+	// TASK_STATE_INPUT_REQUIRED terminal=false
+	// TASK_STATE_REJECTED terminal=true
 }
 
 func ExampleStreamResponse_UnmarshalJSON() {
-	jsonData := []byte(`{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1","status":{"state":"WORKING"}}}`)
+	jsonData := []byte(`{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}`)
 
 	var sr a2a.StreamResponse
 	if err := json.Unmarshal(jsonData, &sr); err != nil {
@@ -111,7 +111,7 @@ func ExampleStreamResponse_UnmarshalJSON() {
 	// Output:
 	// Event type: TaskStatusUpdateEvent
 	// Task ID: task-1
-	// State: WORKING
+	// State: TASK_STATE_WORKING
 }
 
 func ExampleStreamResponse_UnmarshalJSON_message() {
@@ -169,7 +169,7 @@ func ExampleNewStatusUpdateEvent() {
 	fmt.Println("Has timestamp:", event.Status.Timestamp != nil)
 	// Output:
 	// Task ID: task-1
-	// State: WORKING
+	// State: TASK_STATE_WORKING
 	// Has timestamp: true
 }
 
