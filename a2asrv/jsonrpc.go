@@ -134,6 +134,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	}
 
 	if result != nil {
+		rw.Header().Set("Content-Type", "application/json")
 		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
 		if err := json.NewEncoder(rw).Encode(resp); err != nil {
 			log.Error(ctx, "failed to encode response", err)
@@ -314,7 +315,6 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 			}
 		}
 	}
-
 }
 
 func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
