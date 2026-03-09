@@ -26,15 +26,15 @@ import (
 type TestTaskStore struct {
 	*taskstore.Mem
 
-	SaveFunc func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error)
+	SaveFunc func(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error)
 	GetFunc  func(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
 }
 
-func (m *TestTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (m *TestTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if m.SaveFunc != nil {
-		return m.SaveFunc(ctx, task, event, version)
+		return m.SaveFunc(ctx, task, event, prev, prevVersion)
 	}
-	return m.Mem.Save(ctx, task, event, version)
+	return m.Mem.Save(ctx, task, event, prev, prevVersion)
 }
 
 func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error) {
@@ -46,8 +46,8 @@ func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, 
 
 // SetSaveError overrides Save execution with given error
 func (m *TestTaskStore) SetSaveError(err error) *TestTaskStore {
-	m.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
-		return version, err
+	m.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
+		return prevVersion, err
 	}
 	return m
 }
@@ -66,7 +66,7 @@ func (m *TestTaskStore) WithTasks(t *testing.T, tasks ...*a2a.Task) *TestTaskSto
 	ctx := t.Context()
 
 	for _, task := range tasks {
-		_, err := m.Save(ctx, task, nil, a2a.TaskVersionMissing)
+		_, err := m.Save(ctx, task, nil, nil, a2a.TaskVersionMissing)
 		if err != nil {
 			t.Errorf("failed to save task: %v", err)
 		}

@@ -37,7 +37,7 @@ func newDBTaskStore(db *sql.DB, version a2a.ProtocolVersion) *dbTaskStore {
 
 var _ a2asrv.TaskStore = (*dbTaskStore)(nil)
 
-func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *dbTaskStore) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return a2a.TaskVersionMissing, err

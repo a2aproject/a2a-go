@@ -39,11 +39,12 @@ func getText(m *a2a.Message) string {
 }
 
 type testSaver struct {
-	saved      *a2a.Task
-	version    a2a.TaskVersion
-	versionSet bool
-	fail       error
-	failOnce   error
+	saved            *a2a.Task
+	version          a2a.TaskVersion
+	versionSet       bool
+	fail             error
+	failOnce         error
+	disablePrevCheck bool
 }
 
 var _ Saver = (*testSaver)(nil)
@@ -52,7 +53,7 @@ func (s *testSaver) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.
 	return s.saved, s.version, nil
 }
 
-func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.failOnce != nil {
 		err := s.failOnce
 		s.failOnce = nil
@@ -62,8 +63,13 @@ func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, p
 		return a2a.TaskVersionMissing, s.fail
 	}
 	if s.versionSet {
-		if prev != a2a.TaskVersionMissing && prev != s.version {
+		if prevVersion != a2a.TaskVersionMissing && prevVersion != s.version {
 			return a2a.TaskVersionMissing, fmt.Errorf("version mismatch: prev=%v, current=%v", prev, s.version)
+		}
+	}
+	if !s.disablePrevCheck {
+		if diff := cmp.Diff(s.saved, prev); diff != "" && s.saved != nil {
+			return a2a.TaskVersionMissing, fmt.Errorf("unexpected previous task: %s", diff)
 		}
 	}
 	s.version = s.version + 1
@@ -95,14 +101,62 @@ func TestManager_TaskSaved(t *testing.T) {
 		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
 
-	if updated != saver.saved {
-		t.Fatalf("task not saved: got = %v, want = %v", saver.saved, updated)
+	if diff := cmp.Diff(saver.saved, updated); diff != "" {
+		t.Fatalf("wrong saved task state (+got,-want):\n%s", diff)
 	}
-	if updated != result.Task {
-		t.Fatalf("manager task not updated: got = %v, want = %v", result, updated)
+	if diff := cmp.Diff(result.Task, updated); diff != "" {
+		t.Fatalf("wrong result task (+got,-want):\n%s", diff)
 	}
 	if result.Task.Status.State != newState {
 		t.Fatalf("task state not updated: got = %v, want = %v", result.Task.Status.State, newState)
+	}
+}
+
+func TestManager_TaskImmutableAfterSave(t *testing.T) {
+	saver := &testSaver{}
+	m := NewManager(saver, newTestTask())
+
+	task := &a2a.Task{
+		ID:        m.lastSaved.Task.ID,
+		ContextID: m.lastSaved.Task.ContextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+	}
+	_, err := m.Process(t.Context(), task)
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+
+	result1, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.TextPart{Text: "foo"}))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if len(task.Artifacts) != 0 {
+		t.Fatalf("task artifact length = %d, want empty", len(task.Artifacts))
+	}
+
+	result2, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.TextPart{Text: "bar"}))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if len(result2.Task.Artifacts) != 2 {
+		t.Fatalf("task artifact length = %d, want 2", len(result2.Task.Artifacts))
+	}
+	if len(result1.Task.Artifacts) != 1 {
+		t.Fatalf("task artifact length = %d, want 1", len(result1.Task.Artifacts))
+	}
+
+	result3, err := m.Process(t.Context(), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if result3.Task.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("task state after update = %q, want = %q", result3.Task.Status.State, a2a.TaskStateCompleted)
+	}
+	if result1.Task.Status.State != a2a.TaskStateWorking {
+		t.Fatalf("previous result state changed to = %q, want = %q", result1.Task.Status.State, a2a.TaskStateWorking)
+	}
+	if result2.Task.Status.State != a2a.TaskStateWorking {
+		t.Fatalf("previous result state changed to = %q, want = %q", result2.Task.Status.State, a2a.TaskStateWorking)
 	}
 }
 
@@ -604,7 +658,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			saver := &testSaver{}
+			saver := &testSaver{disablePrevCheck: true}
 
 			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version}
 			task.Task.Status = tc.initialState.Task.Status
