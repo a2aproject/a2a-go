@@ -126,13 +126,38 @@ func TestManager_TaskImmutableAfterSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
-	_, err = m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("hello!")))
+
+	result1, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("foo")))
 	if err != nil {
 		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
-
 	if len(task.Artifacts) != 0 {
 		t.Fatalf("task artifact length = %d, want empty", len(task.Artifacts))
+	}
+
+	result2, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("bar")))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if len(result2.Task.Artifacts) != 2 {
+		t.Fatalf("task artifact length = %d, want 2", len(result2.Task.Artifacts))
+	}
+	if len(result1.Task.Artifacts) != 1 {
+		t.Fatalf("task artifact length = %d, want 1", len(result1.Task.Artifacts))
+	}
+
+	result3, err := m.Process(t.Context(), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if result3.Task.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("task state after update = %q, want = %q", result3.Task.Status.State, a2a.TaskStateCompleted)
+	}
+	if result1.Task.Status.State != a2a.TaskStateWorking {
+		t.Fatalf("previous result state changed to = %q, want = %q", result1.Task.Status.State, a2a.TaskStateWorking)
+	}
+	if result2.Task.Status.State != a2a.TaskStateWorking {
+		t.Fatalf("previous result state changed to = %q, want = %q", result2.Task.Status.State, a2a.TaskStateWorking)
 	}
 }
 
