@@ -1,7 +1,13 @@
 # Changelog
 
-## [0.3.7](https://github.com/a2aproject/a2a-go/compare/v0.3.6...v0.3.7) (2026-02-20)
+## [0.3.8](https://github.com/a2aproject/a2a-go/compare/v0.3.7...v0.3.8) (2026-03-09)
 
+
+### Features
+
+* add `prev *a2a.Task` argument to `a2asrv.TaskStore` so that implementations can perform update diffs.
+
+## [0.3.7](https://github.com/a2aproject/a2a-go/compare/v0.3.6...v0.3.7) (2026-02-20)
 
 ### Features
 

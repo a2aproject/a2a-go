@@ -59,7 +59,7 @@ func WithPushNotifications(store PushConfigStore, sender PushSender) RequestHand
 type TaskStore interface {
 	// Save stores a task. Implementations might choose to store event and use the previous known TaskVersion
 	// for optimistic concurrency control during updates.
-	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error)
+	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error)
 
 	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
 	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)

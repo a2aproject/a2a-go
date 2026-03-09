@@ -774,11 +774,11 @@ func TestRequestHandler_OnSendMessage_FailsToStoreFailedState(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, prevTask *a2a.Task, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		if task.Status.State == a2a.TaskStateFailed {
 			return a2a.TaskVersionMissing, fmt.Errorf("exploded")
 		}
-		return store.Mem.Save(ctx, task, event, version)
+		return store.Mem.Save(ctx, task, event, prevTask, version)
 	}
 	input := &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "work")}
 
@@ -797,9 +797,9 @@ func TestRequestHandler_OnSendMessage_TaskVersion(t *testing.T) {
 
 	gotPrevVersions := make([]a2a.TaskVersion, 0)
 	store := testutil.NewTestTaskStore()
-	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+	store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, prevTask *a2a.Task, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		gotPrevVersions = append(gotPrevVersions, version)
-		return store.Mem.Save(ctx, task, event, version)
+		return store.Mem.Save(ctx, task, event, prevTask, version)
 	}
 
 	statusUpdates := [][]a2a.TaskState{
@@ -1025,7 +1025,7 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 		getCalled += 1
 		return nil, a2a.TaskVersionMissing, a2a.ErrTaskNotFound
 	}
-	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+	mockStore.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, prevTask *a2a.Task, version a2a.TaskVersion) (a2a.TaskVersion, error) {
 		savedCalled += 1
 		return version, nil
 	}

@@ -37,7 +37,7 @@ func mustSave(t *testing.T, store *Mem, tasks ...*a2a.Task) {
 
 func mustSaveVersioned(t *testing.T, store *Mem, task *a2a.Task, prev a2a.TaskVersion) a2a.TaskVersion {
 	t.Helper()
-	version, err := store.Save(t.Context(), task, task, prev)
+	version, err := store.Save(t.Context(), task, task, nil, prev)
 	if err != nil {
 		t.Fatalf("Save() failed: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 	_ = mustSaveVersioned(t, store, task, v1)
 
 	task.ContextID = "id3"
-	if _, err := store.Save(t.Context(), task, task, v1); !errors.Is(err, a2a.ErrConcurrentTaskModification) {
+	if _, err := store.Save(t.Context(), task, task, task, v1); !errors.Is(err, a2a.ErrConcurrentTaskModification) {
 		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }

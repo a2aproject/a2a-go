@@ -88,7 +88,7 @@ func NewMem(opts ...Option) *Mem {
 	return m
 }
 
-func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *Mem) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if err := validateTask(task); err != nil {
 		return a2a.TaskVersionMissing, err
 	}

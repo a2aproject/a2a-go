@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/internal/taskexec"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/internal/utils"
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
@@ -173,8 +174,12 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 		return m.ID == msg.ID // message will already be present if we're retrying execution
 	})
 	if updateHistory {
+		prevTask, err := utils.DeepCopy(storedTask)
+		if err != nil {
+			return nil, fmt.Errorf("failed to copy a task: %w", err)
+		}
 		storedTask.History = append(storedTask.History, msg)
-		lastVersion, err = f.taskStore.Save(ctx, storedTask, nil, lastVersion)
+		lastVersion, err = f.taskStore.Save(ctx, storedTask, nil, prevTask, lastVersion)
 		if err != nil {
 			return nil, fmt.Errorf("task message history update failed: %w", err)
 		}

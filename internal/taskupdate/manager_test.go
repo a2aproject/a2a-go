@@ -39,11 +39,12 @@ func getText(m *a2a.Message) string {
 }
 
 type testSaver struct {
-	saved      *a2a.Task
-	version    a2a.TaskVersion
-	versionSet bool
-	fail       error
-	failOnce   error
+	saved            *a2a.Task
+	version          a2a.TaskVersion
+	versionSet       bool
+	fail             error
+	failOnce         error
+	disablePrevCheck bool
 }
 
 var _ Saver = (*testSaver)(nil)
@@ -52,7 +53,7 @@ func (s *testSaver) Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.
 	return s.saved, s.version, nil
 }
 
-func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error) {
+func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error) {
 	if s.failOnce != nil {
 		err := s.failOnce
 		s.failOnce = nil
@@ -62,8 +63,13 @@ func (s *testSaver) Save(ctx context.Context, task *a2a.Task, event a2a.Event, p
 		return a2a.TaskVersionMissing, s.fail
 	}
 	if s.versionSet {
-		if prev != a2a.TaskVersionMissing && prev != s.version {
+		if prevVersion != a2a.TaskVersionMissing && prevVersion != s.version {
 			return a2a.TaskVersionMissing, fmt.Errorf("version mismatch: prev=%v, current=%v", prev, s.version)
+		}
+	}
+	if !s.disablePrevCheck {
+		if diff := cmp.Diff(s.saved, prev); diff != "" && s.saved != nil {
+			return a2a.TaskVersionMissing, fmt.Errorf("unexpected previous task: %s", diff)
 		}
 	}
 	s.version = s.version + 1
@@ -604,7 +610,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			saver := &testSaver{}
+			saver := &testSaver{disablePrevCheck: true}
 
 			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version}
 			task.Task.Status = tc.initialState.Task.Status

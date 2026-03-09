@@ -36,7 +36,7 @@ type VersionedTask struct {
 // Saver is used for saving the [a2a.Task] after updating its state.
 type Saver interface {
 	Get(ctx context.Context, taskID a2a.TaskID) (*a2a.Task, a2a.TaskVersion, error)
-	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev a2a.TaskVersion) (a2a.TaskVersion, error)
+	Save(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (a2a.TaskVersion, error)
 }
 
 // Manager is used for processing [a2a.Event] related to an [a2a.Task]. It updates
@@ -148,6 +148,11 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 	version := mgr.lastSaved.Version
 
 	for range maxCancelationAttempts {
+		prev, err := utils.DeepCopy(task)
+		if err != nil {
+			return nil, err
+		}
+
 		if task.Status.Message != nil {
 			task.History = append(task.History, task.Status.Message)
 		}
@@ -159,7 +164,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 		task.Status = event.Status
 
-		vt, err := mgr.saveVersionedTask(ctx, task, event, version)
+		vt, err := mgr.saveVersionedTask(ctx, task, event, prev, version)
 		if err == nil {
 			return vt, nil
 		}
@@ -189,11 +194,11 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 }
 
 func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*VersionedTask, error) {
-	return mgr.saveVersionedTask(ctx, task, event, mgr.lastSaved.Version)
+	return mgr.saveVersionedTask(ctx, task, event, mgr.lastSaved.Task, mgr.lastSaved.Version)
 }
 
-func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, version a2a.TaskVersion) (*VersionedTask, error) {
-	version, err := mgr.saver.Save(ctx, task, event, version)
+func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (*VersionedTask, error) {
+	version, err := mgr.saver.Save(ctx, task, event, prev, prevVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
