@@ -81,14 +81,14 @@ func unmarshalEventJSON(data []byte) (event, error) {
 }
 
 type message struct {
-	ID             string          `json:"messageId"`
-	ContextID      string          `json:"contextId,omitempty"`
-	Extensions     []string        `json:"extensions,omitempty"`
-	Metadata       map[string]any  `json:"metadata,omitempty"`
-	Parts          contentParts    `json:"parts"`
-	ReferenceTasks []a2a.TaskID    `json:"referenceTaskIds,omitempty"`
-	Role           a2a.MessageRole `json:"role"`
-	TaskID         a2a.TaskID      `json:"taskId,omitempty"`
+	ID             string         `json:"messageId"`
+	ContextID      string         `json:"contextId,omitempty"`
+	Extensions     []string       `json:"extensions,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	Parts          contentParts   `json:"parts"`
+	ReferenceTasks []a2a.TaskID   `json:"referenceTaskIds,omitempty"`
+	Role           role           `json:"role"`
+	TaskID         a2a.TaskID     `json:"taskId,omitempty"`
 }
 
 func (m message) MarshalJSON() ([]byte, error) {
@@ -113,6 +113,14 @@ const (
 	taskStateSubmitted     taskState = "submitted"
 	taskStateUnknown       taskState = "unknown"
 	taskStateWorking       taskState = "working"
+)
+
+type role string
+
+const (
+	roleUnspecified role = ""
+	roleAgent       role = "agent"
+	roleUser        role = "user"
 )
 
 type task struct {
