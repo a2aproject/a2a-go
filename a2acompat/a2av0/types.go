@@ -87,7 +87,7 @@ type message struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 	Parts          contentParts   `json:"parts"`
 	ReferenceTasks []a2a.TaskID   `json:"referenceTaskIds,omitempty"`
-	Role           role           `json:"role,omitempty"`
+	Role           role           `json:"role"`
 	TaskID         a2a.TaskID     `json:"taskId,omitempty"`
 }
 
