@@ -83,7 +83,11 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTas
 		if err := mgr.validate(v.ID, v.ContextID); err != nil {
 			return nil, err
 		}
-		return mgr.saveTask(ctx, v, event)
+		copy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return mgr.saveTask(ctx, copy, event)
 
 	case *a2a.TaskArtifactUpdateEvent:
 		if err := mgr.validate(v.TaskID, v.ContextID); err != nil {
@@ -103,7 +107,10 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTas
 }
 
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*VersionedTask, error) {
-	task := mgr.lastSaved.Task
+	task, err := utils.DeepCopy(mgr.lastSaved.Task)
+	if err != nil {
+		return nil, err
+	}
 
 	// The copy is required because the event will be passed to subscriber goroutines, while
 	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
