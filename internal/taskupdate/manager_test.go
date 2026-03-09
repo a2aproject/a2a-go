@@ -103,11 +103,11 @@ func TestManager_TaskSaved(t *testing.T) {
 		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
 
-	if updated != saver.saved {
-		t.Fatalf("task not saved: got = %v, want = %v", saver.saved, updated)
+	if diff := cmp.Diff(saver.saved, updated); diff != "" {
+		t.Fatalf("wrong saved task state (+got,-want):\n%s", diff)
 	}
-	if updated != result.Task {
-		t.Fatalf("manager task not updated: got = %v, want = %v", result, updated)
+	if diff := cmp.Diff(result.Task, updated); diff != "" {
+		t.Fatalf("wrong result task (+got,-want):\n%s", diff)
 	}
 	if result.Task.Status.State != newState {
 		t.Fatalf("task state not updated: got = %v, want = %v", result.Task.Status.State, newState)
