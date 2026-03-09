@@ -114,6 +114,28 @@ func TestManager_TaskSaved(t *testing.T) {
 	}
 }
 
+func TestManager_TaskImmutableAfterSave(t *testing.T) {
+	m, _ := newUpdaterWithStoredTask()
+
+	task := &a2a.Task{
+		ID:        m.lastStored.Task.ID,
+		ContextID: m.lastStored.Task.ContextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+	}
+	_, err := m.Process(t.Context(), task)
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	_, err = m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("hello!")))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+
+	if len(task.Artifacts) != 0 {
+		t.Fatalf("task artifact length = %d, want empty", len(task.Artifacts))
+	}
+}
+
 func TestManager_SaverError(t *testing.T) {
 	m, saver := newUpdaterWithStoredTask()
 

@@ -78,7 +78,11 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		if err := mgr.validate(v); err != nil {
 			return nil, err
 		}
-		return mgr.saveTask(ctx, v, event)
+		copy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return mgr.saveTask(ctx, copy, event)
 	}
 
 	if mgr.lastStored == nil {
