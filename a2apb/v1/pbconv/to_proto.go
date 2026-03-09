@@ -404,26 +404,10 @@ func toProtoRole(role a2a.MessageRole) a2apb.Role {
 }
 
 func toProtoTaskState(state a2a.TaskState) a2apb.TaskState {
-	switch state {
-	case a2a.TaskStateAuthRequired:
-		return a2apb.TaskState_TASK_STATE_AUTH_REQUIRED
-	case a2a.TaskStateCanceled:
-		return a2apb.TaskState_TASK_STATE_CANCELED
-	case a2a.TaskStateCompleted:
-		return a2apb.TaskState_TASK_STATE_COMPLETED
-	case a2a.TaskStateFailed:
-		return a2apb.TaskState_TASK_STATE_FAILED
-	case a2a.TaskStateInputRequired:
-		return a2apb.TaskState_TASK_STATE_INPUT_REQUIRED
-	case a2a.TaskStateRejected:
-		return a2apb.TaskState_TASK_STATE_REJECTED
-	case a2a.TaskStateSubmitted:
-		return a2apb.TaskState_TASK_STATE_SUBMITTED
-	case a2a.TaskStateWorking:
-		return a2apb.TaskState_TASK_STATE_WORKING
-	default:
-		return a2apb.TaskState_TASK_STATE_UNSPECIFIED
+	if code, ok := a2apb.TaskState_value[string(state)]; ok {
+		return a2apb.TaskState(code)
 	}
+	return a2apb.TaskState_TASK_STATE_UNSPECIFIED
 }
 
 func toProtoTaskStatus(status a2a.TaskStatus) (*a2apb.TaskStatus, error) {

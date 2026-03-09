@@ -153,10 +153,37 @@ const (
 	// MessageRoleUnspecified is an unspecified message role.
 	MessageRoleUnspecified MessageRole = ""
 	// MessageRoleAgent is an agent message role.
-	MessageRoleAgent MessageRole = "agent"
+	MessageRoleAgent MessageRole = "ROLE_AGENT"
 	// MessageRoleUser is a user message role.
-	MessageRoleUser MessageRole = "user"
+	MessageRoleUser MessageRole = "ROLE_USER"
 )
+
+// String implements fmt.Stringer.
+func (mr MessageRole) String() string {
+	if mr == MessageRoleUnspecified {
+		return "ROLE_UNSPECIFIED"
+	}
+	return string(mr)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (mr MessageRole) MarshalJSON() ([]byte, error) {
+	return json.Marshal(mr.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (mr *MessageRole) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "ROLE_UNSPECIFIED" {
+		*mr = MessageRoleUnspecified
+		return nil
+	}
+	*mr = MessageRole(s)
+	return nil
+}
 
 // NewMessageID generates a new random message identifier.
 func NewMessageID() string {
@@ -252,24 +279,51 @@ const (
 	// TaskStateUnspecified represents a missing TaskState value.
 	TaskStateUnspecified TaskState = ""
 	// TaskStateAuthRequired means the task requires authentication to proceed.
-	TaskStateAuthRequired TaskState = "AUTH_REQUIRED"
+	TaskStateAuthRequired TaskState = "TASK_STATE_AUTH_REQUIRED"
 	// TaskStateCanceled means the task has been canceled by the user.
-	TaskStateCanceled TaskState = "CANCELED"
+	TaskStateCanceled TaskState = "TASK_STATE_CANCELED"
 	// TaskStateCompleted means the task has been successfully completed.
-	TaskStateCompleted TaskState = "COMPLETED"
+	TaskStateCompleted TaskState = "TASK_STATE_COMPLETED"
 	// TaskStateFailed means the task failed due to an error during execution.
-	TaskStateFailed TaskState = "FAILED"
+	TaskStateFailed TaskState = "TASK_STATE_FAILED"
 	// TaskStateInputRequired means the task is paused and waiting for input from the user.
-	TaskStateInputRequired TaskState = "INPUT_REQUIRED"
+	TaskStateInputRequired TaskState = "TASK_STATE_INPUT_REQUIRED"
 	// TaskStateRejected means the task was rejected by the agent and was not started.
-	TaskStateRejected TaskState = "REJECTED"
+	TaskStateRejected TaskState = "TASK_STATE_REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
-	TaskStateSubmitted TaskState = "SUBMITTED"
+	TaskStateSubmitted TaskState = "TASK_STATE_SUBMITTED"
 	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "UNKNOWN"
+	TaskStateUnknown TaskState = "TASK_STATE_UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
-	TaskStateWorking TaskState = "WORKING"
+	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )
+
+// String implements fmt.Stringer.
+func (ts TaskState) String() string {
+	if ts == TaskStateUnspecified {
+		return "TASK_STATE_UNSPECIFIED"
+	}
+	return string(ts)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (ts TaskState) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ts.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (ts *TaskState) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "TASK_STATE_UNSPECIFIED" {
+		*ts = TaskStateUnspecified
+		return nil
+	}
+	*ts = TaskState(s)
+	return nil
+}
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
 // changes to the Task are permitted.
