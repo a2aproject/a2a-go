@@ -35,7 +35,7 @@ go get github.com/a2aproject/a2a-go/v2
 
 Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
 
-## Versioning
+## 📦 Versioning
 
 The first two digits of a release version are reserved for the version of the A2A Protocol Spec which the release implements. 
 
@@ -50,7 +50,7 @@ github.com/a2aproject/a2a-go/vn@x.y.z
                                 └───── Protocol Spec Major Version
 ```
 
-## Examples
+## 💡 Examples
 
 For a simple example refer to the [helloworld](./examples/helloworld) example. 
 
