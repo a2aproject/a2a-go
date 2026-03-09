@@ -378,6 +378,7 @@ func handleUnmarshalError(err error) error {
 func (h *jsonrpcHandler) writeJSONRPCError(ctx context.Context, rw http.ResponseWriter, err error, reqID any) {
 	jsonrpcErr := jsonrpc.ToJSONRPCError(err)
 	resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, Error: jsonrpcErr, ID: reqID}
+	rw.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(rw).Encode(resp); err != nil {
 		log.Error(ctx, "failed to send error response", err)
 	}
