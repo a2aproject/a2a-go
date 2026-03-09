@@ -35,6 +35,21 @@ go get github.com/a2aproject/a2a-go/v2
 
 Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
 
+## Versioning
+
+The first two digits of a release version are reserved for the version of the A2A Protocol Spec which the release implements. 
+
+The third digit is SDK API Minor version which gets incremented for patches or minor API changes.
+Major breaking SDK API changes increment the version suffix in the module ID.
+
+```
+github.com/a2aproject/a2a-go/vn@x.y.z
+                             ^  ^ ^ ^ 
+               SDK API Major ┘  | | └─ SDK API Minor
+                                | └─── Protocol Spec Minor Version
+                                └───── Protocol Spec Major Version
+```
+
 ## Examples
 
 For a simple example refer to the [helloworld](./examples/helloworld) example. 
