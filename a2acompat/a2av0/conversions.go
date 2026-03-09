@@ -74,11 +74,38 @@ var v1ToLegacyTaskState = map[a2a.TaskState]a2alegacy.TaskState{
 
 var legacyToV1TaskState map[a2alegacy.TaskState]a2a.TaskState
 
+var coreToCompatRole = map[a2a.MessageRole]a2alegacy.MessageRole{
+	a2a.MessageRoleAgent:       a2alegacy.MessageRoleAgent,
+	a2a.MessageRoleUser:        a2alegacy.MessageRoleUser,
+	a2a.MessageRoleUnspecified: a2alegacy.MessageRoleUnspecified,
+}
+
+var compatToCoreRole map[a2alegacy.MessageRole]a2a.MessageRole
+
 func init() {
 	legacyToV1TaskState = make(map[a2alegacy.TaskState]a2a.TaskState, len(v1ToLegacyTaskState))
 	for k, v := range v1ToLegacyTaskState {
 		legacyToV1TaskState[v] = k
 	}
+
+	compatToCoreRole = make(map[a2alegacy.MessageRole]a2a.MessageRole, len(coreToCompatRole))
+	for k, v := range coreToCompatRole {
+		compatToCoreRole[v] = k
+	}
+}
+
+func toCompatRole(r a2a.MessageRole) a2alegacy.MessageRole {
+	if mapped, ok := coreToCompatRole[r]; ok {
+		return mapped
+	}
+	return a2alegacy.MessageRoleUnspecified
+}
+
+func fromCompatRole(r a2alegacy.MessageRole) a2a.MessageRole {
+	if mapped, ok := compatToCoreRole[r]; ok {
+		return mapped
+	}
+	return a2a.MessageRoleUnspecified
 }
 
 // ToV1TaskState converts a legacy task state to a v1 task state.
@@ -227,7 +254,7 @@ func ToV1Message(m *a2alegacy.Message) (*a2a.Message, error) {
 		Metadata:       m.Metadata,
 		Parts:          parts,
 		ReferenceTasks: toV1TaskIDs(m.ReferenceTasks),
-		Role:           a2a.MessageRole(m.Role),
+		Role:           fromCompatRole(m.Role),
 		TaskID:         a2a.TaskID(m.TaskID),
 	}, nil
 }
@@ -266,7 +293,7 @@ func FromV1Message(m *a2a.Message) *a2alegacy.Message {
 		Metadata:       m.Metadata,
 		Parts:          FromV1Parts(m.Parts),
 		ReferenceTasks: fromV1TaskIDs(m.ReferenceTasks),
-		Role:           a2alegacy.MessageRole(m.Role),
+		Role:           toCompatRole(m.Role),
 		TaskID:         a2alegacy.TaskID(m.TaskID),
 	}
 }
