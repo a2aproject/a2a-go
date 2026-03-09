@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // ErrCredentialNotFound is returned by [CredentialsService] if a credential for the provided

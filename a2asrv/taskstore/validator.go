@@ -17,7 +17,7 @@ package taskstore
 import (
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 func validateTask(task *a2a.Task) error {
