@@ -175,7 +175,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 			return vt, nil
 		}
 
-		if !errors.Is(err, a2a.ErrConcurrentTaskModification) || event.Status.State != a2a.TaskStateCanceled {
+		if !errors.Is(err, taskstore.ErrConcurrentModification) || event.Status.State != a2a.TaskStateCanceled {
 			return nil, err
 		}
 
