@@ -54,6 +54,8 @@ github.com/a2aproject/a2a-go/vn@x.y.z
 
 For a simple example refer to the [helloworld](./examples/helloworld) example. 
 
+For an example of agent state transitions and user input handling, refer to the [inputrequired](./examples/inputrequired) example. 
+
 ### Server
 
 For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github.com/a2aproject/a2a-go/a2asrv).
