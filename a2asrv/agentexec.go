@@ -132,6 +132,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		f.pushConfigStore,
 		f.pushSender,
 		execCtx.reqCtx,
+		f.taskStore,
 	)
 	return executor, processor, nil
 }
@@ -240,7 +241,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 
 	canceler := &canceler{agent: f.agent, reqCtx: reqCtx, task: task, interceptors: f.interceptors}
 	updateManager := taskupdate.NewManager(f.taskStore, &taskupdate.VersionedTask{Task: task, Version: version})
-	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, reqCtx)
+	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, reqCtx, f.taskStore)
 	return canceler, processor, nil
 }
 
@@ -296,18 +297,20 @@ type processor struct {
 	pushConfigStore PushConfigStore
 	pushSender      PushSender
 	reqCtx          *RequestContext
+	store           TaskStore
 
 	processedCount int
 }
 
 var _ taskexec.Processor = (*processor)(nil)
 
-func newProcessor(updateManager *taskupdate.Manager, store PushConfigStore, sender PushSender, reqCtx *RequestContext) *processor {
+func newProcessor(updateManager *taskupdate.Manager, pushStore PushConfigStore, sender PushSender, reqCtx *RequestContext, store TaskStore) *processor {
 	return &processor{
 		updateManager:   updateManager,
-		pushConfigStore: store,
+		pushConfigStore: pushStore,
 		pushSender:      sender,
 		reqCtx:          reqCtx,
+		store:           store,
 	}
 }
 
@@ -320,9 +323,26 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
 	}
 
-	versioned, err := p.updateManager.Process(ctx, event)
-	if err != nil {
-		return p.setTaskFailed(ctx, event, err)
+	versioned, processingErr := p.updateManager.Process(ctx, event)
+
+	if processingErr != nil && errors.Is(processingErr, a2a.ErrConcurrentTaskModification) {
+		task, version, err := p.store.Get(ctx, p.reqCtx.TaskID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load a task: %w: %w", err, processingErr)
+		}
+		if !task.Status.State.Terminal() {
+			return nil, fmt.Errorf("parallel active execution: %w", processingErr)
+		}
+		return &taskexec.ProcessorResult{
+			ExecutionResult:       task,
+			EventOverride:         task,
+			TaskVersion:           version,
+			ExecutionFailureCause: processingErr,
+		}, nil
+	}
+
+	if processingErr != nil {
+		return p.setTaskFailed(ctx, event, processingErr)
 	}
 
 	task := versioned.Task
@@ -356,15 +376,16 @@ func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMess
 	return versioned.Task, nil
 }
 
-func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, err error) (*taskexec.ProcessorResult, error) {
-	versioned, err := p.updateManager.SetTaskFailed(ctx, event, err)
+func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, cause error) (*taskexec.ProcessorResult, error) {
+	versioned, err := p.updateManager.SetTaskFailed(ctx, event, cause)
 	if err != nil {
 		return nil, err
 	}
 	return &taskexec.ProcessorResult{
-		ExecutionResult: versioned.Task,
-		EventOverride:   versioned.Task,
-		TaskVersion:     versioned.Version,
+		ExecutionResult:       versioned.Task,
+		EventOverride:         versioned.Task,
+		TaskVersion:           versioned.Version,
+		ExecutionFailureCause: cause,
 	}, nil
 }
 

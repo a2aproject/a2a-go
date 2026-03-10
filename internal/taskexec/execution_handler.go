@@ -68,7 +68,9 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 		}
 
 		if processResult.ExecutionResult != nil {
-			return processResult.ExecutionResult, nil
+			// If ExecutionResult is not nil it will be received by blocking clients, not the failure cause.
+			// The failure cause gets delivered to execution goroutine.
+			return processResult.ExecutionResult, processResult.ExecutionFailureCause
 		}
 	}
 }
