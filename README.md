@@ -52,7 +52,9 @@ github.com/a2aproject/a2a-go/vn@x.y.z
 
 ## 💡 Examples
 
-For a simple example refer to the [helloworld](./examples/helloworld) example. 
+For a simple example refer to the [helloworld](./examples/helloworld) example.
+
+For an example demonstrating **streaming** capabilities, see the [streaming](./examples/streaming) example. 
 
 ### Server
 
