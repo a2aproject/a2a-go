@@ -151,8 +151,8 @@ func TestMatch(t *testing.T) {
 		},
 		{
 			name:     "match with leading and trailing slashes",
-			template: "/tasks/{*}/",
-			path:     "/tasks/123/",
+			template: "/v2/tasks/{*}/",
+			path:     "/v2/tasks/123/",
 			want:     &MatchResult{Captured: "123", Rest: "/"},
 			wantOk:   true,
 		},

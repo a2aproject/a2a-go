@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2apb/v1"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -293,6 +293,11 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		want  a2apb.TaskState
 	}{
 		{
+			name:  "unspecified",
+			state: a2a.TaskStateUnspecified,
+			want:  a2apb.TaskState_TASK_STATE_UNSPECIFIED,
+		},
+		{
 			name:  string(a2a.TaskStateAuthRequired),
 			state: a2a.TaskStateAuthRequired,
 			want:  a2apb.TaskState_TASK_STATE_AUTH_REQUIRED,
@@ -334,7 +339,7 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		},
 		{
 			name:  "unknown",
-			state: "unknown",
+			state: a2a.TaskStateUnknown,
 			want:  a2apb.TaskState_TASK_STATE_UNSPECIFIED,
 		},
 	}
@@ -342,6 +347,11 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := toProtoTaskState(tt.state); got != tt.want {
 				t.Errorf("toProtoTaskState() = %v, want %v", got, tt.want)
+			}
+			if tt.state != a2a.TaskStateUnknown { // unknown is runtime-only state
+				if got := fromProtoTaskState(tt.want); got != tt.state {
+					t.Errorf("fromProtoTaskState() = %v, want %v", got, tt.state)
+				}
 			}
 		})
 	}

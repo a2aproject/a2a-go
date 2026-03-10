@@ -19,7 +19,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // ErrQueueClosed can be returned by Read implementation to stop the polling queue backend.

@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )

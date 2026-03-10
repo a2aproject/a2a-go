@@ -19,7 +19,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 func ExampleNewMessage() {
@@ -29,7 +29,7 @@ func ExampleNewMessage() {
 	fmt.Println("Parts count:", len(msg.Parts))
 	fmt.Println("Has ID:", msg.ID != "")
 	// Output:
-	// Role: user
+	// Role: ROLE_USER
 	// Parts count: 1
 	// Has ID: true
 }
@@ -46,7 +46,7 @@ func ExampleNewMessageForTask() {
 	fmt.Println("TaskID:", msg.TaskID)
 	fmt.Println("ContextID:", msg.ContextID)
 	// Output:
-	// Role: agent
+	// Role: ROLE_AGENT
 	// TaskID: task-abc
 	// ContextID: ctx-123
 }
@@ -61,7 +61,7 @@ func ExampleNewSubmittedTask() {
 	fmt.Println("Has ContextID:", task.ContextID != "")
 	fmt.Println("History length:", len(task.History))
 	// Output:
-	// State: SUBMITTED
+	// State: TASK_STATE_SUBMITTED
 	// Has TaskID: true
 	// Has ContextID: true
 	// History length: 1
@@ -82,17 +82,17 @@ func ExampleTaskState_Terminal() {
 		fmt.Printf("%-16s terminal=%v\n", s, s.Terminal())
 	}
 	// Output:
-	// SUBMITTED        terminal=false
-	// WORKING          terminal=false
-	// COMPLETED        terminal=true
-	// CANCELED         terminal=true
-	// FAILED           terminal=true
-	// INPUT_REQUIRED   terminal=false
-	// REJECTED         terminal=true
+	// TASK_STATE_SUBMITTED terminal=false
+	// TASK_STATE_WORKING terminal=false
+	// TASK_STATE_COMPLETED terminal=true
+	// TASK_STATE_CANCELED terminal=true
+	// TASK_STATE_FAILED terminal=true
+	// TASK_STATE_INPUT_REQUIRED terminal=false
+	// TASK_STATE_REJECTED terminal=true
 }
 
 func ExampleStreamResponse_UnmarshalJSON() {
-	jsonData := []byte(`{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1","status":{"state":"WORKING"}}}`)
+	jsonData := []byte(`{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}`)
 
 	var sr a2a.StreamResponse
 	if err := json.Unmarshal(jsonData, &sr); err != nil {
@@ -111,11 +111,11 @@ func ExampleStreamResponse_UnmarshalJSON() {
 	// Output:
 	// Event type: TaskStatusUpdateEvent
 	// Task ID: task-1
-	// State: WORKING
+	// State: TASK_STATE_WORKING
 }
 
 func ExampleStreamResponse_UnmarshalJSON_message() {
-	jsonData := []byte(`{"message":{"messageId":"msg-42","role":"user","parts":[{"kind":"text","text":"hello"}]}}`)
+	jsonData := []byte(`{"message":{"messageId":"msg-42","role":"ROLE_USER","parts":[{"kind":"text","text":"hello"}]}}`)
 
 	var sr a2a.StreamResponse
 	if err := json.Unmarshal(jsonData, &sr); err != nil {
@@ -129,7 +129,7 @@ func ExampleStreamResponse_UnmarshalJSON_message() {
 	fmt.Println("Text:", msg.Parts[0].Text())
 	// Output:
 	// ID: msg-42
-	// Role: user
+	// Role: ROLE_USER
 	// Text: hello
 }
 
@@ -169,7 +169,7 @@ func ExampleNewStatusUpdateEvent() {
 	fmt.Println("Has timestamp:", event.Status.Timestamp != nil)
 	// Output:
 	// Task ID: task-1
-	// State: WORKING
+	// State: TASK_STATE_WORKING
 	// Has timestamp: true
 }
 
@@ -207,7 +207,7 @@ func ExampleStreamResponse_MarshalJSON_message() {
 	fmt.Println("role:", inner["role"])
 	// Output:
 	// Has message key: true
-	// role: user
+	// role: ROLE_USER
 }
 
 func ExampleStreamResponse_MarshalJSON_task() {

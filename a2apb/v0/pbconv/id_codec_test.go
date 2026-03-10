@@ -17,7 +17,7 @@ package pbconv
 import (
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 func TestPathExtractors(t *testing.T) {

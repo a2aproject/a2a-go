@@ -17,8 +17,8 @@ package testutil
 import (
 	"context"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 )
 
 // TestWorkQueue is a mock of [workqueue.Queue].

@@ -24,11 +24,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/internal/jsonrpc"
-	"github.com/a2aproject/a2a-go/internal/sse"
-	"github.com/a2aproject/a2a-go/log"
+	a2alegacy "github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/log"
 	"github.com/google/uuid"
 )
 
@@ -85,7 +86,7 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
 
-	for k, vals := range params {
+	for k, vals := range FromServiceParams(params) {
 		for _, v := range vals {
 			httpReq.Header.Add(k, v)
 		}
@@ -174,18 +175,18 @@ func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 
 // SendMessage sends a non-streaming message to the agent.
 func (t *jsonrpcTransport) SendMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	compatReq := toCompatSendMessageRequest(req)
+	compatReq := FromV1SendMessageRequest(req)
 	result, err := t.sendRequest(ctx, methodMessageSend, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	compatEvent, err := unmarshalEventJSON(result)
+	compatEvent, err := a2alegacy.UnmarshalEventJSON(result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 	}
 
-	event, err := fromCompatEvent(compatEvent)
+	event, err := ToV1Event(compatEvent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert event: %w", err)
 	}
@@ -219,13 +220,13 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 				return
 			}
 
-			compatEvent, err := unmarshalEventJSON(result)
+			compatEvent, err := a2alegacy.UnmarshalEventJSON(result)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
 
-			event, err := fromCompatEvent(compatEvent)
+			event, err := ToV1Event(compatEvent)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -240,24 +241,24 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 
 // SendStreamingMessage sends a streaming message to the agent.
 func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
-	compatReq := toCompatSendMessageRequest(req)
+	compatReq := FromV1SendMessageRequest(req)
 	return t.streamRequestToEvents(ctx, methodMessageStream, params, compatReq)
 }
 
 // GetTask retrieves the current state of a task.
 func (t *jsonrpcTransport) GetTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	compatReq := toCompatGetTaskRequest(req)
+	compatReq := FromV1GetTaskRequest(req)
 	result, err := t.sendRequest(ctx, methodTasksGet, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var compatTask task
+	var compatTask a2alegacy.Task
 	if err := json.Unmarshal(result, &compatTask); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
-	task, err := fromCompatTask(&compatTask)
+	task, err := ToV1Task(&compatTask)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert task: %w", err)
 	}
@@ -271,18 +272,18 @@ func (t *jsonrpcTransport) ListTasks(ctx context.Context, params a2aclient.Servi
 
 // CancelTask requests cancellation of a task.
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	compatReq := toCompatCancelTaskRequest(req)
+	compatReq := FromV1CancelTaskRequest(req)
 	result, err := t.sendRequest(ctx, methodTasksCancel, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var compatTask task
+	var compatTask a2alegacy.Task
 	if err := json.Unmarshal(result, &compatTask); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
-	task, err := fromCompatTask(&compatTask)
+	task, err := ToV1Task(&compatTask)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert task: %w", err)
 	}
@@ -292,24 +293,24 @@ func (t *jsonrpcTransport) CancelTask(ctx context.Context, params a2aclient.Serv
 
 // SubscribeToTask reconnects to an SSE stream for an ongoing task.
 func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
-	compatReq := toCompatSubscribeToTaskRequest(req)
+	compatReq := FromV1SubscribeToTaskRequest(req)
 	return t.streamRequestToEvents(ctx, methodTasksResubscribe, params, compatReq)
 }
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	compatReq := toCompatGetTaskPushConfigRequest(req)
+	compatReq := FromV1GetTaskPushConfigRequest(req)
 	result, err := t.sendRequest(ctx, methodPushConfigGet, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var compatConfig taskPushConfig
+	var compatConfig a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	config, err := fromCompatTaskPushConfig(&compatConfig)
+	config, err := ToV1TaskPushConfig(&compatConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert config: %w", err)
 	}
@@ -318,20 +319,20 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclie
 
 // ListTaskPushConfig lists push notification configurations.
 func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-	compatReq := toCompatListTaskPushConfigRequest(req)
+	compatReq := FromV1ListTaskPushConfigRequest(req)
 	result, err := t.sendRequest(ctx, methodPushConfigList, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var compatConfigs []*taskPushConfig
+	var compatConfigs []*a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfigs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
 
 	configs := make([]*a2a.TaskPushConfig, 0, len(compatConfigs))
 	for _, compatConfig := range compatConfigs {
-		config, err := fromCompatTaskPushConfig(compatConfig)
+		config, err := ToV1TaskPushConfig(compatConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert config: %w", err)
 		}
@@ -343,18 +344,18 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2acl
 
 // CreateTaskPushConfig sets or updates the push notification configuration for a task.
 func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	compatReq := toCompatCreateTaskPushConfigRequest(req)
+	compatReq := FromV1CreateTaskPushConfigRequest(req)
 	result, err := t.sendRequest(ctx, methodPushConfigSet, params, compatReq)
 	if err != nil {
 		return nil, err
 	}
 
-	var compatConfig taskPushConfig
+	var compatConfig a2alegacy.TaskPushConfig
 	if err := json.Unmarshal(result, &compatConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	config, err := fromCompatTaskPushConfig(&compatConfig)
+	config, err := ToV1TaskPushConfig(&compatConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert config: %w", err)
 	}
@@ -363,7 +364,7 @@ func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2ac
 
 // DeleteTaskPushConfig deletes a push notification configuration.
 func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
-	compatReq := toCompatDeleteTaskPushConfigRequest(req)
+	compatReq := FromV1DeleteTaskPushConfigRequest(req)
 	_, err := t.sendRequest(ctx, methodPushConfigDelete, params, compatReq)
 	return err
 }

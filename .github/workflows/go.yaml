@@ -7,10 +7,10 @@ name: Go
 
 on:
   push:
-    branches: [ "main", "release/spec-v1" ]
+    branches: [ "main", "release/**" ]
 
   pull_request:
-    branches: [ "main", "release/spec-v1" ]
+    branches: [ "main", "release/**" ]
 
   workflow_dispatch:
 

@@ -21,10 +21,10 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/utils"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 const maxCancelationAttempts = 10
@@ -78,7 +78,11 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		if err := mgr.validate(v); err != nil {
 			return nil, err
 		}
-		return mgr.saveTask(ctx, v, event)
+		copy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return mgr.saveTask(ctx, copy, event)
 	}
 
 	if mgr.lastStored == nil {
@@ -107,7 +111,10 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 }
 
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*taskstore.StoredTask, error) {
-	task := mgr.lastStored.Task
+	task, err := utils.DeepCopy(mgr.lastStored.Task)
+	if err != nil {
+		return nil, err
+	}
 
 	// The copy is required because the event will be passed to subscriber goroutines, while
 	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
