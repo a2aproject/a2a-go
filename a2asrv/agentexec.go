@@ -382,7 +382,6 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		if !storedTask.Task.Status.State.Terminal() {
 			return nil, fmt.Errorf("parallel active execution: %w", processingErr)
 		}
-		fmt.Println("storedTask", storedTask.Task.Status.State)
 		return &taskexec.ProcessorResult{
 			ExecutionResult:       storedTask.Task,
 			EventOverride:         storedTask.Task,
