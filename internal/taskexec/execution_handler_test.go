@@ -137,3 +137,23 @@ func TestRunProducerConsumer(t *testing.T) {
 		})
 	}
 }
+
+func TestRunProducerConsumer_CausePropagation(t *testing.T) {
+	consumerErr := a2a.ErrConcurrentTaskModification
+	var gotProducerErr error
+	_, _ = runProducerConsumer(t.Context(),
+		func(ctx context.Context) error {
+			<-ctx.Done()
+			gotProducerErr = context.Cause(ctx)
+			return nil
+		},
+		func(ctx context.Context) (a2a.SendMessageResult, error) {
+			return nil, consumerErr
+		},
+		nil,
+		nil,
+	)
+	if gotProducerErr != consumerErr {
+		t.Fatalf("expected producer error = %s, got %s", consumerErr, gotProducerErr)
+	}
+}
