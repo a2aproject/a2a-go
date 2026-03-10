@@ -374,7 +374,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 
 	versioned, processingErr := p.updateManager.Process(ctx, event)
 
-	if processingErr != nil && errors.Is(processingErr, a2a.ErrConcurrentTaskModification) {
+	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {
 		storedTask, err := p.store.Get(ctx, p.execCtx.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load a task: %w: %w", err, processingErr)
@@ -382,6 +382,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		if !storedTask.Task.Status.State.Terminal() {
 			return nil, fmt.Errorf("parallel active execution: %w", processingErr)
 		}
+		fmt.Println("storedTask", storedTask.Task.Status.State)
 		return &taskexec.ProcessorResult{
 			ExecutionResult:       storedTask.Task,
 			EventOverride:         storedTask.Task,

@@ -109,8 +109,8 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	}
 
 	gotErrCause := <-executionErrCauseChan
-	if !errors.Is(gotErrCause, a2a.ErrConcurrentTaskModification) {
-		t.Fatalf("execution error cause = %v, want %v", gotErrCause, a2a.ErrConcurrentTaskModification)
+	if !errors.Is(gotErrCause, taskstore.ErrConcurrentModification) {
+		t.Fatalf("execution error cause = %v, want %v", gotErrCause, taskstore.ErrConcurrentModification)
 	}
 }
 

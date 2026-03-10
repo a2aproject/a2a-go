@@ -657,7 +657,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 				Status:   a2a.TaskStatus{State: a2a.TaskStateCanceled},
 				Metadata: map[string]any{"hello": "world"},
 			},
-			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			firstUpdateErr: taskstore.ErrConcurrentModification,
 			getResult: &a2a.Task{
 				Status:   a2a.TaskStatus{State: a2a.TaskStateWorking},
 				Metadata: map[string]any{"foo": "bar"},
@@ -690,8 +690,8 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
 			},
-			firstUpdateErr: a2a.ErrConcurrentTaskModification,
-			wantErrContain: a2a.ErrConcurrentTaskModification.Error(),
+			firstUpdateErr: taskstore.ErrConcurrentModification,
+			wantErrContain: taskstore.ErrConcurrentModification.Error(),
 		},
 		{
 			name:         "concurrent update and task is canceled - task returned as result",
@@ -700,7 +700,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
 			},
-			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			firstUpdateErr: taskstore.ErrConcurrentModification,
 			getResult: &a2a.Task{
 				Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},
 			},
@@ -716,7 +716,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 				Task:    &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
 				Version: 1,
 			},
-			firstUpdateErr: a2a.ErrConcurrentTaskModification,
+			firstUpdateErr: taskstore.ErrConcurrentModification,
 			getResult: &a2a.Task{
 				Status: a2a.TaskStatus{State: a2a.TaskStateCompleted},
 			},

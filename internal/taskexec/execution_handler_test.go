@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
 )
 
 func TestRunProducerConsumer(t *testing.T) {
@@ -139,7 +140,7 @@ func TestRunProducerConsumer(t *testing.T) {
 }
 
 func TestRunProducerConsumer_CausePropagation(t *testing.T) {
-	consumerErr := a2a.ErrConcurrentTaskModification
+	consumerErr := taskstore.ErrConcurrentModification
 	var gotProducerErr error
 	_, _ = runProducerConsumer(t.Context(),
 		func(ctx context.Context) error {
