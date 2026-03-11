@@ -59,7 +59,10 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), h.handleDeleteTaskPushConfig)
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
-	return mux
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
+		mux.ServeHTTP(rw, req.WithContext(ctx))
+	})
 }
 
 // NewTenantRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
@@ -94,7 +97,7 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 }
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	var message a2a.SendMessageRequest
 	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
@@ -115,7 +118,7 @@ func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Reques
 }
 
 func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	var message a2a.SendMessageRequest
 	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
@@ -126,7 +129,7 @@ func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Requ
 }
 
 func (h *restHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	taskID := req.PathValue("id")
 	historyLengthRaw := req.URL.Query().Get("historyLength")
 	var historyLength *int
@@ -160,7 +163,7 @@ func (h *restHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	query := req.URL.Query()
 	request := &a2a.ListTasksRequest{}
 	var err error
@@ -207,7 +210,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 }
 
 func (h *restHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	idAndAction := req.PathValue("idAndAction")
 	if idAndAction == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
@@ -229,7 +232,7 @@ func (h *restHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Request)
 }
 
 func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 
 	id := &a2a.CancelTaskRequest{
 		ID: a2a.TaskID(taskID),
@@ -249,7 +252,7 @@ func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, re
 }
 
 func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
@@ -351,7 +354,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 }
 
 func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	taskID := req.PathValue("id")
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
@@ -383,7 +386,7 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 }
 
 func (h *restHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	taskID := req.PathValue("id")
 	configID := req.PathValue("configId")
 	if taskID == "" || configID == "" {
@@ -411,7 +414,7 @@ func (h *restHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.
 }
 
 func (h *restHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	taskID := req.PathValue("id")
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
@@ -436,7 +439,7 @@ func (h *restHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *htt
 }
 
 func (h *restHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	taskID := req.PathValue("id")
 	configID := req.PathValue("configId")
 	if taskID == "" || configID == "" {
@@ -459,7 +462,7 @@ func (h *restHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, req *ht
 }
 
 func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *http.Request) {
-	ctx := h.withCallContext(req)
+	ctx := req.Context()
 	req2 := &a2a.GetExtendedAgentCardRequest{}
 	fillTenant(ctx, &req2.Tenant)
 	result, err := h.handler.GetExtendedAgentCard(ctx, req2)
@@ -501,9 +504,4 @@ func tenantFromContext(ctx context.Context) string {
 		return tenant
 	}
 	return ""
-}
-
-func (h *restHandler) withCallContext(req *http.Request) context.Context {
-	ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
-	return ctx
 }
