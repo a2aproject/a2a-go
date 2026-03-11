@@ -639,8 +639,11 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 			wantResult: newAgentMessage("hello"),
 		},
 		{
-			name:       "streaming supported",
-			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			name:  "streaming supported",
+			input: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			options: []RequestHandlerOption{
+				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
+			},
 			wantResult: newAgentMessage("hello"),
 		},
 		{
