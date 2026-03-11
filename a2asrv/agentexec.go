@@ -101,10 +101,9 @@ type AgentExecutor interface {
 	Cancel(ctx context.Context, reqCtx *RequestContext, queue eventqueue.Queue) error
 }
 
-// AgentExecutionCleaner is an optional interface [AgentExecutor] can implement to perform cleanup after execution finishes.
+// AgentExecutionCleaner is an optional interface [AgentExecutor] can implement to perform cleanup after execution or cancelation.
 type AgentExecutionCleaner interface {
-	// Cleanup is called after an agent execution completes with either result or an error.
-	// It will be invoked in the execution goroutine after the execution goroutine finishes.
+	// Cleanup is called after an agent execution or cancelation finishes with either result or an error.
 	Cleanup(ctx context.Context, reqCtx *RequestContext, result a2a.SendMessageResult, err error)
 }
 
