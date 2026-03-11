@@ -465,10 +465,6 @@ type testInterceptor struct {
 
 func TestREST_ServiceParams(t *testing.T) {
 	ctx := t.Context()
-	tid := a2a.NewTaskID()
-	task := &a2a.Task{ID: tid, ContextID: a2a.NewContextID()}
-	store := testutil.NewTestTaskStore().WithTasks(t, task)
-
 	var gotAuth []string
 	interceptor := &testInterceptor{
 		BeforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
@@ -477,11 +473,11 @@ func TestREST_ServiceParams(t *testing.T) {
 		},
 	}
 
-	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store), WithCallInterceptors(interceptor))
+	handler := NewHandler(&mockAgentExecutor{}, WithCallInterceptors(interceptor))
 	server := httptest.NewServer(NewRESTHandler(handler))
 	defer server.Close()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks/"+string(tid), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks/test-task", nil)
 	if err != nil {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
