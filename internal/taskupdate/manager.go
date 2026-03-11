@@ -141,9 +141,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	if toUpdate.Metadata == nil && artifact.Metadata != nil {
 		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
 	}
-	for k, v := range artifact.Metadata {
-		toUpdate.Metadata[k] = v
-	}
+	maps.Copy(toUpdate.Metadata, artifact.Metadata)
 	return mgr.saveTask(ctx, task, event)
 }
 
@@ -209,8 +207,14 @@ func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
+
 	mgr.lastSaved = &VersionedTask{Task: task, Version: version}
-	return mgr.lastSaved, nil
+
+	result, err := utils.DeepCopy(mgr.lastSaved)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (mgr *Manager) validate(taskID a2a.TaskID, contextID string) error {
