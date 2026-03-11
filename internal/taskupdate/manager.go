@@ -52,10 +52,6 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause er
 		return nil, fmt.Errorf("execution failed before a task was created: %w", cause)
 	}
 
-	if mgr.lastStored.Task.Status.State.Terminal() {
-		return nil, fmt.Errorf("%q task state updates are not allowed: %w", mgr.lastStored.Task.Status.State, a2a.ErrInvalidAgentResponse)
-	}
-
 	task := *mgr.lastStored.Task // copy to update task status
 
 	// do not store cause.Error() as part of status to not disclose the cause to clients
@@ -79,6 +75,9 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 	}
 
 	if mgr.lastStored != nil && mgr.lastStored.Task.Status.State.Terminal() {
+		if mgr.lastStored.Task == event { // idempotency for the final task state
+			return mgr.lastStored, nil
+		}
 		return nil, fmt.Errorf("%q task state updates are not allowed: %w", mgr.lastStored.Task.Status.State, a2a.ErrInvalidAgentResponse)
 	}
 
