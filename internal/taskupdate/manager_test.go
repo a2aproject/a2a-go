@@ -161,7 +161,7 @@ func TestManager_TaskImmutableAfterSave(t *testing.T) {
 	}
 
 	result3.Task.Status.State = a2a.TaskStateFailed
-	result4, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("baz")))
+	result4, _ := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("baz")))
 	if result4.Task.Status.State == a2a.TaskStateFailed {
 		t.Fatalf("task state after update = %q, want = %q", result4.Task.Status.State, a2a.TaskStateCompleted)
 	}
