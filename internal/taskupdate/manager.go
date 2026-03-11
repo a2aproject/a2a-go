@@ -85,7 +85,7 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTas
 		}
 		copy, err := utils.DeepCopy(v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("task copy failed: %w", err)
 		}
 		return mgr.saveTask(ctx, copy, event)
 
@@ -109,7 +109,7 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*VersionedTas
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*VersionedTask, error) {
 	task, err := utils.DeepCopy(mgr.lastSaved.Task)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("task copy failed: %w", err)
 	}
 
 	// The copy is required because the event will be passed to subscriber goroutines, while
@@ -141,23 +141,21 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	if toUpdate.Metadata == nil && artifact.Metadata != nil {
 		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
 	}
-	for k, v := range artifact.Metadata {
-		toUpdate.Metadata[k] = v
-	}
+	maps.Copy(toUpdate.Metadata, artifact.Metadata)
 	return mgr.saveTask(ctx, task, event)
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*VersionedTask, error) {
 	task, err := utils.DeepCopy(mgr.lastSaved.Task)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("task copy failed: %w", err)
 	}
 	version := mgr.lastSaved.Version
 
 	for range maxCancelationAttempts {
 		prev, err := utils.DeepCopy(task)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("task copy failed: %w", err)
 		}
 
 		if task.Status.Message != nil {
@@ -177,7 +175,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 
 		if !errors.Is(err, a2a.ErrConcurrentTaskModification) || event.Status.State != a2a.TaskStateCanceled {
-			return nil, err
+			return nil, fmt.Errorf("task update failed: %w", err)
 		}
 
 		latestTask, latestVersion, getErr := mgr.saver.Get(ctx, event.TaskID)
@@ -209,8 +207,14 @@ func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
+
 	mgr.lastSaved = &VersionedTask{Task: task, Version: version}
-	return mgr.lastSaved, nil
+
+	result, err := utils.DeepCopy(mgr.lastSaved)
+	if err != nil {
+		return nil, fmt.Errorf("task copy failed: %w", err)
+	}
+	return result, nil
 }
 
 func (mgr *Manager) validate(taskID a2a.TaskID, contextID string) error {

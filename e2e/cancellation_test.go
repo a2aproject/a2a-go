@@ -34,7 +34,6 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 
 	executionErrCauseChan := make(chan error, 1)
 	executor := &testexecutor.TestAgentExecutor{}
-
 	// Execution will be creating task artifacts until a task is canceled. Cancelation will be detected using a failed task store update
 	executor.ExecuteFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
 		if err := q.Write(ctx, a2a.NewSubmittedTask(reqCtx, reqCtx.Message)); err != nil {
@@ -49,18 +48,27 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 		executionErrCauseChan <- context.Cause(ctx)
 		return ctx.Err()
 	}
+	executionCleanupResultChan := make(chan a2a.SendMessageResult, 1)
+	executor.CleanupFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
+		executionCleanupResultChan <- result
+	}
 
 	// This code will run on a different server
-	executor.CancelFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	canceler := &testexecutor.TestAgentExecutor{}
+	canceler.CancelFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
 		event := a2a.NewStatusUpdateEvent(reqCtx.StoredTask, a2a.TaskStateCanceled, nil)
 		event.Final = true
 		return q.Write(ctx, event)
+	}
+	cancelationCleanupResultChan := make(chan a2a.SendMessageResult, 1)
+	canceler.CleanupFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
+		cancelationCleanupResultChan <- result
 	}
 
 	// The store is shared by two server
 	store := testutil.NewTestTaskStore()
 	client1 := startTestServer(t, executor, store)
-	client2 := startTestServer(t, executor, store)
+	client2 := startTestServer(t, canceler, store)
 
 	// Send message streaming in a detached goroutine piping events to a channel
 	executionEvents := make(chan a2a.Event, 1)
@@ -108,6 +116,17 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	gotErrCause := <-executionErrCauseChan
 	if !errors.Is(gotErrCause, a2a.ErrConcurrentTaskModification) {
 		t.Fatalf("execution error cause = %v, want %v", gotErrCause, a2a.ErrConcurrentTaskModification)
+	}
+
+	for i, ch := range []chan a2a.SendMessageResult{executionCleanupResultChan, cancelationCleanupResultChan} {
+		gotCleanupResult := <-ch
+		if task, ok := gotCleanupResult.(*a2a.Task); ok {
+			if task.Status.State != a2a.TaskStateCanceled {
+				t.Fatalf("execution cleanup result at %d wrong state = %v, want %v", i, task.Status.State, a2a.TaskStateCanceled)
+			}
+		} else {
+			t.Fatalf("execution cleanup result at %d is not a task, got %T", i, gotCleanupResult)
+		}
 	}
 }
 

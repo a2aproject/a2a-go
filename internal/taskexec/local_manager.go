@@ -232,7 +232,7 @@ func (m *localManager) cleanupExecution(ctx context.Context, execution *localExe
 func (m *localManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
 	defer m.cleanupExecution(ctx, execution)
 
-	executor, processor, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
+	executor, processor, cleaner, err := m.factory.CreateExecutor(ctx, execution.tid, execution.params)
 	if err != nil {
 		execution.result.setError(fmt.Errorf("setup failed: %w", err))
 		m.destroyQueue(ctx, execution.tid)
@@ -253,6 +253,8 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		m.panicHandler,
 	)
 
+	cleaner.Cleanup(ctx, result, err)
+
 	if err != nil {
 		execution.result.setError(err)
 		return
@@ -272,7 +274,7 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		m.mu.Unlock()
 	}()
 
-	canceler, processor, err := m.factory.CreateCanceler(ctx, cancel.params)
+	canceler, processor, cleaner, err := m.factory.CreateCanceler(ctx, cancel.params)
 	if err != nil {
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return
@@ -289,6 +291,9 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		nil,
 		m.panicHandler,
 	)
+
+	cleaner.Cleanup(ctx, result, err)
+
 	if err != nil {
 		cancel.result.setError(err)
 		return
@@ -312,7 +317,8 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 		m.mu.Unlock()
 	}()
 
-	canceler, _, err := m.factory.CreateCanceler(ctx, cancel.params)
+	// Cleaner and Processor not used, they will run in execution goroutine
+	canceler, _, _, err := m.factory.CreateCanceler(ctx, cancel.params)
 	if err != nil {
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return
