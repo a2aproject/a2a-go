@@ -880,6 +880,100 @@ func TestRequestHandler_OnSendMessage_AgentExecutorPanicFailsTask(t *testing.T) 
 	}
 }
 
+func TestAgentExecutionCleaner(t *testing.T) {
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+
+	testCases := []struct {
+		name              string
+		agentEvents       []a2a.Event
+		executeErr        error
+		storageErr        error
+		wantCleanupResult a2a.SendMessageResult
+		wantCleanupErr    error
+	}{
+		{
+			name:              "successful execution",
+			agentEvents:       []a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done")},
+			wantCleanupResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "done"),
+		},
+		{
+			name:              "execution error (handled)",
+			executeErr:        errors.New("execution failed"),
+			wantCleanupResult: &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}},
+		},
+		{
+			name:           "execution error (unhandled due to storage failure)",
+			executeErr:     errors.New("execution failed"),
+			storageErr:     errors.New("storage failed"),
+			wantCleanupErr: errors.New("execution failed"),
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+
+			if tt.storageErr != nil {
+				store.SaveFunc = func(ctx context.Context, task *a2a.Task, event a2a.Event, prevTask *a2a.Task, version a2a.TaskVersion) (a2a.TaskVersion, error) {
+					if task.Status.State == a2a.TaskStateFailed {
+						return a2a.TaskVersionMissing, tt.storageErr
+					}
+					return store.Mem.Save(ctx, task, event, prevTask, version)
+				}
+			}
+
+			type cleanupResult struct {
+				result a2a.SendMessageResult
+				err    error
+			}
+			cleanupChan := make(chan cleanupResult, 1)
+
+			agent := &cleanerAgentExecutor{
+				mockAgentExecutor: mockAgentExecutor{
+					ExecuteFunc: func(ctx context.Context, reqCtx *RequestContext, q eventqueue.Queue) error {
+						for _, ev := range tt.agentEvents {
+							if err := q.Write(ctx, ev); err != nil {
+								return err
+							}
+						}
+						return tt.executeErr
+					},
+				},
+				CleanupFunc: func(ctx context.Context, reqCtx *RequestContext, result a2a.SendMessageResult, err error) {
+					cleanupChan <- cleanupResult{result: result, err: err}
+				},
+			}
+
+			handler := NewHandler(agent, WithTaskStore(store))
+			_, _ = handler.OnSendMessage(ctx, &a2a.MessageSendParams{Message: newUserMessage(taskSeed, "test")})
+
+			select {
+			case gotCleanup := <-cleanupChan:
+				if (tt.wantCleanupErr == nil) != (gotCleanup.err == nil) {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				} else if tt.wantCleanupErr != nil && tt.wantCleanupErr.Error() != gotCleanup.err.Error() {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				}
+
+				if tt.wantCleanupResult != nil {
+					if diff := cmp.Diff(tt.wantCleanupResult, gotCleanup.result,
+						cmpopts.IgnoreFields(a2a.Task{}, "ID", "ContextID", "History", "Artifacts", "Metadata"),
+						cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp", "Message"),
+					); diff != "" {
+						t.Errorf("Cleanup() result mismatch (-want +got):\n%s", diff)
+					}
+				} else if gotCleanup.result != nil {
+					t.Errorf("Cleanup() result = %v, want nil", gotCleanup.result)
+				}
+
+			case <-time.After(time.Second):
+				t.Fatal("Cleanup was not called")
+			}
+		})
+	}
+}
+
 func TestRequestHandler_OnGetAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
@@ -1787,4 +1881,15 @@ func collectEvents(seq iter.Seq2[a2a.Event, error]) ([]a2a.Event, error) {
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+type cleanerAgentExecutor struct {
+	mockAgentExecutor
+	CleanupFunc func(ctx context.Context, reqCtx *RequestContext, result a2a.SendMessageResult, err error)
+}
+
+func (m *cleanerAgentExecutor) Cleanup(ctx context.Context, reqCtx *RequestContext, result a2a.SendMessageResult, err error) {
+	if m.CleanupFunc != nil {
+		m.CleanupFunc(ctx, reqCtx, result, err)
+	}
 }

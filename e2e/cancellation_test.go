@@ -50,6 +50,12 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 		return ctx.Err()
 	}
 
+	// Cleanup will be called with the final task state after execution finishes
+	executionCleanupResultChan := make(chan a2a.SendMessageResult, 1)
+	executor.CleanupFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
+		executionCleanupResultChan <- result
+	}
+
 	// This code will run on a different server
 	executor.CancelFn = func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
 		event := a2a.NewStatusUpdateEvent(reqCtx.StoredTask, a2a.TaskStateCanceled, nil)
@@ -108,6 +114,15 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	gotErrCause := <-executionErrCauseChan
 	if !errors.Is(gotErrCause, a2a.ErrConcurrentTaskModification) {
 		t.Fatalf("execution error cause = %v, want %v", gotErrCause, a2a.ErrConcurrentTaskModification)
+	}
+
+	gotCleanupResult := <-executionCleanupResultChan
+	if task, ok := gotCleanupResult.(*a2a.Task); ok {
+		if task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("execution cleanup result wrong state = %v, want %v", task.Status.State, a2a.TaskStateCanceled)
+		}
+	} else {
+		t.Fatalf("execution cleanup result is not a task, got %T", gotCleanupResult)
 	}
 }
 

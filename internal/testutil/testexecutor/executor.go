@@ -25,6 +25,7 @@ import (
 type TestAgentExecutor struct {
 	Emitted   []a2a.Event
 	ExecuteFn func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error
+	CleanupFn func(context.Context, *a2asrv.RequestContext, a2a.SendMessageResult, error)
 	CancelFn  func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error
 }
 
@@ -56,6 +57,12 @@ func (e *TestAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		return e.ExecuteFn(ctx, reqCtx, q)
 	}
 	return nil
+}
+
+func (e *TestAgentExecutor) Cleanup(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
+	if e.CleanupFn != nil {
+		e.CleanupFn(ctx, reqCtx, result, err)
+	}
 }
 
 func (e *TestAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {

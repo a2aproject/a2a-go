@@ -156,6 +156,10 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventqueue.Queue) erro
 	return e.executeErr
 }
 
+func (e *testExecutor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+	// NOP
+}
+
 type testCanceler struct {
 	*testProcessor
 

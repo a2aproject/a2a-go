@@ -49,6 +49,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 
 	var eventProducer eventProducerFn
 	var eventProcessor Processor
+	var cleanup func(context.Context, a2a.SendMessageResult, error)
 
 	switch payload.Type {
 	case workqueue.PayloadTypeExecute:
@@ -61,6 +62,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		}
 		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, pipe.Writer) }
 		eventProcessor = processor
+		cleanup = executor.Cleanup
 
 	case workqueue.PayloadTypeCancel:
 		if payload.CancelParams == nil {
@@ -101,5 +103,9 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
+	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
+	if cleanup != nil {
+		cleanup(ctx, result, err)
+	}
+	return result, err
 }
