@@ -307,6 +307,7 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 	return nil
 }
 
+// Cleanup is called after an agent execution finishes with either result or an error.
 func (e *executor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
 	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
 		cleaner.Cleanup(ctx, e.execCtx, result, err)

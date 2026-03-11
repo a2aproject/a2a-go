@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Nightly Check](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml/badge.svg)](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml)
-[![Go Doc](https://img.shields.io/badge/Go%20Package-Doc-blue.svg)](https://pkg.go.dev/github.com/a2aproject/a2a-go)
+[![Go Doc](https://img.shields.io/badge/Go%20Package-Doc-blue.svg)](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/a2aproject/a2a-go)
 
 <!-- markdownlint-disable no-inline-html -->
@@ -33,7 +33,7 @@ Requires Go `1.24.4` or newer:
 go get github.com/a2aproject/a2a-go/v2
 ```
 
-Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go) for a full documentation.
+Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2) for a full documentation.
 
 ## 📦 Versioning
 
@@ -56,7 +56,7 @@ For a simple example refer to the [helloworld](./examples/helloworld) example.
 
 ### Server
 
-For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github.com/a2aproject/a2a-go/a2asrv).
+For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2/a2asrv).
 
 1. Create a transport-agnostic A2A request handler:
 
@@ -97,7 +97,7 @@ For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github
 
 ### Client 
 
-For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/github.com/a2aproject/a2a-go/a2aclient).
+For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2/a2aclient).
 
 1. Resolve an `AgentCard` to get an information about how an agent is exposed.
 

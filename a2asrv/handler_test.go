@@ -978,12 +978,12 @@ func TestAgentExecutionCleaner(t *testing.T) {
 			wantCleanupResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "done"),
 		},
 		{
-			name:              "execution error (handled)",
+			name:              "handled execution error",
 			executeErr:        errors.New("execution failed"),
 			wantCleanupResult: &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}},
 		},
 		{
-			name:           "execution error (unhandled due to storage failure)",
+			name:           "unhandled execution error",
 			executeErr:     errors.New("execution failed"),
 			storageErr:     errors.New("storage failed"),
 			wantCleanupErr: errors.New("execution failed"),
