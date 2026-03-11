@@ -32,6 +32,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -490,7 +491,11 @@ func TestREST_ServiceParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server.Client().Do() error = %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
 
 	if len(gotAuth) == 0 || gotAuth[0] != "Bearer test-token" {
 		t.Errorf("ServiceParams[authorization] = %v, want [Bearer test-token]", gotAuth)
