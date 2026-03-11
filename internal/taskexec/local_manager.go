@@ -261,6 +261,8 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		m.panicHandler,
 	)
 
+	executor.Cleanup(ctx, result, err)
+
 	if err != nil {
 		execution.result.setError(err)
 		return

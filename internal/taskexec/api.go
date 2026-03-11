@@ -81,6 +81,8 @@ type ProcessorResult struct {
 type Executor interface {
 	// Execute starts publishing events to the queue. Called in a separate goroutine.
 	Execute(context.Context, eventpipe.Writer) error
+	// Cleanup is called after an execution completes.
+	Cleanup(context.Context, a2a.SendMessageResult, error)
 }
 
 // Canceler implementation sends a Task cancelation signal.

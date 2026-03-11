@@ -28,6 +28,7 @@ type TestAgentExecutor struct {
 	Emitted   []a2a.Event
 	ExecuteFn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
 	CancelFn  func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
+	CleanupFn func(context.Context, *a2asrv.ExecutorContext, a2a.SendMessageResult, error)
 }
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
@@ -62,6 +63,13 @@ func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executo
 		return e.ExecuteFn(ctx, execCtx)
 	}
 	return func(yield func(a2a.Event, error) bool) {}
+}
+
+// Cleanup implements [a2asrv.AgentExecutionCleaner] interface.
+func (e *TestAgentExecutor) Cleanup(ctx context.Context, execCtx *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
+	if e.CleanupFn != nil {
+		e.CleanupFn(ctx, execCtx, result, err)
+	}
 }
 
 // Cancel implements [a2asrv.AgentExecutor] interface.

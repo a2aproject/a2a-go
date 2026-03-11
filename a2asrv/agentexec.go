@@ -118,6 +118,13 @@ type AgentExecutor interface {
 	Cancel(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
+// AgentExecutionCleaner is an optional interface [AgentExecutor] can implement to perform cleanup after execution finishes.
+type AgentExecutionCleaner interface {
+	// Cleanup is called after an agent execution completes with either result or an error.
+	// It will be invoked in the execution goroutine after the execution goroutine finishes.
+	Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error)
+}
+
 type factory struct {
 	taskStore       taskstore.Store
 	pushSender      push.Sender
@@ -298,6 +305,12 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 		}
 	}
 	return nil
+}
+
+func (e *executor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
+		cleaner.Cleanup(ctx, e.execCtx, result, err)
+	}
 }
 
 type canceler struct {
