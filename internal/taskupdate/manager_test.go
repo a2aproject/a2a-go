@@ -522,10 +522,11 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 	taskID, contextID := a2a.NewTaskID(), a2a.NewContextID()
 	taskInfo := a2a.TaskInfo{TaskID: taskID, ContextID: contextID}
 	testCases := []struct {
-		name           string
-		storedTask     bool
-		event          a2a.Event
-		wantErrContain string
+		name            string
+		storedTask      bool
+		storedTaskState a2a.TaskState
+		event           a2a.Event
+		wantErrContain  string
 	}{
 		{
 			name:           "artifact update before task snapshot",
@@ -551,6 +552,34 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 			event:          a2a.NewMessageForTask(a2a.MessageRoleAgent, taskInfo),
 			wantErrContain: "message not allowed after task was stored",
 		},
+		{
+			name:            "completed task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateCompleted,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateCompleted),
+		},
+		{
+			name:            "canceled task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateCanceled,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateCanceled),
+		},
+		{
+			name:            "failed task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateFailed,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateFailed),
+		},
+		{
+			name:            "rejected task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateRejected,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateRejected),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -559,6 +588,9 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 				storedTask = &taskstore.StoredTask{
 					Task:    &a2a.Task{ID: taskID, ContextID: contextID},
 					Version: taskstore.TaskVersion(1),
+				}
+				if tc.storedTaskState != "" {
+					storedTask.Task.Status.State = tc.storedTaskState
 				}
 			}
 			manager := NewManager(newTestSaver(), taskInfo, storedTask)
