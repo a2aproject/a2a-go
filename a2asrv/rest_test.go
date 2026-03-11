@@ -462,6 +462,41 @@ type testInterceptor struct {
 	BeforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
 }
 
+func TestREST_ServiceParams(t *testing.T) {
+	ctx := t.Context()
+	tid := a2a.NewTaskID()
+	task := &a2a.Task{ID: tid, ContextID: a2a.NewContextID()}
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+
+	var gotAuth []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+			gotAuth, _ = callCtx.ServiceParams().Get("authorization")
+			return ctx, nil, nil
+		},
+	}
+
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store), WithCallInterceptors(interceptor))
+	server := httptest.NewServer(NewRESTHandler(handler))
+	defer server.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks/"+string(tid), nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if len(gotAuth) == 0 || gotAuth[0] != "Bearer test-token" {
+		t.Errorf("ServiceParams[authorization] = %v, want [Bearer test-token]", gotAuth)
+	}
+}
+
 func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
 	if i.BeforeFn != nil {
 		return i.BeforeFn(ctx, callCtx, req)
