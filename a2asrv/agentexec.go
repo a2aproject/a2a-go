@@ -118,18 +118,18 @@ type factory struct {
 
 var _ taskexec.Factory = (*factory)(nil)
 
-func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (taskexec.Executor, taskexec.Processor, error) {
+func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (taskexec.Executor, taskexec.Processor, taskexec.Cleaner, error) {
 	execCtx, err := f.loadExecutionContext(ctx, tid, params)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
 		if f.pushConfigStore == nil || f.pushSender == nil {
-			return nil, nil, a2a.ErrPushNotificationNotSupported
+			return nil, nil, nil, a2a.ErrPushNotificationNotSupported
 		}
 		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
-			return nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
+			return nil, nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
 		}
 	}
 
@@ -141,7 +141,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		execCtx.reqCtx,
 		f.taskStore,
 	)
-	return executor, processor, nil
+	return executor, processor, &cleaner{agent: f.agent, reqCtx: execCtx.reqCtx}, nil
 }
 
 type executionContext struct {
@@ -229,14 +229,14 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.MessageS
 	}, nil
 }
 
-func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, error) {
+func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) (taskexec.Canceler, taskexec.Processor, taskexec.Cleaner, error) {
 	task, version, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load a task: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to load a task: %w", err)
 	}
 
 	if task.Status.State.Terminal() && task.Status.State != a2a.TaskStateCanceled {
-		return nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+		return nil, nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
 	reqCtx := &RequestContext{
@@ -249,7 +249,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.TaskIDParams) 
 	canceler := &canceler{agent: f.agent, reqCtx: reqCtx, task: task, interceptors: f.interceptors}
 	updateManager := taskupdate.NewManager(f.taskStore, &taskupdate.VersionedTask{Task: task, Version: version})
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, reqCtx, f.taskStore)
-	return canceler, processor, nil
+	return canceler, processor, &cleaner{agent: f.agent, reqCtx: reqCtx}, nil
 }
 
 type executor struct {
@@ -271,7 +271,12 @@ func (e *executor) Execute(ctx context.Context, q eventqueue.Queue) error {
 	return e.agent.Execute(ctx, e.reqCtx, q)
 }
 
-func (e *executor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+type cleaner struct {
+	agent  AgentExecutor
+	reqCtx *RequestContext
+}
+
+func (e *cleaner) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
 	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
 		cleaner.Cleanup(ctx, e.reqCtx, result, err)
 	}
