@@ -2,10 +2,14 @@
 
 ## [0.3.9](https://github.com/a2aproject/a2a-go/compare/v0.3.8...v0.3.9) (2026-03-10)
 
+### Features
+
+* agent execution cleanup callback ([#273](https://github.com/a2aproject/a2a-go/issues/273)) 
 
 ### Bug Fixes
 
 * correctly handle concurrent cancelations ([#245](https://github.com/a2aproject/a2a-go/issues/245)) 
+* ensure task passed to event listeners is immutable ([#273](https://github.com/a2aproject/a2a-go/issues/273)) 
 
 ## [0.3.8](https://github.com/a2aproject/a2a-go/compare/v0.3.7...v0.3.8) (2026-03-09)
 
