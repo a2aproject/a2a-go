@@ -961,6 +961,102 @@ func TestRequestHandler_SendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
 	}
 }
 
+func TestAgentExecutionCleaner(t *testing.T) {
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+
+	testCases := []struct {
+		name              string
+		agentEvents       []a2a.Event
+		executeErr        error
+		storageErr        error
+		wantCleanupResult a2a.SendMessageResult
+		wantCleanupErr    error
+	}{
+		{
+			name:              "successful execution",
+			agentEvents:       []a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done")},
+			wantCleanupResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "done"),
+		},
+		{
+			name:              "handled execution error",
+			executeErr:        errors.New("execution failed"),
+			wantCleanupResult: &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}},
+		},
+		{
+			name:           "unhandled execution error",
+			executeErr:     errors.New("execution failed"),
+			storageErr:     errors.New("storage failed"),
+			wantCleanupErr: errors.New("execution failed"),
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+
+			if tt.storageErr != nil {
+				store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+					if req.Task.Status.State == a2a.TaskStateFailed {
+						return taskstore.TaskVersionMissing, tt.storageErr
+					}
+					return store.InMemory.Update(ctx, req)
+				}
+			}
+
+			type cleanupResult struct {
+				result a2a.SendMessageResult
+				err    error
+			}
+			cleanupChan := make(chan cleanupResult, 1)
+
+			agent := &cleanerAgentExecutor{
+				mockAgentExecutor: mockAgentExecutor{
+					ExecuteFunc: func(ctx context.Context, reqCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+						return func(yield func(a2a.Event, error) bool) {
+							for _, ev := range tt.agentEvents {
+								if !yield(ev, nil) {
+									return
+								}
+							}
+							yield(nil, tt.executeErr)
+						}
+					},
+				},
+				CleanupFunc: func(ctx context.Context, reqCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+					cleanupChan <- cleanupResult{result: result, err: err}
+				},
+			}
+
+			handler := NewHandler(agent, WithTaskStore(store))
+			_, _ = handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "test")})
+
+			select {
+			case gotCleanup := <-cleanupChan:
+				if (tt.wantCleanupErr == nil) != (gotCleanup.err == nil) {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				} else if tt.wantCleanupErr != nil && tt.wantCleanupErr.Error() != gotCleanup.err.Error() {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				}
+
+				if tt.wantCleanupResult != nil {
+					if diff := cmp.Diff(tt.wantCleanupResult, gotCleanup.result,
+						cmpopts.IgnoreFields(a2a.Task{}, "ID", "ContextID", "History", "Artifacts", "Metadata"),
+						cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp", "Message"),
+					); diff != "" {
+						t.Errorf("Cleanup() result mismatch (-want +got):\n%s", diff)
+					}
+				} else if gotCleanup.result != nil {
+					t.Errorf("Cleanup() result = %v, want nil", gotCleanup.result)
+				}
+
+			case <-time.After(time.Second):
+				t.Fatal("Cleanup was not called")
+			}
+		})
+	}
+}
+
 func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 	card := &a2a.AgentCard{Name: "agent"}
 
@@ -2223,4 +2319,15 @@ func collectEvents(seq iter.Seq2[a2a.Event, error]) ([]a2a.Event, error) {
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+type cleanerAgentExecutor struct {
+	mockAgentExecutor
+	CleanupFunc func(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error)
+}
+
+func (m *cleanerAgentExecutor) Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+	if m.CleanupFunc != nil {
+		m.CleanupFunc(ctx, execCtx, result, err)
+	}
 }
