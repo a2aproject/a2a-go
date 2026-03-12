@@ -363,15 +363,6 @@ func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore,
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
-	if err := p.sendPushNotifications(ctx, event); err != nil {
-		return p.setTaskFailed(ctx, event, err)
-	}
-
-	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
-	if msg, ok := event.(*a2a.Message); ok {
-		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
-	}
-
 	versioned, processingErr := p.updateManager.Process(ctx, event)
 
 	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {
@@ -394,11 +385,18 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return p.setTaskFailed(ctx, event, processingErr)
 	}
 
-	task := versioned.Task
-	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
+	if msg, ok := event.(*a2a.Message); ok {
+		if err := p.sendPushNotifications(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to send push notification for message response: %w", err)
+		}
+		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
 	}
 
+	if err := p.sendPushNotifications(ctx, event); err != nil {
+		return p.setTaskFailed(ctx, event, err)
+	}
+
+	task := versioned.Task
 	result := &taskexec.ProcessorResult{TaskVersion: versioned.Version}
 	if taskupdate.IsFinal(event) {
 		result.ExecutionResult = task

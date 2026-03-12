@@ -273,7 +273,6 @@ func TestTaskState_Codec(t *testing.T) {
 		TaskStateInputRequired: "TASK_STATE_INPUT_REQUIRED",
 		TaskStateRejected:      "TASK_STATE_REJECTED",
 		TaskStateSubmitted:     "TASK_STATE_SUBMITTED",
-		TaskStateUnknown:       "TASK_STATE_UNKNOWN",
 		TaskStateWorking:       "TASK_STATE_WORKING",
 	}
 
