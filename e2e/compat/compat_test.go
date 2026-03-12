@@ -60,18 +60,14 @@ func TestCompat_OldClientNewServer(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to resolve AgentCard: %v", err)
 			}
-			var client *legacyclient.Client
+
+			var opts []legacyclient.FactoryOption
 			if transport == a2a.TransportProtocolGRPC {
-				withInsecureGRPC := legacyclient.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials()))
-				client, err = legacyclient.NewFromCard(ctx, card, withInsecureGRPC)
-				if err != nil {
-					t.Fatalf("failed to create client: %v", err)
-				}
-			} else {
-				client, err = legacyclient.NewFromCard(ctx, card)
-				if err != nil {
-					t.Fatalf("failed to create client: %v", err)
-				}
+				opts = append(opts, legacyclient.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())))
+			}
+			client, err := legacyclient.NewFromCard(ctx, card, opts...)
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
 			}
 
 			msg := legacycore.NewMessage(legacycore.MessageRoleUser, legacycore.TextPart{Text: "ping"})
