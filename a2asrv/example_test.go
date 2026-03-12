@@ -21,14 +21,20 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
-type echoExecutor struct{}
+type echoExecutor struct {
+	ExecuteFn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
+}
 
-func (e *echoExecutor) Execute(_ context.Context, _ *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+func (e *echoExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	if e.ExecuteFn != nil {
+		return e.ExecuteFn(ctx, execCtx)
+	}
 	return func(yield func(a2a.Event, error) bool) {
 		yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("echo")), nil)
 	}
@@ -38,6 +44,25 @@ func (e *echoExecutor) Cancel(_ context.Context, execCtx *a2asrv.ExecutorContext
 	return func(yield func(a2a.Event, error) bool) {
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
 	}
+}
+
+type testInterceptor struct {
+	BeforeFn func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error)
+	AfterFn  func(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error
+}
+
+func (ti *testInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
+	if ti.BeforeFn != nil {
+		return ti.BeforeFn(ctx, callCtx, req)
+	}
+	return ctx, nil, nil
+}
+
+func (ti *testInterceptor) After(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error {
+	if ti.AfterFn != nil {
+		return ti.AfterFn(ctx, callCtx, resp)
+	}
+	return nil
 }
 
 func ExampleNewHandler() {
@@ -145,96 +170,150 @@ func ExampleNewAgentCardHandler() {
 	// Version: 2.0.0
 }
 
-func ExampleWellKnownAgentCardPath() {
-	fmt.Println("Path:", a2asrv.WellKnownAgentCardPath)
-	// Output:
-	// Path: /.well-known/agent-card.json
-}
-
-func ExampleWithCallInterceptors() {
-	executor := &echoExecutor{}
-	handler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(&a2asrv.PassthroughCallInterceptor{}))
-
-	fmt.Println("Handler with interceptor:", handler != nil)
-	// Output:
-	// Handler with interceptor: true
-}
-
 func ExamplePassthroughCallInterceptor() {
-	var interceptor a2asrv.PassthroughCallInterceptor
+	type myInterceptor struct {
+		a2asrv.PassthroughCallInterceptor
+	}
 
-	ctx := context.Background()
-	_, callCtx := a2asrv.NewCallContext(ctx, nil)
-
-	newCtx, result, err := interceptor.Before(ctx, callCtx, &a2asrv.Request{})
-	fmt.Println("Before - context preserved:", newCtx == ctx)
-	fmt.Println("Before - result:", result)
-	fmt.Println("Before - error:", err)
-
-	afterErr := interceptor.After(ctx, callCtx, &a2asrv.Response{})
-	fmt.Println("After - error:", afterErr)
+	handler := a2asrv.NewHandler(&echoExecutor{}, a2asrv.WithCallInterceptors(myInterceptor{}))
+	fmt.Println("Handler created:", handler != nil)
 	// Output:
-	// Before - context preserved: true
-	// Before - result: <nil>
-	// Before - error: <nil>
-	// After - error: <nil>
+	// Handler created: true
 }
 
-func ExampleNewCallContext() {
-	params := a2asrv.NewServiceParams(map[string][]string{
-		"Authorization": {"Bearer token123"},
+func ExampleUser() {
+	authenticate := func(_ string) string { return "user" }
+
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
+			if auth, ok := callCtx.ServiceParams().Get("authorization"); ok && strings.HasPrefix(auth[0], "Bearer ") {
+				if name := authenticate(auth[0]); name != "" {
+					callCtx.User = a2asrv.NewAuthenticatedUser(name, nil)
+				}
+			}
+			return ctx, nil, nil
+		},
+	}
+
+	executor := &echoExecutor{
+		ExecuteFn: func(_ context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				fmt.Println("Auth found:", execCtx.User.Name)
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("echo")), nil)
+			}
+		},
+	}
+
+	ctx, _ := a2asrv.NewCallContext(context.Background(), a2asrv.NewServiceParams(map[string][]string{
+		"Authorization": {"Bearer token"},
+	}))
+	handler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
+	_, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("echo")),
 	})
-
-	_, callCtx := a2asrv.NewCallContext(context.Background(), params)
-
-	auth, ok := callCtx.ServiceParams().Get("authorization")
-	fmt.Println("Auth found:", ok)
-	fmt.Println("Auth value:", auth[0])
+	fmt.Println("Error:", err)
 	// Output:
-	// Auth found: true
-	// Auth value: Bearer token123
+	// Auth found: user
+	// Error: <nil>
 }
 
-func ExampleNewServiceParams() {
-	params := a2asrv.NewServiceParams(map[string][]string{
-		"Content-Type":  {"application/json"},
-		"Authorization": {"Bearer secret"},
-	})
+func ExampleAgentExecutor() {
+	executor := &echoExecutor{
+		ExecuteFn: func(_ context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+					return
+				}
 
-	ct, ok := params.Get("content-type")
-	fmt.Println("Content-Type found:", ok)
-	fmt.Println("Content-Type:", ct[0])
+				if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+					return
+				}
 
-	auth, ok := params.Get("AUTHORIZATION")
-	fmt.Println("Auth found:", ok)
-	fmt.Println("Auth:", auth[0])
+				if !yield(a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("generated output")), nil) {
+					return
+				}
+
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+			}
+		},
+	}
+
+	handler := a2asrv.NewHandler(executor)
+
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("generate something"))
+	result, err := handler.SendMessage(context.Background(), &a2a.SendMessageRequest{Message: msg})
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		fmt.Println("Expected task result")
+		return
+	}
+
+	fmt.Println("State:", task.Status.State)
+	fmt.Println("Artifacts:", len(task.Artifacts))
 	// Output:
-	// Content-Type found: true
-	// Content-Type: application/json
-	// Auth found: true
-	// Auth: Bearer secret
+	// State: TASK_STATE_COMPLETED
+	// Artifacts: 1
 }
 
-func ExampleCallContext_Extensions() {
-	params := a2asrv.NewServiceParams(map[string][]string{
-		a2a.SvcParamExtensions: {"urn:example:ext1"},
-	})
+func ExampleNewHandler_fullServer() {
+	executor := &echoExecutor{}
+	handler := a2asrv.NewHandler(executor)
 
-	_, callCtx := a2asrv.NewCallContext(context.Background(), params)
-	extensions := callCtx.Extensions()
+	card := &a2a.AgentCard{
+		Name:    "My Agent",
+		Version: "1.0.0",
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface("http://localhost:8080", a2a.TransportProtocolJSONRPC),
+		},
+	}
 
-	ext1 := &a2a.AgentExtension{URI: "urn:example:ext1"}
-	ext2 := &a2a.AgentExtension{URI: "urn:example:ext2"}
+	mux := http.NewServeMux()
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
+	mux.Handle("/", a2asrv.NewJSONRPCHandler(handler))
 
-	fmt.Println("ext1 requested:", extensions.Requested(ext1))
-	fmt.Println("ext2 requested:", extensions.Requested(ext2))
-
-	extensions.Activate(ext1)
-	fmt.Println("ext1 active:", extensions.Active(ext1))
-	fmt.Println("Activated URIs:", extensions.ActivatedURIs())
+	fmt.Println("Agent card path:", a2asrv.WellKnownAgentCardPath)
+	fmt.Println("Server ready")
 	// Output:
-	// ext1 requested: true
-	// ext2 requested: false
-	// ext1 active: true
-	// Activated URIs: [urn:example:ext1]
+	// Agent card path: /.well-known/agent-card.json
+	// Server ready
+}
+
+func ExampleServiceParams() {
+	var capturedHeader string
+
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
+			if vals, ok := callCtx.ServiceParams().Get("x-custom-header"); ok {
+				capturedHeader = vals[0]
+			}
+			return ctx, nil, nil
+		},
+	}
+
+	executor := &echoExecutor{}
+	handler := a2asrv.NewHandler(executor, a2asrv.WithCallInterceptors(interceptor))
+	restHandler := a2asrv.NewRESTHandler(handler)
+
+	server := httptest.NewServer(restHandler)
+	defer server.Close()
+
+	req, _ := http.NewRequest("GET", server.URL+"/tasks/task-123", nil)
+	req.Header.Set("X-Custom-Header", "my-value")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// The task won't be found, but the interceptor still captures the header.
+	fmt.Println("Header in ServiceParams:", capturedHeader)
+	// Output:
+	// Header in ServiceParams: my-value
 }
