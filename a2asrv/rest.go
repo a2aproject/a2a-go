@@ -26,11 +26,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/pathtemplate"
-	"github.com/a2aproject/a2a-go/internal/rest"
-	"github.com/a2aproject/a2a-go/internal/sse"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/pathtemplate"
+	"github.com/a2aproject/a2a-go/v2/internal/rest"
+	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 type restHandler struct {
@@ -59,7 +59,10 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), h.handleDeleteTaskPushConfig)
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
-	return mux
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
+		mux.ServeHTTP(rw, req.WithContext(ctx))
+	})
 }
 
 // NewTenantRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.

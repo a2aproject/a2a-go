@@ -18,9 +18,9 @@ import (
 	"context"
 	"iter"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 )
 
 // Manager provides an API for executing and canceling tasks.
@@ -66,6 +66,10 @@ type Processor interface {
 type ProcessorResult struct {
 	// ExecutionResult becomes the result of the execution if a non-nil value is returned.
 	ExecutionResult a2a.SendMessageResult
+	// ExecutionFailureCause can be returned by the processor to pass information about why the execution stopped to event producer.
+	// It is set when ExecutionResult is not a direct consequence of executor-emitted event: for example, a malformed event was received and task was moved to failed state.
+	// The cause will be accessible using context.Cause(ctx) in the executor code.
+	ExecutionFailureCause error
 	// TaskVersion is the version of the task after the event was processed.
 	TaskVersion taskstore.TaskVersion
 	// EventOverride can be returned by the processor to change which event gets emitted to subscribers.

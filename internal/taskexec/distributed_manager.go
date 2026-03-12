@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/a2asrv/limiter"
-	"github.com/a2aproject/a2a-go/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/internal/taskupdate"
-	"github.com/a2aproject/a2a-go/log"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
+	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // DistributedManagerConfig contains configuration for A2A task execution

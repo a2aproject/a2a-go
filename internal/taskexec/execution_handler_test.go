@@ -20,7 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
 func TestRunProducerConsumer(t *testing.T) {
@@ -135,5 +136,25 @@ func TestRunProducerConsumer(t *testing.T) {
 				t.Fatalf("expected non-nil error when result is nil")
 			}
 		})
+	}
+}
+
+func TestRunProducerConsumer_CausePropagation(t *testing.T) {
+	consumerErr := taskstore.ErrConcurrentModification
+	var gotProducerErr error
+	_, _ = runProducerConsumer(t.Context(),
+		func(ctx context.Context) error {
+			<-ctx.Done()
+			gotProducerErr = context.Cause(ctx)
+			return nil
+		},
+		func(ctx context.Context) (a2a.SendMessageResult, error) {
+			return nil, consumerErr
+		},
+		nil,
+		nil,
+	)
+	if gotProducerErr != consumerErr {
+		t.Fatalf("expected producer error = %s, got %s", consumerErr, gotProducerErr)
 	}
 }

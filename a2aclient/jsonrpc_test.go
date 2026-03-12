@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -61,7 +61,7 @@ func TestJSONRPCTransport_SendMessage(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"SUBMITTED"}}}`),
+			json.RawMessage(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -97,7 +97,7 @@ func TestJSONRPCTransport_SendMessage_MessageResult(t *testing.T) {
 		// Send Message response (has "role" field, not "status" field)
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"message":{"messageId":"msg-123","role":"agent","parts":[{"text":"Hello"}]}}`),
+			json.RawMessage(`{"message":{"messageId":"msg-123","role":"ROLE_AGENT","parts":[{"text":"Hello"}]}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -155,7 +155,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -175,7 +175,7 @@ func TestJSONRPCTransport_GetTask(t *testing.T) {
 		t.Errorf("got task ID %s, want task-123", task.ID)
 	}
 	if task.Status.State != a2a.TaskStateCompleted {
-		t.Errorf("got status %s, want completed", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_COMPLETED", task.Status.State)
 	}
 }
 
@@ -188,8 +188,8 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 			json.RawMessage(
 				`{
 						"tasks":[
-							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"COMPLETED"}},
-							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"WORKING"}}
+							{"kind":"task","id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}},
+							{"kind":"task","id":"task-2","contextId":"ctx-2","status":{"state":"TASK_STATE_WORKING"}}
 						],
 						"totalSize": 2,
 						"pageSize": 10,
@@ -272,11 +272,11 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 
 		// Send multiple SSE events
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}}`,
 			``,
 			`data: {"jsonrpc":"2.0","id":"test","result":{"message":{"messageId":"msg-1","role":"agent","parts":[{"text":"Processing..."}]}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}}`,
 			``,
 		}
 
@@ -354,9 +354,9 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 
 		// Send task updates via SSE
 		events := []string{
-			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"WORKING"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}}`,
 			``,
-			`data: {"jsonrpc":"2.0","id":"test","result":{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}}}`,
+			`data: {"jsonrpc":"2.0","id":"test","result":{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}}}`,
 			``,
 		}
 
@@ -435,7 +435,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"CANCELED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -452,7 +452,7 @@ func TestJSONRPCTransport_CancelTask(t *testing.T) {
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("got status %s, want canceled", task.Status.State)
+		t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
 	}
 }
 
@@ -579,7 +579,7 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 
 		resp := newResponse(
 			req,
-			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"COMPLETED"}}`),
+			json.RawMessage(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`),
 		)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
@@ -670,5 +670,89 @@ func TestJSONRPCTransport_Tenant(t *testing.T) {
 	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
 	if err != nil {
 		t.Fatalf("ListTasks failed: %v", err)
+	}
+}
+func TestJSONRPCTransport_Serialization(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     a2a.MessageRole
+		wantJSON string
+	}{
+		{
+			name:     "ROLE_USER",
+			role:     a2a.MessageRoleUser,
+			wantJSON: `"ROLE_USER"`,
+		},
+		{
+			name:     "ROLE_AGENT",
+			role:     a2a.MessageRoleAgent,
+			wantJSON: `"ROLE_AGENT"`,
+		},
+		{
+			name:     "ROLE_UNSPECIFIED",
+			role:     a2a.MessageRoleUnspecified,
+			wantJSON: `"ROLE_UNSPECIFIED"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				if !bytes.Contains(body, []byte(tt.wantJSON)) {
+					t.Errorf("body does not contain %s: %s", tt.wantJSON, string(body))
+				}
+
+				req := jsonrpc.ClientRequest{}
+				_ = json.Unmarshal(body, &req)
+				resp := newResponse(req, json.RawMessage(`{"kind":"task"}`))
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+			_, _ = transport.SendMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(tt.role, a2a.NewTextPart("test")),
+			})
+		})
+	}
+}
+
+func TestJSONRPCTransport_Deserialization(t *testing.T) {
+	tests := []struct {
+		name      string
+		rawJSON   string
+		wantState a2a.TaskState
+	}{
+		{
+			name:      "TASK_STATE_COMPLETED",
+			rawJSON:   `{"id":"task-1","status":{"state":"TASK_STATE_COMPLETED"}}`,
+			wantState: a2a.TaskStateCompleted,
+		},
+		{
+			name:      "TASK_STATE_UNSPECIFIED",
+			rawJSON:   `{"id":"task-1","status":{"state":"TASK_STATE_UNSPECIFIED"}}`,
+			wantState: a2a.TaskStateUnspecified,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req := mustDecodeJSONRPC(t, r, "GetTask")
+				resp := newResponse(req, json.RawMessage(tt.rawJSON))
+				_ = json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+			task, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-1"})
+			if err != nil {
+				t.Fatalf("GetTask failed: %v", err)
+			}
+			if task.Status.State != tt.wantState {
+				t.Errorf("got state %s, want %s", task.Status.State, tt.wantState)
+			}
+		})
 	}
 }

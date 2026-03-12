@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2acompat/a2av0"
-	"github.com/a2aproject/a2a-go/a2apb/v0"
+	"github.com/a2aproject/a2a-go/a2apb"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
