@@ -22,55 +22,66 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/a2aproject/a2a-go/a2a"
-	"github.com/a2aproject/a2a-go/a2aclient"
-	"github.com/a2aproject/a2a-go/a2aclient/agentcard"
-	"github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
-type testExecutor struct{}
+type echoExecutor struct{}
 
-func (e *testExecutor) Execute(_ context.Context, _ *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+func (e *echoExecutor) Execute(_ context.Context, _ *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hello")), nil)
 	}
 }
 
-func (e *testExecutor) Cancel(_ context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+func (e *echoExecutor) Cancel(_ context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
 	}
 }
 
-func startTestServer() *httptest.Server {
-	handler := a2asrv.NewHandler(&testExecutor{})
+func startEchoServer() *httptest.Server {
+	handler := a2asrv.NewHandler(&echoExecutor{})
 	return httptest.NewServer(a2asrv.NewJSONRPCHandler(handler))
 }
 
-func ExampleNewFromCard() {
-	server := startTestServer()
-	defer server.Close()
-
-	card := &a2a.AgentCard{
+func makeCard(serverURL string) *a2a.AgentCard {
+	return &a2a.AgentCard{
 		Name: "Test Agent",
 		SupportedInterfaces: []*a2a.AgentInterface{
-			a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
+			a2a.NewAgentInterface(serverURL, a2a.TransportProtocolJSONRPC),
 		},
 	}
+}
 
-	client, err := a2aclient.NewFromCard(context.Background(), card)
+func ExampleNewFromCard() {
+	server := startEchoServer()
+	defer server.Close()
+
+	client, err := a2aclient.NewFromCard(context.Background(), makeCard(server.URL))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 
-	fmt.Println("Client created:", client != nil)
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	result, err := client.SendMessage(context.Background(), &a2a.SendMessageRequest{Message: msg})
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	if resp, ok := result.(*a2a.Message); ok {
+		fmt.Println("Response:", resp.Parts[0].Text())
+	}
 	// Output:
-	// Client created: true
+	// Response: hello
 }
 
 func ExampleNewFromEndpoints() {
-	server := startTestServer()
+	server := startEchoServer()
 	defer server.Close()
 
 	endpoints := []*a2a.AgentInterface{
@@ -83,94 +94,46 @@ func ExampleNewFromEndpoints() {
 		return
 	}
 
-	fmt.Println("Client created:", client != nil)
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	result, err := client.SendMessage(context.Background(), &a2a.SendMessageRequest{Message: msg})
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	if resp, ok := result.(*a2a.Message); ok {
+		fmt.Println("Response:", resp.Parts[0].Text())
+	}
 	// Output:
-	// Client created: true
+	// Response: hello
 }
 
 func ExampleNewFactory() {
-	factory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(nil),
-	)
-
-	fmt.Println("Factory created:", factory != nil)
-	// Output:
-	// Factory created: true
-}
-
-func ExampleNewFactory_withConfig() {
-	factory := a2aclient.NewFactory(
-		a2aclient.WithConfig(a2aclient.Config{
-			PreferredTransports: []a2a.TransportProtocol{
-				a2a.TransportProtocolJSONRPC,
-			},
-		}),
-	)
-
-	fmt.Println("Factory with config:", factory != nil)
-	// Output:
-	// Factory with config: true
-}
-
-func ExampleFactory_CreateFromCard() {
-	server := startTestServer()
+	server := startEchoServer()
 	defer server.Close()
 
 	factory := a2aclient.NewFactory(
 		a2aclient.WithJSONRPCTransport(nil),
 	)
 
-	card := &a2a.AgentCard{
-		Name: "Test Agent",
-		SupportedInterfaces: []*a2a.AgentInterface{
-			a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
-		},
-	}
-
-	client, err := factory.CreateFromCard(context.Background(), card)
+	client, err := factory.CreateFromCard(context.Background(), makeCard(server.URL))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 
-	fmt.Println("Client from factory:", client != nil)
-	// Output:
-	// Client from factory: true
-}
-
-func ExampleFactory_CreateFromEndpoints() {
-	server := startTestServer()
-	defer server.Close()
-
-	factory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(nil),
-	)
-
-	endpoints := []*a2a.AgentInterface{
-		a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
-	}
-
-	client, err := factory.CreateFromEndpoints(context.Background(), endpoints)
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	result, err := client.SendMessage(context.Background(), &a2a.SendMessageRequest{Message: msg})
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 
-	fmt.Println("Client from endpoints:", client != nil)
+	if resp, ok := result.(*a2a.Message); ok {
+		fmt.Println("Response:", resp.Parts[0].Text())
+	}
 	// Output:
-	// Client from endpoints: true
-}
-
-func ExampleWithJSONRPCTransport() {
-	customHTTPClient := &http.Client{}
-
-	factory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(customHTTPClient),
-	)
-
-	fmt.Println("Factory with custom transport:", factory != nil)
-	// Output:
-	// Factory with custom transport: true
+	// Response: hello
 }
 
 func ExampleResolver_Resolve() {
@@ -206,50 +169,104 @@ func ExampleResolver_Resolve() {
 	// Version: 1.0.0
 }
 
-func ExampleNewResolver() {
-	customClient := &http.Client{}
-	resolver := agentcard.NewResolver(customClient)
+func ExampleAuthInterceptor() {
+	var capturedAuth string
+	srvInterceptor := &srvAuthCapture{captureFn: func(auth string) { capturedAuth = auth }}
+	srvHandler := a2asrv.NewHandler(&echoExecutor{}, a2asrv.WithCallInterceptors(srvInterceptor))
+	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(srvHandler))
+	defer server.Close()
 
-	fmt.Println("Resolver created:", resolver != nil)
+	credStore := a2aclient.NewInMemoryCredentialsStore()
+	sessionID := a2aclient.SessionID("session-1")
+	schemeName := a2a.SecuritySchemeName("bearer")
+	credStore.Set(sessionID, schemeName, a2aclient.AuthCredential("my-secret-token"))
+
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
+		},
+		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			schemeName: a2a.OAuth2SecurityScheme{},
+		},
+	}
+
+	client, err := a2aclient.NewFromCard(
+		context.Background(),
+		card,
+		a2aclient.WithCallInterceptors(&a2aclient.AuthInterceptor{Service: credStore}),
+	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	ctx := a2aclient.AttachSessionID(context.Background(), sessionID)
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Server received auth:", capturedAuth)
 	// Output:
-	// Resolver created: true
+	// Server received auth: Bearer my-secret-token
 }
 
-func ExampleAuthInterceptor() {
-	credStore := a2aclient.NewInMemoryCredentialsStore()
-	sessionID := a2aclient.SessionID("session-123")
-	schemeName := a2a.SecuritySchemeName("bearer")
-	credStore.Set(sessionID, schemeName, a2aclient.AuthCredential("secret-token"))
+type srvAuthCapture struct {
+	a2asrv.PassthroughCallInterceptor
+	captureFn func(string)
+}
 
-	interceptor := &a2aclient.AuthInterceptor{Service: credStore}
+func (s *srvAuthCapture) Before(ctx context.Context, callCtx *a2asrv.CallContext, _ *a2asrv.Request) (context.Context, any, error) {
+	if auth, ok := callCtx.ServiceParams().Get("authorization"); ok && len(auth) > 0 {
+		s.captureFn(auth[0])
+	}
+	return ctx, nil, nil
+}
 
-	factory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(nil),
+func ExampleWithCallInterceptors() {
+	server := startEchoServer()
+	defer server.Close()
+
+	var capturedMethod string
+	interceptor := &clientLogInterceptor{
+		beforeFn: func(req *a2aclient.Request) {
+			capturedMethod = req.Method
+		},
+	}
+
+	client, err := a2aclient.NewFromCard(
+		context.Background(),
+		makeCard(server.URL),
 		a2aclient.WithCallInterceptors(interceptor),
 	)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
-	fmt.Println("Factory with auth interceptor created:", factory != nil)
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	_, err = client.SendMessage(context.Background(), &a2a.SendMessageRequest{Message: msg})
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Intercepted method:", capturedMethod)
 	// Output:
-	// Factory with auth interceptor created: true
+	// Intercepted method: SendMessage
 }
 
-func ExampleWithAdditionalOptions() {
-	baseFactory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(nil),
-	)
+type clientLogInterceptor struct {
+	a2aclient.PassthroughInterceptor
+	beforeFn func(*a2aclient.Request)
+}
 
-	extendedFactory := a2aclient.WithAdditionalOptions(
-		baseFactory,
-		a2aclient.WithConfig(a2aclient.Config{
-			PreferredTransports: []a2a.TransportProtocol{
-				a2a.TransportProtocolJSONRPC,
-			},
-		}),
-	)
-
-	fmt.Println("Base factory:", baseFactory != nil)
-	fmt.Println("Extended factory:", extendedFactory != nil)
-	// Output:
-	// Base factory: true
-	// Extended factory: true
+func (i *clientLogInterceptor) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
+	if i.beforeFn != nil {
+		i.beforeFn(req)
+	}
+	return ctx, nil, nil
 }
