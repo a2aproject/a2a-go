@@ -186,7 +186,7 @@ func ExampleUser() {
 
 	interceptor := &testInterceptor{
 		BeforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
-			if auth, ok := callCtx.ServiceParams().Get("authorization"); ok && strings.HasPrefix(auth[0], "Bearer ") {
+			if auth, ok := callCtx.ServiceParams().Get("authorization"); ok && len(auth) > 0 && strings.HasPrefix(auth[0], "Bearer ") {
 				if name := authenticate(auth[0]); name != "" {
 					callCtx.User = a2asrv.NewAuthenticatedUser(name, nil)
 				}
@@ -287,8 +287,8 @@ func ExampleServiceParams() {
 	var capturedHeader string
 
 	interceptor := &testInterceptor{
-		BeforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
-			if vals, ok := callCtx.ServiceParams().Get("x-custom-header"); ok {
+		BeforeFn: func(ctx context.Context, callCtx *a2asrv.CallContext, _ *a2asrv.Request) (context.Context, any, error) {
+			if vals, ok := callCtx.ServiceParams().Get("x-custom-header"); ok && len(vals) > 0 {
 				capturedHeader = vals[0]
 			}
 			return ctx, nil, nil
