@@ -34,13 +34,7 @@ import (
 func WithGRPCTransport(opts ...grpc.DialOption) a2aclient.FactoryOption {
 	return a2aclient.WithTransport(
 		a2a.TransportProtocolGRPC,
-		a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
-			conn, err := grpc.NewClient(iface.URL, opts...)
-			if err != nil {
-				return nil, err
-			}
-			return NewGRPCTransport(conn), nil
-		}),
+		NewGRPCTransportFactory(opts...),
 	)
 }
 
@@ -59,6 +53,17 @@ func NewGRPCTransportFromClient(client a2apb.A2AServiceClient) a2aclient.Transpo
 		client:      client,
 		closeConnFn: func() error { return nil },
 	}
+}
+
+// NewGRPCTransportFactory creates a transport factory for gRPC protocol.
+func NewGRPCTransportFactory(opts ...grpc.DialOption) a2aclient.TransportFactory {
+	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
+		conn, err := grpc.NewClient(iface.URL, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return NewGRPCTransport(conn), nil
+	})
 }
 
 // grpcTransport implements Transport by delegating to a2apb.A2AServiceClient.
