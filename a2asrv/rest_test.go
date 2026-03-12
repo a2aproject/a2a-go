@@ -32,6 +32,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -460,6 +461,41 @@ func TestRESTTenant(t *testing.T) {
 type testInterceptor struct {
 	PassthroughCallInterceptor
 	BeforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
+}
+
+func TestREST_ServiceParams(t *testing.T) {
+	ctx := t.Context()
+	var gotAuth []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+			gotAuth, _ = callCtx.ServiceParams().Get("authorization")
+			return ctx, nil, nil
+		},
+	}
+
+	handler := NewHandler(&mockAgentExecutor{}, WithCallInterceptors(interceptor))
+	server := httptest.NewServer(NewRESTHandler(handler))
+	defer server.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks/test-task", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
+
+	if len(gotAuth) == 0 || gotAuth[0] != "Bearer test-token" {
+		t.Errorf("ServiceParams[authorization] = %v, want [Bearer test-token]", gotAuth)
+	}
 }
 
 func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
