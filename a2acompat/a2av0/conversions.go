@@ -68,7 +68,6 @@ var v1ToLegacyTaskState = map[a2a.TaskState]a2alegacy.TaskState{
 	a2a.TaskStateInputRequired: a2alegacy.TaskStateInputRequired,
 	a2a.TaskStateRejected:      a2alegacy.TaskStateRejected,
 	a2a.TaskStateSubmitted:     a2alegacy.TaskStateSubmitted,
-	a2a.TaskStateUnknown:       a2alegacy.TaskStateUnknown,
 	a2a.TaskStateWorking:       a2alegacy.TaskStateWorking,
 }
 
