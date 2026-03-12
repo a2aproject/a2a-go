@@ -292,8 +292,6 @@ const (
 	TaskStateRejected TaskState = "TASK_STATE_REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
 	TaskStateSubmitted TaskState = "TASK_STATE_SUBMITTED"
-	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "TASK_STATE_UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
 	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )

@@ -74,6 +74,13 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		return nil, nil
 	}
 
+	if mgr.lastStored != nil && mgr.lastStored.Task.Status.State.Terminal() {
+		if mgr.lastStored.Task == event { // idempotency for the final task state
+			return mgr.lastStored, nil
+		}
+		return nil, fmt.Errorf("%q task state updates are not allowed: %w", mgr.lastStored.Task.Status.State, a2a.ErrInvalidAgentResponse)
+	}
+
 	if v, ok := event.(*a2a.Task); ok {
 		if err := mgr.validate(v); err != nil {
 			return nil, err
@@ -145,9 +152,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	if toUpdate.Metadata == nil && artifact.Metadata != nil {
 		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
 	}
-	for k, v := range artifact.Metadata {
-		toUpdate.Metadata[k] = v
-	}
+	maps.Copy(toUpdate.Metadata, artifact.Metadata)
 	return mgr.saveTask(ctx, task, event)
 }
 
@@ -221,8 +226,14 @@ func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
+
 	mgr.lastStored = &taskstore.StoredTask{Task: task, Version: version}
-	return mgr.lastStored, nil
+
+	result, err := utils.DeepCopy(mgr.lastStored)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a result: %w", err)
+	}
+	return result, nil
 }
 
 func (mgr *Manager) validate(provider a2a.TaskInfoProvider) error {
