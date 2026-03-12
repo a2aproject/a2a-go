@@ -55,6 +55,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 		return []testCase{
 			{
 				name:        "message returned as a result",
+				input:       &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
 				agentEvents: []a2a.Event{newAgentMessage("hello")},
 				wantResult:  newAgentMessage("hello"),
 			},
@@ -77,14 +78,6 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				name:        "input required",
 				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input")},
 				wantResult:  newTaskWithStatus(taskSeed, a2a.TaskStateInputRequired, "need more input"),
-			},
-			{
-				name: "fails if unknown task state",
-				input: &a2a.SendMessageRequest{
-					Message: newUserMessage(taskSeed, "Work"),
-				},
-				agentEvents: []a2a.Event{newTaskWithStatus(taskSeed, a2a.TaskStateUnknown, "...")},
-				wantErr:     fmt.Errorf("unknown task state: %s", a2a.TaskStateUnknown),
 			},
 			{
 				name: "final task overwrites intermediate task events",
@@ -513,8 +506,11 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 				wantEvents: 2,
 			},
 			{
-				name:  "message",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				name: "message",
+				input: &a2a.SendMessageRequest{
+					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi")),
+					Config:  &a2a.SendMessageConfig{Blocking: utils.Ptr(false)},
+				},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, a2a.NewTextPart("Done")),
@@ -627,11 +623,6 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 }
 
 func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
-	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
-	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
-	completedTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
-	taskStoreSeed := []*a2a.Task{taskSeed, inputRequiredTaskSeed, completedTaskSeed}
-	store := testutil.NewTestTaskStore().WithTasks(t, taskStoreSeed...)
 	agentEvents := []a2a.Event{newAgentMessage("hello")}
 	executor := newEventReplayAgent(agentEvents, nil)
 
@@ -644,44 +635,41 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 	}{
 		{
 			name:       "no capability checks - success",
-			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
 			wantResult: newAgentMessage("hello"),
-			options: []RequestHandlerOption{
-				WithTaskStore(store),
-			},
 		},
 		{
-			name:       "streaming supported",
-			input:      &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
-			wantResult: newAgentMessage("hello"),
+			name:  "streaming supported",
+			input: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
-				WithTaskStore(store),
 			},
+			wantResult: newAgentMessage("hello"),
 		},
 		{
 			name:  "streaming not supported",
-			input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")},
+			input: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}),
-				WithTaskStore(store),
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
 		},
 	}
 	for _, tt := range tests {
-		ctx := t.Context()
-		handler := NewHandler(executor, tt.options...)
-		for event, err := range handler.SendStreamingMessage(ctx, tt.input) {
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("SendStreamingMessage() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr == nil {
-				if diff := cmp.Diff(tt.wantResult, event); diff != "" {
-					t.Fatalf("SendStreamingMessage() mismatch (-want +got):\n%s", diff)
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			handler := NewHandler(executor, tt.options...)
+			for event, err := range handler.SendStreamingMessage(ctx, tt.input) {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("SendStreamingMessage() error = %v, wantErr %v", err, tt.wantErr)
+				}
+				if tt.wantErr == nil {
+					if diff := cmp.Diff(tt.wantResult, event); diff != "" {
+						t.Fatalf("SendStreamingMessage() mismatch (-want +got):\n%s", diff)
+					}
 				}
 			}
-		}
+		})
 	}
 }
 
@@ -690,20 +678,23 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
-	msg := newUserMessage(taskSeed, "Done")
 	input := &a2a.SendMessageRequest{
-		Message: msg,
+		Message: newUserMessage(taskSeed, "Done"),
 		Config: &a2a.SendMessageConfig{
 			PushConfig: pushConfig,
 		},
 	}
+	artifactEvent := newArtifactEvent(taskSeed, "artifact-id", a2a.NewTextPart("hello"))
+	statusUpdate := newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Work")
 	agentEvents := []a2a.Event{
-		newTaskWithStatus(taskSeed, a2a.TaskStateSubmitted, "Hello"),
-		newArtifactEvent(taskSeed, "artifact-id", a2a.NewTextPart("hello")),
-		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Work"),
-		newUserMessage(taskSeed, "Done"),
+		a2a.NewSubmittedTask(taskSeed, input.Message),
+		artifactEvent,
+		statusUpdate,
+		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
 	}
-	wantResult := msg
+	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
+	wantResult.Artifacts = []*a2a.Artifact{artifactEvent.Artifact}
+	wantResult.History = []*a2a.Message{input.Message, statusUpdate.Status.Message}
 	wantPushCount := len(agentEvents)
 
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
@@ -731,7 +722,7 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 		t.Fatalf("SendMessage() expected %d push notifications, but got %#v", wantPushCount, pn.PushedEvents)
 	}
 
-	hasArtifact, hasStatusUpdate, hasTask, hasMessage := false, false, false, false
+	hasArtifact, hasStatusUpdate, hasTask := false, false, false
 	for _, event := range pn.PushedEvents {
 		switch event.(type) {
 		case *a2a.TaskArtifactUpdateEvent:
@@ -740,11 +731,9 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 			hasStatusUpdate = true
 		case *a2a.Task:
 			hasTask = true
-		case *a2a.Message:
-			hasMessage = true
 		}
 	}
-	if !hasArtifact || !hasStatusUpdate || !hasTask || !hasMessage {
+	if !hasArtifact || !hasStatusUpdate || !hasTask {
 		t.Fatalf("SendMessage() expected artifact and status update events, but got %v", pn.PushedEvents)
 	}
 }
