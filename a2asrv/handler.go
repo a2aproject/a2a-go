@@ -287,6 +287,10 @@ func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMe
 		return res, nil
 	}
 
+	if lastEvent == nil {
+		return nil, fmt.Errorf("execution finished without producing any events: %w", a2a.ErrInvalidAgentResponse)
+	}
+
 	task, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
