@@ -129,23 +129,35 @@ func FromGRPCError(err error) error {
 		return err
 	}
 
-	baseErr := a2a.ErrInternalError
-	for _, mapping := range errorMappings {
-		if s.Code() == mapping.code {
-			baseErr = mapping.err
-			break
-		}
-	}
+	var reason string
 
 	details := make(map[string]any)
 	for _, d := range s.Details() {
 		switch v := d.(type) {
 		case *errdetails.ErrorInfo:
+			reason = v.Reason
 			for k, val := range v.Metadata {
 				details[k] = val
 			}
 		case *structpb.Struct:
 			maps.Copy(details, v.AsMap())
+		}
+	}
+
+	baseErr := a2a.ErrInternalError
+	if reason != "" {
+		for _, mapping := range errorMappings {
+			if mapping.reason == reason && s.Code() == mapping.code {
+				baseErr = mapping.err
+				break
+			}
+		}
+	} else {
+		for _, mapping := range errorMappings {
+			if s.Code() == mapping.code {
+				baseErr = mapping.err
+				break
+			}
 		}
 	}
 
