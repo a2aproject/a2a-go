@@ -77,14 +77,15 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	}
 
 	var taskID a2a.TaskID
-	if len(req.Message.TaskID) == 0 {
+	isNewTask := req.Message.TaskID == ""
+	if isNewTask {
 		taskID = a2a.NewTaskID()
 	} else {
 		taskID = req.Message.TaskID
 	}
 
 	msg := req.Message
-	if msg.TaskID != "" {
+	if !isNewTask {
 		taskStoreTask, err := m.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("task loading failed: %w", err)
@@ -157,6 +158,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			cancelationErr = err
+			break
 		}
 		if taskupdate.IsFinal(event) {
 			if result, ok := event.(a2a.SendMessageResult); ok {
