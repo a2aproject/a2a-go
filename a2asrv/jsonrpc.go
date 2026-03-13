@@ -149,7 +149,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 
 	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error)
+	sseChan, panicChan := make(chan []byte), make(chan error, 1)
 	requestCtx, cancelExecCtx := context.WithCancel(ctx)
 	defer cancelExecCtx()
 	go func() {
