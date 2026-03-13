@@ -369,6 +369,61 @@ func TestREST_InvalidPayloads(t *testing.T) {
 	}
 }
 
+func TestREST_ListTasksParseErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "invalid pageSize",
+			query: "?pageSize=abc",
+		},
+		{
+			name:  "invalid includeArtifacts",
+			query: "?includeArtifacts=notbool",
+		},
+		{
+			name:  "multiple invalid params",
+			query: "?pageSize=abc&includeArtifacts=notbool",
+		},
+	}
+
+	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
+	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: auth,
+	})
+	reqHandler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store))
+	server := httptest.NewServer(NewRESTHandler(reqHandler))
+	t.Cleanup(server.Close)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks"+tc.query, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("resp.StatusCode = %d, want non-200 for invalid query params", resp.StatusCode)
+			}
+
+			gotErr := rest.ToA2AError(resp)
+			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+				t.Fatalf("rest.ToA2AError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+			}
+		})
+	}
+}
+
 func TestRESTTenant(t *testing.T) {
 	tid := a2a.NewTaskID()
 	tests := []struct {
