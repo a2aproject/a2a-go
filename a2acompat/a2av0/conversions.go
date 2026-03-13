@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -307,14 +308,12 @@ func ToV1Part(p a2alegacy.Part) *a2a.Part {
 		}
 	case a2alegacy.DataPart:
 		var val any = c.Data
-		if compat, ok := c.Metadata["data_part_compat"].(bool); ok && compat {
+		metadata := maps.Clone(c.Metadata)
+		if compat, ok := metadata["data_part_compat"].(bool); ok && compat {
 			val = c.Data["value"]
-			delete(c.Metadata, "data_part_compat")
+			delete(metadata, "data_part_compat")
 		}
-		return &a2a.Part{
-			Content:  a2a.Data{Value: val},
-			Metadata: c.Metadata,
-		}
+		return &a2a.Part{Content: a2a.Data{Value: val}, Metadata: metadata}
 	case a2alegacy.FilePart:
 		switch f := c.File.(type) {
 		case a2alegacy.FileBytes:
@@ -368,18 +367,16 @@ func FromV1Part(p *a2a.Part) a2alegacy.Part {
 		}
 	case a2a.Data:
 		val := c.Value
+		metadata := maps.Clone(p.Metadata)
 		// Compatibility mode: wrap non-map values to avoid crashing old clients that expect a map.
 		if _, ok := val.(map[string]any); !ok {
 			val = map[string]any{"value": val}
-			if p.Metadata == nil {
-				p.Metadata = make(map[string]any)
+			if metadata == nil {
+				metadata = make(map[string]any)
 			}
-			p.Metadata["data_part_compat"] = true
+			metadata["data_part_compat"] = true
 		}
-		return a2alegacy.DataPart{
-			Data:     val.(map[string]any),
-			Metadata: p.Metadata,
-		}
+		return a2alegacy.DataPart{Data: val.(map[string]any), Metadata: metadata}
 	case a2a.Raw:
 		return a2alegacy.FilePart{
 			File: a2alegacy.FileBytes{
@@ -852,19 +849,34 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 	// Simplified conversion, focusing on common fields.
 	// For full conversion, more complex mapping of interfaces/security is needed.
 	res := &a2alegacy.AgentCard{
-		DefaultInputModes:  card.DefaultInputModes,
-		DefaultOutputModes: card.DefaultOutputModes,
-		Description:        card.Description,
-		DocumentationURL:   card.DocumentationURL,
-		IconURL:            card.IconURL,
-		Name:               card.Name,
-		Provider:           (*a2alegacy.AgentProvider)(card.Provider),
-		Signatures:         make([]a2alegacy.AgentCardSignature, len(card.Signatures)),
-		Version:            card.Version,
+		DefaultInputModes:                 card.DefaultInputModes,
+		DefaultOutputModes:                card.DefaultOutputModes,
+		Description:                       card.Description,
+		DocumentationURL:                  card.DocumentationURL,
+		IconURL:                           card.IconURL,
+		Name:                              card.Name,
+		Provider:                          (*a2alegacy.AgentProvider)(card.Provider),
+		Signatures:                        make([]a2alegacy.AgentCardSignature, len(card.Signatures)),
+		Version:                           card.Version,
+		SupportsAuthenticatedExtendedCard: card.Capabilities.ExtendedAgentCard,
 		Capabilities: a2alegacy.AgentCapabilities{
 			PushNotifications: card.Capabilities.PushNotifications,
 			Streaming:         card.Capabilities.Streaming,
 		},
+	}
+	if len(card.Skills) > 0 {
+		res.Skills = make([]a2alegacy.AgentSkill, len(card.Skills))
+		for i, s := range card.Skills {
+			res.Skills[i] = a2alegacy.AgentSkill{
+				Description: s.Description,
+				Examples:    s.Examples,
+				ID:          s.ID,
+				InputModes:  s.InputModes,
+				Name:        s.Name,
+				OutputModes: s.OutputModes,
+				Tags:        s.Tags,
+			}
+		}
 	}
 	if len(card.Capabilities.Extensions) > 0 {
 		res.Capabilities.Extensions = make([]a2alegacy.AgentExtension, len(card.Capabilities.Extensions))
