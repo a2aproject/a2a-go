@@ -25,7 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // DistributedManagerConfig contains configuration for A2A task execution
@@ -104,21 +103,18 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 	}
 
-	queue, err := m.queueManager.CreateReader(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get or create queue: %w", err)
-	}
-
-	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
+	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         taskID,
 		ExecuteRequest: req,
 	})
 	if err != nil {
-		if closeErr := queue.Close(); closeErr != nil {
-			log.Warn(ctx, "queue close failed", "error", closeErr)
-		}
 		return nil, fmt.Errorf("failed to create work item: %w", err)
+	}
+
+	queue, err := m.queueManager.CreateReader(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to execution events: %w", err)
 	}
 
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil

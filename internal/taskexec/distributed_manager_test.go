@@ -155,10 +155,9 @@ func TestClusterFrontend_Execute(t *testing.T) {
 			wantErr:     fmt.Errorf("queue failed"),
 		},
 		{
-			name:          "work queue write error - closes queue",
+			name:          "work queue write error",
 			req:           &a2a.SendMessageRequest{Message: &a2a.Message{Role: a2a.MessageRoleUser}},
 			writeQueueErr: fmt.Errorf("write failed"),
-			queueClosed:   true,
 			wantErr:       fmt.Errorf("write failed"),
 		},
 	}
