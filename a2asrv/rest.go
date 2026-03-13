@@ -60,6 +60,7 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
 		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
@@ -166,7 +167,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 	ctx := req.Context()
 	query := req.URL.Query()
 	request := &a2a.ListTasksRequest{}
-	var err error
+	var parseErrors []error
 	parse := func(key string, target any) {
 		val := query.Get(key)
 		if val == "" {
@@ -178,12 +179,25 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 		case *a2a.TaskState:
 			*t = a2a.TaskState(val)
 		case *int:
-			*t, err = strconv.Atoi(val)
+			v, err := strconv.Atoi(val)
+			if err != nil {
+				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
+				return
+			}
+			*t = v
 		case *bool:
-			*t, err = strconv.ParseBool(val)
+			v, err := strconv.ParseBool(val)
+			if err != nil {
+				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
+				return
+			}
+			*t = v
 		case *time.Time:
-			var parsedTime time.Time
-			parsedTime, err = time.Parse(time.RFC3339, val)
+			parsedTime, err := time.Parse(time.RFC3339, val)
+			if err != nil {
+				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
+				return
+			}
 			*t = parsedTime
 		}
 	}
@@ -195,7 +209,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 	parse("statusTimestampAfter", &request.StatusTimestampAfter)
 	parse("includeArtifacts", &request.IncludeArtifacts)
 	fillTenant(ctx, &request.Tenant)
-	if err != nil {
+	if len(parseErrors) > 0 {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}

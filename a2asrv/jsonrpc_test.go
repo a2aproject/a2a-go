@@ -382,6 +382,56 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	taskID := a2a.NewTaskID()
+	config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
+	store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
+	pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
+	pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
+	reqHandler := NewHandler(
+		&mockAgentExecutor{},
+		WithTaskStore(store),
+		WithPushNotifications(pushStore, pushSender),
+	)
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
+	defer server.Close()
+
+	params := mustMarshal(t, &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config.ID})
+	request := jsonrpc.ServerRequest{
+		JSONRPC: "2.0",
+		Method:  jsonrpc.MethodPushConfigDelete,
+		Params:  params,
+		ID:      "delete-1",
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("http.DefaultClient.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var payload jsonrpc.ServerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("json.Decode() error = %v, want valid JSON-RPC response", err)
+	}
+	if payload.JSONRPC != "2.0" {
+		t.Fatalf("payload.JSONRPC = %q, want %q", payload.JSONRPC, "2.0")
+	}
+	if payload.Error != nil {
+		t.Fatalf("payload.Error = %v, want nil", payload.Error)
+	}
+	if payload.ID != "delete-1" {
+		t.Fatalf("payload.ID = %v, want %q", payload.ID, "delete-1")
+	}
+}
+
 func mustMarshal(t *testing.T, data any) []byte {
 	t.Helper()
 	body, err := json.Marshal(data)

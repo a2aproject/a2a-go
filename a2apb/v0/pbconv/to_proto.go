@@ -16,6 +16,7 @@ package pbconv
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/a2apb"
@@ -339,7 +340,9 @@ func toProtoDataPart(part *a2a.Part) (*a2apb.Part, error) {
 		// Version 0.3 clients expect a map, so we wrap non-map values.
 		m := map[string]any{"value": dataContent.Value}
 		if part.Metadata == nil {
-			part.Metadata = make(map[string]any)
+			part.Metadata = map[string]any{}
+		} else {
+			part.Metadata = maps.Clone(part.Metadata)
 		}
 		part.Metadata["data_part_compat"] = true
 		s, err = toProtoMap(m)

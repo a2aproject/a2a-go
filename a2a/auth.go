@@ -349,6 +349,8 @@ func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("unknown OAuth flow type: %s, available: %v", name, keys)
 		}
 	}
+	s.Description = scheme.Description
+	s.Oauth2MetadataURL = scheme.Oauth2MetadataURL
 	return nil
 }
 

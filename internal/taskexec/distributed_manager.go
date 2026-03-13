@@ -25,7 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // DistributedManagerConfig contains configuration for A2A task execution
@@ -77,14 +76,15 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	}
 
 	var taskID a2a.TaskID
-	if len(req.Message.TaskID) == 0 {
+	isNewTask := req.Message.TaskID == ""
+	if isNewTask {
 		taskID = a2a.NewTaskID()
 	} else {
 		taskID = req.Message.TaskID
 	}
 
 	msg := req.Message
-	if msg.TaskID != "" {
+	if !isNewTask {
 		taskStoreTask, err := m.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("task loading failed: %w", err)
@@ -103,21 +103,18 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 	}
 
-	queue, err := m.queueManager.CreateReader(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get or create queue: %w", err)
-	}
-
-	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
+	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         taskID,
 		ExecuteRequest: req,
 	})
 	if err != nil {
-		if closeErr := queue.Close(); closeErr != nil {
-			log.Warn(ctx, "queue close failed", "error", closeErr)
-		}
 		return nil, fmt.Errorf("failed to create work item: %w", err)
+	}
+
+	queue, err := m.queueManager.CreateReader(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to execution events: %w", err)
 	}
 
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
@@ -157,6 +154,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			cancelationErr = err
+			break
 		}
 		if taskupdate.IsFinal(event) {
 			if result, ok := event.(a2a.SendMessageResult); ok {

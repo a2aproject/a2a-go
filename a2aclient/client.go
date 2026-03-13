@@ -66,11 +66,6 @@ type interceptBeforeResult[Req any, Resp any] struct {
 	earlyErr      error
 }
 
-// AddCallInterceptor allows to attach a [CallInterceptor] to the client after creation.
-func (c *Client) AddCallInterceptor(ci CallInterceptor) {
-	c.interceptors = append(c.interceptors, ci)
-}
-
 // A2A protocol methods
 
 // GetTask implements the 'GetTask' protocol method.

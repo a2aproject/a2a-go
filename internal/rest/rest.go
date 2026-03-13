@@ -17,6 +17,7 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -188,10 +189,13 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 		TaskID:    string(taskID),
 	}
 
-	if details, ok := errToDetails[err]; ok {
-		e.Type = details.uri
-		e.Title = details.title
-		e.Status = details.status
+	for sentinel, details := range errToDetails {
+		if errors.Is(err, sentinel) {
+			e.Type = details.uri
+			e.Title = details.title
+			e.Status = details.status
+			break
+		}
 	}
 
 	return e
