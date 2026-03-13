@@ -133,12 +133,10 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		return
 	}
 
-	if result != nil {
-		rw.Header().Set("Content-Type", "application/json")
-		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			log.Error(ctx, "failed to encode response", err)
-		}
+	rw.Header().Set("Content-Type", "application/json")
+	resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
+	if err := json.NewEncoder(rw).Encode(resp); err != nil {
+		log.Error(ctx, "failed to encode response", err)
 	}
 }
 
