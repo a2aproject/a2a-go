@@ -198,12 +198,10 @@ func TestREST_ClientSendMessage(t *testing.T) {
 		t.Fatalf("failed to create transport: %v", err)
 	}
 
+	sendMsg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello"))
+	sendMsg.ID = "m1"
 	result, err := transport.SendMessage(context.Background(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
-		Message: &a2a.Message{
-			ID:    "m1",
-			Role:  a2a.MessageRoleUser,
-			Parts: a2a.ContentParts{a2a.NewTextPart("hello")},
-		},
+		Message: sendMsg,
 	})
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
@@ -254,11 +252,9 @@ type mockRESTHandler struct {
 }
 
 func (h *mockRESTHandler) SendMessage(_ context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	return &a2a.Message{
-		ID:    req.Message.ID + "-resp",
-		Role:  a2a.MessageRoleAgent,
-		Parts: a2a.ContentParts{a2a.NewTextPart("ok")},
-	}, nil
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok"))
+	msg.ID = req.Message.ID + "-resp"
+	return msg, nil
 }
 
 func (h *mockRESTHandler) GetTask(_ context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
@@ -273,11 +269,13 @@ type mockExtensionRESTHandler struct {
 	lastRequestedURIs []string
 }
 
-func (h *mockExtensionRESTHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockExtensionRESTHandler) SendMessage(ctx context.Context, _ *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	if ext, ok := a2asrv.ExtensionsFrom(ctx); ok {
 		h.lastRequestedURIs = ext.RequestedURIs()
 	}
-	return &a2a.Message{ID: "resp-1", Role: a2a.MessageRoleAgent, Parts: a2a.ContentParts{a2a.NewTextPart("ok")}}, nil
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok"))
+	msg.ID = "resp-1"
+	return msg, nil
 }
 
 type mockStreamingRESTHandler struct {
@@ -286,10 +284,8 @@ type mockStreamingRESTHandler struct {
 
 func (h *mockStreamingRESTHandler) SendStreamingMessage(_ context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		yield(&a2a.Message{
-			ID:    req.Message.ID + "-stream",
-			Role:  a2a.MessageRoleAgent,
-			Parts: a2a.ContentParts{a2a.NewTextPart("streaming ok")},
-		}, nil)
+		msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("streaming ok"))
+		msg.ID = req.Message.ID + "-stream"
+		yield(msg, nil)
 	}
 }

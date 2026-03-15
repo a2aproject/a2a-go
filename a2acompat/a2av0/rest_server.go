@@ -400,6 +400,9 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
+	if compatConfigs == nil {
+		compatConfigs = []*a2alegacy.TaskPushConfig{}
+	}
 	if err := json.NewEncoder(rw).Encode(compatConfigs); err != nil {
 		log.Error(ctx, "failed to encode response", err)
 	}
