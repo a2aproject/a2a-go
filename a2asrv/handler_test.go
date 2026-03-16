@@ -738,6 +738,43 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.NewTaskID()
+
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
+		Config: &a2a.SendMessageConfig{
+			PushConfig: pushConfig,
+		},
+	}
+
+	pushError := errors.New("push failed")
+	store := testutil.NewTestTaskStore()
+	ps := testutil.NewTestPushConfigStore()
+	if _, err := ps.Save(ctx, taskID, pushConfig); err != nil {
+		t.Fatalf("failed to save push config: %v", err)
+	}
+
+	pn := testutil.NewTestPushSender(t).SetSendPushError(pushError)
+	agentMsg := newAgentMessage("test message")
+	agentMsg.TaskID = taskID
+	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	result, err := handler.SendMessage(ctx, input)
+	if err == nil {
+		t.Fatalf("Expected error, got nil. Result type: %T", result)
+	}
+	if !errors.Is(err, pushError) {
+		t.Fatalf("Expected error %v, got %v", pushError, err)
+	}
+	if result != nil {
+		t.Fatalf("Expected nil result, got %v", result)
+	}
+}
+
 func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	ctx := t.Context()
 
