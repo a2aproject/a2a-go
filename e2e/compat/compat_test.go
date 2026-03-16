@@ -16,6 +16,7 @@ package compat_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"net"
@@ -167,12 +168,15 @@ func startOldServer(t *testing.T, transport legacycore.TransportProtocol) (port 
 
 	httpPort := httpListener.Addr().(*net.TCPAddr).Port
 
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
+	var grpcListener net.Listener
+	var grpcPort int
+	if transport == legacycore.TransportProtocolGRPC {
+		grpcListener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+		grpcPort = grpcListener.Addr().(*net.TCPAddr).Port
 	}
-
-	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
 
 	var cardURL string
 	switch transport {
@@ -204,7 +208,7 @@ func startOldServer(t *testing.T, transport legacycore.TransportProtocol) (port 
 	srv := &http.Server{Handler: mux}
 
 	go func() {
-		if err := srv.Serve(httpListener); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("legacy server error: %v", err)
 		}
 	}()
@@ -215,7 +219,7 @@ func startOldServer(t *testing.T, transport legacycore.TransportProtocol) (port 
 		grpcServer = grpc.NewServer()
 		grpcHandler.RegisterWith(grpcServer)
 		go func() {
-			if err := grpcServer.Serve(grpcListener); err != nil && err != http.ErrServerClosed {
+			if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 				t.Errorf("legacy server error: %v", err)
 			}
 		}()
@@ -279,12 +283,15 @@ func startNewServer(t *testing.T, preferredTransport a2a.TransportProtocol) (por
 
 	httpPort := httpListener.Addr().(*net.TCPAddr).Port
 
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
+	var grpcListener net.Listener
+	var grpcPort int
+	if preferredTransport == a2a.TransportProtocolGRPC {
+		grpcListener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+		grpcPort = grpcListener.Addr().(*net.TCPAddr).Port
 	}
-
-	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
 
 	var cardURL string
 	switch preferredTransport {
@@ -322,7 +329,7 @@ func startNewServer(t *testing.T, preferredTransport a2a.TransportProtocol) (por
 	srv := &http.Server{Handler: mux}
 
 	go func() {
-		if err := srv.Serve(httpListener); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(httpListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("server error: %v", err)
 		}
 	}()
@@ -333,7 +340,7 @@ func startNewServer(t *testing.T, preferredTransport a2a.TransportProtocol) (por
 		grpcServer = grpc.NewServer()
 		grpcHandler.RegisterWith(grpcServer)
 		go func() {
-			if err := grpcServer.Serve(grpcListener); err != nil && err != http.ErrServerClosed {
+			if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 				t.Errorf("server error: %v", err)
 			}
 		}()
