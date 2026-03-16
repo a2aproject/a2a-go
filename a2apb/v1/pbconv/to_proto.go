@@ -166,6 +166,7 @@ func ToProtoSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.Subs
 	}, nil
 }
 
+// ToProtoCreateTaskPushConfigRequest converts a [a2a.CreateTaskPushConfigRequest] to a [a2apb.TaskPushNotificationConfig].
 func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	// TODO: add validation
 	if config == nil {

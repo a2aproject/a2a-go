@@ -182,10 +182,9 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Send
 
 	result := &a2a.SendMessageConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
+		ReturnImmediately:   conf.GetReturnImmediately(),
 		PushConfig:          pConf,
 	}
-
-	result.ReturnImmediately = conf.GetReturnImmediately()
 
 	// TODO: consider the approach after resolving https://github.com/a2aproject/A2A/issues/1072
 	if conf.HistoryLength != nil && *conf.HistoryLength >= 0 {
