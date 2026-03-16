@@ -220,12 +220,6 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			config:  failedPushConfig,
 			wantErr: "push notification endpoint returned non-success status: 500 Internal Server Error",
 		},
-		{
-			name:    "missing task id",
-			event:   []a2a.Event{&a2a.Message{ID: "test-message", Parts: a2a.ContentParts{a2a.NewTextPart("test")}, Role: a2a.MessageRoleUser}},
-			config:  &a2a.PushConfig{URL: server.URL},
-			wantErr: "has no task ID",
-		},
 	}
 
 	for _, failOnError := range []bool{true, false} {

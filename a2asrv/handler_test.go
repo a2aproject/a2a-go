@@ -740,7 +740,6 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 
 func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T) {
 	ctx := t.Context()
-	taskID := a2a.NewTaskID()
 
 	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
 	input := &a2a.SendMessageRequest{
@@ -753,13 +752,9 @@ func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T
 	pushError := errors.New("push failed")
 	store := testutil.NewTestTaskStore()
 	ps := testutil.NewTestPushConfigStore()
-	if _, err := ps.Save(ctx, taskID, pushConfig); err != nil {
-		t.Fatalf("failed to save push config: %v", err)
-	}
-
 	pn := testutil.NewTestPushSender(t).SetSendPushError(pushError)
+	
 	agentMsg := newAgentMessage("test message")
-	agentMsg.TaskID = taskID
 	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
 	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
 

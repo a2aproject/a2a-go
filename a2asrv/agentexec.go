@@ -436,7 +436,7 @@ func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) 
 	if p.pushSender == nil || p.pushConfigStore == nil {
 		return nil
 	}
-	taskID := event.TaskInfo().TaskID
+	taskID := p.execCtx.TaskID
 
 	configs, err := p.pushConfigStore.List(ctx, taskID)
 	if err != nil {
