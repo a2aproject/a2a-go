@@ -194,7 +194,7 @@ func TestREST_ClientSendMessage(t *testing.T) {
 		rw.Header().Set("Content-Type", "application/json")
 		// v0.3 REST server responds with snake_case JSON
 		data, _ := marshalSnakeCase(legacyMsg)
-		rw.Write(data)
+		_, _ = rw.Write(data)
 	}))
 	defer fakeServer.Close()
 
@@ -229,7 +229,7 @@ func TestREST_ClientGetTask(t *testing.T) {
 		rw.Header().Set("Content-Type", "application/json")
 		// v0.3 REST server responds with snake_case JSON
 		data, _ := marshalSnakeCase(legacyTask)
-		rw.Write(data)
+		_, _ = rw.Write(data)
 	}))
 	defer fakeServer.Close()
 
