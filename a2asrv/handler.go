@@ -432,8 +432,8 @@ func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a
 }
 
 func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (a2a.TaskID, bool) {
-	// Non-blocking clients receive a result on the first task event, default Blocking to TRUE
-	if req.Config != nil && req.Config.Blocking != nil && !(*req.Config.Blocking) {
+	// ReturnImmediately clients receive a result on the first task event
+	if req.Config != nil && req.Config.ReturnImmediately {
 		if _, ok := event.(*a2a.Message); ok {
 			return "", false
 		}

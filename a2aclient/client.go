@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // Config exposes options for customizing [Client] behavior.
@@ -254,7 +253,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest, blocking
 	if result.Config.AcceptedOutputModes == nil {
 		result.Config.AcceptedOutputModes = c.config.AcceptedOutputModes
 	}
-	result.Config.Blocking = utils.Ptr(bool(blocking))
+	result.Config.ReturnImmediately = !bool(blocking)
 	return &result
 }
 

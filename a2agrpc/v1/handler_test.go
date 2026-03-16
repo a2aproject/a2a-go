@@ -906,23 +906,22 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		req         *a2apb.CreateTaskPushNotificationConfigRequest
+		req         *a2apb.TaskPushNotificationConfig
 		want        *a2apb.TaskPushNotificationConfig
 		wantRequest *a2a.CreateTaskPushConfigRequest
 		wantErr     codes.Code
 	}{
 		{
 			name: "success",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: string(taskID),
-				Config: &a2apb.PushNotificationConfig{
-					Id:  "test-config",
-					Url: "https://example.com",
-				},
+				Id:     "test-config",
+				Url:    "https://example.com",
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId:                 string(taskID),
-				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config", Url: "https://example.com"},
+				TaskId: string(taskID),
+				Id:     "test-config",
+				Url:    "https://example.com",
 			},
 			wantRequest: &a2a.CreateTaskPushConfigRequest{
 				TaskID: taskID,
@@ -931,9 +930,10 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 		},
 		{
 			name: "handler error",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: "handler-error",
-				Config: &a2apb.PushNotificationConfig{Id: "test-config", Url: "https://example.com"},
+				Id:     "test-config",
+				Url:    "https://example.com",
 			},
 			wantErr: codes.Internal,
 		},
@@ -999,8 +999,8 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 				Id:     configID,
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId:                 string(taskID),
-				PushNotificationConfig: &a2apb.PushNotificationConfig{Id: configID},
+				TaskId: string(taskID),
+				Id:     configID,
 			},
 			wantParams: &a2a.GetTaskPushConfigRequest{
 				TaskID: taskID,
@@ -1074,12 +1074,12 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			want: &a2apb.ListTaskPushNotificationConfigsResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{
 					{
-						TaskId:                 string(taskID),
-						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-1", configID)},
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-1", configID),
 					},
 					{
-						TaskId:                 string(taskID),
-						PushNotificationConfig: &a2apb.PushNotificationConfig{Id: fmt.Sprintf("%s-2", configID)},
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-2", configID),
 					},
 				},
 			},
@@ -1112,10 +1112,10 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 					t.Fatalf("ListTaskPushNotificationConfig() got unexpected error: %v", err)
 				}
 				sort.Slice(resp.Configs, func(i, j int) bool {
-					return resp.Configs[i].PushNotificationConfig.Id < resp.Configs[j].PushNotificationConfig.Id
+					return resp.Configs[i].Id < resp.Configs[j].Id
 				})
 				sort.Slice(tt.want.Configs, func(i, j int) bool {
-					return tt.want.Configs[i].PushNotificationConfig.Id < tt.want.Configs[j].PushNotificationConfig.Id
+					return tt.want.Configs[i].Id < tt.want.Configs[j].Id
 				})
 				if !proto.Equal(resp, tt.want) {
 					t.Fatalf("ListTaskPushNotificationConfig() got = %v, want %v", resp, tt.want)

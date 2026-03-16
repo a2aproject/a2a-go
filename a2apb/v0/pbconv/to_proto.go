@@ -98,9 +98,7 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 		AcceptedOutputModes: config.AcceptedOutputModes,
 		PushNotification:    pushConf,
 	}
-	if config.Blocking != nil {
-		pConf.Blocking = *config.Blocking
-	}
+	pConf.Blocking = !config.ReturnImmediately
 	if config.HistoryLength != nil {
 		pConf.HistoryLength = int32(*config.HistoryLength)
 	}

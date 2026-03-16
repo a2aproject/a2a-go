@@ -454,14 +454,12 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{
-					Id:    "c1",
-					Url:   "http://a.com",
-					Token: "tok",
-					Authentication: &a2apb.AuthenticationInfo{
-						Scheme:      "Bearer",
-						Credentials: "cred",
-					},
+				Id:     "c1",
+				Url:    "http://a.com",
+				Token:  "tok",
+				Authentication: &a2apb.AuthenticationInfo{
+					Scheme:      "Bearer",
+					Credentials: "cred",
 				},
 			},
 		},
@@ -473,10 +471,8 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{
-					Id:  "c1",
-					Url: "http://a.com",
-				},
+				Id:     "c1",
+				Url:    "http://a.com",
 			},
 		},
 		{
@@ -491,8 +487,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId:                 "test-task",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{},
+				TaskId: "test-task",
 			},
 		},
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -643,8 +644,10 @@ func ToV1SendMessageRequest(p *a2alegacy.MessageSendParams) (*a2a.SendMessageReq
 	if p.Config != nil {
 		req.Config = &a2a.SendMessageConfig{
 			AcceptedOutputModes: p.Config.AcceptedOutputModes,
-			Blocking:            p.Config.Blocking,
 			HistoryLength:       p.Config.HistoryLength,
+		}
+		if p.Config.Blocking != nil {
+			req.Config.ReturnImmediately = !(*p.Config.Blocking)
 		}
 		if p.Config.PushConfig != nil {
 			req.Config.PushConfig = ToV1PushConfig(*p.Config.PushConfig)
@@ -665,9 +668,9 @@ func FromV1SendMessageRequest(req *a2a.SendMessageRequest) *a2alegacy.MessageSen
 	if req.Config != nil {
 		res.Config = &a2alegacy.MessageSendConfig{
 			AcceptedOutputModes: req.Config.AcceptedOutputModes,
-			Blocking:            req.Config.Blocking,
 			HistoryLength:       req.Config.HistoryLength,
 		}
+		res.Config.Blocking = utils.Ptr(!req.Config.ReturnImmediately)
 		if req.Config.PushConfig != nil {
 			res.Config.PushConfig = FromV1PushConfig(req.Config.PushConfig)
 		}
