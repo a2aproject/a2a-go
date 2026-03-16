@@ -109,6 +109,7 @@ type Error struct {
 	Err        StatusError `json:"error"`
 }
 
+// HTTPStatus returns the HTTP status code for the error.
 func (e *Error) HTTPStatus() int {
 	return e.httpStatus
 }
