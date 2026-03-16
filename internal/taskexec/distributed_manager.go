@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/internal/taskupdate"
-	"github.com/a2aproject/a2a-go/log"
 )
 
 // DistributedManagerConfig contains configuration for A2A task execution
@@ -101,21 +100,18 @@ func (m *distributedManager) Execute(ctx context.Context, params *a2a.MessageSen
 		}
 	}
 
-	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get or create queue: %w", err)
-	}
-
-	taskID, err = m.workQueue.Write(ctx, &workqueue.Payload{
+	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeExecute,
 		TaskID:        taskID,
 		ExecuteParams: params,
 	})
 	if err != nil {
-		if closeErr := queue.Close(); closeErr != nil {
-			log.Warn(ctx, "queue close failed", "error", closeErr)
-		}
 		return nil, fmt.Errorf("failed to create work item: %w", err)
+	}
+
+	queue, err := m.queueManager.GetOrCreate(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
 
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
@@ -154,6 +150,7 @@ func (m *distributedManager) Cancel(ctx context.Context, params *a2a.TaskIDParam
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
 			cancelationErr = err
+			break
 		}
 		if taskupdate.IsFinal(event) {
 			if result, ok := event.(a2a.SendMessageResult); ok {

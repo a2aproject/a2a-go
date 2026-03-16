@@ -139,7 +139,7 @@ func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactU
 	toUpdate := task.Artifacts[updateIdx]
 	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
 	if toUpdate.Metadata == nil && artifact.Metadata != nil {
-		toUpdate.Metadata = make(map[string]any, len(artifact.Description))
+		toUpdate.Metadata = make(map[string]any, len(artifact.Metadata))
 	}
 	maps.Copy(toUpdate.Metadata, artifact.Metadata)
 	return mgr.saveTask(ctx, task, event)

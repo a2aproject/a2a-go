@@ -178,11 +178,9 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		return
 	}
 
-	if result != nil {
-		resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			log.Error(ctx, "failed to encode response", err)
-		}
+	resp := jsonrpcResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
+	if err := json.NewEncoder(rw).Encode(resp); err != nil {
+		log.Error(ctx, "failed to encode response", err)
 	}
 }
 
@@ -195,7 +193,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 
 	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error)
+	sseChan, panicChan := make(chan []byte), make(chan error, 1)
 	requestCtx, cancelReqCtx := context.WithCancel(ctx)
 	defer cancelReqCtx()
 	go func() {
