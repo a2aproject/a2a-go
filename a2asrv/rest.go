@@ -493,8 +493,8 @@ func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *ht
 
 func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
 	errResp := rest.ToRESTError(err, taskID)
-	rw.Header().Set("Content-Type", "application/problem+json")
-	rw.WriteHeader(errResp.Status)
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(errResp.HTTPStatus())
 
 	if err := json.NewEncoder(rw).Encode(errResp); err != nil {
 		log.Error(ctx, "failed to write error response", err)
