@@ -86,7 +86,7 @@ type compatRestReq struct {
 func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestReq) (*http.Response, error) {
 	var bodyReader io.Reader
 	if req.payload != nil {
-		body, err := json.Marshal(req.payload)
+		body, err := marshalSnakeCase(req.payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
@@ -146,7 +146,11 @@ func (t *restCompatTransport) doRequest(ctx context.Context, req *compatRestReq,
 		}
 	}()
 	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response: %w", err)
+		}
+		if err := unmarshalSnakeCase(data, result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 	}
@@ -172,8 +176,14 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				yield(nil, err)
 				return
 			}
-			// v0.3 SSE events are bare legacy event JSON (not wrapped in StreamResponse)
-			compatEvent, err := a2alegacy.UnmarshalEventJSON(data)
+			// v0.3 SSE events use snake_case keys; transform to camelCase
+			// before legacy unmarshal.
+			camelData, err := transformJSONKeys(data, snakeToCamel)
+			if err != nil {
+				yield(nil, fmt.Errorf("failed to transform SSE event keys: %w", err))
+				return
+			}
+			compatEvent, err := a2alegacy.UnmarshalEventJSON(camelData)
 			if err != nil {
 				yield(nil, fmt.Errorf("failed to unmarshal SSE event: %w", err))
 				return
@@ -202,8 +212,12 @@ func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.
 	}, &rawResult); err != nil {
 		return nil, err
 	}
-
-	compatEvent, err := a2alegacy.UnmarshalEventJSON(rawResult)
+	// Transform snake_case response to camelCase for legacy unmarshal.
+	camelData, err := transformJSONKeys(rawResult, snakeToCamel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to transform send message result keys: %w", err)
+	}
+	compatEvent, err := a2alegacy.UnmarshalEventJSON(camelData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal send message result: %w", err)
 	}

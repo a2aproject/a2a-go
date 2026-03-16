@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"iter"
 	"net/http"
 	"runtime/debug"
@@ -71,7 +72,7 @@ func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOptio
 func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var params a2alegacy.MessageSendParams
-	if err := json.NewDecoder(req.Body).Decode(&params); err != nil {
+	if err := readSnakeCaseBody(req.Body, &params); err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -90,15 +91,13 @@ func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(compatEvent); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, compatEvent)
 }
 
 func (h *restCompatHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var params a2alegacy.MessageSendParams
-	if err := json.NewDecoder(req.Body).Decode(&params); err != nil {
+	if err := readSnakeCaseBody(req.Body, &params); err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -131,9 +130,7 @@ func (h *restCompatHandler) handleGetTask(rw http.ResponseWriter, req *http.Requ
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(FromV1Task(result)); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, FromV1Task(result))
 }
 
 func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Request) {
@@ -191,9 +188,7 @@ func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Re
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(FromV1ListTasksResponse(result)); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, FromV1ListTasksResponse(result))
 }
 
 func (h *restCompatHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Request) {
@@ -220,9 +215,7 @@ func (h *restCompatHandler) handleCancelTask(taskID string, rw http.ResponseWrit
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(FromV1Task(result)); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, FromV1Task(result))
 }
 
 func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.ResponseWriter, req *http.Request) {
@@ -269,7 +262,7 @@ func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.E
 				handleError(err)
 				return
 			}
-			data, jErr := json.Marshal(compatEvent)
+			data, jErr := marshalSnakeCase(compatEvent)
 			if jErr != nil {
 				handleError(jErr)
 				return
@@ -332,7 +325,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		return
 	}
 	var config a2alegacy.PushConfig
-	if err := json.NewDecoder(req.Body).Decode(&config); err != nil {
+	if err := readSnakeCaseBody(req.Body, &config); err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
@@ -350,9 +343,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(compatConfig); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, compatConfig)
 }
 
 func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -376,9 +367,7 @@ func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req 
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(compatConfig); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, compatConfig)
 }
 
 func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *http.Request) {
@@ -403,9 +392,7 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 	if compatConfigs == nil {
 		compatConfigs = []*a2alegacy.TaskPushConfig{}
 	}
-	if err := json.NewEncoder(rw).Encode(compatConfigs); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, compatConfigs)
 }
 
 func (h *restCompatHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -431,9 +418,7 @@ func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	if err := json.NewEncoder(rw).Encode(FromV1AgentCard(result)); err != nil {
-		log.Error(ctx, "failed to encode response", err)
-	}
+	writeSnakeCaseJSON(ctx, rw, FromV1AgentCard(result))
 }
 
 func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
@@ -443,4 +428,26 @@ func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error
 	if jErr := json.NewEncoder(rw).Encode(errResp); jErr != nil {
 		log.Error(ctx, "failed to write error response", jErr)
 	}
+}
+
+// writeSnakeCaseJSON marshals v with snake_case keys and writes it to the response.
+func writeSnakeCaseJSON(ctx context.Context, rw http.ResponseWriter, v any) {
+	data, err := marshalSnakeCase(v)
+	if err != nil {
+		log.Error(ctx, "failed to encode response", err)
+		return
+	}
+	if _, err := rw.Write(data); err != nil {
+		log.Error(ctx, "failed to write response", err)
+	}
+}
+
+// readSnakeCaseBody reads a JSON body with snake_case keys and unmarshals it
+// into v (which has camelCase JSON tags).
+func readSnakeCaseBody(body io.Reader, v any) error {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	return unmarshalSnakeCase(data, v)
 }

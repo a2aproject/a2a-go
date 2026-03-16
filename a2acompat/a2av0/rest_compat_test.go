@@ -38,7 +38,8 @@ func TestREST_ServerSendMessage(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	body := `{"message":{"messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
+	// v0.3 REST uses snake_case JSON keys
+	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
 	req, _ := http.NewRequest("POST", server.URL+"/message:send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -61,9 +62,9 @@ func TestREST_ServerSendMessage(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	// The legacy message has "messageId" and "role" at the top level.
-	if _, ok := raw["messageId"]; !ok {
-		t.Errorf("expected v0.3 message response with 'messageId' field, got: %v", raw)
+	// The v0.3 REST response has snake_case keys: "message_id" and "role".
+	if _, ok := raw["message_id"]; !ok {
+		t.Errorf("expected v0.3 message response with 'message_id' field, got: %v", raw)
 	}
 }
 
@@ -104,7 +105,8 @@ func TestREST_ServerExtensionsFrom(t *testing.T) {
 	defer server.Close()
 
 	legacyKey := "x-" + strings.ToLower(a2a.SvcParamExtensions)
-	body := `{"message":{"messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
+	// v0.3 REST uses snake_case JSON keys
+	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
 	req, _ := http.NewRequest("POST", server.URL+"/message:send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(legacyKey, "uri1")
@@ -130,7 +132,8 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	body := `{"message":{"messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
+	// v0.3 REST uses snake_case JSON keys
+	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
 	req, _ := http.NewRequest("POST", server.URL+"/message:stream", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -171,8 +174,8 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 	if err := json.Unmarshal([]byte(dataLine), &raw); err != nil {
 		t.Fatalf("failed to parse SSE data: %v", err)
 	}
-	if _, ok := raw["messageId"]; !ok {
-		t.Errorf("expected v0.3 message in SSE event with 'messageId' field, got: %v", raw)
+	if _, ok := raw["message_id"]; !ok {
+		t.Errorf("expected v0.3 message in SSE event with 'message_id' field, got: %v", raw)
 	}
 }
 
@@ -189,7 +192,9 @@ func TestREST_ClientSendMessage(t *testing.T) {
 	}
 	fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(legacyMsg)
+		// v0.3 REST server responds with snake_case JSON
+		data, _ := marshalSnakeCase(legacyMsg)
+		rw.Write(data)
 	}))
 	defer fakeServer.Close()
 
@@ -222,7 +227,9 @@ func TestREST_ClientGetTask(t *testing.T) {
 	}
 	fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(rw).Encode(legacyTask)
+		// v0.3 REST server responds with snake_case JSON
+		data, _ := marshalSnakeCase(legacyTask)
+		rw.Write(data)
 	}))
 	defer fakeServer.Close()
 
