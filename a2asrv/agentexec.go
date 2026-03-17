@@ -343,8 +343,6 @@ type processor struct {
 	pushSender      push.Sender
 	execCtx         *ExecutorContext
 	store           taskstore.Store
-
-	processedCount int
 }
 
 var _ taskexec.Processor = (*processor)(nil)
@@ -407,11 +405,6 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
-	if p.execCtx.StoredTask == nil && p.processedCount == 0 {
-		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
-		return nil, cause
-	}
-
 	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, cause)
 	if err != nil {
 		return nil, err

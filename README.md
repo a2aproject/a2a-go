@@ -46,8 +46,8 @@ Major breaking SDK API changes increment the version suffix in the module ID.
 github.com/a2aproject/a2a-go/vn@x.y.z
                              ^  ^ ^ ^ 
                SDK API Major ┘  | | └─ SDK API Minor
-                                | └─── Protocol Spec Minor Version
-                                └───── Protocol Spec Major Version
+                                | └─── Protocol Spec Minor
+                                └───── Protocol Spec Major
 ```
 
 ## 💡 Examples

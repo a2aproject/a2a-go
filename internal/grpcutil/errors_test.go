@@ -277,6 +277,41 @@ func TestFromGRPCError(t *testing.T) {
 	}
 }
 
+func TestFromGRPCError_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	errsToTest := []error{
+		a2a.ErrTaskNotFound,
+		a2a.ErrTaskNotCancelable,
+		a2a.ErrUnsupportedOperation,
+		a2a.ErrPushNotificationNotSupported,
+		a2a.ErrMethodNotFound,
+		a2a.ErrInvalidParams,
+		a2a.ErrUnsupportedContentType,
+		a2a.ErrInvalidRequest,
+		a2a.ErrInternalError,
+		a2a.ErrInvalidAgentResponse,
+		a2a.ErrExtendedCardNotConfigured,
+		a2a.ErrExtensionSupportRequired,
+		a2a.ErrVersionNotSupported,
+		a2a.ErrParseError,
+		a2a.ErrServerError,
+		a2a.ErrUnauthenticated,
+		a2a.ErrUnauthorized,
+	}
+
+	for _, sentinel := range errsToTest {
+		t.Run(sentinel.Error(), func(t *testing.T) {
+			t.Parallel()
+
+			got := FromGRPCError(ToGRPCError(sentinel))
+			if !errors.Is(got, sentinel) {
+				t.Fatalf("FromGRPCError(ToGRPCError(%v)) = %v, want errors.Is to match", sentinel, got)
+			}
+		})
+	}
+}
+
 func TestErrorInfo(t *testing.T) {
 	err := a2a.NewError(a2a.ErrTaskNotFound, "oops").WithDetails(map[string]any{
 		"foo": "bar",

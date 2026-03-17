@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
@@ -42,10 +43,7 @@ func (i *intercepter) Before(ctx context.Context, callCtx *a2asrv.CallContext, r
 		if sendParams.Config == nil {
 			sendParams.Config = &a2a.SendMessageConfig{}
 		}
-		if sendParams.Config.Blocking == nil {
-			blocking := false
-			sendParams.Config.Blocking = &blocking
-		}
+		sendParams.Config.ReturnImmediately = true
 		return context.WithValue(ctx, msgContextKeyType{}, sendParams.Message.ID), nil, nil
 	}
 	return ctx, nil, nil

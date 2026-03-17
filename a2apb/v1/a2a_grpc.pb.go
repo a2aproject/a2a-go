@@ -58,10 +58,11 @@ type A2AServiceClient interface {
 	// (-- api-linter: client-libraries::4232::required-fields=disabled
 	//
 	//	api-linter: core::0133::method-signature=disabled
+	//	api-linter: core::0133::request-message-name=disabled
 	//	aip.dev/not-precedent: method_signature preserved for backwards compatibility --)
 	//
 	// Creates a push notification config for a task.
-	CreateTaskPushNotificationConfig(ctx context.Context, in *CreateTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error)
+	CreateTaskPushNotificationConfig(ctx context.Context, in *TaskPushNotificationConfig, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error)
 	// Gets a push notification config for a task.
 	GetTaskPushNotificationConfig(ctx context.Context, in *GetTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error)
 	// Get a list of push notifications configured for a task.
@@ -158,7 +159,7 @@ func (c *a2AServiceClient) SubscribeToTask(ctx context.Context, in *SubscribeToT
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type A2AService_SubscribeToTaskClient = grpc.ServerStreamingClient[StreamResponse]
 
-func (c *a2AServiceClient) CreateTaskPushNotificationConfig(ctx context.Context, in *CreateTaskPushNotificationConfigRequest, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error) {
+func (c *a2AServiceClient) CreateTaskPushNotificationConfig(ctx context.Context, in *TaskPushNotificationConfig, opts ...grpc.CallOption) (*TaskPushNotificationConfig, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TaskPushNotificationConfig)
 	err := c.cc.Invoke(ctx, A2AService_CreateTaskPushNotificationConfig_FullMethodName, in, out, cOpts...)
@@ -231,10 +232,11 @@ type A2AServiceServer interface {
 	// (-- api-linter: client-libraries::4232::required-fields=disabled
 	//
 	//	api-linter: core::0133::method-signature=disabled
+	//	api-linter: core::0133::request-message-name=disabled
 	//	aip.dev/not-precedent: method_signature preserved for backwards compatibility --)
 	//
 	// Creates a push notification config for a task.
-	CreateTaskPushNotificationConfig(context.Context, *CreateTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error)
+	CreateTaskPushNotificationConfig(context.Context, *TaskPushNotificationConfig) (*TaskPushNotificationConfig, error)
 	// Gets a push notification config for a task.
 	GetTaskPushNotificationConfig(context.Context, *GetTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error)
 	// Get a list of push notifications configured for a task.
@@ -271,7 +273,7 @@ func (UnimplementedA2AServiceServer) CancelTask(context.Context, *CancelTaskRequ
 func (UnimplementedA2AServiceServer) SubscribeToTask(*SubscribeToTaskRequest, grpc.ServerStreamingServer[StreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeToTask not implemented")
 }
-func (UnimplementedA2AServiceServer) CreateTaskPushNotificationConfig(context.Context, *CreateTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error) {
+func (UnimplementedA2AServiceServer) CreateTaskPushNotificationConfig(context.Context, *TaskPushNotificationConfig) (*TaskPushNotificationConfig, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTaskPushNotificationConfig not implemented")
 }
 func (UnimplementedA2AServiceServer) GetTaskPushNotificationConfig(context.Context, *GetTaskPushNotificationConfigRequest) (*TaskPushNotificationConfig, error) {
@@ -402,7 +404,7 @@ func _A2AService_SubscribeToTask_Handler(srv interface{}, stream grpc.ServerStre
 type A2AService_SubscribeToTaskServer = grpc.ServerStreamingServer[StreamResponse]
 
 func _A2AService_CreateTaskPushNotificationConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateTaskPushNotificationConfigRequest)
+	in := new(TaskPushNotificationConfig)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -414,7 +416,7 @@ func _A2AService_CreateTaskPushNotificationConfig_Handler(srv interface{}, ctx c
 		FullMethod: A2AService_CreateTaskPushNotificationConfig_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(A2AServiceServer).CreateTaskPushNotificationConfig(ctx, req.(*CreateTaskPushNotificationConfigRequest))
+		return srv.(A2AServiceServer).CreateTaskPushNotificationConfig(ctx, req.(*TaskPushNotificationConfig))
 	}
 	return interceptor(ctx, in, info, handler)
 }

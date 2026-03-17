@@ -38,7 +38,6 @@ type RESTTransport struct {
 }
 
 // NewRESTTransport creates a new REST Transport for A2A protocol and communication
-// By default, an HTTP client with 5-second timeout is used.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
 func NewRESTTransport(u *url.URL, client *http.Client) Transport {
@@ -48,9 +47,7 @@ func NewRESTTransport(u *url.URL, client *http.Client) Transport {
 	}
 
 	if t.httpClient == nil {
-		t.httpClient = &http.Client{
-			Timeout: 5 * time.Second,
-		}
+		t.httpClient = &http.Client{Timeout: defaultRequestTimeout}
 	}
 	return t
 }
