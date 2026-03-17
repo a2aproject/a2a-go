@@ -20,11 +20,10 @@
 
 ## ✨ Features
 
-- **Full A2A Protocol Compliance:** Build and consume agentic applications strictly adhering to the Agent2Agent (A2A) **v1.0 Protocol Specification**.
-- **Client & Server SDKs:** High-level APIs for both exposing autonomous agents (`a2asrv`) and interacting with them (`a2aclient`).
-- **Multi-Transport Support:** Built-in protocol handlers for gRPC, REST, and JSON-RPC over a single agnostic domain model.
-- **Real-Time Streaming:** Event-driven architecture supporting real-time artifact generation, task status updates, and agent thought streams.
-- **Extensible & Pluggable:** Easily bring your own transport layers, authentication middlewares, and database backends.
+- **A2A Protocol Compliance:** Build agentic applications that adhere to the Agent2Agent (A2A) **v1.0 Protocol Specification**.
+- **Client & Server SDKs:** High-level APIs for both serving agentic functionality (`a2asrv`) and consuming it (`a2aclient`).
+- **Multi-Transport Support:** Protocol bindings for gRPC, REST, and JSON-RPC.
+- **Extensible & Pluggable:** Extension points for bringing your own transport implementations, authentication middlewares, messaging and database backends.
 
 > **Note:** The SDK version is distinct from the A2A specification version. The supported protocol version is exported in the codebase as `a2a.Version`
 
