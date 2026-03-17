@@ -21,6 +21,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
@@ -113,7 +114,7 @@ func ExampleNewFactory() {
 	defer server.Close()
 
 	factory := a2aclient.NewFactory(
-		a2aclient.WithJSONRPCTransport(nil),
+		a2aclient.WithJSONRPCTransport(&http.Client{Timeout: 30 * time.Second}),
 	)
 
 	client, err := factory.CreateFromCard(context.Background(), makeCard(server.URL))
