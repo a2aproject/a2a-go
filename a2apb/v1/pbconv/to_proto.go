@@ -65,7 +65,7 @@ func ToProtoSendMessageRequest(req *a2a.SendMessageRequest) (*a2apb.SendMessageR
 	}, nil
 }
 
-func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, error) {
+func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	// TODO: add validation
 	if config == nil {
 		return nil, nil
@@ -76,7 +76,7 @@ func toProtoPushConfig(config *a2a.PushConfig) (*a2apb.PushNotificationConfig, e
 		return nil, fmt.Errorf("failed to convert authentication info: %w", err)
 	}
 
-	pConf := &a2apb.PushNotificationConfig{
+	pConf := &a2apb.TaskPushNotificationConfig{
 		Id:             config.ID,
 		Url:            config.URL,
 		Token:          config.Token,
@@ -108,12 +108,10 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 	}
 
 	pConf := &a2apb.SendMessageConfiguration{
-		AcceptedOutputModes:    config.AcceptedOutputModes,
-		PushNotificationConfig: pushConf,
+		AcceptedOutputModes:        config.AcceptedOutputModes,
+		TaskPushNotificationConfig: pushConf,
 	}
-	if config.Blocking != nil {
-		pConf.Blocking = *config.Blocking
-	}
+	pConf.ReturnImmediately = config.ReturnImmediately
 	if config.HistoryLength != nil {
 		pConf.HistoryLength = proto.Int32(int32(*config.HistoryLength))
 	}
@@ -168,8 +166,8 @@ func ToProtoSubscribeToTaskRequest(req *a2a.SubscribeToTaskRequest) (*a2apb.Subs
 	}, nil
 }
 
-// ToProtoCreateTaskPushConfigRequest converts a [a2a.CreateTaskPushConfigRequest] to a [a2apb.CreateTaskPushNotificationConfigRequest].
-func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest) (*a2apb.CreateTaskPushNotificationConfigRequest, error) {
+// ToProtoCreateTaskPushConfigRequest converts a [a2a.CreateTaskPushConfigRequest] to a [a2apb.TaskPushNotificationConfig].
+func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
 	// TODO: add validation
 	if config == nil {
 		return nil, nil
@@ -180,11 +178,10 @@ func ToProtoCreateTaskPushConfigRequest(config *a2a.CreateTaskPushConfigRequest)
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
-	return &a2apb.CreateTaskPushNotificationConfigRequest{
-		Tenant: config.Tenant,
-		TaskId: string(config.TaskID),
-		Config: pConfig,
-	}, nil
+	pConfig.Tenant = config.Tenant
+	pConfig.TaskId = string(config.TaskID)
+
+	return pConfig, nil
 }
 
 // ToProtoGetTaskPushConfigRequest converts a [a2a.GetTaskPushConfigRequest] to a [a2apb.GetTaskPushNotificationConfigRequest].
@@ -571,11 +568,10 @@ func ToProtoTaskPushConfig(config *a2a.TaskPushConfig) (*a2apb.TaskPushNotificat
 		return nil, err
 	}
 
-	return &a2apb.TaskPushNotificationConfig{
-		Tenant:                 config.Tenant,
-		TaskId:                 string(config.TaskID),
-		PushNotificationConfig: pConfig,
-	}, nil
+	pConfig.Tenant = config.Tenant
+	pConfig.TaskId = string(config.TaskID)
+
+	return pConfig, nil
 }
 
 // ToProtoListTaskPushConfigResponse converts a [a2a.ListTaskPushConfigResponse] to a [a2apb.ListTaskPushNotificationConfigResponse].

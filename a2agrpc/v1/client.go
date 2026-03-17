@@ -92,7 +92,7 @@ func (c *grpcTransport) ListTasks(ctx context.Context, params a2aclient.ServiceP
 
 	pbResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pbReq)
 	if err != nil {
-		return nil, err
+		return nil, grpcutil.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoListTasksResponse(pbResp)

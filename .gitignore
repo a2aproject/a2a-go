@@ -55,3 +55,6 @@ Temporary Items
 *.icloud
 
 .env
+
+# gitignore temporary AI worktree directories
+aiwt-*

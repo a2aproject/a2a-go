@@ -146,18 +146,27 @@ func TestManager_TaskImmutableAfterSave(t *testing.T) {
 		t.Fatalf("task artifact length = %d, want 1", len(result1.Task.Artifacts))
 	}
 
-	result3, err := m.Process(t.Context(), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil))
+	result3, err := m.Process(t.Context(), a2a.NewStatusUpdateEvent(task, a2a.TaskStateInputRequired, nil))
 	if err != nil {
 		t.Fatalf("m.Process() failed to save task: %v", err)
 	}
-	if result3.Task.Status.State != a2a.TaskStateCompleted {
-		t.Fatalf("task state after update = %q, want = %q", result3.Task.Status.State, a2a.TaskStateCompleted)
+	if result3.Task.Status.State != a2a.TaskStateInputRequired {
+		t.Fatalf("task state after update = %q, want = %q", result3.Task.Status.State, a2a.TaskStateInputRequired)
 	}
 	if result1.Task.Status.State != a2a.TaskStateWorking {
 		t.Fatalf("previous result state changed to = %q, want = %q", result1.Task.Status.State, a2a.TaskStateWorking)
 	}
 	if result2.Task.Status.State != a2a.TaskStateWorking {
 		t.Fatalf("previous result state changed to = %q, want = %q", result2.Task.Status.State, a2a.TaskStateWorking)
+	}
+
+	result3.Task.Status.State = a2a.TaskStateFailed
+	result4, err := m.Process(t.Context(), a2a.NewArtifactEvent(task, a2a.NewTextPart("baz")))
+	if err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if result4.Task.Status.State == a2a.TaskStateFailed {
+		t.Fatalf("task state after update = %q, want = %q", result4.Task.Status.State, a2a.TaskStateInputRequired)
 	}
 }
 
@@ -516,10 +525,11 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 	taskID, contextID := a2a.NewTaskID(), a2a.NewContextID()
 	taskInfo := a2a.TaskInfo{TaskID: taskID, ContextID: contextID}
 	testCases := []struct {
-		name           string
-		storedTask     bool
-		event          a2a.Event
-		wantErrContain string
+		name            string
+		storedTask      bool
+		storedTaskState a2a.TaskState
+		event           a2a.Event
+		wantErrContain  string
 	}{
 		{
 			name:           "artifact update before task snapshot",
@@ -545,6 +555,34 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 			event:          a2a.NewMessageForTask(a2a.MessageRoleAgent, taskInfo),
 			wantErrContain: "message not allowed after task was stored",
 		},
+		{
+			name:            "completed task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateCompleted,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateCompleted),
+		},
+		{
+			name:            "canceled task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateCanceled,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateCanceled),
+		},
+		{
+			name:            "failed task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateFailed,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateFailed),
+		},
+		{
+			name:            "rejected task update not allowed",
+			storedTask:      true,
+			storedTaskState: a2a.TaskStateRejected,
+			event:           a2a.NewArtifactEvent(taskInfo),
+			wantErrContain:  fmt.Sprintf("%q task state updates are not allowed", a2a.TaskStateRejected),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -553,6 +591,9 @@ func TestManager_InvalidAgentResponse(t *testing.T) {
 				storedTask = &taskstore.StoredTask{
 					Task:    &a2a.Task{ID: taskID, ContextID: contextID},
 					Version: taskstore.TaskVersion(1),
+				}
+				if tc.storedTaskState != "" {
+					storedTask.Task.Status.State = tc.storedTaskState
 				}
 			}
 			manager := NewManager(newTestSaver(), taskInfo, storedTask)

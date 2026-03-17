@@ -23,7 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/proto"
+
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -192,7 +192,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			},
 			want: &a2a.SendMessageConfig{
 				AcceptedOutputModes: []string{"text/plain"},
-				Blocking:            proto.Bool(true),
+				ReturnImmediately:   false,
 				HistoryLength:       &a2aHistoryLen,
 				PushConfig: &a2a.PushConfig{
 					ID:    "test-push-config",
@@ -210,14 +210,14 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			in: &a2apb.SendMessageConfiguration{
 				HistoryLength: 0,
 			},
-			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false)},
+			want: &a2a.SendMessageConfig{ReturnImmediately: true},
 		},
 		{
 			name: "config with no push notification",
 			in: &a2apb.SendMessageConfiguration{
 				PushNotification: nil,
 			},
-			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false)},
+			want: &a2a.SendMessageConfig{ReturnImmediately: true},
 		},
 		{
 			name: "nil config",
@@ -266,8 +266,8 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 		},
 	}
 	a2aConf := &a2a.SendMessageConfig{
-		Blocking:      proto.Bool(true),
-		HistoryLength: &a2aHistoryLen,
+		ReturnImmediately: false,
+		HistoryLength:     &a2aHistoryLen,
 		PushConfig: &a2a.PushConfig{
 			ID:    "push-config",
 			URL:   "http://example.com/hook",
@@ -331,7 +331,7 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			},
 			want: &a2a.SendMessageRequest{
 				Message: &a2aMsg,
-				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{}, Blocking: proto.Bool(false)},
+				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{}, ReturnImmediately: true},
 			},
 		},
 	}

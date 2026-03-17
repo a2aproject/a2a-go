@@ -32,6 +32,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -355,14 +356,69 @@ func TestREST_InvalidPayloads(t *testing.T) {
 				t.Errorf("got %d, want 400 Bad Request", resp.StatusCode)
 			}
 
-			if contentType := resp.Header.Get("Content-Type"); contentType != "application/problem+json" {
-				t.Errorf("got Content-Type %q, want application/problem+json", contentType)
+			if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
+				t.Errorf("got Content-Type %q, want application/json", contentType)
 			}
 
 			gotErr := rest.ToA2AError(resp)
 
 			if !errors.Is(gotErr, expectedErr) {
 				t.Errorf("got error %v, want %v", gotErr, expectedErr)
+			}
+		})
+	}
+}
+
+func TestREST_ListTasksParseErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "invalid pageSize",
+			query: "?pageSize=abc",
+		},
+		{
+			name:  "invalid includeArtifacts",
+			query: "?includeArtifacts=notbool",
+		},
+		{
+			name:  "multiple invalid params",
+			query: "?pageSize=abc&includeArtifacts=notbool",
+		},
+	}
+
+	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
+	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: auth,
+	})
+	reqHandler := NewHandler(&mockAgentExecutor{}, WithTaskStore(store))
+	server := httptest.NewServer(NewRESTHandler(reqHandler))
+	t.Cleanup(server.Close)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks"+tc.query, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("resp.StatusCode = %d, want non-200 for invalid query params", resp.StatusCode)
+			}
+
+			gotErr := rest.ToA2AError(resp)
+			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+				t.Fatalf("rest.ToA2AError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
 			}
 		})
 	}
@@ -460,6 +516,41 @@ func TestRESTTenant(t *testing.T) {
 type testInterceptor struct {
 	PassthroughCallInterceptor
 	BeforeFn func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error)
+}
+
+func TestREST_ServiceParams(t *testing.T) {
+	ctx := t.Context()
+	var gotAuth []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
+			gotAuth, _ = callCtx.ServiceParams().Get("authorization")
+			return ctx, nil, nil
+		},
+	}
+
+	handler := NewHandler(&mockAgentExecutor{}, WithCallInterceptors(interceptor))
+	server := httptest.NewServer(NewRESTHandler(handler))
+	defer server.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/tasks/test-task", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-token")
+
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
+
+	if len(gotAuth) == 0 || gotAuth[0] != "Bearer test-token" {
+		t.Errorf("ServiceParams[authorization] = %v, want [Bearer test-token]", gotAuth)
+	}
 }
 
 func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
