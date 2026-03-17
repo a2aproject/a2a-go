@@ -753,7 +753,7 @@ func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T
 	store := testutil.NewTestTaskStore()
 	ps := testutil.NewTestPushConfigStore()
 	pn := testutil.NewTestPushSender(t).SetSendPushError(pushError)
-	
+
 	agentMsg := newAgentMessage("test message")
 	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
 	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
