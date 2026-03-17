@@ -760,13 +760,13 @@ func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T
 
 	result, err := handler.SendMessage(ctx, input)
 	if err == nil {
-		t.Fatalf("Expected error, got nil. Result type: %T", result)
+		t.Fatalf("handler.SendMessage() error = nil, want to fail")
 	}
 	if !errors.Is(err, pushError) {
-		t.Fatalf("Expected error %v, got %v", pushError, err)
+		t.Fatalf("handler.SendMessage() error = %v, want %v", err, pushError)
 	}
 	if result != nil {
-		t.Fatalf("Expected nil result, got %v", result)
+		t.Fatalf("handler.SendMessage() result = %v, want nil", result)
 	}
 }
 
