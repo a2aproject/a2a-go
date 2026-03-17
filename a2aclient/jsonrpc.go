@@ -22,7 +22,6 @@ import (
 	"io"
 	"iter"
 	"net/http"
-	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
@@ -48,7 +47,6 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 }
 
 // NewJSONRPCTransport creates a new JSON-RPC transport for A2A protocol communication.
-// By default, an HTTP client will use a 3-minute timeout.
 // For production deployments, provide a client with appropriate timeout, retry policy,
 // and connection pooling configured for your requirements.
 //
@@ -63,7 +61,7 @@ func NewJSONRPCTransport(url string, client *http.Client) Transport {
 	}
 
 	if t.httpClient == nil {
-		t.httpClient = &http.Client{Timeout: 3 * time.Minute}
+		t.httpClient = &http.Client{Timeout: defaultRequestTimeout}
 	}
 
 	return t

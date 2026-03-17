@@ -187,7 +187,7 @@ func (h *Handler) SubscribeToTask(pbReq *a2apb.SubscribeToTaskRequest, stream gr
 }
 
 // CreateTaskPushNotificationConfig implements a2apb.A2AServiceServer.
-func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.CreateTaskPushNotificationConfigRequest) (*a2apb.TaskPushNotificationConfig, error) {
+func (h *Handler) CreateTaskPushNotificationConfig(ctx context.Context, pbReq *a2apb.TaskPushNotificationConfig) (*a2apb.TaskPushNotificationConfig, error) {
 	req, err := pbconv.FromProtoCreateTaskPushConfigRequest(pbReq)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)

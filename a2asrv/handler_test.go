@@ -459,7 +459,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "non-terminal task state",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskWithStatus(execCtx, a2a.TaskStateWorking, "Working..."),
@@ -471,7 +471,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "non-final status update",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(execCtx, a2a.TaskStateWorking, "Working..."),
@@ -483,7 +483,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "artifact update",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newArtifactEvent(execCtx, a2a.NewArtifactID(), a2a.NewTextPart("Artifact")),
@@ -495,7 +495,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "message for existing task",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
@@ -509,7 +509,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 				name: "message",
 				input: &a2a.SendMessageRequest{
 					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi")),
-					Config:  &a2a.SendMessageConfig{Blocking: utils.Ptr(false)},
+					Config:  &a2a.SendMessageConfig{ReturnImmediately: true},
 				},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
@@ -735,6 +735,38 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	}
 	if !hasArtifact || !hasStatusUpdate || !hasTask {
 		t.Fatalf("SendMessage() expected artifact and status update events, but got %v", pn.PushedEvents)
+	}
+}
+
+func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T) {
+	ctx := t.Context()
+
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
+		Config: &a2a.SendMessageConfig{
+			PushConfig: pushConfig,
+		},
+	}
+
+	pushError := errors.New("push failed")
+	store := testutil.NewTestTaskStore()
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t).SetSendPushError(pushError)
+
+	agentMsg := newAgentMessage("test message")
+	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	result, err := handler.SendMessage(ctx, input)
+	if err == nil {
+		t.Fatalf("handler.SendMessage() error = nil, want to fail")
+	}
+	if !errors.Is(err, pushError) {
+		t.Fatalf("handler.SendMessage() error = %v, want %v", err, pushError)
+	}
+	if result != nil {
+		t.Fatalf("handler.SendMessage() result = %v, want nil", result)
 	}
 }
 

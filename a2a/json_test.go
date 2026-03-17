@@ -76,6 +76,8 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		"name3": MutualTLSSecurityScheme{Description: "optional"},
 		"name4": HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
 		"name5": OAuth2SecurityScheme{
+			Oauth2MetadataURL: "https://test.com",
+			Description:       "test",
 			Flows: PasswordOAuthFlow{
 				TokenURL: "url",
 				Scopes:   map[string]string{"email": "read user emails"},
@@ -88,21 +90,21 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 		`"name2":{"openIdConnect":{"openIdConnectUrl":"url"}}`,
 		`"name3":{"mutualTLS":{"description":"optional"}}`,
 		`"name4":{"http":{"bearerFormat":"JWT","scheme":"Bearer"}}`,
-		`"name5":{"oauth2":{"flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}`,
+		`"name5":{"oauth2":{"oauth2MetadataUrl": "https://test.com", "description": "test","flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}`,
 	}
 	wantJSON := fmt.Sprintf("{%s}", strings.Join(entriesJSON, ","))
 
 	var decodedJSON NamedSecuritySchemes
 	mustUnmarshal(t, []byte(wantJSON), &decodedJSON)
 	if !reflect.DeepEqual(decodedJSON, schemes) {
-		t.Fatalf("Unmarshal() failed:\nwant %v\ngot: %s", schemes, decodedJSON)
+		t.Fatalf("Unmarshal() failed:\nwant %+v\ngot: %s", schemes, decodedJSON)
 	}
 
 	encodedSchemes := mustMarshal(t, &schemes)
 	var decodedBack NamedSecuritySchemes
 	mustUnmarshal(t, []byte(encodedSchemes), &decodedBack)
 	if !reflect.DeepEqual(decodedJSON, decodedBack) {
-		t.Fatalf("Decoding back failed:\nwant %v\ngot: %s", decodedJSON, decodedBack)
+		t.Fatalf("Decoding back failed:\nwant %+v\ngot: %s", decodedJSON, decodedBack)
 	}
 }
 
