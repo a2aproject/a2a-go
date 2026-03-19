@@ -133,33 +133,18 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 	ctx := t.Context()
 
+	sharedStore := testutil.NewTestTaskStore()
 	executor, execChannels := testexecutor.NewWithControlChannels()
-	canceler, cancelChannels := testexecutor.NewWithControlChannels()
-
-	// The store is shared by two server
-	store := testutil.NewTestTaskStore()
-	client1, client2 := startTestServer(t, executor, store), startTestServer(t, canceler, store)
-
-	// Send message streaming in a detached goroutine piping events to a channel
-	receivedEventsChan := make(chan a2a.Event, 1)
-	go func() {
-		defer close(receivedEventsChan)
-		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
-		for event, err := range client1.SendStreamingMessage(ctx, msg) {
-			if err != nil {
-				t.Errorf("client.SendStreamingMessage() error = %v", err)
-				return
-			}
-			receivedEventsChan <- event
-		}
-	}()
+	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
 	reqCtx := <-execChannels.ReqCtx
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
 
 	cancelErrChan := make(chan error)
+	canceler, cancelChannels := testexecutor.NewWithControlChannels()
 	go func() {
-		_, err := client2.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
+		cancelClient := startTestServer(t, canceler, sharedStore)
+		_, err := cancelClient.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
 		cancelErrChan <- err
 	}()
 	<-cancelChannels.CancelCalled
@@ -177,28 +162,42 @@ func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 	}
 }
 
+func TestCancelCancelledTask(t *testing.T) {
+	ctx := t.Context()
+
+	sharedStore := testutil.NewTestTaskStore()
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	cancelClient1 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
+	if _, err := cancelClient1.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID}); err != nil {
+		t.Errorf("cancel1Client.CancelTask() error = %v", err)
+	}
+
+	finalEvent := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	finalEvent.Final = true
+	execChannels.ExecEvent <- finalEvent
+	<-receivedEventsChan
+
+	cancelClient2 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
+	task, err := cancelClient2.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
+	if err != nil {
+		t.Fatalf("cancel2Client.CancelTask() error = %v", err)
+	}
+	if task.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("cancel2Client.CancelTask() = %v, want cancelled task", task)
+	}
+}
+
 func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 	ctx := t.Context()
 
-	// This store is shared by all the servers
-	store := testutil.NewTestTaskStore()
-
+	sharedStore := testutil.NewTestTaskStore()
 	executor, execChannels := testexecutor.NewWithControlChannels()
-	execClient := startTestServer(t, executor, store)
-
-	// Send message streaming in a detached goroutine piping events to a channel
-	receivedEventsChan := make(chan a2a.Event, 1)
-	go func() {
-		defer close(receivedEventsChan)
-		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
-		for event, err := range execClient.SendStreamingMessage(ctx, msg) {
-			if err != nil {
-				t.Errorf("client.SendStreamingMessage() error = %v", err)
-				return
-			}
-			receivedEventsChan <- event
-		}
-	}()
+	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
 	reqCtx := <-execChannels.ReqCtx
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
@@ -210,7 +209,7 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 		canceler, channels := testexecutor.NewWithControlChannels()
 		cancelChannels = append(cancelChannels, channels)
 
-		client := startTestServer(t, canceler, store)
+		client := startTestServer(t, canceler, sharedStore)
 		go func() {
 			task, err := client.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
 			if err != nil {
@@ -250,4 +249,20 @@ func startTestServer(t *testing.T, executor a2asrv.AgentExecutor, store a2asrv.T
 	t.Cleanup(server.Close)
 	client := mustCreateClient(t, newAgentCard(server.URL))
 	return client
+}
+
+func sendMessageInBackground(t *testing.T, client *a2aclient.Client) <-chan a2a.Event {
+	receivedEventsChan := make(chan a2a.Event, 1)
+	go func() {
+		defer close(receivedEventsChan)
+		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+		for event, err := range client.SendStreamingMessage(t.Context(), msg) {
+			if err != nil {
+				t.Errorf("client.SendStreamingMessage() error = %v", err)
+				return
+			}
+			receivedEventsChan <- event
+		}
+	}()
+	return receivedEventsChan
 }

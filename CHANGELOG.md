@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.11](https://github.com/a2aproject/a2a-go/compare/v0.3.10...v0.3.11) (2026-03-19)
+
+### Bug Fixes
+
+* fix concurrent cancellations handled incorrectly ([#286])
+
 ## [0.3.10](https://github.com/a2aproject/a2a-go/compare/v0.3.9...v0.3.10) (2026-03-17)
 
 ### Bug Fixes

@@ -110,3 +110,13 @@ func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
 		ContinueCancel: continueCancelChan,
 	}
 }
+
+func NewCanceler() *TestAgentExecutor {
+	return &TestAgentExecutor{
+		CancelFn: func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil)
+			event.Final = true
+			return q.Write(ctx, event)
+		},
+	}
+}
