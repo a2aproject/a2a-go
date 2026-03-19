@@ -35,6 +35,7 @@ type TestAgentExecutor struct {
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
+// Emitted provides access to events emitted by [TestAgentExecutor] guarded with a mutex.
 func (e *TestAgentExecutor) Emitted() []a2a.Event {
 	e.mu.Lock()
 	defer e.mu.Unlock()

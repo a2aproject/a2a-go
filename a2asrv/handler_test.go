@@ -950,7 +950,7 @@ func TestRequestHandler_SendMessage_TaskVersion(t *testing.T) {
 		}
 		gotPrevVersions = make([]taskstore.TaskVersion, 0)
 		// TODO: use cleanup callback when added
-		time.Sleep(15*time.Millisecond)
+		time.Sleep(15 * time.Millisecond)
 	}
 
 }
