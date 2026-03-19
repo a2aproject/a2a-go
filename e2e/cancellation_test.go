@@ -67,23 +67,9 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 
 	// The store is shared by two server
 	store := testutil.NewTestTaskStore()
-	client1 := startTestServer(t, executor, store)
 	client2 := startTestServer(t, canceler, store)
 
-	// Send message streaming in a detached goroutine piping events to a channel
-	executionEvents := make(chan a2a.Event, 1)
-	go func() {
-		defer close(executionEvents)
-		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
-		for event, err := range client1.SendStreamingMessage(ctx, msg) {
-			if err != nil {
-				t.Errorf("client.SendStreamingMessage() error = %v", err)
-				return
-			}
-			executionEvents <- event
-		}
-	}()
-
+	executionEvents := sendMessageInBackground(t, startTestServer(t, executor, store))
 	taskEvent, ok := <-executionEvents
 	if !ok {
 		t.Fatalf("client.SendStreamingMessage() no task event")
