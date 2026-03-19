@@ -48,6 +48,7 @@ func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.Executor
 	return func(yield func(a2a.Event, error) bool) {}
 }
 
+// FromFunction creates a [TestAgentExecutor] from a function.
 func FromFunction(fn func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
@@ -71,6 +72,7 @@ func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Ev
 	return exec
 }
 
+// ControlChannels is a group of channels for controlling [TestAgentExecutor] behavior.
 type ControlChannels struct {
 	ReqCtx         <-chan *a2asrv.ExecutorContext
 	ExecEvent      chan<- a2a.Event
@@ -78,6 +80,7 @@ type ControlChannels struct {
 	ContinueCancel chan<- struct{}
 }
 
+// NewWithControlChannels creates a [TestAgentExecutor] controllable through the returned channels.
 func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
 	reqCtxChan, eventsChan := make(chan *a2asrv.ExecutorContext, 1), make(chan a2a.Event, 1)
 	cancelCalledChan, continueCancelChan := make(chan struct{}, 1), make(chan struct{}, 1)
@@ -111,6 +114,7 @@ func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
 	}
 }
 
+// NewCanceler creates a [TestAgentExecutor] which emits a single [a2a.TaskStateCanceled] even on cancel.
 func NewCanceler() *TestAgentExecutor {
 	return &TestAgentExecutor{
 		CancelFn: func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
