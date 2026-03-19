@@ -32,8 +32,23 @@ type TestAgentExecutor struct {
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
-// FromFunction creates a [TestAgentExecutor] from a function.
-func FromFunction(fn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]) *TestAgentExecutor {
+// Execute implements [a2asrv.AgentExecutor] interface.
+func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	if e.ExecuteFn != nil {
+		return e.ExecuteFn(ctx, execCtx)
+	}
+	return func(yield func(a2a.Event, error) bool) {}
+}
+
+// Cancel implements [a2asrv.AgentExecutor] interface.
+func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	if e.CancelFn != nil {
+		return e.CancelFn(ctx, execCtx)
+	}
+	return func(yield func(a2a.Event, error) bool) {}
+}
+
+func FromFunction(fn func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
 
@@ -56,18 +71,52 @@ func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Ev
 	return exec
 }
 
-// Execute implements [a2asrv.AgentExecutor] interface.
-func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	if e.ExecuteFn != nil {
-		return e.ExecuteFn(ctx, execCtx)
-	}
-	return func(yield func(a2a.Event, error) bool) {}
+type ControlChannels struct {
+	ReqCtx         <-chan *a2asrv.ExecutorContext
+	ExecEvent      chan<- a2a.Event
+	CancelCalled   <-chan struct{}
+	ContinueCancel chan<- struct{}
 }
 
-// Cancel implements [a2asrv.AgentExecutor] interface.
-func (e *TestAgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	if e.CancelFn != nil {
-		return e.CancelFn(ctx, execCtx)
+func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
+	reqCtxChan, eventsChan := make(chan *a2asrv.ExecutorContext, 1), make(chan a2a.Event, 1)
+	cancelCalledChan, continueCancelChan := make(chan struct{}, 1), make(chan struct{}, 1)
+	var executor *TestAgentExecutor
+	executor = &TestAgentExecutor{
+		Emitted: []a2a.Event{},
+		ExecuteFn: func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				reqCtxChan <- reqCtx
+				for ev := range eventsChan {
+					executor.Emitted = append(executor.Emitted, ev)
+					if !yield(ev, nil) {
+						return
+					}
+				}
+			}
+		},
+		CancelFn: func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				cancelCalledChan <- struct{}{}
+				<-continueCancelChan
+				yield(a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
 	}
-	return func(yield func(a2a.Event, error) bool) {}
+	return executor, &ControlChannels{
+		ReqCtx:         reqCtxChan,
+		ExecEvent:      eventsChan,
+		CancelCalled:   cancelCalledChan,
+		ContinueCancel: continueCancelChan,
+	}
+}
+
+func NewCanceler() *TestAgentExecutor {
+	return &TestAgentExecutor{
+		CancelFn: func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+	}
 }
