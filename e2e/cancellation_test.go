@@ -210,8 +210,8 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 	}
 
 	for range concurrentCancelCount {
-		if task := <-cancelResutlts; task.Status.State != a2a.TaskStateCanceled {
-			t.Fatalf("CancelTask() status = %q, want %q", task.Status.State, a2a.TaskStateCanceled)
+		if task := <-cancelResutlts; task != nil && task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("CancelTask() status = %v, want canceled task", task)
 		}
 	}
 
@@ -222,7 +222,7 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 
 	if task, ok := execResult.(*a2a.Task); ok {
 		if task.Status.State != a2a.TaskStateCanceled {
-			t.Fatalf("client.SendStreamingMessage() wrong state = %v, want %v", task.Status.State, a2a.TaskStateCompleted)
+			t.Fatalf("client.SendStreamingMessage() wrong state = %v, want %v", task.Status.State, a2a.TaskStateCanceled)
 		}
 	} else {
 		t.Fatalf("client.SendStreamingMessage() task event is not a task, got %T", execResult)
