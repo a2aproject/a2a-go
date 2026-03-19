@@ -18,6 +18,7 @@ package testexecutor
 import (
 	"context"
 	"iter"
+	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
@@ -25,12 +26,26 @@ import (
 
 // TestAgentExecutor is a mock of [a2asrv.AgentExecutor].
 type TestAgentExecutor struct {
-	Emitted   []a2a.Event
+	mu      sync.Mutex
+	emitted []a2a.Event
+
 	ExecuteFn func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
 	CancelFn  func(context.Context, *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
+
+func (e *TestAgentExecutor) Emitted() []a2a.Event {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.emitted
+}
+
+func (e *TestAgentExecutor) record(event a2a.Event) {
+	e.mu.Lock()
+	e.emitted = append(e.emitted, event)
+	e.mu.Unlock()
+}
 
 // Execute implements [a2asrv.AgentExecutor] interface.
 func (e *TestAgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
@@ -57,14 +72,15 @@ func FromFunction(fn func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.
 func FromEventGenerator(generator func(execCtx *a2asrv.ExecutorContext) []a2a.Event) *TestAgentExecutor {
 	var exec *TestAgentExecutor
 	exec = &TestAgentExecutor{
-		Emitted: []a2a.Event{},
+		emitted: []a2a.Event{},
 		ExecuteFn: func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
 				for _, ev := range generator(execCtx) {
+					exec.record(ev)
+
 					if !yield(ev, nil) {
 						return
 					}
-					exec.Emitted = append(exec.Emitted, ev)
 				}
 			}
 		},
@@ -86,12 +102,12 @@ func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
 	cancelCalledChan, continueCancelChan := make(chan struct{}, 1), make(chan struct{}, 1)
 	var executor *TestAgentExecutor
 	executor = &TestAgentExecutor{
-		Emitted: []a2a.Event{},
+		emitted: []a2a.Event{},
 		ExecuteFn: func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
 				reqCtxChan <- reqCtx
 				for ev := range eventsChan {
-					executor.Emitted = append(executor.Emitted, ev)
+					executor.record(ev)
 					if !yield(ev, nil) {
 						return
 					}
