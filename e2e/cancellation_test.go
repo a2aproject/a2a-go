@@ -130,6 +130,120 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	}
 }
 
+func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
+	ctx := t.Context()
+
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	canceler, cancelChannels := testexecutor.NewWithControlChannels()
+
+	// The store is shared by two server
+	store := testutil.NewTestTaskStore()
+	client1, client2 := startTestServer(t, executor, store), startTestServer(t, canceler, store)
+
+	// Send message streaming in a detached goroutine piping events to a channel
+	receivedEventsChan := make(chan a2a.Event, 1)
+	go func() {
+		defer close(receivedEventsChan)
+		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+		for event, err := range client1.SendStreamingMessage(ctx, msg) {
+			if err != nil {
+				t.Errorf("client.SendStreamingMessage() error = %v", err)
+				return
+			}
+			receivedEventsChan <- event
+		}
+	}()
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	cancelErrChan := make(chan error)
+	go func() {
+		_, err := client2.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
+		cancelErrChan <- err
+	}()
+	<-cancelChannels.CancelCalled
+
+	finalEvent := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	finalEvent.Final = true
+	execChannels.ExecEvent <- finalEvent
+	<-receivedEventsChan
+
+	cancelChannels.ContinueCancel <- struct{}{}
+
+	gotErr := <-cancelErrChan
+	if !errors.Is(gotErr, a2a.ErrTaskNotCancelable) {
+		t.Fatalf("client2.CancelTask() error = %v, want %v", gotErr, a2a.ErrTaskNotCancelable)
+	}
+}
+
+func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
+	ctx := t.Context()
+
+	// This store is shared by all the servers
+	store := testutil.NewTestTaskStore()
+
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	execClient := startTestServer(t, executor, store)
+
+	// Send message streaming in a detached goroutine piping events to a channel
+	receivedEventsChan := make(chan a2a.Event, 1)
+	go func() {
+		defer close(receivedEventsChan)
+		msg := &a2a.MessageSendParams{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: "Work"})}
+		for event, err := range execClient.SendStreamingMessage(ctx, msg) {
+			if err != nil {
+				t.Errorf("client.SendStreamingMessage() error = %v", err)
+				return
+			}
+			receivedEventsChan <- event
+		}
+	}()
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	concurrentCancelCount := 2
+	var cancelChannels []*testexecutor.ControlChannels
+	cancelResutlts := make(chan *a2a.Task, concurrentCancelCount)
+	for range concurrentCancelCount {
+		canceler, channels := testexecutor.NewWithControlChannels()
+		cancelChannels = append(cancelChannels, channels)
+
+		client := startTestServer(t, canceler, store)
+		go func() {
+			task, err := client.CancelTask(ctx, &a2a.TaskIDParams{ID: reqCtx.TaskID})
+			if err != nil {
+				t.Errorf("CancelTask() error = %v", err)
+			}
+			cancelResutlts <- task
+		}()
+	}
+	for _, channels := range cancelChannels {
+		<-channels.CancelCalled
+		channels.ContinueCancel <- struct{}{}
+	}
+
+	for range concurrentCancelCount {
+		if task := <-cancelResutlts; task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("CancelTask() status = %q, want %q", task.Status.State, a2a.TaskStateCanceled)
+		}
+	}
+
+	finalEvent := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	finalEvent.Final = true
+	execChannels.ExecEvent <- finalEvent
+	execResult := <-receivedEventsChan
+
+	if task, ok := execResult.(*a2a.Task); ok {
+		if task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("client.SendStreamingMessage() wrong state = %v, want %v", task.Status.State, a2a.TaskStateCompleted)
+		}
+	} else {
+		t.Fatalf("client.SendStreamingMessage() task event is not a task, got %T", execResult)
+	}
+}
+
 func startTestServer(t *testing.T, executor a2asrv.AgentExecutor, store a2asrv.TaskStore) *a2aclient.Client {
 	handler := a2asrv.NewHandler(executor, a2asrv.WithTaskStore(store))
 	server := httptest.NewServer(a2asrv.NewJSONRPCHandler(handler))

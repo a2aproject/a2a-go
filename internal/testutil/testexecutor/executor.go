@@ -31,6 +31,26 @@ type TestAgentExecutor struct {
 
 var _ a2asrv.AgentExecutor = (*TestAgentExecutor)(nil)
 
+func (e *TestAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	if e.ExecuteFn != nil {
+		return e.ExecuteFn(ctx, reqCtx, q)
+	}
+	return nil
+}
+
+func (e *TestAgentExecutor) Cleanup(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
+	if e.CleanupFn != nil {
+		e.CleanupFn(ctx, reqCtx, result, err)
+	}
+}
+
+func (e *TestAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+	if e.CancelFn != nil {
+		return e.CancelFn(ctx, reqCtx, q)
+	}
+	return nil
+}
+
 func FromFunction(fn func(context.Context, *a2asrv.RequestContext, eventqueue.Queue) error) *TestAgentExecutor {
 	return &TestAgentExecutor{ExecuteFn: fn}
 }
@@ -52,22 +72,41 @@ func FromEventGenerator(generator func(reqCtx *a2asrv.RequestContext) []a2a.Even
 	return exec
 }
 
-func (e *TestAgentExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	if e.ExecuteFn != nil {
-		return e.ExecuteFn(ctx, reqCtx, q)
-	}
-	return nil
+type ControlChannels struct {
+	ReqCtx         <-chan *a2asrv.RequestContext
+	ExecEvent      chan<- a2a.Event
+	CancelCalled   <-chan struct{}
+	ContinueCancel chan<- struct{}
 }
 
-func (e *TestAgentExecutor) Cleanup(ctx context.Context, reqCtx *a2asrv.RequestContext, result a2a.SendMessageResult, err error) {
-	if e.CleanupFn != nil {
-		e.CleanupFn(ctx, reqCtx, result, err)
+func NewWithControlChannels() (*TestAgentExecutor, *ControlChannels) {
+	reqCtxChan, eventsChan := make(chan *a2asrv.RequestContext, 1), make(chan a2a.Event, 1)
+	cancelCalledChan, continueCancelChan := make(chan struct{}, 1), make(chan struct{}, 1)
+	var executor *TestAgentExecutor
+	executor = &TestAgentExecutor{
+		Emitted: []a2a.Event{},
+		ExecuteFn: func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+			reqCtxChan <- reqCtx
+			for ev := range eventsChan {
+				if err := q.Write(ctx, ev); err != nil {
+					return err
+				}
+				executor.Emitted = append(executor.Emitted, ev)
+			}
+			return nil
+		},
+		CancelFn: func(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
+			cancelCalledChan <- struct{}{}
+			<-continueCancelChan
+			event := a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCanceled, nil)
+			event.Final = true
+			return q.Write(ctx, event)
+		},
 	}
-}
-
-func (e *TestAgentExecutor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, q eventqueue.Queue) error {
-	if e.CancelFn != nil {
-		return e.CancelFn(ctx, reqCtx, q)
+	return executor, &ControlChannels{
+		ReqCtx:         reqCtxChan,
+		ExecEvent:      eventsChan,
+		CancelCalled:   cancelCalledChan,
+		ContinueCancel: continueCancelChan,
 	}
-	return nil
 }

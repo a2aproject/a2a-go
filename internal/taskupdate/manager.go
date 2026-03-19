@@ -189,7 +189,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 
 		if latestTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task moved to %q before it could be cancelled", latestTask.Status.State)
+			return nil, fmt.Errorf("task moved to %q before it could be cancelled: %w", latestTask.Status.State, a2a.ErrConcurrentTaskModification)
 		}
 
 		task, version = latestTask, latestVersion
