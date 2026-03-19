@@ -57,7 +57,8 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	store := testutil.NewTestTaskStore()
 	client2 := startTestServer(t, testexecutor.NewCanceler(), store)
 
-	executionEvents := sendMessageInBackground(t, startTestServer(t, executor, store))
+	executionEvents, drainFn := sendMessageInBackground(t, startTestServer(t, executor, store))
+	defer drainFn()
 	taskEvent, ok := <-executionEvents
 	if !ok {
 		t.Fatalf("client.SendStreamingMessage() no task event")
@@ -98,7 +99,8 @@ func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 
 	sharedStore := testutil.NewTestTaskStore()
 	executor, execChannels := testexecutor.NewWithControlChannels()
-	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
 	reqCtx := <-execChannels.ReqCtx
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
@@ -128,7 +130,8 @@ func TestCancelCancelledTask(t *testing.T) {
 
 	sharedStore := testutil.NewTestTaskStore()
 	executor, execChannels := testexecutor.NewWithControlChannels()
-	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
 	reqCtx := <-execChannels.ReqCtx
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
@@ -156,7 +159,8 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 
 	sharedStore := testutil.NewTestTaskStore()
 	executor, execChannels := testexecutor.NewWithControlChannels()
-	receivedEventsChan := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
 	reqCtx := <-execChannels.ReqCtx
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
@@ -179,6 +183,8 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 	}
 	for _, channels := range cancelChannels {
 		<-channels.CancelCalled
+	}
+	for _, channels := range cancelChannels {
 		channels.ContinueCancel <- struct{}{}
 	}
 
@@ -208,7 +214,7 @@ func startTestServer(t *testing.T, executor a2asrv.AgentExecutor, store taskstor
 	return client
 }
 
-func sendMessageInBackground(t *testing.T, client *a2aclient.Client) <-chan a2a.Event {
+func sendMessageInBackground(t *testing.T, client *a2aclient.Client) (<-chan a2a.Event, func()) {
 	receivedEventsChan := make(chan a2a.Event, 1)
 	go func() {
 		defer close(receivedEventsChan)
@@ -221,5 +227,9 @@ func sendMessageInBackground(t *testing.T, client *a2aclient.Client) <-chan a2a.
 			receivedEventsChan <- event
 		}
 	}()
-	return receivedEventsChan
+	return receivedEventsChan, func() {
+		for range receivedEventsChan {
+			// drain
+		}
+	}
 }
