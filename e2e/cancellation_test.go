@@ -189,8 +189,12 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 	}
 
 	for range concurrentCancelCount {
-		if task := <-cancelResutlts; task != nil && task.Status.State != a2a.TaskStateCanceled {
-			t.Fatalf("CancelTask() status = %v, want canceled task", task)
+		task := <-cancelResutlts
+		if task == nil {
+			t.Fatal("CancelTask() returned nil task")
+		}
+		if task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("CancelTask() status = %v, want canceled task", task.Status.State)
 		}
 	}
 
