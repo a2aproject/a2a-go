@@ -354,5 +354,3 @@ In cluster mode, the frontend does not spawn execution goroutines. The backend's
 5. **Cancelation coalescing is per-instance**: two `localManager` instances sharing a store do NOT coalesce cancelations. Each creates independent cancelation goroutines, and OCC is the only coordination mechanism.
 
 6. **Cleanup order in `cleanupExecution`**: the queue is destroyed before `signalDone` is called. Subscriptions that fall back to `execution.result.wait()` after seeing `ErrQueueClosed` must briefly wait for the promise to be signaled.
-
-7. **`handleErrorFn` is nil for cancellation**: `handleCancel` (local_manager.go:294) does not set `handleErrorFn` on the `executionHandler`, unlike `handleExecution` (line 254). If the cancellation producer errors and the errgroup context gets canceled, the consumer's `processEvents` will call the nil `handleErrorFn`, panicking. The panic is recovered by `runProducerConsumer`, but the original producer error may be masked.
