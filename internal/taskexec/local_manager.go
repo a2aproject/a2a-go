@@ -289,7 +289,11 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 	pipe := eventpipe.NewLocal()
 	defer pipe.Close()
 
-	handler := &executionHandler{agentEvents: pipe.Reader, handleEventFn: processor.Process}
+	handler := &executionHandler{
+		agentEvents:   pipe.Reader,
+		handleEventFn: processor.Process,
+		handleErrorFn: func(ctx context.Context, err error) (a2a.SendMessageResult, error) { return nil, err },
+	}
 	result, err := runProducerConsumer(
 		ctx,
 		func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) },

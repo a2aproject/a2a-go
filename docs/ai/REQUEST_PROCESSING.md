@@ -39,7 +39,7 @@ The factory is used identically by both local and distributed modes.
 
 ### eventpipe (`internal/eventpipe/local.go`)
 
-A buffered channel (default 1024 capacity) connecting the producer goroutine to the consumer goroutine. Always in-process, even in cluster mode. Important properties:
+A buffered channel connecting the producer goroutine to the consumer goroutine. Always in-process, even in cluster mode. Important properties:
 
 1. **Write** uses a `select` on the channel send, a close signal, and context cancellation (`pipeWriter.Write`, line 87).
 2. **Read** allows draining buffered events even after the pipe is closed (`pipeReader.Read`, line 112).
@@ -164,7 +164,7 @@ There are three distinct cancellation scenarios, all handled by `localManager.Ca
 
 1. Creates a new `eventpipe.Local` (separate from any execution pipe).
 2. Calls `factory.CreateCanceler` -- loads the task from the store, creates a `canceler` + `processor`.
-3. Constructs an `executionHandler` with `handleEventFn` set but **`handleErrorFn` left nil** (unlike execution which sets it to `processor.ProcessError`). If the pipe read fails (e.g., errgroup context canceled due to producer error), the consumer will nil-pointer panic when trying to call `handleErrorFn`. The panic is caught by `runProducerConsumer`'s recovery, but it masks the original error.
+3. Constructs an `executionHandler` with a passthrough `handleEventFn` (unlike execution which sets it to `processor.ProcessError`).
 4. Runs `runProducerConsumer` with the canceler as producer and processor as consumer.
 5. Sets the result on the cancelation promise and calls `signalDone`.
 
@@ -347,7 +347,7 @@ In cluster mode, the frontend does not spawn execution goroutines. The backend's
 
 2. **Assuming channel range loops respect context**: a `for event := range channel` loop does not check `ctx.Done()`. If the producer is stuck in such a loop, it won't stop when the consumer finishes, hanging `group.Wait()` and preventing cleanup.
 
-3. **Pipe write succeeding despite canceled context**: because the pipe buffer is 1024, a write to a non-full buffer succeeds immediately even if the context is canceled.
+3. **Pipe write succeeding despite canceled context**: because the pipe buffered, a write to a non-full buffer succeeds immediately even if the context is canceled.
 
 4. **Broadcast queue write is synchronous**: `eventqueue.Writer.Write` blocks until all registered readers receive the message. A subscriber that doesn't drain its queue blocks the entire pipeline.
 
