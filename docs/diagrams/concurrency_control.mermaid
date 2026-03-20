@@ -1,0 +1,46 @@
+sequenceDiagram
+    participant Exec as Execution<br/>(Server 1)
+    participant Store as TaskStore
+    participant Cancel as Cancel<br/>(Server 2)
+
+    Note over Store: Task at V1 (submitted)
+
+    Exec->>Store: CreateExecutor → load task
+    Store-->>Exec: task V1
+
+    Exec->>Store: store.Update(submitted→working, prevVersion=V1)
+    Store-->>Exec: V2
+    Note over Store: Task at V2 (working)
+
+    Cancel->>Store: CreateCanceler → load task
+    Store-->>Cancel: task V2
+
+    par Execution processes events
+        Exec->>Exec: agent yields artifact update
+        Exec->>Store: store.Update(artifact, prevVersion=V2)
+        Store-->>Exec: V3
+        Note over Store: Task at V3 (working + artifact)
+    and Cancelation runs
+        Cancel->>Cancel: agent.Cancel yields StatusUpdate(canceled)
+        Cancel->>Store: updateStatus(canceled, prevVersion=V2)
+        Store-->>Cancel: ErrConcurrentModification!
+        Note over Cancel: OCC retry: re-fetch task
+        Cancel->>Store: store.Get(taskID)
+        Store-->>Cancel: task V3 (working, not terminal)
+        Cancel->>Store: updateStatus(canceled, prevVersion=V3)
+        Store-->>Cancel: V4
+        Note over Store: Task at V4 (canceled)
+    end
+
+    Exec->>Exec: agent yields StatusUpdate(completed)
+    Exec->>Store: store.Update(completed, prevVersion=V3)
+    Store-->>Exec: ErrConcurrentModification!
+
+    Note over Exec: processor.Process catches OCC error
+
+    Exec->>Store: store.Get(taskID)
+    Store-->>Exec: task V4 (canceled = terminal)
+
+    Note over Exec: task is terminal →<br/>return canceled task as ExecutionResult<br/>with ExecutionFailureCause = OCC error
+
+    Exec->>Exec: execution terminates gracefully
