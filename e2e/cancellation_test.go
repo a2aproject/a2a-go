@@ -55,7 +55,7 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 
 	// The store is shared by two server
 	store := testutil.NewTestTaskStore()
-	client2 := startTestServer(t, testexecutor.NewCanceler(), store)
+	cancelClient := startTestServer(t, testexecutor.NewCanceler(), store)
 
 	executionEvents, drainFn := sendMessageInBackground(t, startTestServer(t, executor, store))
 	defer drainFn()
@@ -68,7 +68,7 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 		t.Fatalf("client.SendStreamingMessage() task event is not a task, got %T", taskEvent)
 	}
 
-	canceledTask, err := client2.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
+	canceledTask, err := cancelClient.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
 	if err != nil {
 		t.Fatalf("client.CancelTask() error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 
 	gotErr := <-cancelErrChan
 	if !errors.Is(gotErr, a2a.ErrTaskNotCancelable) {
-		t.Fatalf("client2.CancelTask() error = %v, want %v", gotErr, a2a.ErrTaskNotCancelable)
+		t.Fatalf("cancelClient.CancelTask() error = %v, want %v", gotErr, a2a.ErrTaskNotCancelable)
 	}
 }
 
@@ -138,7 +138,7 @@ func TestCancelCancelledTask(t *testing.T) {
 
 	cancelClient1 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
 	if _, err := cancelClient1.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID}); err != nil {
-		t.Errorf("cancel1Client.CancelTask() error = %v", err)
+		t.Errorf("cancelClient1.CancelTask() error = %v", err)
 	}
 
 	execChannels.ExecEvent <- a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
@@ -147,10 +147,10 @@ func TestCancelCancelledTask(t *testing.T) {
 	cancelClient2 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
 	task, err := cancelClient2.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
 	if err != nil {
-		t.Fatalf("cancel2Client.CancelTask() error = %v", err)
+		t.Fatalf("cancelClient2.CancelTask() error = %v", err)
 	}
 	if task.Status.State != a2a.TaskStateCanceled {
-		t.Fatalf("cancel2Client.CancelTask() = %v, want cancelled task", task)
+		t.Fatalf("cancelClient2.CancelTask() = %v, want cancelled task", task)
 	}
 }
 
