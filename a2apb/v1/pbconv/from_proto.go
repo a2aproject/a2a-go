@@ -20,7 +20,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
-	"google.golang.org/protobuf/proto"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -133,7 +132,7 @@ func fromProtoRole(role a2apb.Role) a2a.MessageRole {
 	}
 }
 
-func fromProtoPushConfig(pConf *a2apb.PushNotificationConfig) (*a2a.PushConfig, error) {
+func fromProtoPushConfig(pConf *a2apb.TaskPushNotificationConfig) (*a2a.PushConfig, error) {
 	if pConf == nil {
 		return nil, nil
 	}
@@ -176,14 +175,14 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Send
 		return nil, nil
 	}
 
-	pConf, err := fromProtoPushConfig(conf.GetPushNotificationConfig())
+	pConf, err := fromProtoPushConfig(conf.GetTaskPushNotificationConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
 
 	result := &a2a.SendMessageConfig{
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
-		Blocking:            proto.Bool(conf.GetBlocking()),
+		ReturnImmediately:   conf.GetReturnImmediately(),
 		PushConfig:          pConf,
 	}
 
@@ -314,17 +313,12 @@ func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksRe
 }
 
 // FromProtoCreateTaskPushConfigRequest converts a [a2apb.CreateTaskPushNotificationConfigRequest] to a [a2a.CreateTaskPushConfigRequest].
-func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationConfigRequest) (*a2a.CreateTaskPushConfigRequest, error) {
+func FromProtoCreateTaskPushConfigRequest(req *a2apb.TaskPushNotificationConfig) (*a2a.CreateTaskPushConfigRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
 
-	config := req.GetConfig()
-	if config == nil {
-		return nil, fmt.Errorf("config is required")
-	}
-
-	pConf, err := fromProtoPushConfig(config)
+	pConf, err := fromProtoPushConfig(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
@@ -335,8 +329,8 @@ func FromProtoCreateTaskPushConfigRequest(req *a2apb.CreateTaskPushNotificationC
 
 	return &a2a.CreateTaskPushConfigRequest{
 		Tenant: req.GetTenant(),
-		TaskID: taskID,
 		Config: *pConf,
+		TaskID: taskID,
 	}, nil
 }
 
@@ -593,12 +587,7 @@ func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2
 		return nil, fmt.Errorf("task id cannot be empty")
 	}
 
-	pConf := pTaskConfig.GetPushNotificationConfig()
-	if pConf == nil {
-		return nil, fmt.Errorf("push notification config cannot be empty")
-	}
-
-	config, err := fromProtoPushConfig(pConf)
+	config, err := fromProtoPushConfig(pTaskConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}

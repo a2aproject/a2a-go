@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import time
-import requests
+import urllib.request
+import urllib.error
 import subprocess
 import os           
 import sys
@@ -70,11 +71,14 @@ def wait_for_server(url, expected_status=200, timeout=120, interval=2):
             print(f"❌ Timeout: Server did not respond with {expected_status} within {timeout}s.")
             sys.exit(1)
 
+        status_code = "No Response"
         try:
-            response = requests.get(url, timeout=5)
-            status_code = response.status_code
-        except requests.exceptions.RequestException:
-            status_code = "No Response"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                status_code = response.getcode()
+        except urllib.error.HTTPError as e:
+            status_code = e.code
+        except Exception:
+            pass
 
         if status_code == expected_status:
             print(f"✅ Server is up! Received status {status_code} after {int(elapsed_time)}s.")
@@ -89,15 +93,34 @@ def setup_tck_env():
         print("TCK directory not found")
         sys.exit(1)
     
+    # Ensure uv is installed
     run_shell_command("curl -LsSf https://astral.sh/uv/install.sh | sh", cwd=TCK_DIR)
+    
+    # Refresh environment/re-create venv if needed
     run_shell_command("uv venv --clear", cwd=TCK_DIR)
+    
+    # Install dependencies.
+    run_shell_command("uv pip install python-dotenv requests httpx pytest pytest-asyncio pytest-json-report deepdiff jsonschema PyYAML grpcio grpcio-tools googleapis-common-protos", cwd=TCK_DIR)
     run_shell_command("uv pip install -e .", cwd=TCK_DIR)
 
 def run_shell_command(command, cwd=None):
     env = os.environ.copy()
+    
+    # Strictly isolate from any external virtual environments the user might have active
+    env.pop("VIRTUAL_ENV", None)
+    env.pop("PYTHONHOME", None)
+    
+    # Ensure venv and local bin (where uv is likely installed) are in PATH
     venv_bin = TCK_DIR / ".venv" / "bin"
-    env["PATH"] = str(venv_bin) + os.pathsep + env.get("PATH", "")
+    local_bin = os.path.expanduser("~/.local/bin")
+    env["PATH"] = f"{venv_bin}{os.pathsep}{local_bin}{os.pathsep}{env.get('PATH', '')}"
+    
     env["UV_INDEX_URL"] = "https://pypi.org/simple"
+
+    # If the command starts with ./run_tck.py, we should ensure it uses the venv python
+    if command.startswith("./run_tck.py"):
+        python_exe = venv_bin / "python"
+        command = f"{python_exe} {command[2:]}"
 
     result = subprocess.run(command, shell=True, cwd=cwd, env=env, check=True)
 
@@ -132,7 +155,12 @@ def start_and_test(protocol):
         return False
     finally:
         print("🛑 Stopping SUT...")
-        requests.post(f"{SUT_URL}/quit")
+        try:
+            req = urllib.request.Request(f"{SUT_URL}/quit", method="POST")
+            with urllib.request.urlopen(req, timeout=5) as _:
+                pass
+        except Exception:
+            pass
        
 
 def main():

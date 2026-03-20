@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // NewServerInterceptor adapts a legacy server call interceptor to the v1 interceptor interface.
@@ -322,7 +323,11 @@ func fromV1Payload(payload any) any {
 	case *a2a.ListTasksResponse:
 		return FromV1ListTasksResponse(v)
 	case a2a.Event:
-		legacy, _ := FromV1Event(v)
+		legacy, err := FromV1Event(v)
+		if err != nil {
+			log.Warn(context.Background(), "failed to convert v1 event to legacy", "error", err)
+			return payload
+		}
 		return legacy
 	default:
 		return payload

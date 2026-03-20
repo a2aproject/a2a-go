@@ -129,11 +129,9 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		return
 	}
 
-	if result != nil {
-		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
-		if err := json.NewEncoder(rw).Encode(resp); err != nil {
-			log.Error(ctx, "failed to encode response", err)
-		}
+	resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: result}
+	if err := json.NewEncoder(rw).Encode(resp); err != nil {
+		log.Error(ctx, "failed to encode response", err)
 	}
 }
 
@@ -295,7 +293,11 @@ func (h *jsonrpcHandler) onSendMessage(ctx context.Context, raw json.RawMessage)
 	if err != nil || compEvent == nil {
 		return nil, err
 	}
-	return compEvent.(a2alegacy.SendMessageResult), nil
+	result, ok := compEvent.(a2alegacy.SendMessageResult)
+	if !ok {
+		return nil, fmt.Errorf("unexpected event type %T: %w", compEvent, a2a.ErrInvalidAgentResponse)
+	}
+	return result, nil
 }
 
 func (h *jsonrpcHandler) onResubscribeToTask(ctx context.Context, raw json.RawMessage) iter.Seq2[a2a.Event, error] {

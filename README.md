@@ -20,8 +20,12 @@
 
 ## ✨ Features
 
-- **A2A Protocol Compliant:** Build agentic applications that adhere to the Agent2Agent (A2A) Protocol.
-- **Extensible:** Easily add support for different communication protocols and database backends.
+- **A2A Protocol Compliance:** Build agentic applications that adhere to the Agent2Agent (A2A) **v1.0 Protocol Specification**.
+- **Client & Server SDKs:** High-level APIs for both serving agentic functionality (`a2asrv`) and consuming it (`a2aclient`).
+- **Multi-Transport Support:** Protocol bindings for gRPC, REST, and JSON-RPC.
+- **Extensible & Pluggable:** Extension points for bringing your own transport implementations, authentication middlewares, messaging and database backends.
+
+> **Note:** The SDK version is distinct from the A2A specification version. The supported protocol version is exported in the codebase as `a2a.Version`
 
 ---
 
@@ -34,21 +38,6 @@ go get github.com/a2aproject/a2a-go/v2
 ```
 
 Visit [**pkg.go**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2) for a full documentation.
-
-## 📦 Versioning
-
-The first two digits of a release version are reserved for the version of the A2A Protocol Spec which the release implements. 
-
-The third digit is SDK API Minor version which gets incremented for patches or minor API changes.
-Major breaking SDK API changes increment the version suffix in the module ID.
-
-```
-github.com/a2aproject/a2a-go/vn@x.y.z
-                             ^  ^ ^ ^ 
-               SDK API Major ┘  | | └─ SDK API Minor
-                                | └─── Protocol Spec Minor Version
-                                └───── Protocol Spec Major Version
-```
 
 ## 💡 Examples
 

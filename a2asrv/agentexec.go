@@ -357,8 +357,6 @@ type processor struct {
 	pushSender      push.Sender
 	execCtx         *ExecutorContext
 	store           taskstore.Store
-
-	processedCount int
 }
 
 var _ taskexec.Processor = (*processor)(nil)
@@ -377,15 +375,6 @@ func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore,
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
-	if err := p.sendPushNotifications(ctx, event); err != nil {
-		return p.setTaskFailed(ctx, event, err)
-	}
-
-	// TODO(yarolegovich): handle invalid event sequence where a Message is produced after a Task was created
-	if msg, ok := event.(*a2a.Message); ok {
-		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
-	}
-
 	versioned, processingErr := p.updateManager.Process(ctx, event)
 
 	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {
@@ -408,11 +397,18 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return p.setTaskFailed(ctx, event, processingErr)
 	}
 
-	task := versioned.Task
-	if task.Status.State == a2a.TaskStateUnknown {
-		return nil, fmt.Errorf("unknown task state: %s", task.Status.State)
+	if msg, ok := event.(*a2a.Message); ok {
+		if err := p.sendPushNotifications(ctx, event); err != nil {
+			return nil, fmt.Errorf("failed to send push notification for message response: %w", err)
+		}
+		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
 	}
 
+	if err := p.sendPushNotifications(ctx, event); err != nil {
+		return p.setTaskFailed(ctx, event, err)
+	}
+
+	task := versioned.Task
 	result := &taskexec.ProcessorResult{TaskVersion: versioned.Version}
 	if taskupdate.IsFinal(event) {
 		result.ExecutionResult = task
@@ -423,11 +419,6 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
-	if p.execCtx.StoredTask == nil && p.processedCount == 0 {
-		// there was no task in the store, don't create one in failed state and allow to error to be propagated to the client
-		return nil, cause
-	}
-
 	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, cause)
 	if err != nil {
 		return nil, err
@@ -452,7 +443,7 @@ func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) 
 	if p.pushSender == nil || p.pushConfigStore == nil {
 		return nil
 	}
-	taskID := event.TaskInfo().TaskID
+	taskID := p.execCtx.TaskID
 
 	configs, err := p.pushConfigStore.List(ctx, taskID)
 	if err != nil {

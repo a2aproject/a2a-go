@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.0](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.3...v1.0.0) (2026-03-17)
+
+
+### Features
+
+* implement the new rest error handling ([#282](https://github.com/a2aproject/a2a-go/issues/282)) ([a3bda30](https://github.com/a2aproject/a2a-go/commit/a3bda30ccd6258c9f3af3e88e483f11213f2f2bf))
+* use v2 suffix for module ID and provide compat support ([#270](https://github.com/a2aproject/a2a-go/issues/270)) ([dd1b6ba](https://github.com/a2aproject/a2a-go/commit/dd1b6ba1a32aac7b8051c9a9be9da5f661a7f443)), closes [#250](https://github.com/a2aproject/a2a-go/issues/250)
+
+
+### Bug Fixes
+
+* a2asrv jsonrpc Content-Type ([#265](https://github.com/a2aproject/a2a-go/issues/265)) ([2568a46](https://github.com/a2aproject/a2a-go/commit/2568a4609b59dedbece4f324d5829ba9160d3e24))
+* bugs before going from alpha ([#279](https://github.com/a2aproject/a2a-go/issues/279)) ([b1f055c](https://github.com/a2aproject/a2a-go/commit/b1f055ce0fbd90295b9e9ce91dc6ae92f6618cd5))
+* GetTaskRequest nil pointer assignment check ([#258](https://github.com/a2aproject/a2a-go/issues/258)) ([440bb79](https://github.com/a2aproject/a2a-go/commit/440bb793d8fb2e4a6cde8c2cfb43ff4c5235943b))
+* inject headers into service params ([#277](https://github.com/a2aproject/a2a-go/issues/277)) ([d33f3bd](https://github.com/a2aproject/a2a-go/commit/d33f3bd9c2e18b4d45995dc0bbf4f76e44a729bd)), closes [#275](https://github.com/a2aproject/a2a-go/issues/275)
+* propagate cancelation signal using task store ([#272](https://github.com/a2aproject/a2a-go/issues/272)) ([5e1d462](https://github.com/a2aproject/a2a-go/commit/5e1d4625242b918bc40e513617c23c63308ce2fb)), closes [#245](https://github.com/a2aproject/a2a-go/issues/245)
+* regenerate spec and fix returnImmediately ([#284](https://github.com/a2aproject/a2a-go/issues/284)) ([2eee0b9](https://github.com/a2aproject/a2a-go/commit/2eee0b9a0008a4f61a1ddea034f9f0e10897ae05))
+* task modified after save ([#266](https://github.com/a2aproject/a2a-go/issues/266)) ([c15febe](https://github.com/a2aproject/a2a-go/commit/c15febe52b1c856c4e7aa0d8b55478f9523efdf0))
+* taskupdater result mutable ([#274](https://github.com/a2aproject/a2a-go/issues/274)) ([6038d92](https://github.com/a2aproject/a2a-go/commit/6038d92c6709d352c9496f2c3973f1a9da730bb0))
+* update pushsender ([#256](https://github.com/a2aproject/a2a-go/issues/256)) ([5f7a594](https://github.com/a2aproject/a2a-go/commit/5f7a594a85a1653ba8d41a7fc0f0924cef8f6b3d))
+* use enum values as in the spec ([#261](https://github.com/a2aproject/a2a-go/issues/261)) ([eb98981](https://github.com/a2aproject/a2a-go/commit/eb98981e2fd6b698925200bc02fef52b9c75288f)), closes [#251](https://github.com/a2aproject/a2a-go/issues/251)
+
+
+### Documentation
+
+* **a2asrv:** add Example_* test functions for pkg.go.dev documentation ([#262](https://github.com/a2aproject/a2a-go/issues/262)) ([7888e37](https://github.com/a2aproject/a2a-go/commit/7888e3704df17222376eda1bfbc876a06ea6d665))
+* add example tests a2a ([#240](https://github.com/a2aproject/a2a-go/issues/240)) ([4fe08a9](https://github.com/a2aproject/a2a-go/commit/4fe08a95d47e2c85e642775a3eac2a363ecdb323))
+
 ## [1.0.0-alpha.3](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.2...v1.0.0-alpha.3) (2026-02-27)
 
 ### Bug Fixes

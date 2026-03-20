@@ -18,9 +18,12 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
+
+const defaultRequestTimeout = 3 * time.Minute
 
 // Transport defines a transport-agnostic interface for making A2A requests.
 // Implementations are a translation layer between a2a core types and wire formats.

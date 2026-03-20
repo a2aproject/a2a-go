@@ -337,21 +337,14 @@ func TestToProto_toProtoTaskState(t *testing.T) {
 			state: a2a.TaskStateWorking,
 			want:  a2apb.TaskState_TASK_STATE_WORKING,
 		},
-		{
-			name:  "unknown",
-			state: a2a.TaskStateUnknown,
-			want:  a2apb.TaskState_TASK_STATE_UNSPECIFIED,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := toProtoTaskState(tt.state); got != tt.want {
 				t.Errorf("toProtoTaskState() = %v, want %v", got, tt.want)
 			}
-			if tt.state != a2a.TaskStateUnknown { // unknown is runtime-only state
-				if got := fromProtoTaskState(tt.want); got != tt.state {
-					t.Errorf("fromProtoTaskState() = %v, want %v", got, tt.state)
-				}
+			if got := fromProtoTaskState(tt.want); got != tt.state {
+				t.Errorf("fromProtoTaskState() = %v, want %v", got, tt.state)
 			}
 		})
 	}
@@ -461,14 +454,12 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{
-					Id:    "c1",
-					Url:   "http://a.com",
-					Token: "tok",
-					Authentication: &a2apb.AuthenticationInfo{
-						Scheme:      "Bearer",
-						Credentials: "cred",
-					},
+				Id:     "c1",
+				Url:    "http://a.com",
+				Token:  "tok",
+				Authentication: &a2apb.AuthenticationInfo{
+					Scheme:      "Bearer",
+					Credentials: "cred",
 				},
 			},
 		},
@@ -480,10 +471,8 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{
-					Id:  "c1",
-					Url: "http://a.com",
-				},
+				Id:     "c1",
+				Url:    "http://a.com",
 			},
 		},
 		{
@@ -498,8 +487,7 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 				Config: a2a.PushConfig{},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
-				TaskId:                 "test-task",
-				PushNotificationConfig: &a2apb.PushNotificationConfig{},
+				TaskId: "test-task",
 			},
 		},
 	}

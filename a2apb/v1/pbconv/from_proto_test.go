@@ -166,9 +166,9 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			name: "full config",
 			in: &a2apb.SendMessageConfiguration{
 				AcceptedOutputModes: []string{"text/plain"},
-				Blocking:            true,
+				ReturnImmediately:   true,
 				HistoryLength:       &historyLen,
-				PushNotificationConfig: &a2apb.PushNotificationConfig{
+				TaskPushNotificationConfig: &a2apb.TaskPushNotificationConfig{
 					Id:    "test-push-config",
 					Url:   "http://example.com/hook",
 					Token: "secret",
@@ -180,7 +180,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 			},
 			want: &a2a.SendMessageConfig{
 				AcceptedOutputModes: []string{"text/plain"},
-				Blocking:            proto.Bool(true),
+				ReturnImmediately:   true,
 				HistoryLength:       &a2aHistoryLen,
 				PushConfig: &a2a.PushConfig{
 					ID:    "test-push-config",
@@ -196,21 +196,21 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 		{
 			name: "config with unlimited history only",
 			in:   &a2apb.SendMessageConfiguration{},
-			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false), HistoryLength: nil},
+			want: &a2a.SendMessageConfig{HistoryLength: nil},
 		},
 		{
 			name: "config with zero history",
 			in: &a2apb.SendMessageConfiguration{
 				HistoryLength: &zeroHistoryLen,
 			},
-			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false), HistoryLength: &a2aZeroHistoryLen},
+			want: &a2a.SendMessageConfig{HistoryLength: &a2aZeroHistoryLen},
 		},
 		{
 			name: "config with no push notification",
 			in: &a2apb.SendMessageConfiguration{
-				PushNotificationConfig: nil,
+				TaskPushNotificationConfig: nil,
 			},
-			want: &a2a.SendMessageConfig{Blocking: proto.Bool(false)},
+			want: &a2a.SendMessageConfig{},
 		},
 		{
 			name: "nil config",
@@ -250,17 +250,17 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 	a2aHistoryLen := int(historyLen)
 
 	pConf := &a2apb.SendMessageConfiguration{
-		Blocking:      true,
-		HistoryLength: &historyLen,
-		PushNotificationConfig: &a2apb.PushNotificationConfig{
+		ReturnImmediately: true,
+		HistoryLength:     &historyLen,
+		TaskPushNotificationConfig: &a2apb.TaskPushNotificationConfig{
 			Id:    "push-config",
 			Url:   "http://example.com/hook",
 			Token: "secret",
 		},
 	}
 	a2aConf := &a2a.SendMessageConfig{
-		Blocking:      proto.Bool(true),
-		HistoryLength: &a2aHistoryLen,
+		ReturnImmediately: true,
+		HistoryLength:     &a2aHistoryLen,
 		PushConfig: &a2a.PushConfig{
 			ID:    "push-config",
 			URL:   "http://example.com/hook",
@@ -318,14 +318,14 @@ func TestFromProto_fromProtoSendMessageRequest(t *testing.T) {
 			req: &a2apb.SendMessageRequest{
 				Message: pMsg,
 				Configuration: &a2apb.SendMessageConfiguration{
-					PushNotificationConfig: &a2apb.PushNotificationConfig{
+					TaskPushNotificationConfig: &a2apb.TaskPushNotificationConfig{
 						Url: "http://example.com/hook",
 					},
 				},
 			},
 			want: &a2a.SendMessageRequest{
 				Message: &a2aMsg,
-				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "http://example.com/hook"}, Blocking: proto.Bool(false)},
+				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "http://example.com/hook"}},
 			},
 		},
 	}
@@ -526,41 +526,40 @@ func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
 func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string
-		req     *a2apb.CreateTaskPushNotificationConfigRequest
+		req     *a2apb.TaskPushNotificationConfig
 		want    *a2a.CreateTaskPushConfigRequest
 		wantErr bool
 	}{
 		{
 			name: "success",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: "test-task",
-				Config: &a2apb.PushNotificationConfig{
-					Url: "http://example.com/hook",
-					Id:  "test-config",
-				},
+				Url:    "http://example.com/hook",
+				Id:     "test-config",
 			},
 			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config", URL: "http://example.com/hook"}},
 		},
 		{
 			name: "nil config",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: "test",
 			},
 			wantErr: true,
 		},
 		{
 			name: "nil push config",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: "test",
-				Config: &a2apb.PushNotificationConfig{},
+				Url:    "",
 			},
 			wantErr: true,
 		},
 		{
 			name: "empty optional ID conversion push config conversion",
-			req: &a2apb.CreateTaskPushNotificationConfigRequest{
+			req: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
-				Config: &a2apb.PushNotificationConfig{Id: "", Url: "http://example.com/hook"},
+				Id:     "",
+				Url:    "http://example.com/hook",
 			},
 			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{URL: "http://example.com/hook"}},
 		},

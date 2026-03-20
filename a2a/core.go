@@ -292,8 +292,6 @@ const (
 	TaskStateRejected TaskState = "TASK_STATE_REJECTED"
 	// TaskStateSubmitted means the task has been submitted and is awaiting execution.
 	TaskStateSubmitted TaskState = "TASK_STATE_SUBMITTED"
-	// TaskStateUnknown means the task is in an unknown or indeterminate state.
-	TaskStateUnknown TaskState = "TASK_STATE_UNKNOWN"
 	// TaskStateWorking means The agent is actively working on the task.
 	TaskStateWorking TaskState = "TASK_STATE_WORKING"
 )
@@ -761,9 +759,8 @@ type SendMessageConfig struct {
 	// AcceptedOutputModes is a list of output MIME types the client is prepared to accept in the response.
 	AcceptedOutputModes []string `json:"acceptedOutputModes,omitempty" yaml:"acceptedOutputModes,omitempty" mapstructure:"acceptedOutputModes,omitempty"`
 
-	// Blocking indicates if the client will wait for the task to complete. The server may reject
-	// this if the task is long-running. Server might choose to default to true.
-	Blocking *bool `json:"blocking,omitempty" yaml:"blocking,omitempty" mapstructure:"blocking,omitempty"`
+	// ReturnImmediately indicates if the operation should return immediately after creating the task.
+	ReturnImmediately bool `json:"returnImmediately,omitempty" yaml:"returnImmediately,omitempty" mapstructure:"returnImmediately,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
