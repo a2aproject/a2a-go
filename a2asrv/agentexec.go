@@ -121,7 +121,6 @@ type AgentExecutor interface {
 // AgentExecutionCleaner is an optional interface [AgentExecutor] can implement to perform cleanup after execution finishes.
 type AgentExecutionCleaner interface {
 	// Cleanup is called after an agent execution completes with either result or an error.
-	// It will be invoked in the execution goroutine after the execution goroutine finishes.
 	Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error)
 }
 
