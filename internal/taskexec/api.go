@@ -45,10 +45,10 @@ type Subscription interface {
 // Factory is used to setup task execution or cancelation context.
 type Factory interface {
 	// CreateExecutor is used to create initialized Executor and Processor for a Task execution which will run in separate goroutines.
-	CreateExecutor(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, error)
+	CreateExecutor(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error)
 
 	// CreateCanceler is used to create initialized Canceler and Processor for a Task cancelation which will run in separate goroutines.
-	CreateCanceler(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error)
+	CreateCanceler(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error)
 }
 
 // Processor implementation handles events produced during AgentExecution.
@@ -88,6 +88,12 @@ type Canceler interface {
 	// Cancel attempts to cancel a Task.
 	// Expected to produce a Task update event with canceled state.
 	Cancel(context.Context, eventpipe.Writer) error
+}
+
+// Cleaner implementation can be used to run callbacks after execution or cancellation completes.
+type Cleaner interface {
+	// Cleanup is called after execution or cancellation with the final result.
+	Cleanup(context.Context, a2a.SendMessageResult, error)
 }
 
 // PanicHandlerFn is a function that handles panics occurred during execution.

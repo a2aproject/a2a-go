@@ -356,8 +356,8 @@ func TestREST_InvalidPayloads(t *testing.T) {
 				t.Errorf("got %d, want 400 Bad Request", resp.StatusCode)
 			}
 
-			if contentType := resp.Header.Get("Content-Type"); contentType != "application/problem+json" {
-				t.Errorf("got Content-Type %q, want application/problem+json", contentType)
+			if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
+				t.Errorf("got Content-Type %q, want application/json", contentType)
 			}
 
 			gotErr := rest.ToA2AError(resp)

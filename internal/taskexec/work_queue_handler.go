@@ -52,29 +52,32 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 
 	var eventProducer eventProducerFn
 	var eventProcessor Processor
+	var cleaner Cleaner
 
 	switch payload.Type {
 	case workqueue.PayloadTypeExecute:
 		if payload.ExecuteRequest == nil {
 			return nil, fmt.Errorf("execution request not set: %w", workqueue.ErrMalformedPayload)
 		}
-		executor, processor, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteRequest)
+		executor, processor, localCleaner, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteRequest)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
 		}
 		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, pipe.Writer) }
 		eventProcessor = processor
+		cleaner = localCleaner
 
 	case workqueue.PayloadTypeCancel:
 		if payload.CancelRequest == nil {
 			return nil, fmt.Errorf("cancelation request not set: %w", workqueue.ErrMalformedPayload)
 		}
-		canceler, processor, err := b.factory.CreateCanceler(ctx, payload.CancelRequest)
+		canceler, processor, localCleaner, err := b.factory.CreateCanceler(ctx, payload.CancelRequest)
 		if err != nil {
 			return nil, fmt.Errorf("setup failed: %w", err)
 		}
 		eventProducer = func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) }
 		eventProcessor = processor
+		cleaner = localCleaner
 
 	default:
 		// do not return non-retryable ErrMalformedPayload, the process might be running outdated code
@@ -104,5 +107,9 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	return runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
+	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
+	if cleaner != nil {
+		cleaner.Cleanup(ctx, result, err)
+	}
+	return result, err
 }

@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -80,123 +82,209 @@ func MakeDeletePushConfigPath(taskID, configID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
-// Error represents a problem detail as defined in RFC 7807.
+const (
+	errorInfoType = "type.googleapis.com/google.rpc.ErrorInfo"
+	errorDomain   = "a2a-protocol.org"
+)
+
+// ErrorInfo represents a google.rpc.ErrorInfo message in the details array.
+type ErrorInfo struct {
+	Type     string            `json:"@type"`
+	Reason   string            `json:"reason"`
+	Domain   string            `json:"domain"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// StatusError represents the inner error object in a google.rpc.Status response.
+type StatusError struct {
+	Code    int    `json:"code"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Details []any  `json:"details,omitempty"`
+}
+
+// Error represents a google.rpc.Status error response per AIP-193.
 type Error struct {
-	Type      string `json:"type"`
-	Title     string `json:"title"`
-	Status    int    `json:"status"`
-	Detail    string `json:"detail"`
-	TaskID    string `json:"taskId,omitempty"`
-	Timestamp string `json:"timestamp,omitempty"`
+	httpStatus int
+	Err        StatusError `json:"error"`
+}
+
+// HTTPStatus returns the HTTP status code for the error.
+func (e *Error) HTTPStatus() int {
+	return e.httpStatus
 }
 
 type errorDetails struct {
-	status int
-	uri    string
-	title  string
+	httpStatus int
+	grpcStatus string
+	reason     string
 }
 
 var errToDetails = map[error]errorDetails{
 	a2a.ErrTaskNotFound: {
-		status: http.StatusNotFound,
-		uri:    "https://a2a-protocol.org/errors/task-not-found",
-		title:  "Task Not Found",
+		httpStatus: http.StatusNotFound,
+		grpcStatus: "NOT_FOUND",
+		reason:     "TASK_NOT_FOUND",
 	},
 	a2a.ErrTaskNotCancelable: {
-		status: http.StatusConflict,
-		uri:    "https://a2a-protocol.org/errors/task-not-cancelable",
-		title:  "Task Not Cancelable",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "FAILED_PRECONDITION",
+		reason:     "TASK_NOT_CANCELABLE",
 	},
 	a2a.ErrPushNotificationNotSupported: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/push-notification-not-supported",
-		title:  "Push Notification Not Supported",
+		httpStatus: http.StatusNotImplemented,
+		grpcStatus: "UNIMPLEMENTED",
+		reason:     "PUSH_NOTIFICATION_NOT_SUPPORTED",
 	},
 	a2a.ErrUnsupportedOperation: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/unsupported-operation",
-		title:  "Unsupported Operation",
+		httpStatus: http.StatusNotImplemented,
+		grpcStatus: "UNIMPLEMENTED",
+		reason:     "UNSUPPORTED_OPERATION",
 	},
 	a2a.ErrUnsupportedContentType: {
-		status: http.StatusUnsupportedMediaType,
-		uri:    "https://a2a-protocol.org/errors/content-type-not-supported",
-		title:  "Content Type Not Supported",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "INVALID_ARGUMENT",
+		reason:     "UNSUPPORTED_CONTENT_TYPE",
 	},
 	a2a.ErrInvalidAgentResponse: {
-		status: http.StatusBadGateway,
-		uri:    "https://a2a-protocol.org/errors/invalid-agent-response",
-		title:  "Invalid Agent Response",
+		httpStatus: http.StatusInternalServerError,
+		grpcStatus: "INTERNAL",
+		reason:     "INVALID_AGENT_RESPONSE",
 	},
 	a2a.ErrExtendedCardNotConfigured: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/extended-agent-card-not-configured",
-		title:  "Extended Agent Card Not Configured",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "FAILED_PRECONDITION",
+		reason:     "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
 	},
 	a2a.ErrExtensionSupportRequired: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/extension-support-required",
-		title:  "Extension Support Required",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "FAILED_PRECONDITION",
+		reason:     "EXTENSION_SUPPORT_REQUIRED",
 	},
 	a2a.ErrVersionNotSupported: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/version-not-supported",
-		title:  "Version Not Supported",
+		httpStatus: http.StatusNotImplemented,
+		grpcStatus: "UNIMPLEMENTED",
+		reason:     "VERSION_NOT_SUPPORTED",
 	},
 	a2a.ErrParseError: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/parse-error",
-		title:  "Parse Error",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "INVALID_ARGUMENT",
+		reason:     "PARSE_ERROR",
 	},
 	a2a.ErrInvalidRequest: {
-		status: http.StatusBadRequest,
-		uri:    "https://a2a-protocol.org/errors/invalid-request",
-		title:  "Invalid Request",
+		httpStatus: http.StatusBadRequest,
+		grpcStatus: "INVALID_ARGUMENT",
+		reason:     "INVALID_REQUEST",
 	},
 }
 
-// ToA2AError returns A2A error  based on HTTP status codes and messages
+// ToA2AError converts an HTTP error response in google.rpc.Status format to an a2a error.
 func ToA2AError(resp *http.Response) error {
 	contentType := resp.Header.Get("Content-Type")
-	if contentType != "application/problem+json" {
+	if !strings.HasPrefix(contentType, "application/json") {
 		return a2a.ErrServerError
 	}
 
-	var e Error
-	if err := json.NewDecoder(resp.Body).Decode(&e); err != nil {
-		return fmt.Errorf("failed to decode error details: %w", err)
+	var body struct {
+		Error struct {
+			Code    int               `json:"code"`
+			Status  string            `json:"status"`
+			Message string            `json:"message"`
+			Details []json.RawMessage `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("failed to decode error response: %w", err)
 	}
 
-	a2aError := a2a.ErrInternalError
-	for err, details := range errToDetails {
-		if e.Type == details.uri {
-			a2aError = err
-			break
+	baseErr := a2a.ErrInternalError
+	details := map[string]any{}
+	for _, raw := range body.Error.Details {
+		var hint struct {
+			Type string `json:"@type"`
+		}
+		if json.Unmarshal(raw, &hint) == nil && hint.Type == errorInfoType {
+			var info ErrorInfo
+			if json.Unmarshal(raw, &info) != nil || info.Domain != errorDomain {
+				continue
+			}
+			for k, v := range info.Metadata {
+				details[k] = v
+			}
+			for err, d := range errToDetails {
+				if d.reason == info.Reason {
+					baseErr = err
+					break
+				}
+			}
+			continue
+		}
+		var extra map[string]any
+		if json.Unmarshal(raw, &extra) == nil {
+			maps.Copy(details, extra)
 		}
 	}
 
-	return fmt.Errorf("%s: %w", e.Detail, a2aError)
+	out := a2a.NewError(baseErr, body.Error.Message)
+	if len(details) > 0 {
+		out = out.WithDetails(details)
+	}
+	return out
 }
 
-// ToRESTError converts an error and a [a2a.TaskID] to a REST [Error].
+// ToRESTError converts an error and a [a2a.TaskID] to a REST [Error] in google.rpc.Status format.
 func ToRESTError(err error, taskID a2a.TaskID) *Error {
-	// Default to Internal Server Error
-	e := &Error{
-		Type:      "https://a2a-protocol.org/errors/internal-error",
-		Title:     "Internal Server Error",
-		Status:    http.StatusInternalServerError,
-		Detail:    err.Error(),
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		TaskID:    string(taskID),
-	}
+	httpStatus := http.StatusInternalServerError
+	grpcStatus := "INTERNAL"
+	reason := "INTERNAL_ERROR"
 
 	for sentinel, details := range errToDetails {
 		if errors.Is(err, sentinel) {
-			e.Type = details.uri
-			e.Title = details.title
-			e.Status = details.status
+			httpStatus = details.httpStatus
+			grpcStatus = details.grpcStatus
+			reason = details.reason
 			break
 		}
 	}
 
-	return e
+	metadata := map[string]string{
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+	if taskID != "" {
+		metadata["taskId"] = string(taskID)
+	}
+
+	additionalMeta := map[string]any{}
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) {
+		for k, v := range a2aErr.Details {
+			if s, ok := v.(string); ok {
+				metadata[k] = s
+			} else {
+				additionalMeta[k] = v
+			}
+		}
+	}
+
+	details := []any{
+		ErrorInfo{
+			Type:     errorInfoType,
+			Reason:   reason,
+			Domain:   errorDomain,
+			Metadata: metadata,
+		},
+	}
+	if len(additionalMeta) > 0 {
+		details = append(details, additionalMeta)
+	}
+
+	return &Error{
+		httpStatus: httpStatus,
+		Err: StatusError{
+			Code:    httpStatus,
+			Status:  grpcStatus,
+			Message: err.Error(),
+			Details: details,
+		},
+	}
 }

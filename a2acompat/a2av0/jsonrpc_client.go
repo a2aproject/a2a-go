@@ -42,10 +42,9 @@ type JSONRPCTransportConfig struct {
 // NewJSONRPCTransportFactory creates a new [TransportFactory] for the JSON-RPC protocol binding.
 func NewJSONRPCTransportFactory(cfg JSONRPCTransportConfig) a2aclient.TransportFactory {
 	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
-		if cfg.URL == "" {
-			cfg.URL = iface.URL
-		}
-		return NewJSONRPCTransport(cfg), nil
+		cfgCopy := cfg
+		cfgCopy.URL = iface.URL
+		return NewJSONRPCTransport(cfgCopy), nil
 	})
 }
 

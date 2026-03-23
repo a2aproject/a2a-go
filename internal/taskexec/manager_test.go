@@ -33,39 +33,39 @@ import (
 )
 
 type testFactory struct {
-	CreateExecutorFn func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, error)
-	CreateCancelerFn func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error)
+	CreateExecutorFn func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error)
+	CreateCancelerFn func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error)
 }
 
 var _ Factory = (*testFactory)(nil)
 
-func (f *testFactory) CreateExecutor(ctx context.Context, tid a2a.TaskID, req *a2a.SendMessageRequest) (Executor, Processor, error) {
+func (f *testFactory) CreateExecutor(ctx context.Context, tid a2a.TaskID, req *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
 	if f.CreateExecutorFn != nil {
 		return f.CreateExecutorFn(ctx, tid, req)
 	}
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, nil, fmt.Errorf("not implemented")
 }
 
-func (f *testFactory) CreateCanceler(ctx context.Context, req *a2a.CancelTaskRequest) (Canceler, Processor, error) {
+func (f *testFactory) CreateCanceler(ctx context.Context, req *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
 	if f.CreateCancelerFn != nil {
 		return f.CreateCancelerFn(ctx, req)
 	}
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, nil, fmt.Errorf("not implemented")
 }
 
 func newStaticFactory(executor *testExecutor, canceler *testCanceler) Factory {
 	return &testFactory{
-		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, error) {
+		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
 			if executor == nil {
-				return nil, nil, fmt.Errorf("executor was not provided")
+				return nil, nil, nil, fmt.Errorf("executor was not provided")
 			}
-			return executor, executor, nil
+			return executor, executor, executor, nil
 		},
-		CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error) {
+		CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
 			if canceler == nil {
-				return nil, nil, fmt.Errorf("canceler was not provided")
+				return nil, nil, nil, fmt.Errorf("canceler was not provided")
 			}
-			return canceler, canceler, nil
+			return canceler, canceler, canceler, nil
 		},
 	}
 }
@@ -162,6 +162,10 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventpipe.Writer) erro
 	}
 
 	return e.executeErr
+}
+
+func (e *testProcessor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+	// NOP
 }
 
 type testCanceler struct {
@@ -655,11 +659,11 @@ func TestManager_ConcurrentCancelationsResolveToTheSameResult(t *testing.T) {
 	var callCount atomic.Int32
 	manager := NewLocalManager(LocalManagerConfig{
 		Factory: &testFactory{
-			CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error) {
+			CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
 				if callCount.CompareAndSwap(0, 1) {
-					return canceler1, canceler1, nil
+					return canceler1, canceler1, canceler1, nil
 				} else {
-					return canceler2, canceler2, nil
+					return canceler2, canceler2, canceler2, nil
 				}
 			},
 		},
@@ -778,12 +782,12 @@ func TestManager_CanCancelAfterCancelFailed(t *testing.T) {
 	callCount := 0
 	manager := NewLocalManager(LocalManagerConfig{
 		Factory: &testFactory{
-			CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, error) {
+			CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
 				callCount++
 				if callCount == 1 {
-					return canceler1, canceler1, nil
+					return canceler1, canceler1, canceler1, nil
 				} else {
-					return canceler2, canceler2, nil
+					return canceler2, canceler2, canceler2, nil
 				}
 			},
 		},

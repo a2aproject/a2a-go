@@ -35,7 +35,6 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 
 	executionErrCauseChan := make(chan error, 1)
 	executor := &testexecutor.TestAgentExecutor{}
-
 	// Execution will be creating task artifacts until a task is canceled. Cancelation will be detected using a failed task store update
 	executor.ExecuteFn = func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
@@ -53,32 +52,23 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 		}
 	}
 
-	// This code will run on a different server
-	executor.CancelFn = func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-		return func(yield func(a2a.Event, error) bool) {
-			yield(a2a.NewStatusUpdateEvent(reqCtx.StoredTask, a2a.TaskStateCanceled, nil), nil)
-		}
+	// Cleanup will be called with the final task state after execution finishes
+	executionCleanupResultChan := make(chan a2a.SendMessageResult, 1)
+	executor.CleanupFn = func(ctx context.Context, execCtx *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
+		executionCleanupResultChan <- result
 	}
 
 	// The store is shared by two server
 	store := testutil.NewTestTaskStore()
-	client1 := startTestServer(t, executor, store)
-	client2 := startTestServer(t, executor, store)
+	canceler := testexecutor.NewCanceler()
+	cancelationCleanupResultChan := make(chan a2a.SendMessageResult, 1)
+	canceler.CleanupFn = func(ctx context.Context, reqCtx *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
+		cancelationCleanupResultChan <- result
+	}
+	cancelClient := startTestServer(t, canceler, store)
 
-	// Send message streaming in a detached goroutine piping events to a channel
-	executionEvents := make(chan a2a.Event, 1)
-	go func() {
-		defer close(executionEvents)
-		msg := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work"))}
-		for event, err := range client1.SendStreamingMessage(ctx, msg) {
-			if err != nil {
-				t.Errorf("client.SendStreamingMessage() error = %v", err)
-				return
-			}
-			executionEvents <- event
-		}
-	}()
-
+	executionEvents, drainFn := sendMessageInBackground(t, startTestServer(t, executor, store))
+	defer drainFn()
 	taskEvent, ok := <-executionEvents
 	if !ok {
 		t.Fatalf("client.SendStreamingMessage() no task event")
@@ -88,7 +78,7 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 		t.Fatalf("client.SendStreamingMessage() task event is not a task, got %T", taskEvent)
 	}
 
-	canceledTask, err := client2.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
+	canceledTask, err := cancelClient.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
 	if err != nil {
 		t.Fatalf("client.CancelTask() error = %v", err)
 	}
@@ -112,6 +102,133 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	if !errors.Is(gotErrCause, taskstore.ErrConcurrentModification) {
 		t.Fatalf("execution error cause = %v, want %v", gotErrCause, taskstore.ErrConcurrentModification)
 	}
+
+	for i, ch := range []chan a2a.SendMessageResult{executionCleanupResultChan, cancelationCleanupResultChan} {
+		gotCleanupResult := <-ch
+		if task, ok := gotCleanupResult.(*a2a.Task); ok {
+			if task.Status.State != a2a.TaskStateCanceled {
+				t.Fatalf("execution cleanup result at %d wrong state = %v, want %v", i, task.Status.State, a2a.TaskStateCanceled)
+			}
+		} else {
+			t.Fatalf("execution cleanup result at %d is not a task, got %T", i, gotCleanupResult)
+		}
+	}
+}
+
+func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
+	ctx := t.Context()
+
+	sharedStore := testutil.NewTestTaskStore()
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	cancelErrChan := make(chan error)
+	canceler, cancelChannels := testexecutor.NewWithControlChannels()
+	go func() {
+		cancelClient := startTestServer(t, canceler, sharedStore)
+		_, err := cancelClient.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
+		cancelErrChan <- err
+	}()
+	<-cancelChannels.CancelCalled
+
+	execChannels.ExecEvent <- a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	<-receivedEventsChan
+
+	cancelChannels.ContinueCancel <- struct{}{}
+
+	gotErr := <-cancelErrChan
+	if !errors.Is(gotErr, a2a.ErrTaskNotCancelable) {
+		t.Fatalf("cancelClient.CancelTask() error = %v, want %v", gotErr, a2a.ErrTaskNotCancelable)
+	}
+}
+
+func TestCancelCancelledTask(t *testing.T) {
+	ctx := t.Context()
+
+	sharedStore := testutil.NewTestTaskStore()
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	cancelClient1 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
+	if _, err := cancelClient1.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID}); err != nil {
+		t.Errorf("cancelClient1.CancelTask() error = %v", err)
+	}
+
+	execChannels.ExecEvent <- a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	<-receivedEventsChan
+
+	cancelClient2 := startTestServer(t, testexecutor.NewCanceler(), sharedStore)
+	task, err := cancelClient2.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
+	if err != nil {
+		t.Fatalf("cancelClient2.CancelTask() error = %v", err)
+	}
+	if task.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("cancelClient2.CancelTask() = %v, want cancelled task", task)
+	}
+}
+
+func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
+	ctx := t.Context()
+
+	sharedStore := testutil.NewTestTaskStore()
+	executor, execChannels := testexecutor.NewWithControlChannels()
+	receivedEventsChan, drainFn := sendMessageInBackground(t, startTestServer(t, executor, sharedStore))
+	defer drainFn()
+	reqCtx := <-execChannels.ReqCtx
+	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
+	<-receivedEventsChan
+
+	concurrentCancelCount := 2
+	var cancelChannels []*testexecutor.ControlChannels
+	cancelResutlts := make(chan *a2a.Task, concurrentCancelCount)
+	for range concurrentCancelCount {
+		canceler, channels := testexecutor.NewWithControlChannels()
+		cancelChannels = append(cancelChannels, channels)
+
+		client := startTestServer(t, canceler, sharedStore)
+		go func() {
+			task, err := client.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
+			if err != nil {
+				t.Errorf("CancelTask() error = %v", err)
+			}
+			cancelResutlts <- task
+		}()
+	}
+	for _, channels := range cancelChannels {
+		<-channels.CancelCalled
+	}
+	for _, channels := range cancelChannels {
+		channels.ContinueCancel <- struct{}{}
+	}
+
+	for range concurrentCancelCount {
+		task := <-cancelResutlts
+		if task == nil {
+			t.Fatal("CancelTask() returned nil task")
+		}
+		if task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("CancelTask() status = %v, want canceled task", task.Status.State)
+		}
+	}
+
+	execChannels.ExecEvent <- a2a.NewStatusUpdateEvent(reqCtx, a2a.TaskStateCompleted, nil)
+	execResult := <-receivedEventsChan
+
+	if task, ok := execResult.(*a2a.Task); ok {
+		if task.Status.State != a2a.TaskStateCanceled {
+			t.Fatalf("client.SendStreamingMessage() wrong state = %v, want %v", task.Status.State, a2a.TaskStateCanceled)
+		}
+	} else {
+		t.Fatalf("client.SendStreamingMessage() task event is not a task, got %T", execResult)
+	}
 }
 
 func startTestServer(t *testing.T, executor a2asrv.AgentExecutor, store taskstore.Store) *a2aclient.Client {
@@ -120,4 +237,24 @@ func startTestServer(t *testing.T, executor a2asrv.AgentExecutor, store taskstor
 	t.Cleanup(server.Close)
 	client := mustCreateClient(t, newAgentCard(server.URL))
 	return client
+}
+
+func sendMessageInBackground(t *testing.T, client *a2aclient.Client) (<-chan a2a.Event, func()) {
+	receivedEventsChan := make(chan a2a.Event, 1)
+	go func() {
+		defer close(receivedEventsChan)
+		msg := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work"))}
+		for event, err := range client.SendStreamingMessage(t.Context(), msg) {
+			if err != nil {
+				t.Errorf("client.SendStreamingMessage() error = %v", err)
+				return
+			}
+			receivedEventsChan <- event
+		}
+	}()
+	return receivedEventsChan, func() {
+		for range receivedEventsChan {
+			// drain
+		}
+	}
 }

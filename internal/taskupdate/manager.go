@@ -193,8 +193,9 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 			mgr.lastStored = storedTask
 			return mgr.lastStored, nil
 		}
+
 		if storedTask.Task.Status.State.Terminal() {
-			return nil, fmt.Errorf("task moved to %q before it could be cancelled", storedTask.Task.Status.State)
+			return nil, fmt.Errorf("task moved to %q before it could be cancelled: %w", storedTask.Task.Status.State, taskstore.ErrConcurrentModification)
 		}
 
 		lastStored = storedTask

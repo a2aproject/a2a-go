@@ -459,7 +459,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "non-terminal task state",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskWithStatus(execCtx, a2a.TaskStateWorking, "Working..."),
@@ -471,7 +471,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "non-final status update",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(execCtx, a2a.TaskStateWorking, "Working..."),
@@ -483,7 +483,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "artifact update",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newArtifactEvent(execCtx, a2a.NewArtifactID(), a2a.NewTextPart("Artifact")),
@@ -495,7 +495,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 			},
 			{
 				name:  "message for existing task",
-				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{Blocking: utils.Ptr(false)}},
+				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Work"), Config: &a2a.SendMessageConfig{ReturnImmediately: true}},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
 						newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
@@ -509,7 +509,7 @@ func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 				name: "message",
 				input: &a2a.SendMessageRequest{
 					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi")),
-					Config:  &a2a.SendMessageConfig{Blocking: utils.Ptr(false)},
+					Config:  &a2a.SendMessageConfig{ReturnImmediately: true},
 				},
 				agentEvents: func(execCtx *ExecutorContext) []a2a.Event {
 					return []a2a.Event{
@@ -738,6 +738,38 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T) {
+	ctx := t.Context()
+
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+	input := &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test message")),
+		Config: &a2a.SendMessageConfig{
+			PushConfig: pushConfig,
+		},
+	}
+
+	pushError := errors.New("push failed")
+	store := testutil.NewTestTaskStore()
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t).SetSendPushError(pushError)
+
+	agentMsg := newAgentMessage("test message")
+	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
+
+	result, err := handler.SendMessage(ctx, input)
+	if err == nil {
+		t.Fatalf("handler.SendMessage() error = nil, want to fail")
+	}
+	if !errors.Is(err, pushError) {
+		t.Fatalf("handler.SendMessage() error = %v, want %v", err, pushError)
+	}
+	if result != nil {
+		t.Fatalf("handler.SendMessage() result = %v, want nil", result)
+	}
+}
+
 func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	ctx := t.Context()
 
@@ -917,6 +949,8 @@ func TestRequestHandler_SendMessage_TaskVersion(t *testing.T) {
 			t.Fatalf("Save() was called with %v, want %v", gotPrevVersions, wantPrev)
 		}
 		gotPrevVersions = make([]taskstore.TaskVersion, 0)
+		// TODO: use cleanup callback when added
+		time.Sleep(15 * time.Millisecond)
 	}
 
 }
@@ -947,6 +981,102 @@ func TestRequestHandler_SendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
 	}
 	if task.Status.State != a2a.TaskStateFailed {
 		t.Fatalf("SendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+	}
+}
+
+func TestAgentExecutionCleaner(t *testing.T) {
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+
+	testCases := []struct {
+		name              string
+		agentEvents       []a2a.Event
+		executeErr        error
+		storageErr        error
+		wantCleanupResult a2a.SendMessageResult
+		wantCleanupErr    error
+	}{
+		{
+			name:              "successful execution",
+			agentEvents:       []a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done")},
+			wantCleanupResult: newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "done"),
+		},
+		{
+			name:              "handled execution error",
+			executeErr:        errors.New("execution failed"),
+			wantCleanupResult: &a2a.Task{Status: a2a.TaskStatus{State: a2a.TaskStateFailed}},
+		},
+		{
+			name:           "unhandled execution error",
+			executeErr:     errors.New("execution failed"),
+			storageErr:     errors.New("storage failed"),
+			wantCleanupErr: errors.New("execution failed"),
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+
+			if tt.storageErr != nil {
+				store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+					if req.Task.Status.State == a2a.TaskStateFailed {
+						return taskstore.TaskVersionMissing, tt.storageErr
+					}
+					return store.InMemory.Update(ctx, req)
+				}
+			}
+
+			type cleanupResult struct {
+				result a2a.SendMessageResult
+				err    error
+			}
+			cleanupChan := make(chan cleanupResult, 1)
+
+			agent := &cleanerAgentExecutor{
+				mockAgentExecutor: mockAgentExecutor{
+					ExecuteFunc: func(ctx context.Context, reqCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+						return func(yield func(a2a.Event, error) bool) {
+							for _, ev := range tt.agentEvents {
+								if !yield(ev, nil) {
+									return
+								}
+							}
+							yield(nil, tt.executeErr)
+						}
+					},
+				},
+				CleanupFunc: func(ctx context.Context, reqCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+					cleanupChan <- cleanupResult{result: result, err: err}
+				},
+			}
+
+			handler := NewHandler(agent, WithTaskStore(store))
+			_, _ = handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "test")})
+
+			select {
+			case gotCleanup := <-cleanupChan:
+				if (tt.wantCleanupErr == nil) != (gotCleanup.err == nil) {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				} else if tt.wantCleanupErr != nil && tt.wantCleanupErr.Error() != gotCleanup.err.Error() {
+					t.Errorf("Cleanup() err = %v, want %v", gotCleanup.err, tt.wantCleanupErr)
+				}
+
+				if tt.wantCleanupResult != nil {
+					if diff := cmp.Diff(tt.wantCleanupResult, gotCleanup.result,
+						cmpopts.IgnoreFields(a2a.Task{}, "ID", "ContextID", "History", "Artifacts", "Metadata"),
+						cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp", "Message"),
+					); diff != "" {
+						t.Errorf("Cleanup() result mismatch (-want +got):\n%s", diff)
+					}
+				} else if gotCleanup.result != nil {
+					t.Errorf("Cleanup() result = %v, want nil", gotCleanup.result)
+				}
+
+			case <-time.After(time.Second):
+				t.Fatal("Cleanup was not called")
+			}
+		})
 	}
 }
 
@@ -2212,4 +2342,15 @@ func collectEvents(seq iter.Seq2[a2a.Event, error]) ([]a2a.Event, error) {
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+type cleanerAgentExecutor struct {
+	mockAgentExecutor
+	CleanupFunc func(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error)
+}
+
+func (m *cleanerAgentExecutor) Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+	if m.CleanupFunc != nil {
+		m.CleanupFunc(ctx, execCtx, result, err)
+	}
 }

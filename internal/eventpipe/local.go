@@ -22,7 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 )
 
-const defaultBufferSize = 1024
+const defaultBufferSize = 256
 
 // Reader is an interface for reading events.
 type Reader interface {
