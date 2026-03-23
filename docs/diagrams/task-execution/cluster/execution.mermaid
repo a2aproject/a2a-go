@@ -1,0 +1,28 @@
+flowchart LR
+C("Client")
+E("Execution")
+RH("RequestHandler")
+EF("ExecutionFrontend")
+EQ@{ shape: das, label: "EventQueue" }
+style EQ fill:#d3ffa0
+AE("AgentExecutor")
+style AE fill:#d3ffa0
+WQ@{ shape: das, label: "WorkQueue" }
+style WQ fill:#d3ffa0
+P("Processor")
+EB("ExecutionBackend")
+LQ@{ shape: das, label: "LocalQueue" }
+TS@{ shape: cyl, label: "TaskStore" }
+style TS fill:#d3ffa0
+C -->|"1. Message"| RH
+P -->|"10. Write"| EQ
+E -->|"11. Read"| EQ
+E -->|"12. Notify"| RH
+EF -->|"4. Return"| E
+RH -->|"2. Invoke"| EF
+AE -->|"7. Write"| LQ
+EF -->|"3. Write"| WQ
+EB -->|"5. Read"| WQ
+EB -->|"6. Invoke"| AE
+P -->|"8. Read"| LQ
+P -->|"9. Update"| TS

@@ -77,7 +77,6 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			}
 		}
 
-		terminalReported := false
 		for {
 			msg, err := s.queue.Read(ctx)
 			if errors.Is(err, eventqueue.ErrQueueClosed) {
@@ -92,17 +91,17 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 				continue
 			}
 			event := msg.Event
-			terminalReported = taskupdate.IsFinal(event)
 			if !yield(event, nil) {
+				return
+			}
+			if taskupdate.IsFinal(event) {
 				return
 			}
 		}
 
 		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
-		if result, err := s.execution.result.wait(ctx); !terminalReported || err != nil {
-			yield(result, err)
-		}
+		yield(s.execution.result.wait(ctx))
 	}
 }
 

@@ -949,6 +949,8 @@ func TestRequestHandler_SendMessage_TaskVersion(t *testing.T) {
 			t.Fatalf("Save() was called with %v, want %v", gotPrevVersions, wantPrev)
 		}
 		gotPrevVersions = make([]taskstore.TaskVersion, 0)
+		// TODO: use cleanup callback when added
+		time.Sleep(15 * time.Millisecond)
 	}
 
 }

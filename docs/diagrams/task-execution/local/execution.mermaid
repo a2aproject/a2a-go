@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant HE as handleExecution
+    participant EG as errgroup
+    participant Producer
+    participant Pipe as eventpipe<br/>(buffered chan)
+    participant Consumer
+    participant BQ as Broadcast Queue
+
+    HE->>EG: errgroup.WithContext(ctx)
+
+    par
+        EG->>Producer: go producer(egCtx)
+        Producer->>Producer: agent.Execute yields event
+        Producer->>Pipe: pipe.Write(event)
+    and
+        EG->>Consumer: go consumer(egCtx)
+        Pipe-->>Consumer: pipe.Read() → event
+        Consumer->>Consumer: processor.Process(event)
+        Consumer->>BQ: broadcast.Write(processed event)
+    end
+
+    Note over Producer,Pipe: producer keeps yielding events
+
+    Producer->>Producer: agent yields terminal event
+    Producer->>Pipe: pipe.Write(terminal event)
+    Pipe-->>Consumer: pipe.Read() → terminal event
+    Consumer->>Consumer: processor.Process → ExecutionResult set
+    Consumer-->>EG: return errConsumerStopped
+
+    Note over EG: errgroup cancels egCtx
+
+    Producer->>Pipe: pipe.Write(next event)
+    Note over Producer,Pipe: write succeeds if buffer has space!<br/>producer must check ctx on next iteration
+    Producer->>Producer: agent.Execute checks ctx.Done()
+    Producer-->>EG: return ctx.Err()
+
+    EG-->>HE: group.Wait() returns
+    Note over HE: processorResult set → return (result, nil)<br/>errConsumerStopped is filtered out
+
+    HE->>HE: executor.Cleanup(ctx, result, err)
+    HE->>HE: execution.result.setValue(result)
+    HE->>HE: cleanupExecution (destroy queue, signalDone)

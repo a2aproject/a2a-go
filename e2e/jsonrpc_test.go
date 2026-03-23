@@ -71,7 +71,7 @@ func TestJSONRPC_Streaming(t *testing.T) {
 		received = append(received, event)
 	}
 
-	if diff := cmp.Diff(executor.Emitted, received); diff != "" {
+	if diff := cmp.Diff(executor.Emitted(), received); diff != "" {
 		t.Fatalf("client.SendStreamingMessage() wrong events (+got,-want) diff = %s", diff)
 	}
 }
