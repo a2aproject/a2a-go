@@ -434,7 +434,7 @@ func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error
 func writeSnakeCaseJSON(ctx context.Context, rw http.ResponseWriter, v any) {
 	data, err := marshalSnakeCase(v)
 	if err != nil {
-		log.Error(ctx, "failed to encode response", err)
+		writeRESTCompatError(ctx, rw, fmt.Errorf("failed to marshal: %w", err), a2a.TaskID(""))
 		return
 	}
 	if _, err := rw.Write(data); err != nil {

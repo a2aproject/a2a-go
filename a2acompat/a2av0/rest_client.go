@@ -45,10 +45,9 @@ type RESTTransportConfig struct {
 // NewRESTTransportFactory creates a new [a2aclient.TransportFactory] for the v0.3 HTTP+JSON protocol binding.
 func NewRESTTransportFactory(cfg RESTTransportConfig) a2aclient.TransportFactory {
 	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
-		if cfg.URL == "" {
-			cfg.URL = iface.URL
-		}
-		return NewRESTTransport(cfg)
+		cfgCopy := cfg
+		cfgCopy.URL = iface.URL
+		return NewRESTTransport(cfgCopy)
 	})
 }
 
@@ -203,17 +202,26 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 // SendMessage implements [a2aclient.Transport].
 func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	compatReq := FromV1SendMessageRequest(req)
-	var rawResult json.RawMessage
-	if err := t.doRequest(ctx, &compatRestReq{
+	resp, err := t.sendRequest(ctx, &compatRestReq{
 		method:  "POST",
 		path:    rest.MakeSendMessagePath(),
 		params:  params,
 		payload: compatReq,
-	}, &rawResult); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
+	rawData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
 	// Transform snake_case response to camelCase for legacy unmarshal.
-	camelData, err := transformJSONKeys(rawResult, snakeToCamel)
+	camelData, err := transformJSONKeys(rawData, snakeToCamel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to transform send message result keys: %w", err)
 	}
