@@ -424,7 +424,7 @@ func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, r
 func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
 	errResp := rest.ToRESTError(err, taskID)
 	rw.Header().Set("Content-Type", "application/problem+json")
-	rw.WriteHeader(errResp.Status)
+	rw.WriteHeader(errResp.HTTPStatus())
 	if jErr := json.NewEncoder(rw).Encode(errResp); jErr != nil {
 		log.Error(ctx, "failed to write error response", jErr)
 	}
