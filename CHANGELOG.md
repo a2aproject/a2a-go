@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.0.1](https://github.com/a2aproject/a2a-go/compare/v2.0.0...v2.0.1) (2026-03-24)
+
+
+### Features
+
+* **a2acompat:** add HTTP+JSON REST support to a2av0 compat layer ([#280](https://github.com/a2aproject/a2a-go/issues/280)) ([bac00e7](https://github.com/a2aproject/a2a-go/commit/bac00e7a1a6974eb62feded3637d661624534f58))
+* agent executor cleaner ([#276](https://github.com/a2aproject/a2a-go/issues/276)) ([9c95980](https://github.com/a2aproject/a2a-go/commit/9c95980a0764f263872b9d10e4ce75984f4b6756))
+
+
+### Bug Fixes
+
+* ensure correct concurrent cancellation results ([#287](https://github.com/a2aproject/a2a-go/issues/287)) ([d0f8981](https://github.com/a2aproject/a2a-go/commit/d0f8981fa1b81d8e0aa09df8db6ad044387ba8b4)), closes [#245](https://github.com/a2aproject/a2a-go/issues/245)
+
+
+### Documentation
+
+* **a2aclient:** add Example_* test functions for pkg.go.dev documentation ([#263](https://github.com/a2aproject/a2a-go/issues/263)) ([f8dae97](https://github.com/a2aproject/a2a-go/commit/f8dae97f47c11ad7a8327a85de592cde95d7083d))
+* update diagrams, docs and instructions ([#289](https://github.com/a2aproject/a2a-go/issues/289)) ([ed33c7a](https://github.com/a2aproject/a2a-go/commit/ed33c7a5ed98a64cffaa1181d8493d0dfb550702))
+
 ## [1.0.0](https://github.com/a2aproject/a2a-go/compare/v1.0.0-alpha.3...v1.0.0) (2026-03-17)
 
 
