@@ -66,6 +66,8 @@ type UpdateRequest struct {
 	Task *a2a.Task
 	// Event is the event that triggered the update. It can be a user message which is added to task history.
 	Event a2a.Event
+	// PrevTask is the previous state of the task in the store. It is passed for detecting concurrent udpates.
+	PrevTask *a2a.Task
 	// PrevVersion is the version of the task before the update. It is passed for detecting concurrent udpates.
 	// If the provided version does not match the latest task version the update request MUST be rejected with [ErrConcurrentModification].
 	PrevVersion TaskVersion

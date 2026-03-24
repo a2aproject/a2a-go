@@ -392,7 +392,7 @@ type mockLegacyTaskStore struct {
 	tasks map[legacya2a.TaskID]*legacya2a.Task
 }
 
-func (s *mockLegacyTaskStore) Save(ctx context.Context, task *legacya2a.Task, event legacya2a.Event, prev legacya2a.TaskVersion) (legacya2a.TaskVersion, error) {
+func (s *mockLegacyTaskStore) Save(ctx context.Context, task *legacya2a.Task, event legacya2a.Event, prevTask *legacya2a.Task, prevVersion legacya2a.TaskVersion) (legacya2a.TaskVersion, error) {
 	if s.tasks == nil {
 		s.tasks = make(map[legacya2a.TaskID]*legacya2a.Task)
 	}

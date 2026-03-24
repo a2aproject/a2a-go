@@ -3,7 +3,7 @@ module github.com/a2aproject/a2a-go/v2
 go 1.24.4
 
 require (
-	github.com/a2aproject/a2a-go v0.3.7
+	github.com/a2aproject/a2a-go v0.3.12
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0

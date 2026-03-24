@@ -200,7 +200,7 @@ type taskStoreAdapter struct {
 
 func (s *taskStoreAdapter) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
 	legacyTask := FromV1Task(task)
-	version, err := s.TaskStore.Save(ctx, legacyTask, legacyTask, legacya2a.TaskVersionMissing)
+	version, err := s.TaskStore.Save(ctx, legacyTask, legacyTask, nil, legacya2a.TaskVersionMissing)
 	return taskstore.TaskVersion(version), err
 }
 
@@ -210,7 +210,12 @@ func (s *taskStoreAdapter) Update(ctx context.Context, update *taskstore.UpdateR
 	if err != nil {
 		return taskstore.TaskVersionMissing, err
 	}
-	version, err := s.TaskStore.Save(ctx, legacyTask, legacyEvent, legacya2a.TaskVersion(update.PrevVersion))
+	var legacyPrevTask *legacya2a.Task
+	if update.PrevTask != nil {
+		legacyPrevTask = FromV1Task(update.PrevTask)
+	}
+
+	version, err := s.TaskStore.Save(ctx, legacyTask, legacyEvent, legacyPrevTask, legacya2a.TaskVersion(update.PrevVersion))
 	if err != nil {
 		if errors.Is(err, legacya2a.ErrConcurrentTaskModification) {
 			return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
