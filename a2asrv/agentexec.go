@@ -452,7 +452,7 @@ func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMess
 		return nil, err
 	}
 
-	log.Warn(ctx, "task moved to failed state due to an error", "cause", cause.Error())
+	log.Warn(ctx, "task moved to failed state due to an error", "cause", cause)
 
 	return versioned.Task, nil
 }
@@ -463,7 +463,7 @@ func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, cause er
 		return nil, err
 	}
 
-	log.Warn(ctx, "task moved to failed state due to a processor error", "cause", cause.Error())
+	log.Warn(ctx, "task moved to failed state due to a processor error", "cause", cause)
 
 	return &taskexec.ProcessorResult{
 		ExecutionResult:       versioned.Task,
