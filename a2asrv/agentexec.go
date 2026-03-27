@@ -317,6 +317,21 @@ type cleaner struct {
 
 // Cleanup is called after an agent execution finishes with either result or an error.
 func (e *cleaner) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+	isCancelation := e.execCtx.Message == nil
+	if err != nil {
+		if isCancelation {
+			log.Warn(ctx, "task cancelation failed", "cause", err)
+		} else {
+			log.Warn(ctx, "agent execution failed", "cause", err)
+		}
+	} else {
+		if isCancelation {
+			if t, ok := result.(*a2a.Task); ok && t.Status.State != a2a.TaskStateCanceled {
+				log.Warn(ctx, "task cancelation failed, resolving to a different state", "state", t.Status.State)
+			}
+		}
+	}
+
 	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
 		cleaner.Cleanup(ctx, e.execCtx, result, err)
 	}
