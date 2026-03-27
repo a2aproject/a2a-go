@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +38,8 @@ import (
 var fixedTime = time.Now()
 
 func TestRequestHandler_SendMessage(t *testing.T) {
+	slog.SetDefault(testutil.NewLogger(t))
+
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
