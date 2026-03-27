@@ -43,8 +43,8 @@ func LoggerFrom(ctx context.Context) *slog.Logger {
 	return slog.Default()
 }
 
-// Log invokes Log on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
-func Log(ctx context.Context, level slog.Level, msg string, keyValArgs ...any) {
+// Write invokes Write on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
+func Write(ctx context.Context, level slog.Level, msg string, keyValArgs ...any) {
 	doLog(ctx, level, msg, keyValArgs...)
 }
 
@@ -58,9 +58,19 @@ func Warn(ctx context.Context, msg string, keyValArgs ...any) {
 	doLog(ctx, slog.LevelWarn, msg, keyValArgs...)
 }
 
+// Debug invokes DebugContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
+func Debug(ctx context.Context, msg string, keyValArgs ...any) {
+	doLog(ctx, slog.LevelDebug, msg, keyValArgs...)
+}
+
 // Error invokes ErrorContext on the [slog.Logger] associated with the provided Context or slog.Default() if no context-scoped logger is available.
 func Error(ctx context.Context, msg string, err error, keyValArgs ...any) {
 	doLog(ctx, slog.LevelError, msg, slices.Concat([]any{"error", err}, keyValArgs)...)
+}
+
+// Enabled checks if the [slog.Logger] associated with the provided Context is enabled for the given level.
+func Enabled(ctx context.Context, level slog.Level) bool {
+	return LoggerFrom(ctx).Enabled(ctx, level)
 }
 
 // If we use logger.Log() directly in our log package methods these methods are logged as the call site.

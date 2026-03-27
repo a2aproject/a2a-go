@@ -32,12 +32,16 @@ func TestLogAddSource(t *testing.T) {
 		call func(context.Context)
 	}{
 		{
-			name: "Log",
-			call: func(ctx context.Context) { Log(ctx, slog.LevelInfo, "hello") },
+			name: "Write",
+			call: func(ctx context.Context) { Write(ctx, slog.LevelInfo, "hello") },
 		},
 		{
 			name: "Info",
 			call: func(ctx context.Context) { Info(ctx, "hello") },
+		},
+		{
+			name: "Debug",
+			call: func(ctx context.Context) { Debug(ctx, "hello") },
 		},
 		{
 			name: "Warn",
@@ -52,7 +56,7 @@ func TestLogAddSource(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{AddSource: true})
+			handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug})
 
 			tc.call(AttachLogger(t.Context(), slog.New(handler)))
 
