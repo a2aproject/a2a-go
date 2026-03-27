@@ -136,13 +136,12 @@ func TestClusterBackend(t *testing.T) {
 
 			factory := newStaticFactory(tc.executor, tc.canceler)
 			wq := testutil.NewTestWorkQueue()
-			cfg := &DistributedManagerConfig{
+			_ = newWorkQueueHandler(DistributedManagerConfig{
 				QueueManager: qm,
 				TaskStore:    testutil.NewTestTaskStore(),
 				Factory:      factory,
 				WorkQueue:    wq,
-			}
-			_ = newWorkQueueHandler(cfg)
+			})
 
 			gotResult, gotErr := wq.HandlerFn(t.Context(), tc.payload)
 
@@ -189,13 +188,12 @@ func TestClusterBackend_Heartbeater(t *testing.T) {
 
 	factory := newStaticFactory(executor, nil)
 	wq := testutil.NewTestWorkQueue()
-	cfg := &DistributedManagerConfig{
+	_ = newWorkQueueHandler(DistributedManagerConfig{
 		QueueManager: testutil.NewTestQueueManager(),
 		TaskStore:    testutil.NewTestTaskStore(),
 		Factory:      factory,
 		WorkQueue:    wq,
-	}
-	_ = newWorkQueueHandler(cfg)
+	})
 
 	ctx := workqueue.AttachHeartbeater(t.Context(), heartbeater)
 	gotResult, gotErr := wq.HandlerFn(ctx, &workqueue.Payload{

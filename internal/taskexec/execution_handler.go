@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"time"
 
@@ -41,30 +42,32 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 	for {
 		event, err := h.agentEvents.Read(ctx)
 		if err != nil && ctx.Err() != nil {
-			log.Info(ctx, "execution context canceled", "cause", context.Cause(ctx))
-			return h.handleErrorFn(ctx, context.Cause(ctx))
+			return h.handleErrorFn(ctx, fmt.Errorf("context canceled: %w", context.Cause(ctx)))
 		}
 
 		if err != nil {
-			log.Info(ctx, "error reading from queue", "error", err)
-			return h.handleErrorFn(ctx, err)
+			return h.handleErrorFn(ctx, fmt.Errorf("queue read failed: %w", err))
+		}
+
+		if log.Enabled(ctx, slog.LevelDebug) {
+			log.Debug(ctx, "processing event", "event_type", fmt.Sprintf("%T", event))
 		}
 
 		processResult, err := h.handleEventFn(ctx, event)
 		if err != nil {
-			log.Info(ctx, "processor error", "error", err)
-			return nil, err
+			return nil, fmt.Errorf("processor error: %w", err)
 		}
 
 		if h.handledEventQueue != nil {
 			toEmit := event
 			if processResult.EventOverride != nil {
+				log.Debug(ctx, "event overridden by processor", "cause", processResult.ExecutionFailureCause)
 				toEmit = processResult.EventOverride
 			}
+
 			msg := &eventqueue.Message{Event: toEmit, TaskVersion: processResult.TaskVersion}
 			if err := h.handledEventQueue.Write(ctx, msg); err != nil {
-				log.Info(ctx, "execution context canceled during subscriber notification attempt", "cause", context.Cause(ctx))
-				return h.handleErrorFn(ctx, context.Cause(ctx))
+				return h.handleErrorFn(ctx, fmt.Errorf("context canceled on event broadcast: %w", context.Cause(ctx)))
 			}
 		}
 
@@ -100,7 +103,7 @@ func runProducerConsumer(
 					return ctx.Err()
 				case <-timer.C:
 					if err := heartbeater.Heartbeat(ctx); err != nil {
-						return err
+						return fmt.Errorf("heartbeat failure: %w", err)
 					}
 				}
 			}
@@ -114,10 +117,14 @@ func runProducerConsumer(
 					err = panicHandler(r)
 				} else {
 					err = fmt.Errorf("event producer panic: %v\n%s", r, debug.Stack())
+					log.Warn(ctx, "event producer panicked", "error", err)
 				}
 			}
 		}()
+
+		log.Debug(ctx, "event producer started")
 		err = producer(ctx)
+		log.Debug(ctx, "event producer stopped", "error", err)
 		return
 	})
 
@@ -132,11 +139,15 @@ func runProducerConsumer(
 					err = panicHandler(r)
 				} else {
 					err = fmt.Errorf("event consumer panic: %v\n%s", r, debug.Stack())
+					log.Warn(ctx, "event consumer panicked", "error", err)
 				}
 			}
 		}()
 
+		log.Debug(ctx, "event consumer started")
 		localResult, err := consumer(ctx)
+		log.Debug(ctx, "event consumer stopped", "has_result", localResult != nil, "error", err)
+
 		processorResult = localResult
 		if err == nil {
 			// We do this to cancel producer context. There's no point for it to continue, as there will be no consumer to process events.

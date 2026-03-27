@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -146,7 +147,7 @@ func (m *localManager) Execute(ctx context.Context, req *a2a.SendMessageRequest)
 
 	execution, err := m.createExecution(ctx, tid, req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create execution failure: %w", err)
 	}
 
 	eventBroadcastQueue, err := m.queueManager.CreateWriter(ctx, tid)
@@ -216,6 +217,8 @@ func (m *localManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (
 		} else {
 			go m.handleCancel(detachedCtx, cancel)
 		}
+	} else {
+		log.Debug(ctx, "waiting for existing cancelation result")
 	}
 
 	result, err := cancel.result.wait(ctx)
@@ -242,8 +245,8 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 
 	executor, processor, cleaner, err := m.factory.CreateExecutor(ctx, execution.tid, execution.req)
 	if err != nil {
-		execution.result.setError(fmt.Errorf("setup failed: %w", err))
-		m.destroyQueue(ctx, execution.tid)
+		log.Error(ctx, "executor setup failed", err)
+		execution.result.setError(fmt.Errorf("executor setup failed: %w", err))
 		return
 	}
 
@@ -284,7 +287,8 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 
 	canceler, processor, cleaner, err := m.factory.CreateCanceler(ctx, cancel.req)
 	if err != nil {
-		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
+		log.Error(ctx, "canceler setup failed", err)
+		cancel.result.setError(fmt.Errorf("canceler setup failed: %w", err))
 		return
 	}
 
@@ -318,7 +322,14 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
 		if r := recover(); r != nil {
-			cancel.result.setError(fmt.Errorf("task cancelation panic: %v", r))
+			var err error
+			if m.panicHandler != nil {
+				err = m.panicHandler(r)
+			} else {
+				err := fmt.Errorf("task cancelation panicked: %v\n%s", r, debug.Stack())
+				log.Warn(ctx, "cancelation panicked", "error", err)
+			}
+			cancel.result.setError(err)
 		}
 	}()
 
@@ -329,8 +340,9 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 		m.mu.Unlock()
 	}()
 
-	canceler, _, _, err := m.factory.CreateCanceler(ctx, cancel.req)
+	canceler, _, cleaner, err := m.factory.CreateCanceler(ctx, cancel.req)
 	if err != nil {
+		log.Error(ctx, "task cancelation setup failed", err)
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return
 	}
@@ -342,21 +354,25 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
 	if err := canceler.Cancel(ctx, run.pipe.Writer); err != nil {
+		cleaner.Cleanup(ctx, nil, err)
 		cancel.result.setError(err)
 		return
 	}
 
+	log.Debug(ctx, "waiting for concurrent cancelation result")
+
 	result, err := run.result.wait(ctx)
+
+	cleaner.Cleanup(ctx, result, err)
+
 	if err != nil {
 		cancel.result.setError(err)
 		return
 	}
-
 	cancel.result.setValue(result)
 }
 
 func (m *localManager) destroyQueue(ctx context.Context, tid a2a.TaskID) {
-	// TODO(yarolegovich): consider not destroying queues until a Task reaches terminal state
 	if err := m.queueManager.Destroy(ctx, tid); err != nil {
 		log.Error(ctx, "failed to destroy a queue", err)
 	}
