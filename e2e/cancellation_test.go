@@ -213,6 +213,7 @@ func TestConcurrentCancellation_MultipleCancelCallsGetSameResult(t *testing.T) {
 		task := <-cancelResutlts
 		if task == nil {
 			t.Fatal("CancelTask() returned nil task")
+			return
 		}
 		if task.Status.State != a2a.TaskStateCanceled {
 			t.Fatalf("CancelTask() status = %v, want canceled task", task.Status.State)

@@ -89,7 +89,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open log file: %v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		output = io.MultiWriter(os.Stderr, f)
 	}
 

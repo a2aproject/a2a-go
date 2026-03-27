@@ -24,6 +24,7 @@
 * Use `receiver.Operation() = %v, want %v` as a template for printing test error check failures.
 * Use `receiver.Operation() wrong result (+got,-want) diff = %s` as a template for printing test errors received when using `cmp.Diff`.
 * Prefer using `t.Fatalf` over `t.Errorf` unless printing all the failed checks is justified or the method is called not from the main goroutine. 
+* Always check return type event if discarding it `_ = smth.Close()`.
 
 ### AI learnings
 
