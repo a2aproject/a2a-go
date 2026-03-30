@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -312,7 +313,13 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
 		if r := recover(); r != nil {
-			cancel.result.setError(fmt.Errorf("task cancelation panic: %v", r))
+			var err error
+			if m.panicHandler != nil {
+				err = m.panicHandler(r)
+			} else {
+				err = fmt.Errorf("task cancelation panic: %v\n%s", r, debug.Stack())
+			}
+			cancel.result.setError(err)
 		}
 	}()
 

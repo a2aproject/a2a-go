@@ -243,6 +243,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 				log.Error(ctx, "failed to write an event", err)
 				return
 			}
+			return // stop the loop
 		case <-keepAliveChan:
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
