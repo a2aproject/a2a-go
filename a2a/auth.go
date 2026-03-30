@@ -91,6 +91,7 @@ func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 	for name, scheme := range s {
 		var wrapped any
 		switch v := scheme.(type) {
+		// TODO: remove short JSON discriminator keys after transition period
 		case APIKeySecurityScheme:
 			wrapped = map[string]any{"apiKeySecurityScheme": v}
 		case HTTPAuthSecurityScheme:
