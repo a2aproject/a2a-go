@@ -145,11 +145,6 @@ func (c *Client) SendStreamingMessage(ctx context.Context, message *a2a.MessageS
 				return
 			}
 
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
 			if !yield(interceptedEvent, nil) {
 				return
 			}
