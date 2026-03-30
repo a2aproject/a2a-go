@@ -511,6 +511,30 @@ func TestManager_IDValidationFailure(t *testing.T) {
 	}
 }
 
+func TestManager_SetTaskFailed_NothingStored(t *testing.T) {
+	seedTask := newTestTask()
+	invalidUpdate := &a2a.Task{
+		ID:        seedTask.Task.ID,
+		ContextID: seedTask.Task.ContextID,
+		Metadata:  map[string]any{"invalid": func() {}},
+	}
+
+	ctx := t.Context()
+	store := taskstore.NewMem()
+
+	m := NewManager(store, seedTask)
+	_, err := m.Process(ctx, invalidUpdate)
+	if err == nil {
+		t.Fatalf("m.Process() error = nil, expected serialization failure")
+	}
+
+	_, err = m.SetTaskFailed(ctx, invalidUpdate, err)
+	wantContain := "error before task was created"
+	if err == nil || !strings.Contains(err.Error(), wantContain) {
+		t.Fatalf("m.SetTaskFailed() error = %v, want to contain %q", err, wantContain)
+	}
+}
+
 func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 	seedTask := newTestTask()
 	invalidMeta := map[string]any{"invalid": func() {}}
@@ -555,6 +579,11 @@ func TestManager_SetTaskFailedAfterInvalidUpdate(t *testing.T) {
 			store := taskstore.NewMem()
 
 			m := NewManager(store, seedTask)
+			validEvent := a2a.NewStatusUpdateEvent(seedTask.Task, a2a.TaskStateSubmitted, nil)
+			if _, err := m.Process(ctx, validEvent); err != nil {
+				t.Fatalf("m.Process() valid event failed: %v", err)
+			}
+
 			_, err := m.Process(ctx, tc.invalidUpdate)
 			if err == nil {
 				t.Fatalf("m.Process() error = nil, expected serialization failure")
@@ -666,7 +695,7 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 			t.Parallel()
 			saver := &testSaver{disablePrevCheck: true}
 
-			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version}
+			task := &VersionedTask{Task: &a2a.Task{ID: tid, ContextID: ctxID}, Version: tc.initialState.Version, Stored: true}
 			task.Task.Status = tc.initialState.Task.Status
 
 			saver.saved = task.Task

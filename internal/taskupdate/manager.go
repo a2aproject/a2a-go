@@ -31,6 +31,7 @@ const maxCancelationAttempts = 10
 type VersionedTask struct {
 	Task    *a2a.Task
 	Version a2a.TaskVersion
+	Stored  bool
 }
 
 // Saver is used for saving the [a2a.Task] after updating its state.
@@ -56,6 +57,10 @@ func NewManager(saver Saver, task *VersionedTask) *Manager {
 
 // SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
 func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*VersionedTask, error) {
+	if !mgr.lastSaved.Stored {
+		return nil, fmt.Errorf("error before task was created: %v", cause)
+	}
+
 	task := *mgr.lastSaved.Task // copy to update task status
 
 	// do not store cause.Error() as part of status to not disclose the cause to clients
@@ -150,26 +155,32 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 	if err != nil {
 		return nil, fmt.Errorf("task copy failed: %w", err)
 	}
-	version := mgr.lastSaved.Version
+
+	var prev *a2a.Task
+	var version a2a.TaskVersion
+	if mgr.lastSaved.Stored {
+		prev = mgr.lastSaved.Task
+		version = mgr.lastSaved.Version
+	}
 
 	for range maxCancelationAttempts {
-		prev, err := utils.DeepCopy(task)
+		updated, err := utils.DeepCopy(task)
 		if err != nil {
 			return nil, fmt.Errorf("task copy failed: %w", err)
 		}
 
-		if task.Status.Message != nil {
-			task.History = append(task.History, task.Status.Message)
+		if updated.Status.Message != nil {
+			updated.History = append(updated.History, updated.Status.Message)
 		}
 		if event.Metadata != nil {
-			if task.Metadata == nil {
-				task.Metadata = make(map[string]any)
+			if updated.Metadata == nil {
+				updated.Metadata = make(map[string]any)
 			}
-			maps.Copy(task.Metadata, event.Metadata)
+			maps.Copy(updated.Metadata, event.Metadata)
 		}
-		task.Status = event.Status
+		updated.Status = event.Status
 
-		vt, err := mgr.saveVersionedTask(ctx, task, event, prev, version)
+		vt, err := mgr.saveVersionedTask(ctx, updated, event, prev, version)
 		if err == nil {
 			return vt, nil
 		}
@@ -184,7 +195,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 
 		if latestTask.Status.State == a2a.TaskStateCanceled {
-			mgr.lastSaved = &VersionedTask{Task: latestTask, Version: latestVersion}
+			mgr.lastSaved = &VersionedTask{Task: latestTask, Version: latestVersion, Stored: true}
 			return mgr.lastSaved, nil
 		}
 
@@ -192,14 +203,22 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 			return nil, fmt.Errorf("task moved to %q before it could be cancelled: %w", latestTask.Status.State, a2a.ErrConcurrentTaskModification)
 		}
 
-		task, version = latestTask, latestVersion
+		task = latestTask
+		prev = latestTask
+		version = latestVersion
 	}
 
 	return nil, fmt.Errorf("max task cancelation attempts reached")
 }
 
 func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*VersionedTask, error) {
-	return mgr.saveVersionedTask(ctx, task, event, mgr.lastSaved.Task, mgr.lastSaved.Version)
+	var prev *a2a.Task
+	var prevVersion a2a.TaskVersion
+	if mgr.lastSaved.Stored {
+		prev = mgr.lastSaved.Task
+		prevVersion = mgr.lastSaved.Version
+	}
+	return mgr.saveVersionedTask(ctx, task, event, prev, prevVersion)
 }
 
 func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, prev *a2a.Task, prevVersion a2a.TaskVersion) (*VersionedTask, error) {
@@ -208,7 +227,7 @@ func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event
 		return nil, fmt.Errorf("failed to save task state: %w", err)
 	}
 
-	mgr.lastSaved = &VersionedTask{Task: task, Version: version}
+	mgr.lastSaved = &VersionedTask{Task: task, Version: version, Stored: true}
 
 	result, err := utils.DeepCopy(mgr.lastSaved)
 	if err != nil {
