@@ -331,7 +331,7 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	}()
 
 	// Cleaner and Processor not used, they will run in execution goroutine
-	canceler, _, _, err := m.factory.CreateCanceler(ctx, cancel.params)
+	canceler, _, cleaner, err := m.factory.CreateCanceler(ctx, cancel.params)
 	if err != nil {
 		cancel.result.setError(fmt.Errorf("setup failed: %w", err))
 		return
@@ -349,6 +349,9 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	}
 
 	result, err := run.result.wait(ctx)
+
+	cleaner.Cleanup(ctx, result, err)
+
 	if err != nil {
 		log.Info(ctx, "concurrent cancelation failed with an error", "cause", err)
 		cancel.result.setError(err)

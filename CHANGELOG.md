@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.13](https://github.com/a2aproject/a2a-go/compare/v0.3.12...v0.3.13) (2026-03-30)
+
+### Bug Fixes
+
+* call cleanup even for cancelation with concurrent execution for API predictability
+* fix a2asrv.TaskStore.Save call with non-nil prev task even if nothing was stored
+* fix panic handler not called for cancelation with concurrent execution
+* fix heartbeater timer leak
+* fix infinite jsonrpc sse loop on panic supression
+* fix client interceptor not being able to supress error in after
+
 ## [0.3.12](https://github.com/a2aproject/a2a-go/compare/v0.3.11...v0.3.12) (2026-03-20)
 
 ### Bug Fixes
