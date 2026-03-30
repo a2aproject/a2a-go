@@ -86,11 +86,11 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 
 	entriesJSON := []string{
-		`"name1":{"apiKey":{"location":"cookie","name":"abc"}}`,
-		`"name2":{"openIdConnect":{"openIdConnectUrl":"url"}}`,
-		`"name3":{"mutualTLS":{"description":"optional"}}`,
-		`"name4":{"http":{"bearerFormat":"JWT","scheme":"Bearer"}}`,
-		`"name5":{"oauth2":{"oauth2MetadataUrl": "https://test.com", "description": "test","flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}`,
+		`"name1":{"apiKeySecurityScheme":{"location":"cookie","name":"abc"}}`,
+		`"name2":{"openIdConnectSecurityScheme":{"openIdConnectUrl":"url"}}`,
+		`"name3":{"mtlsSecurityScheme":{"description":"optional"}}`,
+		`"name4":{"httpAuthSecurityScheme":{"bearerFormat":"JWT","scheme":"Bearer"}}`,
+		`"name5":{"oauth2SecurityScheme":{"oauth2MetadataUrl": "https://test.com", "description": "test","flows":{"password":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}`,
 	}
 	wantJSON := fmt.Sprintf("{%s}", strings.Join(entriesJSON, ","))
 
@@ -132,7 +132,7 @@ func TestAgentCardParsing(t *testing.T) {
   },
   "securitySchemes": {
     "google": {
-      "openIdConnect": {
+      "openIdConnectSecurityScheme": {
         "openIdConnectUrl": "https://accounts.google.com/.well-known/openid-configuration"
       }
     }
