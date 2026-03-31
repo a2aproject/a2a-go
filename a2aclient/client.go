@@ -168,12 +168,6 @@ func (c *Client) ResubscribeToTask(ctx context.Context, id *a2a.TaskIDParams) it
 				yield(nil, errOverride)
 				return
 			}
-
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
 			if !yield(interceptedEvent, nil) {
 				return
 			}
