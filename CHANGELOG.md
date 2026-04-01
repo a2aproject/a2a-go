@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.0](https://github.com/a2aproject/a2a-go/compare/v2.0.1...v2.1.0) (2026-04-01)
+
+
+### Features
+
+* observability improvements ([#295](https://github.com/a2aproject/a2a-go/issues/295)) ([0c90bc7](https://github.com/a2aproject/a2a-go/commit/0c90bc78f3f3828b524fe1035d238a3830e6cb6b))
+
+
+### Bug Fixes
+
+* blocking=true compatibility ([#305](https://github.com/a2aproject/a2a-go/issues/305)) ([8fbdbee](https://github.com/a2aproject/a2a-go/commit/8fbdbee04dec953c5dd9aae1ce83517bbadb0786)), closes [#301](https://github.com/a2aproject/a2a-go/issues/301)
+* correct json discriminator keys ([#298](https://github.com/a2aproject/a2a-go/issues/298)) ([dfb4052](https://github.com/a2aproject/a2a-go/commit/dfb4052201d8db9ba5a854988caebd6d421bfd7f))
+* correct json discriminator keys ([#300](https://github.com/a2aproject/a2a-go/issues/300)) ([b4471e6](https://github.com/a2aproject/a2a-go/commit/b4471e68a5ad082965793e8b557f45fd41675a6a))
+
 ## [2.0.1](https://github.com/a2aproject/a2a-go/compare/v2.0.0...v2.0.1) (2026-03-24)
 
 
