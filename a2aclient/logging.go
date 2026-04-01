@@ -27,7 +27,7 @@ import (
 type LoggingConfig struct {
 	// Level is the log level for outgoing requests. Default: slog.LevelInfo.
 	Level slog.Level
-	// ErrorLevel is the log level for failed requests. Default: slog.LevelWarn.
+	// ErrorLevel is the log level for failed requests. Default: slog.LevelInfo.
 	ErrorLevel slog.Level
 	// LogPayload enables logging of request and response payloads.
 	LogPayload bool
@@ -50,9 +50,6 @@ func NewLoggingInterceptor(config *LoggingConfig) CallInterceptor {
 	var cfg LoggingConfig
 	if config != nil {
 		cfg = *config
-	}
-	if cfg.ErrorLevel == 0 {
-		cfg.ErrorLevel = slog.LevelWarn
 	}
 	return &loggingInterceptor{config: cfg}
 }
