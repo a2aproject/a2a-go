@@ -20,6 +20,15 @@ import (
 	"testing"
 )
 
+// SetDefaultForTest calls [slog.SetDefault] and restores to the original logger on test cleanup callback.
+func SetDefaultForTest(t testing.TB, logger *slog.Logger) {
+	restored := slog.Default()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(restored)
+	})
+}
+
 // NewLogger delegates to [NewLevelLogger] passing debug as the minimum level.
 func NewLogger(t testing.TB) *slog.Logger {
 	return NewLevelLogger(t, slog.LevelDebug)

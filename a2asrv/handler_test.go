@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -38,7 +37,7 @@ import (
 var fixedTime = time.Now()
 
 func TestRequestHandler_SendMessage(t *testing.T) {
-	slog.SetDefault(testutil.NewLogger(t))
+	testutil.SetDefaultForTest(t, testutil.NewLogger(t))
 
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}

@@ -235,7 +235,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.Sen
 	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil {
 		// Attach config to all v0.* protocol requests to preserve legacy blocking=true default
 		// which will be applied on conversion.
-		if !strings.HasPrefix(string(c.endpoint.ProtocolVersion), "0") {
+		if message.Config != nil || !strings.HasPrefix(string(c.endpoint.ProtocolVersion), "0") {
 			return message
 		}
 	}
