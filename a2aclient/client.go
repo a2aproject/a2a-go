@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"strings"
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -232,7 +233,11 @@ func (c *Client) Destroy() error {
 
 func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.SendMessageRequest {
 	if c.config.PushConfig == nil && c.config.AcceptedOutputModes == nil {
-		return message
+		// Attach config to all v0.* protocol requests to preserve legacy blocking=true default
+		// which will be applied on conversion.
+		if !strings.HasPrefix(string(c.endpoint.ProtocolVersion), "0") {
+			return message
+		}
 	}
 	result := *message
 	if result.Config == nil {
