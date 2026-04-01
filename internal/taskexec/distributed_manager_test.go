@@ -64,7 +64,7 @@ func TestClusterFrontend_GetExecution(t *testing.T) {
 				return store.InMemory.Get(ctx, tid)
 			}
 
-			frontend := NewDistributedManager(&DistributedManagerConfig{
+			frontend := NewDistributedManager(DistributedManagerConfig{
 				TaskStore:    store,
 				QueueManager: testutil.NewTestQueueManager(),
 				WorkQueue:    testutil.NewTestWorkQueue(),
@@ -188,7 +188,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 
 			wq := testutil.NewTestWorkQueue()
 			wq.WriteErr = tc.writeQueueErr
-			frontend := NewDistributedManager(&DistributedManagerConfig{
+			frontend := NewDistributedManager(DistributedManagerConfig{
 				TaskStore:    store,
 				QueueManager: qm,
 				WorkQueue:    wq,
@@ -322,7 +322,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wq := testutil.NewTestWorkQueue()
 			wq.WriteErr = tc.writeQueueErr
 
-			frontend := NewDistributedManager(&DistributedManagerConfig{
+			frontend := NewDistributedManager(DistributedManagerConfig{
 				TaskStore:    store,
 				QueueManager: testutil.NewTestQueueManager(),
 				WorkQueue:    wq,

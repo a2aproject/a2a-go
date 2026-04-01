@@ -370,11 +370,11 @@ func (s *namedSecuritySchemes) UnmarshalJSON(b []byte) error {
 	for name, rawMessage := range schemes {
 		type schemeType struct {
 			Type          string                           `json:"type"`
-			ApiKey        *a2a.APIKeySecurityScheme        `json:"apiKey,omitempty"`
-			HTTP          *a2a.HTTPAuthSecurityScheme      `json:"http,omitempty"`
-			MutualTLS     *a2a.MutualTLSSecurityScheme     `json:"mutualTLS,omitempty"`
-			OAuth2        *a2a.OAuth2SecurityScheme        `json:"oauth2,omitempty"`
-			OpenIDConnect *a2a.OpenIDConnectSecurityScheme `json:"openIdConnect,omitempty"`
+			ApiKey        *a2a.APIKeySecurityScheme        `json:"apiKeySecurityScheme,omitempty"`
+			HTTP          *a2a.HTTPAuthSecurityScheme      `json:"httpAuthSecurityScheme,omitempty"`
+			MutualTLS     *a2a.MutualTLSSecurityScheme     `json:"mtlsSecurityScheme,omitempty"`
+			OAuth2        *a2a.OAuth2SecurityScheme        `json:"oauth2SecurityScheme,omitempty"`
+			OpenIDConnect *a2a.OpenIDConnectSecurityScheme `json:"openIdConnectSecurityScheme,omitempty"`
 		}
 		var st schemeType
 		if err := json.Unmarshal(rawMessage, &st); err != nil {

@@ -27,6 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
 	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
@@ -138,7 +139,7 @@ var _ taskexec.Factory = (*factory)(nil)
 func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2a.SendMessageRequest) (taskexec.Executor, taskexec.Processor, taskexec.Cleaner, error) {
 	execCtx, err := f.loadExecutionContext(ctx, tid, params)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to load exec ctx: %w", err)
 	}
 
 	if callCtx, ok := CallContextFrom(ctx); ok {
@@ -149,10 +150,10 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 
 	if params.Config != nil && params.Config.PushConfig != nil {
 		if f.pushConfigStore == nil || f.pushSender == nil {
-			return nil, nil, nil, a2a.ErrPushNotificationNotSupported
+			return nil, nil, nil, fmt.Errorf("bug: message with push config received bug push is not configured: %w", a2a.ErrPushNotificationNotSupported)
 		}
 		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to save %v: %w", params.Config.PushConfig, err)
+			return nil, nil, nil, fmt.Errorf("failed to save push config %v: %w", params.Config.PushConfig, err)
 		}
 	}
 
@@ -204,6 +205,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	updateHistory := !slices.ContainsFunc(storedTask.History, func(m *a2a.Message) bool {
 		return m.ID == message.ID // message will already be present if we're retrying execution
 	})
+
 	if updateHistory {
 		storedTask.History = append(storedTask.History, message)
 		lastVersion, err = f.taskStore.Update(ctx, &taskstore.UpdateRequest{
@@ -214,6 +216,8 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 		if err != nil {
 			return nil, fmt.Errorf("task message history update failed: %w", err)
 		}
+	} else {
+		log.Debug(ctx, "history update skipped because message was already in history")
 	}
 
 	return &executionContext{
@@ -313,6 +317,21 @@ type cleaner struct {
 
 // Cleanup is called after an agent execution finishes with either result or an error.
 func (e *cleaner) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {
+	isCancelation := e.execCtx.Message == nil
+	if err != nil {
+		if isCancelation {
+			log.Warn(ctx, "task cancelation failed", "cause", err)
+		} else {
+			log.Warn(ctx, "agent execution failed", "cause", err)
+		}
+	} else {
+		if isCancelation {
+			if t, ok := result.(*a2a.Task); ok && t.Status.State != a2a.TaskStateCanceled {
+				log.Warn(ctx, "task cancelation failed, resolving to a different state", "state", t.Status.State)
+			}
+		}
+	}
+
 	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
 		cleaner.Cleanup(ctx, e.execCtx, result, err)
 	}
@@ -382,6 +401,8 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	versioned, processingErr := p.updateManager.Process(ctx, event)
 
 	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {
+		log.Debug(ctx, "occ conflict detected, reloading task")
+
 		storedTask, err := p.store.Get(ctx, p.execCtx.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load a task: %w: %w", err, processingErr)
@@ -389,6 +410,9 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		if !storedTask.Task.Status.State.Terminal() {
 			return nil, fmt.Errorf("parallel active execution: %w", processingErr)
 		}
+
+		log.Debug(ctx, "occ conflict resolved to terminal state", "state", storedTask.Task.Status.State)
+
 		return &taskexec.ProcessorResult{
 			ExecutionResult:       storedTask.Task,
 			EventOverride:         storedTask.Task,
@@ -427,6 +451,9 @@ func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMess
 	if err != nil {
 		return nil, err
 	}
+
+	log.Warn(ctx, "task moved to failed state due to an error", "cause", cause)
+
 	return versioned.Task, nil
 }
 
@@ -435,6 +462,9 @@ func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, cause er
 	if err != nil {
 		return nil, err
 	}
+
+	log.Warn(ctx, "task moved to failed state due to a processor error", "cause", cause)
+
 	return &taskexec.ProcessorResult{
 		ExecutionResult:       versioned.Task,
 		EventOverride:         versioned.Task,

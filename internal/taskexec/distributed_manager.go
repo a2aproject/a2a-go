@@ -25,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // DistributedManagerConfig contains configuration for A2A task execution
@@ -49,7 +50,7 @@ type distributedManager struct {
 var _ Manager = (*distributedManager)(nil)
 
 // NewDistributedManager creates a new [Manager] instance which uses WorkQueue for work distribution across A2A cluster.
-func NewDistributedManager(cfg *DistributedManagerConfig) Manager {
+func NewDistributedManager(cfg DistributedManagerConfig) Manager {
 	frontend := &distributedManager{
 		workHandler:  newWorkQueueHandler(cfg),
 		queueManager: cfg.QueueManager,
@@ -75,12 +76,12 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	}
 
-	var taskID a2a.TaskID
+	var requestedTaskID a2a.TaskID
 	isNewTask := req.Message.TaskID == ""
 	if isNewTask {
-		taskID = a2a.NewTaskID()
+		requestedTaskID = a2a.NewTaskID()
 	} else {
-		taskID = req.Message.TaskID
+		requestedTaskID = req.Message.TaskID
 	}
 
 	msg := req.Message
@@ -105,11 +106,18 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
-		TaskID:         taskID,
+		TaskID:         requestedTaskID,
 		ExecuteRequest: req,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)
+	}
+
+	if taskID != requestedTaskID {
+		if req.Message.TaskID != "" {
+			return nil, fmt.Errorf("bug: work queue task id override only allowed for new tasks")
+		}
+		log.Info(ctx, "work queue task id override", "provided", string(requestedTaskID), "used", taskID)
 	}
 
 	queue, err := m.queueManager.CreateReader(ctx, taskID)
@@ -140,36 +148,46 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
 
-	if _, err := m.workQueue.Write(ctx, &workqueue.Payload{
+	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeCancel,
 		TaskID:        req.ID,
 		CancelRequest: req,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)
+	}
+	if taskID != req.ID {
+		return nil, fmt.Errorf("bug: work-queue task id override is only allowed for executions")
 	}
 
 	subscription := newRemoteSubscription(queue, m.taskStore, req.ID)
-	var cancelationResult a2a.SendMessageResult
-	var cancelationErr error
+
+	var subscriptionErr error
 	for event, err := range subscription.Events(ctx) {
 		if err != nil {
-			cancelationErr = err
+			subscriptionErr = err
 			break
 		}
 		if taskupdate.IsFinal(event) {
-			if result, ok := event.(a2a.SendMessageResult); ok {
-				cancelationResult = result
+			if result, ok := event.(*a2a.Task); ok {
+				return convertToCancelationResult(ctx, result, nil)
 			}
 			break
 		}
 	}
-	if cancelationResult == nil && cancelationErr != nil {
-		storedTask, err := m.taskStore.Get(ctx, req.ID)
-		if err != nil {
-			cancelationErr = err
+
+	storedTask, err = m.taskStore.Get(ctx, req.ID)
+	if err != nil {
+		if subscriptionErr == nil {
+			return nil, fmt.Errorf("failed to load a task: %w", err)
 		} else {
-			cancelationResult = storedTask.Task
+			return nil, fmt.Errorf("failed to load a task after subscription error: %w: %w", err, subscriptionErr)
 		}
 	}
-	return convertToCancelationResult(ctx, cancelationResult, cancelationErr)
+
+	if subscriptionErr != nil {
+		log.Warn(ctx, "cancelation subscription error, fallback to taskstore state", "error", subscriptionErr)
+	}
+
+	return convertToCancelationResult(ctx, storedTask.Task, nil)
 }

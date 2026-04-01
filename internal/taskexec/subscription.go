@@ -53,9 +53,13 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 		}
 		s.consumed = true
 
+		log.Debug(ctx, "local subscription created")
+
 		defer func() {
 			if err := s.queue.Close(); err != nil {
-				log.Warn(ctx, "subscription cancel failed", "error", err)
+				log.Warn(ctx, "local subscription queue close failed", "error", err)
+			} else {
+				log.Debug(ctx, "local subscription destroyed")
 			}
 		}()
 
@@ -66,6 +70,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 				yield(nil, fmt.Errorf("task snapshot loading failed: %w", err))
 				return
 			}
+
 			if storedTask != nil {
 				if !yield(storedTask.Task, nil) {
 					return
@@ -80,16 +85,21 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 		for {
 			msg, err := s.queue.Read(ctx)
 			if errors.Is(err, eventqueue.ErrQueueClosed) {
+				log.Info(ctx, "local subscription queue closed, falling back to promise")
 				break
 			}
+
 			if err != nil {
-				yield(nil, err)
+				log.Debug(ctx, "local subscription error", "error", err)
+				yield(nil, fmt.Errorf("queue read failed: %w", err))
 				return
 			}
+
 			if !msg.TaskVersion.After(emittedTaskVersion) {
 				log.Info(ctx, "skipping old event", "version", msg.TaskVersion, "emitted", emittedTaskVersion)
 				continue
 			}
+
 			event := msg.Event
 			if !yield(event, nil) {
 				return
@@ -101,6 +111,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 
 		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
+		log.Debug(ctx, "subscription waiting for execution promise")
 		yield(s.execution.result.wait(ctx))
 	}
 }
@@ -130,9 +141,13 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 		}
 		s.consumed = true
 
+		log.Debug(ctx, "remote subscription created")
+
 		defer func() {
 			if err := s.queue.Close(); err != nil {
-				log.Warn(ctx, "queue close failed", "error", err)
+				log.Warn(ctx, "remote subscription queue close failed", "error", err)
+			} else {
+				log.Debug(ctx, "remote subscription destroyed")
 			}
 		}()
 
@@ -157,6 +172,7 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 		for {
 			msg, err := s.queue.Read(ctx)
 			if err != nil {
+				log.Debug(ctx, "remote subscription error", "error", err)
 				yield(nil, err)
 				return
 			}

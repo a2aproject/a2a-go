@@ -93,15 +93,15 @@ func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 		switch v := scheme.(type) {
 		// TODO: remove short JSON discriminator keys after transition period
 		case APIKeySecurityScheme:
-			wrapped = map[string]any{"apiKey": v, "apiKeySecurityScheme": v}
+			wrapped = map[string]any{"apiKeySecurityScheme": v}
 		case HTTPAuthSecurityScheme:
-			wrapped = map[string]any{"http": v, "httpAuthSecurityScheme": v}
+			wrapped = map[string]any{"httpAuthSecurityScheme": v}
 		case OpenIDConnectSecurityScheme:
-			wrapped = map[string]any{"openIdConnect": v, "openIdConnectSecurityScheme": v}
+			wrapped = map[string]any{"openIdConnectSecurityScheme": v}
 		case MutualTLSSecurityScheme:
-			wrapped = map[string]any{"mutualTLS": v, "mtlsSecurityScheme": v}
+			wrapped = map[string]any{"mtlsSecurityScheme": v}
 		case OAuth2SecurityScheme:
-			wrapped = map[string]any{"oauth2": v, "oauth2SecurityScheme": v}
+			wrapped = map[string]any{"oauth2SecurityScheme": v}
 		default:
 			return nil, fmt.Errorf("unknown security scheme type %T", v)
 		}
@@ -123,38 +123,7 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 		if err := json.Unmarshal(rawMessage, &raw); err != nil {
 			return err
 		}
-		// TODO: remove short JSON discriminator keys after transition period
-		if v, ok := raw["apiKey"]; ok {
-			var scheme APIKeySecurityScheme
-			if err := json.Unmarshal(v, &scheme); err != nil {
-				return err
-			}
-			result[name] = scheme
-		} else if v, ok := raw["http"]; ok {
-			var scheme HTTPAuthSecurityScheme
-			if err := json.Unmarshal(v, &scheme); err != nil {
-				return err
-			}
-			result[name] = scheme
-		} else if v, ok := raw["mutualTLS"]; ok {
-			var scheme MutualTLSSecurityScheme
-			if err := json.Unmarshal(v, &scheme); err != nil {
-				return err
-			}
-			result[name] = scheme
-		} else if v, ok := raw["oauth2"]; ok {
-			var scheme OAuth2SecurityScheme
-			if err := json.Unmarshal(v, &scheme); err != nil {
-				return err
-			}
-			result[name] = scheme
-		} else if v, ok := raw["openIdConnect"]; ok {
-			var scheme OpenIDConnectSecurityScheme
-			if err := json.Unmarshal(v, &scheme); err != nil {
-				return err
-			}
-			result[name] = scheme
-		} else if v, ok := raw["apiKeySecurityScheme"]; ok {
+		if v, ok := raw["apiKeySecurityScheme"]; ok {
 			var scheme APIKeySecurityScheme
 			if err := json.Unmarshal(v, &scheme); err != nil {
 				return err

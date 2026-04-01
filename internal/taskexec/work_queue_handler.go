@@ -17,6 +17,7 @@ package taskexec
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
@@ -33,16 +34,25 @@ type workQueueHandler struct {
 	panicHandler PanicHandlerFn
 }
 
-func newWorkQueueHandler(cfg *DistributedManagerConfig) *workQueueHandler {
+func newWorkQueueHandler(cfg DistributedManagerConfig) *workQueueHandler {
 	backend := &workQueueHandler{
 		queueManager: cfg.QueueManager,
 		taskStore:    cfg.TaskStore,
 		factory:      cfg.Factory,
 		panicHandler: cfg.PanicHandler,
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 	cfg.WorkQueue.RegisterHandler(workqueue.HandlerConfig{
 		Limiter: cfg.ConcurrencyConfig,
-	}, backend.handle)
+	}, func(ctx context.Context, p *workqueue.Payload) (a2a.SendMessageResult, error) {
+		logger := cfg.Logger.WithGroup("a2a").With(
+			slog.String("task_id", string(p.TaskID)),
+			slog.String("work_type", string(p.Type)),
+		)
+		return backend.handle(log.AttachLogger(ctx, logger), p)
+	})
 	return backend
 }
 
@@ -61,7 +71,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		}
 		executor, processor, localCleaner, err := b.factory.CreateExecutor(ctx, payload.TaskID, payload.ExecuteRequest)
 		if err != nil {
-			return nil, fmt.Errorf("setup failed: %w", err)
+			return nil, fmt.Errorf("executor setup failed: %w", err)
 		}
 		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, pipe.Writer) }
 		eventProcessor = processor
@@ -73,7 +83,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		}
 		canceler, processor, localCleaner, err := b.factory.CreateCanceler(ctx, payload.CancelRequest)
 		if err != nil {
-			return nil, fmt.Errorf("setup failed: %w", err)
+			return nil, fmt.Errorf("canceler setup failed: %w", err)
 		}
 		eventProducer = func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) }
 		eventProcessor = processor
@@ -108,8 +118,6 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 	}
 
 	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
-	if cleaner != nil {
-		cleaner.Cleanup(ctx, result, err)
-	}
+	cleaner.Cleanup(ctx, result, err)
 	return result, err
 }

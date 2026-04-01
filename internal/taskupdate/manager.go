@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 const maxCancelationAttempts = 10
@@ -61,7 +60,6 @@ func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause er
 		return nil, fmt.Errorf("failed to store failed task state: %w: %w", err, cause)
 	}
 
-	log.Info(ctx, "task moved to failed state", "cause", cause.Error())
 	return mgr.lastStored, nil
 }
 

@@ -275,6 +275,9 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 
 	for i, interceptor := range c.interceptors {
 		localCtx, result, err := interceptor.Before(ctx, &req)
+
+		ctx = localCtx
+
 		if err != nil || result != nil {
 			var typedResult Resp
 			if result != nil {
@@ -291,7 +294,6 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 			outcome.earlyErr = err
 			return ctx, outcome
 		}
-		ctx = localCtx
 	}
 
 	if req.Payload == nil {

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -37,6 +38,8 @@ import (
 var fixedTime = time.Now()
 
 func TestRequestHandler_SendMessage(t *testing.T) {
+	slog.SetDefault(testutil.NewLogger(t))
+
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
@@ -263,7 +266,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				input: &a2a.SendMessageRequest{
 					Message: newUserMessage(completedTaskSeed, "Test"),
 				},
-				wantErr: fmt.Errorf("setup failed: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
+				wantErr: fmt.Errorf("executor setup failed: failed to load exec ctx: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
 			},
 		}
 	}
@@ -1497,12 +1500,12 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 		{
 			name:    "task not found",
 			params:  &a2a.CancelTaskRequest{ID: a2a.NewTaskID()},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
 		},
 		{
 			name:    "task already completed",
 			params:  &a2a.CancelTaskRequest{ID: completedTask.ID},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
 		},
 		{
 			name:   "task already canceled",

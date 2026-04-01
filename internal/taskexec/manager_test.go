@@ -292,13 +292,12 @@ func (q *testWorkQueue) Close() error {
 }
 
 func newStaticClusterManager(executor *testExecutor, canceler *testCanceler, taskStore taskstore.Store) Manager {
-	config := &DistributedManagerConfig{
+	return NewDistributedManager(DistributedManagerConfig{
 		WorkQueue:    workqueue.NewPullQueue(&testWorkQueue{payloadChan: make(chan *workqueue.Payload)}, nil),
 		QueueManager: eventqueue.NewInMemoryManager(),
 		Factory:      newStaticFactory(executor, canceler),
 		TaskStore:    taskStore,
-	}
-	return NewDistributedManager(config)
+	})
 }
 
 type clusterMode bool

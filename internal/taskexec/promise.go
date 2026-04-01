@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 type promise struct {
@@ -64,13 +63,11 @@ func convertToCancelationResult(ctx context.Context, result a2a.SendMessageResul
 
 	task, ok := result.(*a2a.Task)
 	if !ok { // a2a.Message was the result of the execution
-		log.Info(ctx, "failed to cancel, because execution resolved to a Message")
-		return nil, a2a.ErrTaskNotCancelable
+		return nil, fmt.Errorf("bug: execution result was a message: %w", a2a.ErrTaskNotCancelable)
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		log.Info(ctx, "task in non-cancelable state", "state", task.Status.State)
-		return nil, a2a.ErrTaskNotCancelable
+		return nil, fmt.Errorf("task was in non-cancelable state: %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
 	return task, nil
