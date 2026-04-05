@@ -170,27 +170,40 @@ func (m *localManager) Execute(ctx context.Context, req *a2a.SendMessageRequest)
 }
 
 func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, req *a2a.SendMessageRequest) (*localExecution, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	const maxRetries = 3
+	for range maxRetries {
+		m.mu.Lock()
 
-	// TODO(yarolegovich): handle idempotency once spec establishes the key. We can return
-	// an execution in progress here and decide whether to tap it or not on the caller side.
-	if _, ok := m.executions[tid]; ok {
-		return nil, ErrExecutionInProgress
+		existing, ok := m.executions[tid]
+		if !ok {
+			if _, ok := m.cancelations[tid]; ok {
+				m.mu.Unlock()
+				return nil, ErrCancelationInProgress
+			}
+
+			if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
+				m.mu.Unlock()
+				return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
+			}
+
+			execution := newLocalExecution(m.queueManager, m.store, tid, req)
+			m.executions[tid] = execution
+			m.mu.Unlock()
+
+			return execution, nil
+		}
+
+		done := existing.result.done
+		m.mu.Unlock()
+
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w: timed out waiting for previous execution: %w",
+				ErrExecutionInProgress, ctx.Err())
+		}
 	}
-
-	if _, ok := m.cancelations[tid]; ok {
-		return nil, ErrCancelationInProgress
-	}
-
-	if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
-		return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
-	}
-
-	execution := newLocalExecution(m.queueManager, m.store, tid, req)
-	m.executions[tid] = execution
-
-	return execution, nil
+	return nil, fmt.Errorf("%w: execution still active after %d retries", ErrExecutionInProgress, maxRetries)
 }
 
 // Cancel uses [Canceler] to signal task cancelation and waits for it to take effect.
