@@ -826,3 +826,70 @@ func TestManager_GetExecution(t *testing.T) {
 		t.Fatal("manager.Resubscribe() succeeded for finished execution, want error")
 	}
 }
+
+func TestManager_ExecuteAfterPreviousExecutionCompletes(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	tid := a2a.NewTaskID()
+
+	executor1 := newExecutor()
+	executor1.nextEventTerminal = true
+	executor1.block = make(chan struct{})
+
+	executor2 := newExecutor()
+	executor2.nextEventTerminal = true
+
+	var callCount atomic.Int32
+	manager := NewLocalManager(LocalManagerConfig{
+		Factory: &testFactory{
+			CreateExecutorFn: func(_ context.Context, _ a2a.TaskID, _ *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
+				if callCount.Add(1) == 1 {
+					return executor1, executor1, executor1, nil
+				}
+				return executor2, executor2, executor2, nil
+			},
+		},
+	})
+
+	sub1, err := manager.Execute(ctx, &a2a.SendMessageRequest{
+		Message: a2a.NewMessageForTask(a2a.MessageRoleUser, &a2a.Task{ID: tid}),
+	})
+	if err != nil {
+		t.Fatalf("manager.Execute() [1] error = %v, want nil", err)
+	}
+	_, sub1Err := consumeEvents(t, sub1)
+	<-executor1.executeCalled
+
+	type executeResult struct {
+		sub Subscription
+		err error
+	}
+	sub2Chan := make(chan executeResult, 1)
+	go func() {
+		sub, err := manager.Execute(ctx, &a2a.SendMessageRequest{
+			Message: a2a.NewMessageForTask(a2a.MessageRoleUser, &a2a.Task{ID: tid}),
+		})
+		sub2Chan <- executeResult{sub, err}
+	}()
+
+	// Let the second Execute observe the in-progress execution before unblocking it.
+	time.Sleep(10 * time.Millisecond)
+	close(executor1.block)
+	executor1.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}})
+	if err := <-sub1Err; err != nil {
+		t.Fatalf("subscription [1] error = %v, want nil", err)
+	}
+
+	result := <-sub2Chan
+	if result.err != nil {
+		t.Fatalf("manager.Execute() [2] error = %v, want nil", result.err)
+	}
+
+	_, sub2Err := consumeEvents(t, result.sub)
+	<-executor2.executeCalled
+	executor2.mustWrite(t, &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
+	if err := <-sub2Err; err != nil {
+		t.Fatalf("subscription [2] error = %v, want nil", err)
+	}
+}

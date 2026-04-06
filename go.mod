@@ -1,6 +1,6 @@
 module github.com/a2aproject/a2a-go/v2
 
-go 1.24.4
+go 1.26.1
 
 require (
 	github.com/a2aproject/a2a-go v0.3.12
