@@ -31,8 +31,8 @@ import (
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 )
 
-func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2aclient.Client, error) {
-	factoryOpts := clientFactoryOpts(cfg)
+func newClient(ctx context.Context, cfg *globalConfig, agentURL string, extraOpts ...a2aclient.FactoryOption) (*a2aclient.Client, error) {
+	factoryOpts := append(clientFactoryOpts(cfg), extraOpts...)
 
 	if cfg.transport != "" {
 		proto, err := parseTransport(cfg.transport)

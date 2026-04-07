@@ -31,7 +31,11 @@ import (
 var _ a2asrv.RequestHandler = (*proxyHandler)(nil)
 
 func serveProxy(ctx context.Context, cfg *globalConfig, sc serveConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, upstreamURL, cardFile string, quiet bool) error {
-	client, err := newClient(ctx, cfg, upstreamURL)
+	var clientOpts []a2aclient.FactoryOption
+	if !quiet {
+		clientOpts = append(clientOpts, a2aclient.WithCallInterceptors(&proxyLogInterceptor{}))
+	}
+	client, err := newClient(ctx, cfg, upstreamURL, clientOpts...)
 	if err != nil {
 		return fmt.Errorf("creating upstream client: %w", err)
 	}
@@ -141,4 +145,17 @@ func (p *proxyHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.Delete
 
 func (p *proxyHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
 	return p.client.GetExtendedAgentCard(p.withParams(ctx), req)
+}
+
+type proxyLogInterceptor struct {
+	a2aclient.PassthroughInterceptor
+}
+
+func (i *proxyLogInterceptor) After(_ context.Context, resp *a2aclient.Response) error {
+	if resp.Err != nil {
+		fmt.Fprintf(os.Stderr, "proxy %s → error: %v\n", resp.Method, resp.Err)
+	} else {
+		fmt.Fprintf(os.Stderr, "proxy %s → ok\n", resp.Method)
+	}
+	return nil
 }
