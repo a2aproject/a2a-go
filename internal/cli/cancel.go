@@ -37,7 +37,11 @@ func newCancelCmd(cfg *globalConfig) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create a client: %w", err)
 			}
-			defer func() { _ = client.Destroy() }()
+			defer func() {
+				if err := client.Destroy(); err != nil {
+					cfg.logf("failed to destroy client: %v", err)
+				}
+			}()
 
 			task, err := client.CancelTask(ctx, &a2a.CancelTaskRequest{
 				ID:     a2a.TaskID(args[1]),

@@ -5,6 +5,7 @@
 * Ask clarifying questions from the user if details important for the task are missing.
 * When working on a bug fix, follow the RED-GREEN-BLUE TDD approach.
 * After building a mental model of a complicated flow, update or create a document in @./docs/ai/ to capture that knowledge so future sessions don't have to re-derive it.
+* Never ignore error results `_ = smth.Close()`, errors need to bubble up OR be logged.
 * After correcting a mistake based on user feedback, if it could have been avoided with better instructions, update the "AI learnings" section of @AGENTS.md with a rule that prevents the same class of mistake and notify the user about the update.
 
 ### Code Style
@@ -16,6 +17,7 @@
 ### Test Writing
 
 * ALWAYS use existing test files as a reference when generating new tests. Prioritize files in the same package if they exist.
+* Write "table-driven tests" when logic can be shared across multiple test cases.
 * Prioritize testing observable behavior of exported methods, not the internal state.
 * Use `google/go-cmp/cmp` and `cmp.Diff(want, got)` for comparing structs, slices, maps, or complex types. Do NOT use `reflect.DeepEqual` or manual field checks.
 * Use existing mocking utilities from @./internal/testutil or create a new utility in the package if needed.
@@ -24,7 +26,6 @@
 * Use `receiver.Operation() = %v, want %v` as a template for printing test error check failures.
 * Use `receiver.Operation() wrong result (+got,-want) diff = %s` as a template for printing test errors received when using `cmp.Diff`.
 * Prefer using `t.Fatalf` over `t.Errorf` unless printing all the failed checks is justified or the method is called not from the main goroutine. 
-* Always check return type event if discarding it `_ = smth.Close()`.
 
 ### AI learnings
 

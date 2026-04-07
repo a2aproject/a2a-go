@@ -52,7 +52,11 @@ func runDiscover(ctx context.Context, cfg *globalConfig, agentURL string, extend
 		if err != nil {
 			return fmt.Errorf("failed to create a client: %w", err)
 		}
-		defer func() { _ = client.Destroy() }()
+		defer func() {
+			if err := client.Destroy(); err != nil {
+				cfg.logf("failed to destroy client: %v", err)
+			}
+		}()
 
 		card, err = client.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{
 			Tenant: cfg.tenant,

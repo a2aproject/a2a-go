@@ -225,7 +225,11 @@ func partsText(parts a2a.ContentParts) string {
 			continue
 		}
 		if p.Data() != nil {
-			b, _ := json.Marshal(p.Data())
+			b, err := json.Marshal(p.Data())
+			if err != nil {
+				fmt.Fprintf(&sb, "[data: %v]", err)
+				continue
+			}
 			sb.WriteString(string(b))
 			continue
 		}

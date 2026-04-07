@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"net"
@@ -158,7 +159,9 @@ func startHTTPServer(ctx context.Context, listener net.Listener, handler http.Ha
 
 	go func() {
 		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
+		if err := srv.Shutdown(context.Background()); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "HTTP server shutdown: %v\n", err)
+		}
 	}()
 
 	if !quiet {
@@ -191,11 +194,15 @@ func startGRPCServer(ctx context.Context, listener net.Listener, handler a2asrv.
 	go func() {
 		<-ctx.Done()
 		s.GracefulStop()
-		_ = cardListener.Close()
+		if err := cardListener.Close(); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Agent card listener close: %v\n", err)
+		}
 	}()
 
 	go func() {
-		_ = http.Serve(cardListener, cardMux)
+		if err := http.Serve(cardListener, cardMux); err != nil && !errors.Is(err, net.ErrClosed) {
+			_, _ = fmt.Fprintf(os.Stderr, "Agent card server: %v\n", err)
+		}
 	}()
 
 	if err := s.Serve(listener); err != nil {

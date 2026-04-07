@@ -84,13 +84,14 @@ func (e *execExecutor) untrackProcess(id a2a.TaskID) {
 	e.mu.Unlock()
 }
 
-func (e *execExecutor) killProcess(id a2a.TaskID) {
+func (e *execExecutor) killProcess(id a2a.TaskID) error {
 	e.mu.Lock()
 	p := e.processes[id]
 	e.mu.Unlock()
 	if p != nil {
-		_ = p.Kill()
+		return p.Kill()
 	}
+	return nil
 }
 
 func (e *execExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
@@ -223,8 +224,8 @@ func (e *execExecutor) executeChunked(ctx context.Context, execCtx *a2asrv.Execu
 		if msg == "" {
 			msg = err.Error()
 		}
-		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed,
-			a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(msg))), nil)
+		statusMsg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(msg))
+		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, statusMsg), nil)
 		return
 	}
 	yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
@@ -232,7 +233,10 @@ func (e *execExecutor) executeChunked(ctx context.Context, execCtx *a2asrv.Execu
 
 func (e *execExecutor) Cancel(_ context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		e.killProcess(execCtx.TaskID)
+		if err := e.killProcess(execCtx.TaskID); err != nil {
+			yield(nil, err)
+			return
+		}
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
 	}
 }
