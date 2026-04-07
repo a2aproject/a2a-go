@@ -31,8 +31,19 @@ import (
 )
 
 func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2aclient.Client, error) {
-	cfg.logf("resolving agent card from %s", agentURL)
+	factoryOpts := clientFactoryOpts(cfg)
 
+	if cfg.transport != "" {
+		proto, err := parseTransport(cfg.transport)
+		if err != nil {
+			return nil, err
+		}
+		cfg.logf("connecting directly to %s via %s (skipping card resolution)", agentURL, cfg.transport)
+		endpoint := a2a.NewAgentInterface(agentURL, proto)
+		return a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{endpoint}, factoryOpts...)
+	}
+
+	cfg.logf("resolving agent card from %s", agentURL)
 	var resolveOpts []agentcard.ResolveOption
 	if cfg.auth != "" {
 		resolveOpts = append(resolveOpts, agentcard.WithRequestHeader("Authorization", cfg.auth))
@@ -41,7 +52,11 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2acli
 	if err != nil {
 		return nil, fmt.Errorf("resolving agent card: %w", err)
 	}
+	cfg.logf("creating client for %s", card.Name)
+	return a2aclient.NewFromCard(ctx, card, factoryOpts...)
+}
 
+func clientFactoryOpts(cfg *globalConfig) []a2aclient.FactoryOption {
 	factoryOpts := []a2aclient.FactoryOption{
 		a2av0.WithRESTTransport(a2av0.RESTTransportConfig{}),
 		a2av0.WithJSONRPCTransport(a2av0.JSONRPCTransportConfig{}),
@@ -54,19 +69,7 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2acli
 		a2agrpcv0.WithGRPCTransport(grpcOpts...),
 		a2agrpc.WithGRPCTransport(grpcOpts...),
 	)
-	if cfg.transport != "" {
-		proto, err := parseTransport(cfg.transport)
-		if err != nil {
-			return nil, err
-		}
-		factoryOpts = append(factoryOpts, a2aclient.WithConfig(a2aclient.Config{
-			PreferredTransports: []a2a.TransportProtocol{proto},
-		}))
-	}
-
-	cfg.logf("creating client for %s", card.Name)
-
-	return a2aclient.NewFromCard(ctx, card, factoryOpts...)
+	return factoryOpts
 }
 
 func withServiceParams(ctx context.Context, cfg *globalConfig) context.Context {
