@@ -160,6 +160,7 @@ func loadOrBuildCard(cardFile, name, desc, addr string, proto a2a.TransportProto
 		Name:                name,
 		Description:         desc,
 		Version:             "1.0.0",
+		Capabilities:        a2a.AgentCapabilities{Streaming: true},
 		SupportedInterfaces: []*a2a.AgentInterface{a2a.NewAgentInterface(url, proto)},
 	}, nil
 }
