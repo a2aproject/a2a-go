@@ -34,6 +34,15 @@ import (
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
+// WithRESTTransport creates a factory option for the v0.3 HTTP+JSON transport.
+func WithRESTTransport(cfg RESTTransportConfig) a2aclient.FactoryOption {
+	return a2aclient.WithCompatTransport(
+		Version,
+		a2a.TransportProtocolHTTPJSON,
+		NewRESTTransportFactory(cfg),
+	)
+}
+
 // RESTTransportConfig holds configuration for the v0.3 HTTP+JSON transport.
 type RESTTransportConfig struct {
 	// URL is the base URL of the v0.3 REST server. If empty, the URL from the

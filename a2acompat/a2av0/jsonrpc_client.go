@@ -33,6 +33,15 @@ import (
 	"github.com/google/uuid"
 )
 
+// WithJSONRPCTransport creates a factory option for the v0.3 HTTP+JSON transport.
+func WithJSONRPCTransport(cfg JSONRPCTransportConfig) a2aclient.FactoryOption {
+	return a2aclient.WithCompatTransport(
+		Version,
+		a2a.TransportProtocolJSONRPC,
+		NewJSONRPCTransportFactory(cfg),
+	)
+}
+
 // JSONRPCTransportConfig holds the configuration for the JSON-RPC transport.
 type JSONRPCTransportConfig struct {
 	URL    string

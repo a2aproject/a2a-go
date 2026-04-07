@@ -32,7 +32,8 @@ import (
 
 // WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
 func WithGRPCTransport(opts ...grpc.DialOption) a2aclient.FactoryOption {
-	return a2aclient.WithTransport(
+	return a2aclient.WithCompatTransport(
+		a2a.ProtocolVersion("0.3"),
 		a2a.TransportProtocolGRPC,
 		NewGRPCTransportFactory(opts...),
 	)
