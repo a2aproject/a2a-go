@@ -216,16 +216,15 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/tasks/" + string(taskID) + ":subscribe",
 		},
 		{
-			name:    "SetAndListTaskPushConfig",
+			name:    "CreateAndListTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodPost},
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
-			body:    config,
+			body:    &a2a.CreateTaskPushConfigRequest{TaskID: taskID, Config: config},
 		},
 		{
 			name:    "GetAndDeleteTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodDelete},
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs/" + string(config.ID),
-			body:    config,
 		},
 		{
 			name:    "GetExtendedAgentCard",
@@ -328,7 +327,7 @@ func TestREST_InvalidPayloads(t *testing.T) {
 			path: "/message:stream",
 		},
 		{
-			name: "SetTaskPushConfig with invalid payload",
+			name: "CreateTaskPushConfig with invalid payload",
 			path: "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 		},
 	}
