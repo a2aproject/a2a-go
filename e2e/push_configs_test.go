@@ -16,6 +16,7 @@ package e2e_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"testing"
@@ -163,7 +164,11 @@ func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtoc
 		lis := bufconn.Listen(1024 * 1024)
 		s := grpc.NewServer()
 		a2agrpc.NewHandler(reqHandler).RegisterWith(s)
-		go func() { _ = s.Serve(lis) }()
+		go func() {
+			if err := s.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				t.Errorf("gRPC server error = %v", err)
+			}
+		}()
 		t.Cleanup(func() { s.Stop() })
 		card := &a2a.AgentCard{
 			SupportedInterfaces: []*a2a.AgentInterface{
