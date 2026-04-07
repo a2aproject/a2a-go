@@ -17,6 +17,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -38,9 +39,14 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2acli
 		if err != nil {
 			return nil, err
 		}
-		cfg.logf("connecting directly to %s via %s (skipping card resolution)", agentURL, cfg.transport)
-		endpoint := a2a.NewAgentInterface(agentURL, proto)
-		return a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{endpoint}, factoryOpts...)
+		endpointURL := agentURL
+		if proto == a2a.TransportProtocolGRPC {
+			endpointURL = stripHTTPScheme(agentURL)
+		}
+		cfg.logf("connecting directly to %s via %s (skipping card resolution)", endpointURL, cfg.transport)
+		endpoint := a2a.NewAgentInterface(endpointURL, proto)
+		client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{endpoint}, factoryOpts...)
+		return client, hintInsecure(err)
 	}
 
 	cfg.logf("resolving agent card from %s", agentURL)
@@ -53,7 +59,17 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string) (*a2acli
 		return nil, fmt.Errorf("resolving agent card: %w", err)
 	}
 	cfg.logf("creating client for %s", card.Name)
-	return a2aclient.NewFromCard(ctx, card, factoryOpts...)
+	client, err := a2aclient.NewFromCard(ctx, card, factoryOpts...)
+	return client, hintInsecure(err)
+}
+
+// hintInsecure wraps gRPC "no transport security set" errors with a
+// user-friendly suggestion to pass --insecure.
+func hintInsecure(err error) error {
+	if err != nil && strings.Contains(err.Error(), "no transport security set") {
+		return fmt.Errorf("%w\n\nhint: pass --insecure to allow plaintext gRPC connections", err)
+	}
+	return err
 }
 
 func clientFactoryOpts(cfg *globalConfig) []a2aclient.FactoryOption {
@@ -86,6 +102,16 @@ func withServiceParams(ctx context.Context, cfg *globalConfig) context.Context {
 		ctx = a2aclient.AttachServiceParams(ctx, params)
 	}
 	return ctx
+}
+
+// stripHTTPScheme converts an HTTP(S) URL to a bare host:port suitable for
+// grpc.NewClient, which expects a target address without an HTTP scheme.
+func stripHTTPScheme(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return raw
+	}
+	return u.Host
 }
 
 func parseTransport(s string) (a2a.TransportProtocol, error) {
