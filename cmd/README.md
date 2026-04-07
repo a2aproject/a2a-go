@@ -150,7 +150,9 @@ Streams events to stdout until the task reaches a terminal state. Output format 
 | `--name <name>` | Agent name for the auto-generated card. |
 | `--description <desc>` | Agent description. |
 | `--transport <proto>` | Transport to serve: `rest` (default), `jsonrpc`, `grpc`. |
+| `--protocol <ver>` | Protocol version: `latest` (default), `0.3`. When set to `0.3`, the server uses the compat transport layer (`a2agrpc/v0` for gRPC, `a2acompat/a2av0` for REST/JSON-RPC) to accept v0.3 clients. |
 | `--card <file>` | Serve a custom agent card JSON instead of auto-generating. |
+| `--card-compat` | Serve the agent card in a dual v0.3/v1.0 format so both old and new clients can discover the agent. |
 | `--quiet` | Suppress traffic logging to stderr. |
 
 ### `--echo` - Echo Mode

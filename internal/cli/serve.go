@@ -29,28 +29,36 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	a2agrpcv0 "github.com/a2aproject/a2a-go/v2/a2agrpc/v0"
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 func newServeCmd(cfg *globalConfig) *cobra.Command {
 	var (
-		port     int
-		host     string
-		name     string
-		desc     string
-		cardFile string
-		quiet    bool
-		echo     bool
-		proxyURL string
-		execCmd  string
-		chunk    string
+		port       int
+		host       string
+		name       string
+		desc       string
+		cardFile   string
+		cardCompat bool
+		protocol   string
+		quiet      bool
+		echo       bool
+		proxyURL   string
+		execCmd    string
+		chunk      string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start an A2A-compliant server",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if protocol != "latest" && protocol != "0.3" {
+				return fmt.Errorf("--protocol must be %q or %q", "latest", "0.3")
+			}
+
 			modes := 0
 			if echo {
 				modes++
@@ -90,13 +98,18 @@ func newServeCmd(cfg *globalConfig) *cobra.Command {
 				proto = a2a.TransportProtocolGRPC
 			}
 
+			sc := serveConfig{
+				protocol:   protocol,
+				cardCompat: cardCompat,
+			}
+
 			switch {
 			case echo:
-				return serveEcho(ctx, cfg, listener, addr, proto, name, desc, cardFile, quiet)
+				return serveEcho(ctx, cfg, sc, listener, addr, proto, name, desc, cardFile, quiet)
 			case proxyURL != "":
-				return serveProxy(ctx, cfg, listener, addr, proto, proxyURL, cardFile, quiet)
+				return serveProxy(ctx, cfg, sc, listener, addr, proto, proxyURL, cardFile, quiet)
 			default:
-				return serveExec(ctx, cfg, listener, addr, proto, execCmd, chunk, name, desc, cardFile, quiet)
+				return serveExec(ctx, cfg, sc, listener, addr, proto, execCmd, chunk, name, desc, cardFile, quiet)
 			}
 		},
 	}
@@ -107,6 +120,8 @@ func newServeCmd(cfg *globalConfig) *cobra.Command {
 	f.StringVar(&name, "name", "", "Agent name for the auto-generated card")
 	f.StringVar(&desc, "description", "", "Agent description")
 	f.StringVar(&cardFile, "card", "", "Serve a custom agent card JSON file")
+	f.BoolVar(&cardCompat, "card-compat", false, "Serve the agent card in a dual v0.3/v1.0 format")
+	f.StringVar(&protocol, "protocol", "latest", `Protocol version: "latest" or "0.3"`)
 	f.BoolVar(&quiet, "quiet", false, "Suppress traffic logging to stderr")
 	f.BoolVar(&echo, "echo", false, "Echo mode: return the user's message as a response")
 	f.StringVar(&proxyURL, "proxy", "", "Proxy mode: forward requests to an upstream agent URL")
@@ -114,6 +129,11 @@ func newServeCmd(cfg *globalConfig) *cobra.Command {
 	f.StringVar(&chunk, "chunk", "", "Delimiter for streaming exec output (implies --exec)")
 
 	return cmd
+}
+
+type serveConfig struct {
+	protocol   string
+	cardCompat bool
 }
 
 func loadOrBuildCard(cardFile, name, desc, addr string, proto a2a.TransportProtocol) (*a2a.AgentCard, error) {
@@ -145,11 +165,11 @@ func loadOrBuildCard(cardFile, name, desc, addr string, proto a2a.TransportProto
 }
 
 // startTransportServer starts the appropriate server (HTTP or gRPC) based on transport.
-func startTransportServer(ctx context.Context, listener net.Listener, handler a2asrv.RequestHandler, card *a2a.AgentCard, transport string, quiet bool) error {
+func startTransportServer(ctx context.Context, listener net.Listener, handler a2asrv.RequestHandler, card *a2a.AgentCard, transport string, sc serveConfig, quiet bool) error {
 	if transport == "grpc" {
-		return startGRPCServer(ctx, listener, handler, card, quiet)
+		return startGRPCServer(ctx, listener, handler, card, sc, quiet)
 	}
-	mux := buildMux(handler, card, transport)
+	mux := buildMux(handler, card, transport, sc)
 	return startHTTPServer(ctx, listener, mux, quiet)
 }
 
@@ -174,13 +194,16 @@ func startHTTPServer(ctx context.Context, listener net.Listener, handler http.Ha
 	return nil
 }
 
-func startGRPCServer(ctx context.Context, listener net.Listener, handler a2asrv.RequestHandler, card *a2a.AgentCard, quiet bool) error {
-	grpcHandler := a2agrpc.NewHandler(handler)
+func startGRPCServer(ctx context.Context, listener net.Listener, handler a2asrv.RequestHandler, card *a2a.AgentCard, sc serveConfig, quiet bool) error {
 	s := grpc.NewServer()
-	grpcHandler.RegisterWith(s)
+	if sc.protocol == "0.3" {
+		a2agrpcv0.NewHandler(handler).RegisterWith(s)
+	} else {
+		a2agrpc.NewHandler(handler).RegisterWith(s)
+	}
 
 	cardMux := http.NewServeMux()
-	cardMux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
+	cardMux.Handle(a2asrv.WellKnownAgentCardPath, agentCardHandler(card, sc))
 	cardListener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		return fmt.Errorf("creating agent card listener: %w", err)
@@ -211,20 +234,36 @@ func startGRPCServer(ctx context.Context, listener net.Listener, handler a2asrv.
 	return nil
 }
 
-func buildMux(handler a2asrv.RequestHandler, card *a2a.AgentCard, transport string) *http.ServeMux {
+func buildMux(handler a2asrv.RequestHandler, card *a2a.AgentCard, transport string, sc serveConfig) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
+	mux.Handle(a2asrv.WellKnownAgentCardPath, agentCardHandler(card, sc))
 
-	switch transport {
-	case "jsonrpc":
-		mux.Handle("/", a2asrv.NewJSONRPCHandler(handler))
-	default:
-		mux.Handle("/", a2asrv.NewRESTHandler(handler))
+	if sc.protocol == "0.3" {
+		switch transport {
+		case "jsonrpc":
+			mux.Handle("/", a2av0.NewJSONRPCHandler(handler))
+		default:
+			mux.Handle("/", a2av0.NewRESTHandler(handler))
+		}
+	} else {
+		switch transport {
+		case "jsonrpc":
+			mux.Handle("/", a2asrv.NewJSONRPCHandler(handler))
+		default:
+			mux.Handle("/", a2asrv.NewRESTHandler(handler))
+		}
 	}
 	return mux
 }
 
-func serveEcho(ctx context.Context, cfg *globalConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, name, desc, cardFile string, quiet bool) error {
+func agentCardHandler(card *a2a.AgentCard, sc serveConfig) http.Handler {
+	if sc.cardCompat {
+		return a2asrv.NewAgentCardHandler(a2av0.NewStaticAgentCardProducer(card))
+	}
+	return a2asrv.NewStaticAgentCardHandler(card)
+}
+
+func serveEcho(ctx context.Context, cfg *globalConfig, sc serveConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, name, desc, cardFile string, quiet bool) error {
 	if name == "" {
 		name = "Echo Agent"
 	}
@@ -243,8 +282,8 @@ func serveEcho(ctx context.Context, cfg *globalConfig, listener net.Listener, ad
 		transport = "rest"
 	}
 
-	cfg.logf("echo mode, transport=%s", transport)
-	return startTransportServer(ctx, listener, handler, card, transport, quiet)
+	cfg.logf("echo mode, transport=%s protocol=%s", transport, sc.protocol)
+	return startTransportServer(ctx, listener, handler, card, transport, sc, quiet)
 }
 
 type echoExecutor struct{}

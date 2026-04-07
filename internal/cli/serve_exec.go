@@ -30,7 +30,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
-func serveExec(ctx context.Context, cfg *globalConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, command, chunk, name, desc, cardFile string, quiet bool) error {
+func serveExec(ctx context.Context, cfg *globalConfig, sc serveConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, command, chunk, name, desc, cardFile string, quiet bool) error {
 	if name == "" {
 		name = "Exec Agent"
 	}
@@ -52,8 +52,8 @@ func serveExec(ctx context.Context, cfg *globalConfig, listener net.Listener, ad
 		transport = "rest"
 	}
 
-	cfg.logf("exec mode, command=%q chunk=%q transport=%s", command, chunk, transport)
-	return startTransportServer(ctx, listener, handler, card, transport, quiet)
+	cfg.logf("exec mode, command=%q chunk=%q transport=%s protocol=%s", command, chunk, transport, sc.protocol)
+	return startTransportServer(ctx, listener, handler, card, transport, sc, quiet)
 }
 
 type execExecutor struct {

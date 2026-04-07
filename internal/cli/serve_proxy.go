@@ -30,7 +30,7 @@ import (
 
 var _ a2asrv.RequestHandler = (*proxyHandler)(nil)
 
-func serveProxy(ctx context.Context, cfg *globalConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, upstreamURL, cardFile string, quiet bool) error {
+func serveProxy(ctx context.Context, cfg *globalConfig, sc serveConfig, listener net.Listener, addr string, proto a2a.TransportProtocol, upstreamURL, cardFile string, quiet bool) error {
 	client, err := newClient(ctx, cfg, upstreamURL)
 	if err != nil {
 		return fmt.Errorf("creating upstream client: %w", err)
@@ -65,8 +65,8 @@ func serveProxy(ctx context.Context, cfg *globalConfig, listener net.Listener, a
 	if !quiet {
 		fmt.Fprintf(os.Stderr, "Proxying to %s\n", upstreamURL)
 	}
-	cfg.logf("proxy mode, transport=%s", transport)
-	return startTransportServer(ctx, listener, handler, card, transport, quiet)
+	cfg.logf("proxy mode, transport=%s protocol=%s", transport, sc.protocol)
+	return startTransportServer(ctx, listener, handler, card, transport, sc, quiet)
 }
 
 func deriveProxyCard(upstream *a2a.AgentCard, addr string, proto a2a.TransportProtocol) *a2a.AgentCard {
