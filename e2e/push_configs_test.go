@@ -25,7 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
@@ -123,14 +122,9 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtocol) *a2aclient.Client {
 	t.Helper()
 	ctx := t.Context()
-	authenticator := func(ctx context.Context) (string, error) {
-		return "TestUser", nil
-	}
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
-	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
-		Authenticator: authenticator,
-	}).WithTasks(t, task)
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
 	reqHandler := a2asrv.NewHandler(&testexecutor.TestAgentExecutor{}, a2asrv.WithTaskStore(store), a2asrv.WithPushNotifications(pushstore, pushsender))
 
 	switch transport {
