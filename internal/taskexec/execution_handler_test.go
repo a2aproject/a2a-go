@@ -16,9 +16,11 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
@@ -122,7 +124,7 @@ func TestRunProducerConsumer(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil, tc.panicHandler)
+			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil, tc.panicHandler, inactivityConfig{})
 			if tc.wantErr != nil && err == nil {
 				t.Fatalf("expected error, got %v", result)
 			}
@@ -153,8 +155,199 @@ func TestRunProducerConsumer_CausePropagation(t *testing.T) {
 		},
 		nil,
 		nil,
+		inactivityConfig{},
 	)
 	if gotProducerErr != consumerErr {
 		t.Fatalf("expected producer error = %s, got %s", consumerErr, gotProducerErr)
 	}
+}
+
+// TestRunProducerConsumer_InactivityTimeout exercises the inactivity watcher
+// added for issue #78. It uses a tight timeout and a synthetic activity
+// channel to keep the test fast and deterministic without sleeping for the
+// real timeout window.
+func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
+	t.Parallel()
+
+	t.Run("producer stalls without writing events", func(t *testing.T) {
+		t.Parallel()
+		signal := make(chan struct{}, 1)
+		var producerCause error
+
+		_, err := runProducerConsumer(
+			t.Context(),
+			func(ctx context.Context) error {
+				<-ctx.Done()
+				producerCause = context.Cause(ctx)
+				return ctx.Err()
+			},
+			func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+			nil,
+			nil,
+			inactivityConfig{
+				timeout: 50 * time.Millisecond,
+				signal:  signal,
+			},
+		)
+		if !errors.Is(err, ErrAgentInactivityTimeout) {
+			t.Fatalf("runProducerConsumer() error = %v, want errors.Is(_, ErrAgentInactivityTimeout)", err)
+		}
+		if !errors.Is(producerCause, ErrAgentInactivityTimeout) {
+			t.Fatalf("context.Cause(producerCtx) = %v, want errors.Is(_, ErrAgentInactivityTimeout)", producerCause)
+		}
+	})
+
+	t.Run("activity signals reset the timer", func(t *testing.T) {
+		t.Parallel()
+		signal := make(chan struct{}, 1)
+
+		producerStarted := make(chan struct{})
+		releaseProducer := make(chan struct{})
+		_, err := runProducerConsumer(
+			t.Context(),
+			func(ctx context.Context) error {
+				close(producerStarted)
+				// Send activity signals at half the timeout interval, so the
+				// watcher's timer keeps getting reset and never fires.
+				ticker := time.NewTicker(25 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-releaseProducer:
+						return nil
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-ticker.C:
+						select {
+						case signal <- struct{}{}:
+						default:
+						}
+					}
+				}
+			},
+			func(ctx context.Context) (a2a.SendMessageResult, error) {
+				<-producerStarted
+				// Hold the consumer open long enough that, without timer
+				// resets, the watcher would have fired multiple times.
+				time.Sleep(200 * time.Millisecond)
+				close(releaseProducer)
+				return a2a.NewMessage(a2a.MessageRoleUser), nil
+			},
+			nil,
+			nil,
+			inactivityConfig{
+				timeout: 50 * time.Millisecond,
+				signal:  signal,
+			},
+		)
+		if err != nil {
+			t.Fatalf("runProducerConsumer() error = %v, want nil (timer should have been reset)", err)
+		}
+	})
+
+	t.Run("zero timeout does not start watcher", func(t *testing.T) {
+		t.Parallel()
+		// With timeout=0 the watcher must not be started at all. We verify
+		// by running a long-lived producer and asserting completion is
+		// driven only by the consumer's result.
+		_, err := runProducerConsumer(
+			t.Context(),
+			func(ctx context.Context) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+			func(ctx context.Context) (a2a.SendMessageResult, error) {
+				time.Sleep(20 * time.Millisecond)
+				return a2a.NewMessage(a2a.MessageRoleUser), nil
+			},
+			nil,
+			nil,
+			inactivityConfig{},
+		)
+		if err != nil {
+			t.Fatalf("runProducerConsumer() error = %v, want nil", err)
+		}
+	})
+}
+
+// TestActivityTrackingWriter ensures the writer wrapper signals on
+// successful writes only and is non-blocking when the signal channel is
+// full (the watcher only needs the "activity happened" hint).
+func TestActivityTrackingWriter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil tracker returns inner writer unchanged", func(t *testing.T) {
+		t.Parallel()
+		inner := &fakeWriter{}
+		got := newActivityTrackingWriter(inner, nil)
+		if got != inner {
+			t.Fatalf("newActivityTrackingWriter(_, nil) = %v, want inner writer", got)
+		}
+	})
+
+	t.Run("successful write signals tracker", func(t *testing.T) {
+		t.Parallel()
+		inner := &fakeWriter{}
+		signal := make(chan struct{}, 1)
+		w := newActivityTrackingWriter(inner, &activityTracker{signal: signal})
+
+		if err := w.Write(t.Context(), a2a.NewMessage(a2a.MessageRoleUser)); err != nil {
+			t.Fatalf("Write() error = %v, want nil", err)
+		}
+		select {
+		case <-signal:
+		default:
+			t.Fatalf("expected signal after successful Write")
+		}
+	})
+
+	t.Run("failed write does not signal", func(t *testing.T) {
+		t.Parallel()
+		inner := &fakeWriter{err: errors.New("boom")}
+		signal := make(chan struct{}, 1)
+		w := newActivityTrackingWriter(inner, &activityTracker{signal: signal})
+
+		if err := w.Write(t.Context(), a2a.NewMessage(a2a.MessageRoleUser)); err == nil {
+			t.Fatalf("Write() error = nil, want non-nil")
+		}
+		select {
+		case <-signal:
+			t.Fatalf("expected no signal after failed Write")
+		default:
+		}
+	})
+
+	t.Run("signal is non-blocking when channel is full", func(t *testing.T) {
+		t.Parallel()
+		inner := &fakeWriter{}
+		signal := make(chan struct{}, 1)
+		// Pre-fill the channel so a non-blocking send must drop the new signal.
+		signal <- struct{}{}
+		w := newActivityTrackingWriter(inner, &activityTracker{signal: signal})
+
+		// Should return without blocking even though the channel is full.
+		done := make(chan error, 1)
+		go func() {
+			done <- w.Write(t.Context(), a2a.NewMessage(a2a.MessageRoleUser))
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Write() error = %v, want nil", err)
+			}
+		case <-time.After(100 * time.Millisecond):
+			t.Fatalf("Write() blocked when signal channel was full")
+		}
+	})
+}
+
+type fakeWriter struct {
+	err error
+}
+
+func (w *fakeWriter) Write(_ context.Context, _ a2a.Event) error {
+	return w.err
 }

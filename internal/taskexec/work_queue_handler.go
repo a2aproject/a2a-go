@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
@@ -28,18 +29,20 @@ import (
 )
 
 type workQueueHandler struct {
-	queueManager eventqueue.Manager
-	taskStore    taskstore.Store
-	factory      Factory
-	panicHandler PanicHandlerFn
+	queueManager      eventqueue.Manager
+	taskStore         taskstore.Store
+	factory           Factory
+	panicHandler      PanicHandlerFn
+	inactivityTimeout time.Duration
 }
 
 func newWorkQueueHandler(cfg DistributedManagerConfig) *workQueueHandler {
 	backend := &workQueueHandler{
-		queueManager: cfg.QueueManager,
-		taskStore:    cfg.TaskStore,
-		factory:      cfg.Factory,
-		panicHandler: cfg.PanicHandler,
+		queueManager:      cfg.QueueManager,
+		taskStore:         cfg.TaskStore,
+		factory:           cfg.Factory,
+		panicHandler:      cfg.PanicHandler,
+		inactivityTimeout: cfg.AgentInactivityTimeout,
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -60,6 +63,9 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 	pipe := eventpipe.NewLocal()
 	defer pipe.Close()
 
+	tracker, inactivity := b.inactivityConfig()
+	producerWriter := newActivityTrackingWriter(pipe.Writer, tracker)
+
 	var eventProducer eventProducerFn
 	var eventProcessor Processor
 	var cleaner Cleaner
@@ -73,7 +79,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		if err != nil {
 			return nil, fmt.Errorf("executor setup failed: %w", err)
 		}
-		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, pipe.Writer) }
+		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) }
 		eventProcessor = processor
 		cleaner = localCleaner
 
@@ -85,7 +91,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		if err != nil {
 			return nil, fmt.Errorf("canceler setup failed: %w", err)
 		}
-		eventProducer = func(ctx context.Context) error { return canceler.Cancel(ctx, pipe.Writer) }
+		eventProducer = func(ctx context.Context) error { return canceler.Cancel(ctx, producerWriter) }
 		eventProcessor = processor
 		cleaner = localCleaner
 
@@ -117,7 +123,23 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler)
+	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler, inactivity)
 	cleaner.Cleanup(ctx, result, err)
 	return result, err
+}
+
+// inactivityConfig builds the watcher configuration for [runProducerConsumer]
+// and the matching activity tracker that should wrap the producer's writer.
+// Returns a nil tracker and zero config when the timeout is not configured,
+// in which case the watcher goroutine is not started and the writer wrapping
+// is a no-op.
+func (b *workQueueHandler) inactivityConfig() (*activityTracker, inactivityConfig) {
+	if b.inactivityTimeout <= 0 {
+		return nil, inactivityConfig{}
+	}
+	signal := make(chan struct{}, 1)
+	return &activityTracker{signal: signal}, inactivityConfig{
+		timeout: b.inactivityTimeout,
+		signal:  signal,
+	}
 }

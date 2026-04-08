@@ -128,12 +128,13 @@ func (e *testProcessor) ProcessError(ctx context.Context, err error) (a2a.SendMe
 type testExecutor struct {
 	*testProcessor
 
-	executeCalled   chan struct{}
-	executeErr      error
-	queue           eventpipe.Writer
-	contextCanceled bool
-	block           chan struct{}
-	emitTask        *a2a.Task
+	executeCalled        chan struct{}
+	executeErr           error
+	queue                eventpipe.Writer
+	contextCanceled      bool
+	contextCauseObserver func(error)
+	block                chan struct{}
+	emitTask             *a2a.Task
 }
 
 var _ Executor = (*testExecutor)(nil)
@@ -151,6 +152,9 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventpipe.Writer) erro
 		case <-e.block:
 		case <-ctx.Done():
 			e.contextCanceled = true
+			if e.contextCauseObserver != nil {
+				e.contextCauseObserver(context.Cause(ctx))
+			}
 			return ctx.Err()
 		}
 	}
@@ -824,5 +828,46 @@ func TestManager_GetExecution(t *testing.T) {
 
 	if _, err := manager.Resubscribe(ctx, tid); err == nil {
 		t.Fatal("manager.Resubscribe() succeeded for finished execution, want error")
+	}
+}
+
+// TestManager_AgentInactivityTimeout verifies that a localManager configured
+// with AgentInactivityTimeout terminates an executor that stalls without
+// writing any events. The executor's context must be canceled with
+// [ErrAgentInactivityTimeout] as the cause. Regression test for #78.
+func TestManager_AgentInactivityTimeout(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	executor := newExecutor()
+	executor.block = make(chan struct{})
+	defer close(executor.block)
+
+	var executorCause error
+	executor.contextCauseObserver = func(c error) { executorCause = c }
+
+	manager := NewLocalManager(LocalManagerConfig{
+		Factory:                newStaticFactory(executor, nil),
+		TaskStore:              testutil.NewTestTaskStore(),
+		AgentInactivityTimeout: 50 * time.Millisecond,
+	})
+
+	subscription, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+	if err != nil {
+		t.Fatalf("manager.Execute() error = %v, want nil", err)
+	}
+	executionResult, _ := consumeEvents(t, subscription)
+
+	// Wait for the executor to be invoked.
+	<-executor.executeCalled
+	// The executor blocks without writing events. The watcher should
+	// fire after AgentInactivityTimeout and cancel the executor's ctx.
+	<-executionResult
+
+	if !executor.contextCanceled {
+		t.Fatalf("executor.contextCanceled = false, want true")
+	}
+	if !errors.Is(executorCause, ErrAgentInactivityTimeout) {
+		t.Fatalf("context.Cause(executorCtx) = %v, want errors.Is(_, ErrAgentInactivityTimeout)", executorCause)
 	}
 }

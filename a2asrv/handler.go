@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
@@ -29,6 +30,12 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
+
+// ErrAgentInactivityTimeout is the cancellation cause set on an agent's
+// execution context when no events are written to the event pipe for the
+// duration configured via [WithAgentInactivityTimeout]. Callers can detect
+// this condition with errors.Is.
+var ErrAgentInactivityTimeout = taskexec.ErrAgentInactivityTimeout
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -81,6 +88,8 @@ type defaultRequestHandler struct {
 	workQueue              workqueue.Queue
 	reqContextInterceptors []ExecutorContextInterceptor
 
+	agentInactivityTimeout time.Duration
+
 	authenticatedCardProducer ExtendedAgentCardProducer
 	capabilities              *a2a.AgentCapabilities
 }
@@ -119,6 +128,22 @@ func WithEventQueueManager(manager eventqueue.Manager) RequestHandlerOption {
 func WithExecutionPanicHandler(handler func(r any) error) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.panicHandler = handler
+	}
+}
+
+// WithAgentInactivityTimeout configures the maximum time the server will wait
+// for the next event from an agent's producer before terminating its execution.
+// The timer is reset whenever the agent writes an event to the event pipe.
+// When the timeout fires the producer and consumer contexts are canceled with
+// [ErrAgentInactivityTimeout] as the cause, and the task is finalized via the
+// existing failure path.
+//
+// A value of 0 (default) or negative disables the inactivity watcher and
+// preserves prior behavior. The timeout applies in both single-process and
+// cluster modes.
+func WithAgentInactivityTimeout(d time.Duration) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.agentInactivityTimeout = d
 	}
 }
 
@@ -186,12 +211,13 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			panic("TaskStore and QueueManager must be provided for cluster mode")
 		}
 		h.execManager = taskexec.NewDistributedManager(taskexec.DistributedManagerConfig{
-			WorkQueue:         h.workQueue,
-			TaskStore:         h.taskStore,
-			QueueManager:      h.queueManager,
-			ConcurrencyConfig: h.concurrencyConfig,
-			Factory:           execFactory,
-			PanicHandler:      h.panicHandler,
+			WorkQueue:              h.workQueue,
+			TaskStore:              h.taskStore,
+			QueueManager:           h.queueManager,
+			ConcurrencyConfig:      h.concurrencyConfig,
+			Factory:                execFactory,
+			PanicHandler:           h.panicHandler,
+			AgentInactivityTimeout: h.agentInactivityTimeout,
 		})
 	} else {
 		if h.queueManager == nil {
@@ -204,11 +230,12 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
-			QueueManager:      h.queueManager,
-			ConcurrencyConfig: h.concurrencyConfig,
-			Factory:           execFactory,
-			TaskStore:         h.taskStore,
-			PanicHandler:      h.panicHandler,
+			QueueManager:           h.queueManager,
+			ConcurrencyConfig:      h.concurrencyConfig,
+			Factory:                execFactory,
+			TaskStore:              h.taskStore,
+			PanicHandler:           h.panicHandler,
+			AgentInactivityTimeout: h.agentInactivityTimeout,
 		})
 	}
 

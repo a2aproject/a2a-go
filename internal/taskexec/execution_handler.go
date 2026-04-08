@@ -82,6 +82,53 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 type eventProducerFn func(context.Context) error
 type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
 
+// activityTracker is wired into the producer's event pipe via
+// [newActivityTrackingWriter] so that successful writes signal the inactivity
+// watcher started in [runProducerConsumer]. A nil tracker disables tracking.
+type activityTracker struct {
+	signal chan<- struct{}
+}
+
+func (t *activityTracker) record() {
+	if t == nil {
+		return
+	}
+	select {
+	case t.signal <- struct{}{}:
+	default: // non-blocking; the watcher only needs an "activity happened" hint
+	}
+}
+
+// newActivityTrackingWriter wraps an [eventpipe.Writer] so each successful
+// write signals the provided tracker. A nil tracker returns the writer
+// unchanged so callers without an inactivity timeout configured pay no cost.
+func newActivityTrackingWriter(inner eventpipe.Writer, tracker *activityTracker) eventpipe.Writer {
+	if tracker == nil {
+		return inner
+	}
+	return &activityTrackingWriter{inner: inner, tracker: tracker}
+}
+
+type activityTrackingWriter struct {
+	inner   eventpipe.Writer
+	tracker *activityTracker
+}
+
+func (w *activityTrackingWriter) Write(ctx context.Context, event a2a.Event) error {
+	if err := w.inner.Write(ctx, event); err != nil {
+		return err
+	}
+	w.tracker.record()
+	return nil
+}
+
+// inactivityConfig configures the inactivity watcher started by
+// [runProducerConsumer]. A zero or negative timeout disables the watcher.
+type inactivityConfig struct {
+	timeout time.Duration
+	signal  <-chan struct{}
+}
+
 // runProducerConsumer starts producer and consumer goroutines in an error group and waits
 // for both of them to finish or one of them to fail. If both complete successfuly and consumer produces a result,
 // the result is returned, otherwise an error is returned.
@@ -91,8 +138,38 @@ func runProducerConsumer(
 	consumer eventConsumerFn,
 	heartbeater workqueue.Heartbeater,
 	panicHandler PanicHandlerFn,
+	inactivity inactivityConfig,
 ) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
+
+	// errgroup already wraps its derived context with [context.WithCancelCause]
+	// internally and uses the goroutine's returned error as the cancellation
+	// cause. Returning [ErrAgentInactivityTimeout] from the watcher is enough
+	// to surface it via [context.Cause] on the producer and consumer ctx, and
+	// the existing TestRunProducerConsumer_CausePropagation regression test
+	// covers the same pattern.
+	if inactivity.timeout > 0 && inactivity.signal != nil {
+		group.Go(func() error {
+			timer := time.NewTimer(inactivity.timeout)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-inactivity.signal:
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					timer.Reset(inactivity.timeout)
+				case <-timer.C:
+					return ErrAgentInactivityTimeout
+				}
+			}
+		})
+	}
 
 	if heartbeater != nil {
 		group.Go(func() error {
