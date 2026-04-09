@@ -58,3 +58,8 @@ Temporary Items
 
 # gitignore temporary AI worktree directories
 aiwt-*
+
+# ITK artifacts
+itk/instruction.proto
+itk/pb
+itk/a2a-samples
