@@ -229,7 +229,7 @@ func TestDefaultPropagation(t *testing.T) {
 				a2aclient.WithCallInterceptors(NewActivator(tc.serverASupports...)),
 			)
 			if err != nil {
-				t.Fatalf("a2aclient.NewFromEndpoints() error = %v", err)
+				t.Fatalf("a2aclient.NewFromCard() error = %v", err)
 			}
 
 			resp, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
