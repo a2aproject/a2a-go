@@ -26,8 +26,9 @@ var ErrConcurrencyLimitExceeded = errors.New("concurrency limit exceeded")
 
 type pushQueue struct {
 	Writer
-	config    HandlerConfig
-	handlerFn HandlerFn
+	config           HandlerConfig
+	handlerFn        HandlerFn
+	concurrencyQuota *semaphore
 }
 
 // NewPushQueue creates a [Queue] implementation through which SDK submits work to the queue backend.
@@ -36,7 +37,10 @@ type pushQueue struct {
 func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 	queue := &pushQueue{Writer: writer}
 	handler := HandlerFn(func(ctx context.Context, p *Payload) (a2a.SendMessageResult, error) {
-		// TODO: acquire concurrency quota or return ErrConcurrencyLimitExceeded
+		if !queue.concurrencyQuota.tryAcquire() {
+			return nil, ErrConcurrencyLimitExceeded
+		}
+		defer queue.concurrencyQuota.release()
 		return queue.handlerFn(ctx, p)
 	})
 	return queue, handler
@@ -45,5 +49,6 @@ func NewPushQueue(writer Writer) (Queue, HandlerFn) {
 // RegisterHandler implements [Queue].
 func (q *pushQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
 	q.config = cfg
+	q.concurrencyQuota = newSemaphore(cfg.Limiter.MaxExecutions)
 	q.handlerFn = handlerFn
 }
