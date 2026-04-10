@@ -12,34 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testutil
+package testlogger
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
-// SetDefaultForTest calls [slog.SetDefault] and restores to the original logger on test cleanup callback.
-func SetDefaultForTest(t testing.TB, logger *slog.Logger) {
-	restored := slog.Default()
-	slog.SetDefault(logger)
-	t.Cleanup(func() {
-		slog.SetDefault(restored)
-	})
+// AttachToContext returns a new context with a test logger attached.
+func AttachToContext(t testing.TB) context.Context {
+	return log.AttachLogger(t.Context(), New(t))
 }
 
-// NewLogger delegates to [NewLevelLogger] passing debug as the minimum level.
-func NewLogger(t testing.TB) *slog.Logger {
-	return NewLevelLogger(t, slog.LevelDebug)
+// NewLogger delegates to [NewLeveled] passing debug as the minimum level.
+func New(t testing.TB) *slog.Logger {
+	return NewLeveled(t, slog.LevelDebug)
 }
 
-// NewLevelLogger returns an [slog.Logger] that directs all output to t.Log.
+// NewLeveled returns an [slog.Logger] that directs all output to t.Log.
 // Log statements are printed only in case of a failed text or if go test was invoked with -v flag.
-func NewLevelLogger(t testing.TB, level slog.Level) *slog.Logger {
-	return slog.New(slog.NewTextHandler(&tWriter{t: t}, &slog.HandlerOptions{
+func NewLeveled(t testing.TB, level slog.Level) *slog.Logger {
+	handler := slog.New(slog.NewTextHandler(&tWriter{t: t}, &slog.HandlerOptions{
 		Level: level,
 	}))
+	return handler.With("test_name", t.Name())
 }
 
 type tWriter struct {

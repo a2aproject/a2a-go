@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -37,8 +38,6 @@ import (
 var fixedTime = time.Now()
 
 func TestRequestHandler_SendMessage(t *testing.T) {
-	testutil.SetDefaultForTest(t, testutil.NewLogger(t))
-
 	artifactID := a2a.NewArtifactID()
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	inputRequiredTaskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
@@ -278,7 +277,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := t.Context()
+			ctx := testlogger.AttachToContext(t)
 			store := testutil.NewTestTaskStore().WithTasks(t, taskStoreSeed...)
 			executor := newEventReplayAgent(tt.agentEvents, nil)
 			handler := NewHandler(executor, WithTaskStore(store))
