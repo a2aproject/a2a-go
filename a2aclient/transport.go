@@ -152,10 +152,11 @@ func (d *tenantTransportDecorator) updateTenant(ctx context.Context, current str
 	if d.tenant != "" {
 		return d.tenant
 	}
-	if d.config == nil || !d.config.DisableTenantPropagation {
-		if tenant, ok := a2a.TenantFrom(ctx); ok {
-			return tenant
-		}
+	if d.config != nil && d.config.DisableTenantPropagation {
+		return ""
+	}
+	if tenant, ok := a2a.TenantFrom(ctx); ok {
+		return tenant
 	}
 	return ""
 }
