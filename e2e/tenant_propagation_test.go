@@ -76,7 +76,7 @@ func TestTenantPropagation(t *testing.T) {
 				return func(yield func(a2a.Event, error) bool) {
 					gotTenant = execCtx.Tenant
 					event := a2a.NewSubmittedTask(execCtx, execCtx.Message)
-					event.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
+					event.Status.State = a2a.TaskStateCompleted
 					yield(event, nil)
 				}
 			}))
