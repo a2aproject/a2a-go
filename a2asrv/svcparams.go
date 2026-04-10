@@ -77,3 +77,7 @@ func (sp *ServiceParams) With(additional map[string][]string) *ServiceParams {
 	}
 	return &ServiceParams{kv: merged}
 }
+
+func (sp *ServiceParams) cloneRaw() map[string][]string {
+	return maps.Clone(sp.kv)
+}

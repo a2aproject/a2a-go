@@ -45,6 +45,9 @@ type Payload struct {
 	CancelRequest *a2a.CancelTaskRequest
 	// ExecuteRequest defines the execution parameters. It is only set for [PayloadTypeExecute].
 	ExecuteRequest *a2a.SendMessageRequest
+	// CallContext carries serializable call context data (user identity, service params, tenant)
+	// for cross-process propagation in distributed mode.
+	CallContext map[string]any
 }
 
 // HandlerFn starts agent execution for the provided payload.
@@ -54,6 +57,14 @@ type HandlerFn func(context.Context, *Payload) (a2a.SendMessageResult, error)
 type Writer interface {
 	// Write puts a new payload into the queue. Paylod will contain a TaskID but a different value can be returned to handle idempotency.
 	Write(context.Context, *Payload) (a2a.TaskID, error)
+}
+
+// WriterFunc is a function that implements the [Writer] interface.
+type WriterFunc func(context.Context, *Payload) (a2a.TaskID, error)
+
+// Write implements [Writer].
+func (fn WriterFunc) Write(ctx context.Context, payload *Payload) (a2a.TaskID, error) {
+	return fn(ctx, payload)
 }
 
 // HandlerConfig configures the work queue handler.

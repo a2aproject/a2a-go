@@ -98,3 +98,11 @@ type Cleaner interface {
 
 // PanicHandlerFn is a function that handles panics occurred during execution.
 type PanicHandlerFn func(r any) error
+
+// ContextCodec is used to propagate context information between processes.
+type ContextCodec interface {
+	// Encode encodes context information which will propagate through the work queue.
+	Encode(context.Context) map[string]any
+	// Decode is used to restore context which then gets passed to an agent execution.
+	Decode(context.Context, map[string]any) context.Context
+}

@@ -38,6 +38,7 @@ type DistributedManagerConfig struct {
 	ConcurrencyConfig limiter.ConcurrencyConfig
 	Logger            *slog.Logger
 	PanicHandler      PanicHandlerFn
+	ContextCodec      ContextCodec
 }
 
 type distributedManager struct {
@@ -45,6 +46,7 @@ type distributedManager struct {
 	workQueue    workqueue.Queue
 	queueManager eventqueue.Manager
 	taskStore    taskstore.Store
+	ctxCodec     ContextCodec
 }
 
 var _ Manager = (*distributedManager)(nil)
@@ -56,6 +58,7 @@ func NewDistributedManager(cfg DistributedManagerConfig) Manager {
 		queueManager: cfg.QueueManager,
 		workQueue:    cfg.WorkQueue,
 		taskStore:    cfg.TaskStore,
+		ctxCodec:     cfg.ContextCodec,
 	}
 	return frontend
 }
@@ -108,6 +111,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         requestedTaskID,
 		ExecuteRequest: req,
+		CallContext:    m.encodeContext(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)
@@ -152,6 +156,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		Type:          workqueue.PayloadTypeCancel,
 		TaskID:        req.ID,
 		CancelRequest: req,
+		CallContext:   m.encodeContext(ctx),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)
@@ -190,4 +195,11 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	}
 
 	return convertToCancelationResult(ctx, storedTask.Task, nil)
+}
+
+func (m *distributedManager) encodeContext(ctx context.Context) map[string]any {
+	if m.ctxCodec == nil {
+		return nil
+	}
+	return m.ctxCodec.Encode(ctx)
 }

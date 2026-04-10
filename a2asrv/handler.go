@@ -187,6 +187,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			TaskStore:         h.taskStore,
 			QueueManager:      h.queueManager,
 			ConcurrencyConfig: h.concurrencyConfig,
+			ContextCodec:      &callCtxCodec{},
 			Factory:           execFactory,
 			PanicHandler:      h.panicHandler,
 		})

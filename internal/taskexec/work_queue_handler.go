@@ -44,14 +44,22 @@ func newWorkQueueHandler(cfg DistributedManagerConfig) *workQueueHandler {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+
 	cfg.WorkQueue.RegisterHandler(workqueue.HandlerConfig{
 		Limiter: cfg.ConcurrencyConfig,
 	}, func(ctx context.Context, p *workqueue.Payload) (a2a.SendMessageResult, error) {
-		logger := cfg.Logger.WithGroup("a2a").With(
+		attrs := []any{
 			slog.String("task_id", string(p.TaskID)),
 			slog.String("work_type", string(p.Type)),
-		)
-		return backend.handle(log.AttachLogger(ctx, logger), p)
+		}
+		if p.ExecuteRequest != nil && p.ExecuteRequest.Message != nil {
+			attrs = append(attrs, slog.String("message_id", p.ExecuteRequest.Message.ID))
+		}
+		ctx = log.AttachLogger(ctx, cfg.Logger.WithGroup("a2a").With(attrs...))
+		if cfg.ContextCodec != nil && p.CallContext != nil {
+			ctx = cfg.ContextCodec.Decode(ctx, p.CallContext)
+		}
+		return backend.handle(ctx, p)
 	})
 	return backend
 }
