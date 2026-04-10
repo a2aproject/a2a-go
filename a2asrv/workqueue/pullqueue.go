@@ -17,8 +17,10 @@ package workqueue
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -49,12 +51,21 @@ type ReadWriter interface {
 type PullQueueConfig struct {
 	// ReadRetry configures the behavior of polling loop in case of workqueue Read errors.
 	ReadRetry ReadRetryPolicy
+	// BeforeExecutionCallback is called before execution is started. It can be used to modify the context or the message.
+	// If an error is returned, execution will not be started and neither Complete nor Return will be called for the Message.
+	BeforeExecutionCallback func(context.Context, Message) (context.Context, error)
+	// AfterExecutionCallback is called after execution finishes. It can be used to decide how the message should be handled.
+	// If an error is returned, neither Complete nor Return will be called for the Message.
+	AfterExecutionCallback func(context.Context, Message, a2a.SendMessageResult, error) error
 }
 
 type pullQueue struct {
 	ReadWriter
 
 	config *PullQueueConfig
+
+	// used for tests
+	onShutdown func()
 }
 
 // NewPullQueue creates a [Queue] implementation which starts runs a work polling loop until
@@ -70,28 +81,29 @@ func NewPullQueue(rw ReadWriter, cfg *PullQueueConfig) Queue {
 }
 
 func (q *pullQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
+	concurrencyQuota := newSemaphore(cfg.Limiter.MaxExecutions)
+
+	var wg sync.WaitGroup
 	go func() {
 		readAttempt := 0
 		ctx := context.Background()
 		for {
-			// TODO: only call Read when concurrency quota permits
+			concurrencyQuota.acquire()
+
 			msg, err := q.ReadWriter.Read(ctx)
+
 			if errors.Is(err, ErrQueueClosed) {
+				concurrencyQuota.release()
 				log.Info(ctx, "cluster backend stopped because work queue was closed")
+				wg.Wait() // drain
+				if q.onShutdown != nil {
+					q.onShutdown()
+				}
 				return
 			}
 
-			if errors.Is(err, ErrMalformedPayload) {
-				// TODO: dead-letter queue for this and retry attempt exceeded payloads
-				if completeErr := msg.Complete(ctx); completeErr != nil {
-					log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", err, "error", completeErr)
-				} else {
-					log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", err)
-				}
-				continue
-			}
-
 			if err != nil {
+				concurrencyQuota.release()
 				retryIn := q.config.ReadRetry.NextDelay(readAttempt)
 				log.Info(ctx, "work queue read failed", "error", err, "retry_in_s", retryIn.Seconds())
 				time.Sleep(retryIn)
@@ -100,25 +112,60 @@ func (q *pullQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
 			}
 			readAttempt = 0
 
-			go func() {
-				if hb, ok := msg.(Heartbeater); ok {
-					ctx = AttachHeartbeater(ctx, hb)
-				}
-
-				_, handleErr := handlerFn(ctx, msg.Payload())
-				if handleErr != nil {
-					if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
-						log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
-					} else {
-						log.Info(ctx, "failed to handle work item", "error", handleErr)
-					}
-					return
-				}
-
-				if err := msg.Complete(ctx); err != nil {
-					log.Warn(ctx, "failed to mark work item as completed", "error", err)
-				}
-			}()
+			wg.Add(1)
+			go func(ctx context.Context) {
+				defer wg.Done()
+				defer concurrencyQuota.release()
+				q.handleMessage(ctx, msg, handlerFn)
+			}(ctx)
 		}
 	}()
+}
+
+func (q *pullQueue) handleMessage(ctx context.Context, msg Message, handlerFn HandlerFn) {
+	var err error
+
+	if q.config.BeforeExecutionCallback != nil {
+		ctx, err = q.config.BeforeExecutionCallback(ctx, msg)
+		if err != nil {
+			log.Debug(ctx, "before exec callback short-circuited execution", "cause", err)
+			return
+		}
+	}
+
+	if hb, ok := msg.(Heartbeater); ok {
+		ctx = AttachHeartbeater(ctx, hb)
+	}
+
+	result, handleErr := handlerFn(ctx, msg.Payload())
+
+	if q.config.AfterExecutionCallback != nil {
+		if err = q.config.AfterExecutionCallback(ctx, msg, result, handleErr); err != nil {
+			log.Debug(ctx, "after exec callback handled message", "cause", err)
+			return
+		}
+	}
+
+	if errors.Is(err, ErrMalformedPayload) {
+		// TODO: dead-letter queue Writer. If fails - return message, else - mark completed
+		if completeErr := msg.Complete(ctx); completeErr != nil {
+			log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", err, "error", completeErr)
+		} else {
+			log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", err)
+		}
+		return
+	}
+
+	if handleErr != nil {
+		if returnErr := msg.Return(ctx, handleErr); returnErr != nil {
+			log.Warn(ctx, "failed to return failed work item", "handle_err", handleErr, "return_err", returnErr)
+		} else {
+			log.Info(ctx, "failed to handle work item", "error", handleErr)
+		}
+		return
+	}
+
+	if err := msg.Complete(ctx); err != nil {
+		log.Warn(ctx, "failed to mark work item as completed", "error", err)
+	}
 }
