@@ -16,6 +16,7 @@
 package rest
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -249,7 +250,7 @@ func ParseErrorBytes(data []byte) error {
 		return nil
 	}
 	rawErr, hasError := raw["error"]
-	if !hasError || string(rawErr) == "null" {
+	if !hasError || bytes.Equal(rawErr, []byte("null")) {
 		return nil
 	}
 	// "error" key is present and non-null — this is an error event.
