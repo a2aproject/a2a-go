@@ -15,6 +15,7 @@
 package a2aclient
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -282,6 +283,47 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 	}
 	if _, ok := events[2].(*a2a.Task); !ok {
 		t.Errorf("got events[2] type %T, want *Task", events[2])
+	}
+}
+
+func TestRESTTransport_SendStreamingMessage_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		events := []string{
+			`data: {"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`,
+			``,
+			`data: {"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad request","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_REQUEST","domain":"a2a-protocol.org"}]}}`,
+			``,
+		}
+
+		for _, event := range events {
+			_, _ = w.Write([]byte(event + "\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+	}))
+	defer server.Close()
+	transport := newRESTTransport(t, server)
+
+	var events []a2a.Event
+	var gotErr error
+	for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+	}) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+		events = append(events, event)
+	}
+
+	if len(events) != 1 {
+		t.Errorf("got %d events before error, want 1", len(events))
+	}
+	if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+		t.Fatalf("got error %v, want %v", gotErr, a2a.ErrInvalidRequest)
 	}
 }
 

@@ -184,6 +184,10 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				yield(nil, err)
 				return
 			}
+			if restErr := rest.ParseErrorBytes(data); restErr != nil {
+				yield(nil, restErr)
+				return
+			}
 			// v0.3 SSE events use snake_case keys; transform to camelCase
 			// before legacy unmarshal.
 			camelData, err := transformJSONKeys(data, snakeToCamel)

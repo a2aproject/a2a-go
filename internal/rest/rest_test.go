@@ -352,6 +352,113 @@ func TestToRESTError_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseErrorBytes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid error", func(t *testing.T) {
+		body := []byte(makeStatusBody(400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
+		got := ParseErrorBytes(body)
+		if got == nil {
+			t.Fatal("ParseErrorBytes() returned nil, want error")
+		}
+		if !errors.Is(got, a2a.ErrInvalidRequest) {
+			t.Fatalf("ParseErrorBytes() error = %v, want %v", got, a2a.ErrInvalidRequest)
+		}
+	})
+
+	t.Run("not an error", func(t *testing.T) {
+		body := []byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`)
+		got := ParseErrorBytes(body)
+		if got != nil {
+			t.Fatalf("ParseErrorBytes() = %v, want nil", got)
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(`not json`))
+		if got != nil {
+			t.Fatalf("ParseErrorBytes() = %v, want nil", got)
+		}
+	})
+
+	t.Run("null error", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(`{"error": null}`))
+		if got != nil {
+			t.Fatalf("ParseErrorBytes() = %v, want nil", got)
+		}
+	})
+
+	t.Run("empty bytes", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(""))
+		if got != nil {
+			t.Fatalf("ParseErrorBytes() = %v, want nil", got)
+		}
+	})
+
+	t.Run("empty error body defaults to internal error", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(`{"error": {}}`))
+		if !errors.Is(got, a2a.ErrInternalError) {
+			t.Fatalf("ParseErrorBytes() error = %v, want %v", got, a2a.ErrInternalError)
+		}
+	})
+
+	t.Run("error without details defaults to internal error", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(`{"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": "bad"}}`))
+		if !errors.Is(got, a2a.ErrInternalError) {
+			t.Fatalf("ParseErrorBytes() error = %v, want %v", got, a2a.ErrInternalError)
+		}
+		if !strings.Contains(got.Error(), "bad") {
+			t.Fatalf("ParseErrorBytes() error message %q does not contain %q", got.Error(), "bad")
+		}
+	})
+
+	t.Run("unknown domain defaults to internal error", func(t *testing.T) {
+		body := []byte(`{
+			"error": {
+				"code": 400,
+				"status": "INVALID_ARGUMENT",
+				"message": "bad",
+				"details": [
+					{
+						"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+						"reason": "INVALID_REQUEST",
+						"domain": "other.org"
+					}
+				]
+			}
+		}`)
+		got := ParseErrorBytes(body)
+		if !errors.Is(got, a2a.ErrInternalError) {
+			t.Fatalf("ParseErrorBytes() error = %v, want %v", got, a2a.ErrInternalError)
+		}
+	})
+
+	t.Run("malformed error value returns internal error", func(t *testing.T) {
+		got := ParseErrorBytes([]byte(`{"error": "not an object"}`))
+		if !errors.Is(got, a2a.ErrInternalError) {
+			t.Fatalf("ParseErrorBytes() error = %v, want %v", got, a2a.ErrInternalError)
+		}
+	})
+
+	t.Run("round trip with ToRESTError", func(t *testing.T) {
+		for _, sentinel := range []error{
+			a2a.ErrTaskNotFound,
+			a2a.ErrInvalidRequest,
+			a2a.ErrInternalError,
+		} {
+			restErr := ToRESTError(sentinel, "task-rt")
+			data, err := json.Marshal(restErr)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			got := ParseErrorBytes(data)
+			if !errors.Is(got, sentinel) {
+				t.Fatalf("ParseErrorBytes(ToRESTError(%v)) = %v, want errors.Is to match", sentinel, got)
+			}
+		}
+	})
+}
+
 func TestToRESTError_NonStringDetails(t *testing.T) {
 	t.Parallel()
 

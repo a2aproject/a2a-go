@@ -178,28 +178,19 @@ var errToDetails = map[error]errorDetails{
 	},
 }
 
-// ToA2AError converts an HTTP error response in google.rpc.Status format to an a2a error.
-func ToA2AError(resp *http.Response) error {
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "application/json") {
-		return a2a.ErrServerError
-	}
+// errorBodyJSON is the JSON shape of the inner error object in a google.rpc.Status response.
+type errorBodyJSON struct {
+	Code    int               `json:"code"`
+	Status  string            `json:"status"`
+	Message string            `json:"message"`
+	Details []json.RawMessage `json:"details"`
+}
 
-	var body struct {
-		Error struct {
-			Code    int               `json:"code"`
-			Status  string            `json:"status"`
-			Message string            `json:"message"`
-			Details []json.RawMessage `json:"details"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return fmt.Errorf("failed to decode error response: %w", err)
-	}
-
+// convertErrorBody converts a parsed google.rpc.Status error body into an a2a error.
+func convertErrorBody(body *errorBodyJSON) error {
 	baseErr := a2a.ErrInternalError
 	details := map[string]any{}
-	for _, raw := range body.Error.Details {
+	for _, raw := range body.Details {
 		var hint struct {
 			Type string `json:"@type"`
 		}
@@ -225,11 +216,48 @@ func ToA2AError(resp *http.Response) error {
 		}
 	}
 
-	out := a2a.NewError(baseErr, body.Error.Message)
+	out := a2a.NewError(baseErr, body.Message)
 	if len(details) > 0 {
 		out = out.WithDetails(details)
 	}
 	return out
+}
+
+// ToA2AError converts an HTTP error response in google.rpc.Status format to an a2a error.
+func ToA2AError(resp *http.Response) error {
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "application/json") {
+		return a2a.ErrServerError
+	}
+
+	var body struct {
+		Error errorBodyJSON `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("failed to decode error response: %w", err)
+	}
+
+	return convertErrorBody(&body.Error)
+}
+
+// ParseErrorBytes attempts to parse raw JSON bytes as a google.rpc.Status error.
+// Returns the corresponding A2A error if the bytes contain an "error" key, nil otherwise.
+// If the "error" key is present but malformed, it returns [a2a.ErrInternalError].
+func ParseErrorBytes(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	rawErr, hasError := raw["error"]
+	if !hasError || string(rawErr) == "null" {
+		return nil
+	}
+	// "error" key is present and non-null — this is an error event.
+	var body errorBodyJSON
+	if err := json.Unmarshal(rawErr, &body); err != nil {
+		return a2a.ErrInternalError
+	}
+	return convertErrorBody(&body)
 }
 
 // ToRESTError converts an error and a [a2a.TaskID] to a REST [Error] in google.rpc.Status format.
