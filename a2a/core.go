@@ -721,15 +721,30 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	p.MediaType = wrapper.MediaType
 	p.Metadata = wrapper.Metadata
 
+	var content PartContent
+	var n int
 	if wrapper.Text != nil {
-		p.Content = *wrapper.Text
+		content = *wrapper.Text
+		n++
 	} else if wrapper.Raw != nil {
-		p.Content = *wrapper.Raw
+		content = *wrapper.Raw
+		n++
 	} else if wrapper.Data != nil {
-		p.Content = Data{Value: *wrapper.Data}
+		content = Data{Value: *wrapper.Data}
+		n++
 	} else if wrapper.URL != nil && *wrapper.URL != "" {
-		p.Content = *wrapper.URL
+		content = *wrapper.URL
+		n++
 	}
+
+	if n == 0 {
+		return fmt.Errorf("unknown part content type")
+	}
+	if n > 1 {
+		return fmt.Errorf("expected exactly one of text, raw, data, or url, got %d", n)
+	}
+
+	p.Content = content
 
 	return nil
 }
