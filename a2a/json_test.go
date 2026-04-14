@@ -52,9 +52,9 @@ func TestContentPartsJSONCodec(t *testing.T) {
 	jsons := []string{
 		`{"text":"hello, world"}`,
 		`{"data":{"foo":"bar"}}`,
-		`{"filename":"foo","url":"https://cats.com/1.png"}`,
-		`{"filename":"foo","mediaType":"image/png","raw":"//4="}`,
-		`{"metadata":{"foo":"bar"},"text":"42"}`,
+		`{"url":"https://cats.com/1.png","filename":"foo"}`,
+		`{"raw":"//4=","filename":"foo","mediaType":"image/png"}`,
+		`{"text":"42","metadata":{"foo":"bar"}}`,
 	}
 
 	wantJSON := fmt.Sprintf("[%s]", strings.Join(jsons, ","))

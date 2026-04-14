@@ -15,7 +15,6 @@
 package a2a
 
 import (
-	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -90,57 +89,59 @@ type StreamResponse struct {
 	Event
 }
 
+type event struct {
+	Message        *Message                 `json:"message,omitempty"`
+	Task           *Task                    `json:"task,omitempty"`
+	StatusUpdate   *TaskStatusUpdateEvent   `json:"statusUpdate,omitempty"`
+	ArtifactUpdate *TaskArtifactUpdateEvent `json:"artifactUpdate,omitempty"`
+}
+
 // MarshalJSON implements json.Marshaler.
 func (sr StreamResponse) MarshalJSON() ([]byte, error) {
-	m := make(map[string]any)
+	wrapper := &event{}
 	switch v := sr.Event.(type) {
 	case *Message:
-		m["message"] = v
+		wrapper.Message = v
 	case *Task:
-		m["task"] = v
+		wrapper.Task = v
 	case *TaskStatusUpdateEvent:
-		m["statusUpdate"] = v
+		wrapper.StatusUpdate = v
 	case *TaskArtifactUpdateEvent:
-		m["artifactUpdate"] = v
+		wrapper.ArtifactUpdate = v
 	default:
 		return nil, fmt.Errorf("unknown event type: %T", v)
 	}
-	return json.Marshal(m)
+	return json.Marshal(wrapper)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	var wrapper event
+	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return fmt.Errorf("failed to unmarshal event: %w", err)
 	}
-
-	if v, ok := raw["message"]; ok {
-		var msg Message
-		if err := json.Unmarshal(v, &msg); err != nil {
-			return fmt.Errorf("failed to unmarshal Message event: %w", err)
-		}
-		sr.Event = &msg
-	} else if v, ok := raw["task"]; ok {
-		var task Task
-		if err := json.Unmarshal(v, &task); err != nil {
-			return fmt.Errorf("failed to unmarshal Task event: %w", err)
-		}
-		sr.Event = &task
-	} else if v, ok := raw["statusUpdate"]; ok {
-		var statusUpdate TaskStatusUpdateEvent
-		if err := json.Unmarshal(v, &statusUpdate); err != nil {
-			return fmt.Errorf("failed to unmarshal TaskStatusUpdateEvent: %w", err)
-		}
-		sr.Event = &statusUpdate
-	} else if v, ok := raw["artifactUpdate"]; ok {
-		var artifactUpdate TaskArtifactUpdateEvent
-		if err := json.Unmarshal(v, &artifactUpdate); err != nil {
-			return fmt.Errorf("failed to unmarshal TaskArtifactUpdateEvent: %w", err)
-		}
-		sr.Event = &artifactUpdate
-	} else {
-		return fmt.Errorf("unknown event type: %v", raw)
+	var n int
+	if wrapper.Message != nil {
+		sr.Event = wrapper.Message
+		n++
+	}
+	if wrapper.Task != nil {
+		sr.Event = wrapper.Task
+		n++
+	}
+	if wrapper.StatusUpdate != nil {
+		sr.Event = wrapper.StatusUpdate
+		n++
+	}
+	if wrapper.ArtifactUpdate != nil {
+		sr.Event = wrapper.ArtifactUpdate
+		n++
+	}
+	if n == 0 {
+		return fmt.Errorf("unknown event type: %s", data)
+	}
+	if n != 1 {
+		return fmt.Errorf("expected exactly one event type, got %d", n)
 	}
 	return nil
 }
@@ -676,71 +677,60 @@ type Data struct {
 	Value any
 }
 
+type part struct {
+	Text      *Text          `json:"text,omitempty"`
+	Raw       *Raw           `json:"raw,omitempty"`
+	Data      *any           `json:"data,omitempty"`
+	URL       *URL           `json:"url,omitempty"`
+	Filename  string         `json:"filename,omitempty"`
+	MediaType string         `json:"mediaType,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
 // MarshalJSON custom serializer that flattens Content into the Part object.
 func (p Part) MarshalJSON() ([]byte, error) {
-	m := make(map[string]any)
-
+	wrapper := &part{
+		Filename:  p.Filename,
+		MediaType: p.MediaType,
+		Metadata:  p.Metadata,
+	}
 	switch v := p.Content.(type) {
 	case Text:
-		m["text"] = string(v)
+		wrapper.Text = &v
 	case Raw:
-		m["raw"] = []byte(v)
+		wrapper.Raw = &v
 	case Data:
-		m["data"] = v.Value
+		wrapper.Data = &v.Value
 	case URL:
-		m["url"] = string(v)
+		if v != "" {
+			wrapper.URL = &v
+		}
 	}
 
-	if p.Filename != "" {
-		m["filename"] = p.Filename
-	}
-	if p.MediaType != "" {
-		m["mediaType"] = p.MediaType
-	}
-
-	if len(p.Metadata) > 0 {
-		m["metadata"] = p.Metadata
-	}
-
-	return json.Marshal(m)
+	return json.Marshal(wrapper)
 }
 
 // UnmarshalJSON custom deserializer that hydrates Content from flattened fields.
 func (p *Part) UnmarshalJSON(b []byte) error {
-	var raw map[string]any
-	if err := json.Unmarshal(b, &raw); err != nil {
+	var wrapper part
+	if err := json.Unmarshal(b, &wrapper); err != nil {
 		return err
 	}
 
-	if v, ok := raw["text"].(string); ok {
-		p.Content = Text(v)
-		delete(raw, "text")
-	} else if v, ok := raw["raw"].(string); ok {
-		b, err := base64.StdEncoding.DecodeString(v)
-		if err != nil {
-			return err
-		}
-		p.Content = Raw(b)
-		delete(raw, "raw")
-	} else if v, ok := raw["data"]; ok {
-		p.Content = Data{Value: v}
-		delete(raw, "data")
-	} else if v, ok := raw["url"].(string); ok {
-		p.Content = URL(v)
-		delete(raw, "url")
+	p.Filename = wrapper.Filename
+	p.MediaType = wrapper.MediaType
+	p.Metadata = wrapper.Metadata
+
+	if wrapper.Text != nil {
+		p.Content = *wrapper.Text
+	} else if wrapper.Raw != nil {
+		p.Content = *wrapper.Raw
+	} else if wrapper.Data != nil {
+		p.Content = Data{Value: *wrapper.Data}
+	} else if wrapper.URL != nil && *wrapper.URL != "" {
+		p.Content = *wrapper.URL
 	}
 
-	if filename, ok := raw["filename"].(string); ok {
-		p.Filename = filename
-		delete(raw, "filename")
-	}
-	if mediaType, ok := raw["mediaType"].(string); ok {
-		p.MediaType = mediaType
-		delete(raw, "mediaType")
-	}
-	if m, ok := raw["metadata"].(map[string]any); ok {
-		p.Metadata = m
-	}
 	return nil
 }
 

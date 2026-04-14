@@ -235,7 +235,12 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 		{
 			name:    "malformed task",
 			json:    `{"task":{"id":123}}`,
-			wantErr: "failed to unmarshal Task event",
+			wantErr: "failed to unmarshal event",
+		},
+		{
+			name:    "more than one event type",
+			json:    `{"task":{"id":"123"}, "message":{"id":"123"}}`,
+			wantErr: "expected exactly one event type, got 2",
 		},
 	}
 
