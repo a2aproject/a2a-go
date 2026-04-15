@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
@@ -73,6 +74,10 @@ type localExecution struct {
 	pipe         *eventpipe.Local
 	queueManager eventqueue.Manager
 	store        taskstore.Store
+
+	// exiting flag is set to true after we know the execution is about to finish.
+	// a fast client might attempt to send a follow-up before the execution gets unregistered.
+	exiting atomic.Bool
 }
 
 var _ Manager = (*localManager)(nil)
@@ -143,6 +148,10 @@ func (m *localManager) Execute(ctx context.Context, req *a2a.SendMessageRequest)
 		tid = a2a.NewTaskID()
 	} else {
 		tid = req.Message.TaskID
+		// handle fast client sending a follow-up message before execution was unregistered
+		if err := m.waitForExiting(ctx, tid); err != nil {
+			return nil, err
+		}
 	}
 
 	execution, err := m.createExecution(ctx, tid, req)
@@ -167,6 +176,20 @@ func (m *localManager) Execute(ctx context.Context, req *a2a.SendMessageRequest)
 	go m.handleExecution(detachedCtx, execution, eventBroadcastQueue)
 
 	return newLocalSubscription(execution, defaultSubReadQueue), nil
+}
+
+func (m *localManager) waitForExiting(ctx context.Context, tid a2a.TaskID) error {
+	m.mu.Lock()
+	exec, ok := m.executions[tid]
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	if !exec.exiting.Load() {
+		return ErrExecutionInProgress
+	}
+	_, _ = exec.result.wait(ctx)
+	return ctx.Err()
 }
 
 func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, req *a2a.SendMessageRequest) (*localExecution, error) {
@@ -253,8 +276,12 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 	handler := &executionHandler{
 		agentEvents:       execution.pipe.Reader,
 		handledEventQueue: eventBroadcast,
-		handleEventFn:     processor.Process,
-		handleErrorFn:     processor.ProcessError,
+		handleEventFn: func(ctx context.Context, e a2a.Event) (*ProcessorResult, error) {
+			result, err := processor.Process(ctx, e)
+			execution.exiting.Store(err != nil || result.ExecutionResult != nil)
+			return result, err
+		},
+		handleErrorFn: processor.ProcessError,
 	}
 	result, err := runProducerConsumer(
 		ctx,
