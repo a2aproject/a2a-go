@@ -53,3 +53,20 @@ func NewTestWorkQueue() *TestWorkQueue {
 		Payloads: make([]*workqueue.Payload, 0),
 	}
 }
+
+// NewInMemoryWorkQueue is a simple workqueue implementation.
+func NewInMemoryWorkQueue() *TestWorkQueue {
+	var handler workqueue.HandlerFn
+	tq := &TestWorkQueue{
+		WriteFunc: func(ctx context.Context, p *workqueue.Payload) (a2a.TaskID, error) {
+			go func(ctx context.Context) {
+				_, _ = handler(ctx, p)
+			}(context.WithoutCancel(ctx))
+			return p.TaskID, nil
+		},
+		RegisterHandlerFunc: func(cc limiter.ConcurrencyConfig, hf workqueue.HandlerFn) {
+			handler = hf
+		},
+	}
+	return tq
+}

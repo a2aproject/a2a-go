@@ -145,11 +145,12 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	}
 
 	execFactory := &factory{
-		agent:           h.agentExecutor,
-		taskStore:       h.taskStore,
-		pushSender:      h.pushSender,
-		pushConfigStore: h.pushConfigStore,
-		interceptors:    h.reqContextInterceptors,
+		agent:              h.agentExecutor,
+		taskStore:          h.taskStore,
+		pushSender:         h.pushSender,
+		pushConfigStore:    h.pushConfigStore,
+		interceptors:       h.reqContextInterceptors,
+		taskRetrySupported: h.workQueue != nil,
 	}
 	if h.workQueue != nil {
 		if h.taskStore == nil || h.queueManager == nil {
