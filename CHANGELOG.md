@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.15](https://github.com/a2aproject/a2a-go/compare/v0.3.14...v0.3.15) (2026-04-15)
+
+### Bug Fixes
+
+* fix message rejected during input_required resumption due to execution cleanup race (#303)
+
 ## [0.3.14](https://github.com/a2aproject/a2a-go/compare/v0.3.13...v0.3.14) (2026-04-15)
 
 ### Bug Fixes
