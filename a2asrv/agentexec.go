@@ -108,11 +108,12 @@ type AgentExecutionCleaner interface {
 }
 
 type factory struct {
-	taskStore       TaskStore
-	pushSender      PushSender
-	pushConfigStore PushConfigStore
-	agent           AgentExecutor
-	interceptors    []RequestContextInterceptor
+	taskStore          TaskStore
+	pushSender         PushSender
+	pushConfigStore    PushConfigStore
+	agent              AgentExecutor
+	interceptors       []RequestContextInterceptor
+	taskRetrySupported bool
 }
 
 var _ taskexec.Factory = (*factory)(nil)
@@ -151,6 +152,10 @@ type executionContext struct {
 // loadExecutionContext returns the information necessary for creating agent executor and agent event processor.
 func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.MessageSendParams) (*executionContext, error) {
 	msg := params.Message
+
+	if msg.TaskID == "" && !f.taskRetrySupported {
+		return f.createNewExecutionContext(tid, params)
+	}
 
 	storedTask, lastVersion, err := f.taskStore.Get(ctx, tid)
 	if errors.Is(err, a2a.ErrTaskNotFound) && msg.TaskID == "" {

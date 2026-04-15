@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.14](https://github.com/a2aproject/a2a-go/compare/v0.3.13...v0.3.14) (2026-04-15)
+
+### Bug Fixes
+
+* fix unnecessary task store get in local execution mode
+
 ## [0.3.13](https://github.com/a2aproject/a2a-go/compare/v0.3.12...v0.3.13) (2026-03-30)
 
 ### Bug Fixes
