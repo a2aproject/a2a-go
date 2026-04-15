@@ -177,6 +177,9 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		pushSender:      h.pushSender,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
+		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
+		// retries or not to be able to opt-out of extra GetTask RPC
+		taskRetrySupported: h.workQueue != nil,
 	}
 	if h.workQueue != nil {
 		if h.taskStore == nil || h.queueManager == nil {

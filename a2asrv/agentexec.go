@@ -126,11 +126,12 @@ type AgentExecutionCleaner interface {
 }
 
 type factory struct {
-	taskStore       taskstore.Store
-	pushSender      push.Sender
-	pushConfigStore push.ConfigStore
-	agent           AgentExecutor
-	interceptors    []ExecutorContextInterceptor
+	taskStore          taskstore.Store
+	pushSender         push.Sender
+	pushConfigStore    push.ConfigStore
+	agent              AgentExecutor
+	interceptors       []ExecutorContextInterceptor
+	taskRetrySupported bool
 }
 
 var _ taskexec.Factory = (*factory)(nil)
@@ -177,10 +178,15 @@ type executionContext struct {
 func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, params *a2a.SendMessageRequest) (*executionContext, error) {
 	message := params.Message
 
-	taskStoreTask, err := f.taskStore.Get(ctx, tid)
-	if errors.Is(err, a2a.ErrTaskNotFound) && message.TaskID == "" {
+	if message.TaskID == "" && !f.taskRetrySupported {
 		return f.createNewExecutionContext(tid, params)
 	}
+
+	taskStoreTask, err := f.taskStore.Get(ctx, tid)
+	if message.TaskID == "" && errors.Is(err, a2a.ErrTaskNotFound) {
+		return f.createNewExecutionContext(tid, params)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("task loading failed: %w", err)
 	}

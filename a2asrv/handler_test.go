@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1231,38 +1232,64 @@ func TestRequestHandler_SendMessage_AgentExecutionFails(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_SendMessage_NoTaskCreated(t *testing.T) {
-	ctx := t.Context()
-	getCalled := 0
-	savedCalled := 0
-	mockStore := testutil.NewTestTaskStore()
-	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
-		getCalled += 1
-		return nil, a2a.ErrTaskNotFound
-	}
-	mockStore.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
-		savedCalled += 1
-		return taskstore.TaskVersionMissing, nil
-	}
+func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
+	for _, clusterMode := range []bool{false, true} {
+		name := "local"
+		if clusterMode {
+			name = "cluster"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			var getCalled atomic.Int32
+			savedCalled := 0
+			mockStore := testutil.NewTestTaskStore()
+			mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+				getCalled.Add(1)
+				return nil, a2a.ErrTaskNotFound
+			}
+			mockStore.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+				savedCalled += 1
+				return taskstore.TaskVersionMissing, nil
+			}
 
-	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
-	handler := NewHandler(executor, WithTaskStore(mockStore))
+			executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
+			var opts []RequestHandlerOption
+			if clusterMode {
+				opts = append(opts, WithClusterMode(ClusterConfig{
+					QueueManager: testutil.NewTestQueueManager(),
+					WorkQueue:    testutil.NewInMemoryWorkQueue(),
+					TaskStore:    mockStore,
+				}))
+			} else {
+				opts = append(opts, WithTaskStore(mockStore))
+			}
+			handler := NewHandler(executor, opts...)
 
-	result, gotErr := handler.SendMessage(ctx, &a2a.SendMessageRequest{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
-	})
-	if gotErr != nil {
-		t.Fatalf("SendMessage() error = %v, wantErr nil", gotErr)
-	}
-	if _, ok := result.(*a2a.Message); !ok {
-		t.Fatalf("SendMessage() = %v, want a2a.Message", result)
-	}
+			result, gotErr := handler.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
+			})
+			if gotErr != nil {
+				t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+			}
+			if _, ok := result.(*a2a.Message); !ok {
+				t.Fatalf("OnSendMessage() = %v, want a2a.Message", result)
+			}
 
-	if getCalled != 1 {
-		t.Fatalf("SendMessage() TaskStore.Get called %d times, want 1", getCalled)
-	}
-	if savedCalled > 0 {
-		t.Fatalf("SendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+			var wantGetCalls int32 = 0
+			if clusterMode {
+				// in cluster mode the first get call is performed on task submission to prevent work submission for
+				// tasks in finished state.
+				// the second get call is performed before starting an execution even when a message does not reference
+				// a task, because workqueue implementation can support retries
+				wantGetCalls = 2
+			}
+			if getCalled.Load() != wantGetCalls {
+				t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want %d", getCalled.Load(), wantGetCalls)
+			}
+			if savedCalled > 0 {
+				t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+			}
+		})
 	}
 }
 
