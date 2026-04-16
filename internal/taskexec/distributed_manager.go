@@ -16,6 +16,7 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -159,9 +160,11 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		CallContext:   m.encodeContext(ctx),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create work item: %w", err)
-	}
-	if taskID != req.ID {
+		// if cancelation lease is already taken we can tap into the running cancellation events
+		if !errors.Is(err, workqueue.ErrLeaseAlreadyTaken) {
+			return nil, fmt.Errorf("failed to create work item: %w", err)
+		}
+	} else if taskID != req.ID {
 		return nil, fmt.Errorf("bug: work-queue task id override is only allowed for executions")
 	}
 
