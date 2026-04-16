@@ -81,6 +81,19 @@ func TestPullQueue_MalformedPayloadCompletesAndContinues(t *testing.T) {
 	}
 }
 
+func TestPullQueue_HandlerMalformedPayloadCompletesMessage(t *testing.T) {
+	t.Parallel()
+
+	msg := newTestMsg(&Payload{Type: PayloadTypeExecute, TaskID: a2a.NewTaskID()})
+	queue := NewPullQueue(newFixedReader([]Message{msg}), nil)
+
+	queue.RegisterHandler(HandlerConfig{}, newStaticResultHandler(nil, fmt.Errorf("bad input: %w", ErrMalformedPayload)))
+
+	if res := msg.resolution(); res != msgResultCompleted {
+		t.Fatalf("msg.resolution = %q, want %q (ErrMalformedPayload should complete, not return)", res, msgResultCompleted)
+	}
+}
+
 func TestPullQueue_ReadErrorTriggersBackoff(t *testing.T) {
 	t.Parallel()
 
@@ -295,8 +308,8 @@ func TestPullQueue_DrainOnShutdown(t *testing.T) {
 	}()
 
 	select {
-	case _ = <-msg1.resChan:
-	case _ = <-msg2.resChan:
+	case <-msg1.resChan:
+	case <-msg2.resChan:
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -318,11 +331,9 @@ const (
 )
 
 type testMessage struct {
-	payload   *Payload
-	resChan   chan msgResolution
-	completed bool
-	returned  bool
-	interval  time.Duration
+	payload  *Payload
+	resChan  chan msgResolution
+	interval time.Duration
 }
 
 func newTestMsg(payload *Payload) *testMessage {
@@ -359,7 +370,6 @@ func newFixedReader(msgs []Message) *testReadWriter {
 	return &testReadWriter{
 		readFunc: func(ctx context.Context) (Message, error) {
 			if len(msgs) == 0 {
-				fmt.Println("queue closed")
 				return nil, ErrQueueClosed
 			}
 			msg := msgs[0]

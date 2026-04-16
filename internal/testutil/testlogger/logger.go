@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package testlogger provides test-scoped slog loggers that direct output to testing.T.
 package testlogger
 
 import (
@@ -28,7 +29,7 @@ func AttachToContext(t testing.TB) context.Context {
 	return log.AttachLogger(t.Context(), New(t))
 }
 
-// NewLogger delegates to [NewLeveled] passing debug as the minimum level.
+// New delegates to [NewLeveled] passing debug as the minimum level.
 func New(t testing.TB) *slog.Logger {
 	return NewLeveled(t, slog.LevelDebug)
 }

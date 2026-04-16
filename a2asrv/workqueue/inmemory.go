@@ -21,6 +21,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
+// InMemoryQueueConfig configures the in-memory [Queue] implementation.
 type InMemoryQueueConfig struct {
 	LeaseManager LeaseManager
 }

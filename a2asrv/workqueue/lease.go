@@ -34,7 +34,9 @@ var ErrLeaseAlreadyTaken = errors.New("lease for this type of job is already tak
 // return a TaskID different from the one in the [Payload] to support idempotency
 // (e.g. dedup by message ID and map to an existing TaskID).
 type Lease interface {
+	// TaskID returns the task identifier associated with the lease.
 	TaskID() a2a.TaskID
+	// Release releases the lease. Must be safe to call multiple times.
 	Release(context.Context)
 }
 
@@ -51,6 +53,7 @@ type Lease interface {
 // Acquire may inspect any field of [Payload] (e.g. for dedup by message ID).
 // Release must be safe to call multiple times (idempotent).
 type LeaseManager interface {
+	// Acquire attempts to acquire a lease for the given payload.
 	Acquire(context.Context, *Payload) (Lease, error)
 }
 
@@ -60,6 +63,7 @@ type inMemoryLeaseManager struct {
 	cancelations map[a2a.TaskID]struct{}
 }
 
+// NewInMemoryLeaseManager returns a [LeaseManager] that tracks leases in memory.
 func NewInMemoryLeaseManager() LeaseManager {
 	return &inMemoryLeaseManager{
 		executions:   make(map[a2a.TaskID]struct{}),

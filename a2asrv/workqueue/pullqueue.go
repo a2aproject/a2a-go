@@ -123,9 +123,8 @@ func (q *pullQueue) RegisterHandler(cfg HandlerConfig, handlerFn HandlerFn) {
 }
 
 func (q *pullQueue) handleMessage(ctx context.Context, msg Message, handlerFn HandlerFn) {
-	var err error
-
 	if q.config.BeforeExecutionCallback != nil {
+		var err error
 		ctx, err = q.config.BeforeExecutionCallback(ctx, msg)
 		if err != nil {
 			log.Debug(ctx, "before exec callback short-circuited execution", "cause", err)
@@ -140,18 +139,18 @@ func (q *pullQueue) handleMessage(ctx context.Context, msg Message, handlerFn Ha
 	result, handleErr := handlerFn(ctx, msg.Payload())
 
 	if q.config.AfterExecutionCallback != nil {
-		if err = q.config.AfterExecutionCallback(ctx, msg, result, handleErr); err != nil {
+		if err := q.config.AfterExecutionCallback(ctx, msg, result, handleErr); err != nil {
 			log.Debug(ctx, "after exec callback handled message", "cause", err)
 			return
 		}
 	}
 
-	if errors.Is(err, ErrMalformedPayload) {
+	if errors.Is(handleErr, ErrMalformedPayload) {
 		// TODO: dead-letter queue Writer. If fails - return message, else - mark completed
 		if completeErr := msg.Complete(ctx); completeErr != nil {
-			log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", err, "error", completeErr)
+			log.Warn(ctx, "failed to mark malformed item as complete", "payload", msg.Payload(), "payload_error", handleErr, "error", completeErr)
 		} else {
-			log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", err)
+			log.Info(ctx, "malformed item marked as complete", "payload", msg.Payload(), "payload_error", handleErr)
 		}
 		return
 	}

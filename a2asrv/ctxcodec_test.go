@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"encoding/json"
 	"iter"
 	"testing"
 
@@ -25,6 +26,45 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	codec := &callCtxCodec{}
+
+	svcParams := NewServiceParams(map[string][]string{"x-api-key": {"key1", "key2"}, "x-region": {"us-east-1"}})
+	ctx, callCtx := NewCallContext(t.Context(), svcParams)
+	callCtx.User = &User{Name: "alice", Authenticated: true, Attributes: map[string]any{"role": "admin"}}
+	callCtx.tenant = "acme"
+
+	encoded := codec.Encode(ctx)
+
+	// Simulate JSON serialization round-trip (as a real queue backend would do).
+	jsonBytes, err := json.Marshal(encoded)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var deserialized map[string]any
+	if err := json.Unmarshal(jsonBytes, &deserialized); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	decodedCtx := codec.Decode(context.Background(), deserialized)
+	got, ok := CallContextFrom(decodedCtx)
+	if !ok {
+		t.Fatalf("CallContextFrom() = _, false, want true")
+	}
+
+	if diff := cmp.Diff(callCtx.User, got.User); diff != "" {
+		t.Errorf("callCtxCodec.Decode() user mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(callCtx.ServiceParams().kv, got.ServiceParams().kv); diff != "" {
+		t.Errorf("callCtxCodec.Decode() svcParams mismatch (-want +got):\n%s", diff)
+	}
+	if callCtx.Tenant() != got.Tenant() {
+		t.Errorf("callCtxCodec.Decode() tenant = %q, want %q", got.Tenant(), callCtx.Tenant())
+	}
+}
 
 func TestCallContextPropagation(t *testing.T) {
 	t.Parallel()

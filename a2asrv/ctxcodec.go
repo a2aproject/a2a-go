@@ -16,6 +16,9 @@ package a2asrv
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 const (
@@ -29,7 +32,7 @@ const (
 
 type callCtxCodec struct{}
 
-// Encode implements taskexec ContextCodec.Decode.
+// Encode implements taskexec ContextCodec.Encode.
 func (c *callCtxCodec) Encode(ctx context.Context) map[string]any {
 	data := map[string]any{}
 	if cc, ok := CallContextFrom(ctx); ok {
@@ -49,28 +52,57 @@ func (c *callCtxCodec) Encode(ctx context.Context) map[string]any {
 // Decode implements taskexec ContextCodec.Decode.
 func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) context.Context {
 	var svcParams *ServiceParams
-	if rawParams, ok := data[svcParamsKey].(map[string][]string); ok {
-		svcParams = NewServiceParams(rawParams)
+
+	if rawParams, ok := data[svcParamsKey]; ok {
+		if typedParams, ok := rawParams.(map[string][]string); ok {
+			svcParams = NewServiceParams(typedParams)
+		} else if anyParams, ok := rawParams.(map[string]any); ok {
+			// Handle type-erasure map[string]any with []any values.
+			converted := make(map[string][]string, len(anyParams))
+			for k, v := range anyParams {
+				if arr, ok := v.([]any); ok {
+					strs := make([]string, 0, len(arr))
+					for _, elem := range arr {
+						if s, ok := elem.(string); ok {
+							strs = append(strs, s)
+						}
+					}
+					converted[k] = strs
+				}
+			}
+			svcParams = NewServiceParams(converted)
+		} else {
+			log.Warn(ctx, "unexpected service params type", "type", fmt.Sprintf("%T", rawParams))
+		}
 	}
+
 	ctx, callCtx := NewCallContext(ctx, svcParams)
 
 	callCtx.User = &User{}
-	if authInfo, ok := data[authKey].(map[string]any); ok {
-		user := &User{}
-		if userName, ok := authInfo[authNameKey].(string); ok {
-			user.Name = userName
+	if d, ok := data[authKey]; ok {
+		if authInfo, ok := d.(map[string]any); ok {
+			user := &User{}
+			if userName, ok := authInfo[authNameKey].(string); ok {
+				user.Name = userName
+			}
+			if authenticated, ok := authInfo[authStatusKey].(bool); ok {
+				user.Authenticated = authenticated
+			}
+			if attributes, ok := authInfo[authAttributesKey].(map[string]any); ok {
+				user.Attributes = attributes
+			}
+			callCtx.User = user
+		} else {
+			log.Warn(ctx, "unexpected auth type", "type", fmt.Sprintf("%T", d))
 		}
-		if authenticated, ok := authInfo[authStatusKey].(bool); ok {
-			user.Authenticated = authenticated
-		}
-		if attributes, ok := authInfo[authAttributesKey].(map[string]any); ok {
-			user.Attributes = attributes
-		}
-		callCtx.User = user
 	}
 
-	if t, ok := data[tenantKey].(string); ok {
-		callCtx.tenant = t
+	if d, ok := data[tenantKey]; ok {
+		if t, ok := d.(string); ok {
+			callCtx.tenant = t
+		} else {
+			log.Warn(ctx, "unexpected tenant type", "type", fmt.Sprintf("%T", d))
+		}
 	}
 
 	return ctx
