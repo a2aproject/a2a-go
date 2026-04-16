@@ -375,19 +375,16 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 		return
 	}
 
-	config := &a2a.PushConfig{}
-	if err := json.NewDecoder(req.Body).Decode(config); err != nil {
+	request := &a2a.CreateTaskPushConfigRequest{}
+	if err := json.NewDecoder(req.Body).Decode(request); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
 
-	params := &a2a.CreateTaskPushConfigRequest{
-		TaskID: a2a.TaskID(taskID),
-		Config: *config,
-	}
-	fillTenant(ctx, &params.Tenant)
+	request.TaskID = a2a.TaskID(taskID)
+	fillTenant(ctx, &request.Tenant)
 
-	result, err := h.handler.CreateTaskPushConfig(ctx, params)
+	result, err := h.handler.CreateTaskPushConfig(ctx, request)
 
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))

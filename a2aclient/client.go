@@ -40,6 +40,9 @@ type Config struct {
 	// If there's no overlap in supported Transport Factory will return an error on Client
 	// creation attempt.
 	PreferredTransports []a2a.TransportProtocol
+	// DisableTenantPropagation disables tenant propagation.
+	// If true, the client will not attach tenant from context to the request.
+	DisableTenantPropagation bool
 }
 
 // Client represents a transport-agnostic implementation of A2A client.

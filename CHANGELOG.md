@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.0](https://github.com/a2aproject/a2a-go/compare/v2.1.0...v2.2.0) (2026-04-10)
+
+
+### Features
+
+* add tenant propagation ([#316](https://github.com/a2aproject/a2a-go/issues/316)) ([26d2ced](https://github.com/a2aproject/a2a-go/commit/26d2cedee0b81f9da28d693005835ef3041c91b7))
+* cli ([#307](https://github.com/a2aproject/a2a-go/issues/307)) ([e04fc68](https://github.com/a2aproject/a2a-go/commit/e04fc68edbdb9fcf8fc963307b631dc3fcd7363d))
+
+
+### Bug Fixes
+
+* incorrect decoding of CreateTaskPushConfig request body ([#314](https://github.com/a2aproject/a2a-go/issues/314)) ([769dfe4](https://github.com/a2aproject/a2a-go/commit/769dfe4e9ecc16b37cf18f249d41c482e93dec55))
+
 ## [2.1.0](https://github.com/a2aproject/a2a-go/compare/v2.0.1...v2.1.0) (2026-04-01)
 
 

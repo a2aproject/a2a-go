@@ -288,6 +288,11 @@ func (h *InterceptedHandler) withLoggerContext(ctx context.Context, attrs ...any
 // attachMethodCallContext is a private utility function which modifies CallContext.method if a CallContext
 // was passed by a transport implementation or initializes a new CallContext with the provided method.
 func attachMethodCallContext(ctx context.Context, method string, tenant string) (context.Context, *CallContext) {
+	// AttachTenant needed for a2aclient package, which is not aware of CallContext.
+	if tenant != "" {
+		ctx = a2a.AttachTenant(ctx, tenant)
+	}
+
 	callCtx, ok := CallContextFrom(ctx)
 	if !ok {
 		ctx, callCtx = NewCallContext(ctx, nil)

@@ -96,7 +96,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		return nil, err
 	}
 
-	conn, selected, err := createTransport(ctx, candidates, card)
+	conn, selected, err := createTransport(ctx, candidates, card, &f.config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
@@ -124,7 +124,7 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		return nil, err
 	}
 
-	conn, selected, err := createTransport(ctx, candidates, nil)
+	conn, selected, err := createTransport(ctx, candidates, nil, &f.config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a connection: %w", err)
 	}
@@ -140,7 +140,7 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 
 // createTransport attempts to connect using the provided transports, returning the first
 // one that succeeds. If all transports fail, it returns an error.
-func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard) (Transport, *transportCandidate, error) {
+func createTransport(ctx context.Context, candidates []transportCandidate, card *a2a.AgentCard, config *Config) (Transport, *transportCandidate, error) {
 	if len(candidates) == 0 {
 		return nil, nil, fmt.Errorf("empty list of transport candidates was provided")
 	}
@@ -164,9 +164,7 @@ func createTransport(ctx context.Context, candidates []transportCandidate, card 
 		log.Info(ctx, "some transports failed to connect", "failures", failures)
 	}
 
-	if selected.endpoint.Tenant != "" {
-		transport = &tenantTransportDecorator{base: transport, tenant: selected.endpoint.Tenant}
-	}
+	transport = &tenantTransportDecorator{base: transport, tenant: selected.endpoint.Tenant, config: config}
 
 	return transport, selected, nil
 }
