@@ -459,6 +459,101 @@ func TestParseErrorBytes(t *testing.T) {
 	})
 }
 
+func TestParseStreamResponse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("task event", func(t *testing.T) {
+		data := []byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`)
+		event, err := ParseStreamResponse(data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		task, ok := event.(*a2a.Task)
+		if !ok {
+			t.Fatalf("got event type %T, want *a2a.Task", event)
+		}
+		if task.ID != "task-123" {
+			t.Fatalf("got task ID %s, want task-123", task.ID)
+		}
+	})
+
+	t.Run("message event", func(t *testing.T) {
+		data := []byte(`{"message":{"messageId":"msg-1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
+		event, err := ParseStreamResponse(data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		if _, ok := event.(*a2a.Message); !ok {
+			t.Fatalf("got event type %T, want *a2a.Message", event)
+		}
+	})
+
+	t.Run("status update event", func(t *testing.T) {
+		data := []byte(`{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"TASK_STATE_COMPLETED"}}}`)
+		event, err := ParseStreamResponse(data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		if _, ok := event.(*a2a.TaskStatusUpdateEvent); !ok {
+			t.Fatalf("got event type %T, want *a2a.TaskStatusUpdateEvent", event)
+		}
+	})
+
+	t.Run("artifact update event", func(t *testing.T) {
+		data := []byte(`{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-1","parts":[{"text":"x"}]}}}`)
+		event, err := ParseStreamResponse(data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		if _, ok := event.(*a2a.TaskArtifactUpdateEvent); !ok {
+			t.Fatalf("got event type %T, want *a2a.TaskArtifactUpdateEvent", event)
+		}
+	})
+
+	t.Run("error event", func(t *testing.T) {
+		data := []byte(makeStatusBody(400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
+		event, err := ParseStreamResponse(data)
+		if event != nil {
+			t.Fatalf("got event %v, want nil", event)
+		}
+		if !errors.Is(err, a2a.ErrInvalidRequest) {
+			t.Fatalf("got error %v, want %v", err, a2a.ErrInvalidRequest)
+		}
+	})
+
+	t.Run("unknown type", func(t *testing.T) {
+		data := []byte(`{"foo":"bar"}`)
+		event, err := ParseStreamResponse(data)
+		if event != nil {
+			t.Fatalf("got event %v, want nil", event)
+		}
+		if err == nil {
+			t.Fatal("ParseStreamResponse() returned nil error, want error")
+		}
+	})
+
+	t.Run("multiple discriminators", func(t *testing.T) {
+		data := []byte(`{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}},"message":{"messageId":"m1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
+		event, err := ParseStreamResponse(data)
+		if event != nil {
+			t.Fatalf("got event %v, want nil", event)
+		}
+		if err == nil {
+			t.Fatal("ParseStreamResponse() returned nil error, want error")
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		event, err := ParseStreamResponse([]byte(`not json`))
+		if event != nil {
+			t.Fatalf("got event %v, want nil", event)
+		}
+		if err == nil {
+			t.Fatal("ParseStreamResponse() returned nil error, want error")
+		}
+	})
+}
+
 func TestToRESTError_NonStringDetails(t *testing.T) {
 	t.Parallel()
 
