@@ -145,7 +145,11 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 			n++
 		}
 		if n == 0 {
-			return fmt.Errorf("unknown security scheme %s", name)
+			var raw map[SecuritySchemeName]json.RawMessage
+			if err := json.Unmarshal(b, &raw); err != nil {
+				return fmt.Errorf("unknown security scheme for %s", name)
+			}
+			return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(raw[name])))
 		}
 		if n != 1 {
 			return fmt.Errorf("expected exactly one security scheme type for %s, got %d", name, n)
@@ -322,7 +326,13 @@ func (s *OAuth2SecurityScheme) UnmarshalJSON(b []byte) error {
 		n++
 	}
 	if n == 0 {
-		return fmt.Errorf("unknown OAuth flow type")
+		var raw struct {
+			Flows json.RawMessage `json:"flows"`
+		}
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return fmt.Errorf("unknown OAuth flow")
+		}
+		return fmt.Errorf("unknown OAuth flow type: %v", jsonKeys(raw.Flows))
 	}
 	if n != 1 {
 		return fmt.Errorf("expected exactly one OAuth flow, got %d", n)

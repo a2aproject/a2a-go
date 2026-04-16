@@ -138,7 +138,7 @@ func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 		n++
 	}
 	if n == 0 {
-		return fmt.Errorf("unknown event type: %s", data)
+		return fmt.Errorf("unknown event type: %v", jsonKeys(data))
 	}
 	if n != 1 {
 		return fmt.Errorf("expected exactly one event type, got %d", n)
@@ -726,19 +726,22 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	if wrapper.Text != nil {
 		content = *wrapper.Text
 		n++
-	} else if wrapper.Raw != nil {
+	}
+	if wrapper.Raw != nil {
 		content = *wrapper.Raw
 		n++
-	} else if wrapper.Data != nil {
+	}
+	if wrapper.Data != nil {
 		content = Data{Value: *wrapper.Data}
 		n++
-	} else if wrapper.URL != nil && *wrapper.URL != "" {
+	}
+	if wrapper.URL != nil && *wrapper.URL != "" {
 		content = *wrapper.URL
 		n++
 	}
 
 	if n == 0 {
-		return fmt.Errorf("unknown part content type")
+		return fmt.Errorf("unknown part content type: %v", jsonKeys(b))
 	}
 	if n > 1 {
 		return fmt.Errorf("expected exactly one of text, raw, data, or url, got %d", n)
@@ -903,4 +906,16 @@ type SubscribeToTaskRequest struct {
 
 	// ID is the ID of the task to subscribe to.
 	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+}
+
+func jsonKeys(data []byte) []string {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	return keys
 }
