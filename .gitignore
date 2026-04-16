@@ -63,3 +63,4 @@ aiwt-*
 itk/instruction.proto
 itk/pb
 itk/a2a-samples
+itk/logs

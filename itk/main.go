@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"iter"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -276,6 +279,27 @@ func main() {
 func run() error {
 	flag.Parse()
 
+	logLevelStr := os.Getenv("ITK_LOG_LEVEL")
+	if logLevelStr == "" {
+		logLevelStr = "INFO"
+	}
+	var level slog.Level
+	switch strings.ToUpper(logLevelStr) {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "INFO":
+		level = slog.LevelInfo
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+
 	jsonRPCV0Addr := fmt.Sprintf("http://127.0.0.1:%d", *httpPort)
 
 	agentCard := &a2a.AgentCard{
@@ -310,7 +334,10 @@ func run() error {
 	}
 
 	executor := &V10AgentExecutor{}
-	requestHandler := a2asrv.NewHandler(executor)
+	requestHandler := a2asrv.NewHandler(
+		executor,
+		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
+	)
 
 	// Servers
 	mux := http.NewServeMux()
@@ -324,7 +351,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", *httpPort),
-		Handler:           mux,
+		Handler:           loggingMiddleware(logger, mux),
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
@@ -342,7 +369,10 @@ func run() error {
 		return nil
 	})
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(unaryLoggingInterceptor(logger)),
+		grpc.StreamInterceptor(streamLoggingInterceptor(logger)),
+	)
 	a2agrpc.NewHandler(requestHandler).RegisterWith(grpcServer)
 	g.Go(func() error {
 		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *grpcPort))
@@ -368,4 +398,36 @@ func run() error {
 	})
 
 	return g.Wait()
+}
+
+func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var bodyBytes []byte
+		if r.Body != nil {
+			var err error
+			bodyBytes, err = io.ReadAll(r.Body)
+			if err != nil {
+				logger.Error("Failed to read request body", "error", err)
+				http.Error(w, "Failed to read request body", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+		logger.Info("Incoming request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr, "body", string(bodyBytes))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func unaryLoggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		logger.Info("gRPC Unary Call", "method", info.FullMethod)
+		return handler(ctx, req)
+	}
+}
+
+func streamLoggingInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		logger.Info("gRPC Stream Call", "method", info.FullMethod)
+		return handler(srv, ss)
+	}
 }
