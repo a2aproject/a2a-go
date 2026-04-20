@@ -16,7 +16,6 @@
 package rest
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -179,16 +178,16 @@ var errToDetails = map[error]errorDetails{
 	},
 }
 
-// errorBodyJSON is the JSON shape of the inner error object in a google.rpc.Status response.
-type errorBodyJSON struct {
+// ErrorBodyJSON is the JSON shape of the inner error object in a google.rpc.Status response.
+type ErrorBodyJSON struct {
 	Code    int               `json:"code"`
 	Status  string            `json:"status"`
 	Message string            `json:"message"`
 	Details []json.RawMessage `json:"details"`
 }
 
-// convertErrorBody converts a parsed google.rpc.Status error body into an a2a error.
-func convertErrorBody(body *errorBodyJSON) error {
+// ConvertErrorBody converts a parsed google.rpc.Status error body into an a2a error.
+func ConvertErrorBody(body *ErrorBodyJSON) error {
 	baseErr := a2a.ErrInternalError
 	details := map[string]any{}
 	for _, raw := range body.Details {
@@ -232,33 +231,13 @@ func ToA2AError(resp *http.Response) error {
 	}
 
 	var body struct {
-		Error errorBodyJSON `json:"error"`
+		Error ErrorBodyJSON `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return fmt.Errorf("failed to decode error response: %w", err)
 	}
 
-	return convertErrorBody(&body.Error)
-}
-
-// ParseErrorBytes attempts to parse raw JSON bytes as a google.rpc.Status error.
-// Returns the corresponding A2A error if the bytes contain an "error" key, nil otherwise.
-// If the "error" key is present but malformed, it returns [a2a.ErrInternalError].
-func ParseErrorBytes(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil
-	}
-	rawErr, hasError := raw["error"]
-	if !hasError || bytes.Equal(rawErr, []byte("null")) {
-		return nil
-	}
-	// "error" key is present and non-null — this is an error event.
-	var body errorBodyJSON
-	if err := json.Unmarshal(rawErr, &body); err != nil {
-		return a2a.ErrInternalError
-	}
-	return convertErrorBody(&body)
+	return ConvertErrorBody(&body.Error)
 }
 
 // streamResponse is the JSON shape of a REST SSE stream response.
@@ -267,7 +246,7 @@ type streamResponse struct {
 	Task           *a2a.Task                    `json:"task,omitempty"`
 	StatusUpdate   *a2a.TaskStatusUpdateEvent   `json:"statusUpdate,omitempty"`
 	ArtifactUpdate *a2a.TaskArtifactUpdateEvent `json:"artifactUpdate,omitempty"`
-	Error          *errorBodyJSON               `json:"error,omitempty"`
+	Error          *ErrorBodyJSON               `json:"error,omitempty"`
 }
 
 // ParseStreamResponse parses raw SSE stream data in a single JSON unmarshal.
@@ -297,7 +276,7 @@ func ParseStreamResponse(data []byte) (a2a.Event, error) {
 		n++
 	}
 	if wrapper.Error != nil {
-		errResp = convertErrorBody(wrapper.Error)
+		errResp = ConvertErrorBody(wrapper.Error)
 		n++
 	}
 	if n == 0 {
