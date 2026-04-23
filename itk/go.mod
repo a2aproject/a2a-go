@@ -10,7 +10,7 @@ require (
 )
 
 require (
-	github.com/a2aproject/a2a-go v0.3.12 // indirect
+	github.com/a2aproject/a2a-go v0.3.14-0.20260404065426-6a9878f8f8a8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.48.0 // indirect

@@ -52,20 +52,32 @@ func TestContentPartsJSONCodec(t *testing.T) {
 	jsons := []string{
 		`{"text":"hello, world"}`,
 		`{"data":{"foo":"bar"}}`,
-		`{"filename":"foo","url":"https://cats.com/1.png"}`,
-		`{"filename":"foo","mediaType":"image/png","raw":"//4="}`,
-		`{"metadata":{"foo":"bar"},"text":"42"}`,
+		`{"url":"https://cats.com/1.png","filename":"foo"}`,
+		`{"raw":"//4=","filename":"foo","mediaType":"image/png"}`,
+		`{"text":"42","metadata":{"foo":"bar"}}`,
 	}
 
 	wantJSON := fmt.Sprintf("[%s]", strings.Join(jsons, ","))
 	if got := mustMarshal(t, parts); got != wantJSON {
-		t.Fatalf("Marshal() failed:\nwant %v\ngot: %s", wantJSON, got)
+		t.Fatalf("Marshal() failed:\ngot: %s \nwant: %s", got, wantJSON)
 	}
 
 	var got ContentParts
 	mustUnmarshal(t, []byte(wantJSON), &got)
 	if !reflect.DeepEqual(got, parts) {
-		t.Fatalf("Unmarshal() failed:\nwant %#v\ngot: %#v", parts, got)
+		t.Fatalf("Unmarshal() failed:\ngot: %#v \nwant: %#v", got, parts)
+	}
+}
+
+func TestContentPartsJSONCodecUnknownType(t *testing.T) {
+	wrongJSON := `[{"unknown":"hello, world"}]`
+	var gotWrong ContentParts
+	err := json.Unmarshal([]byte(wrongJSON), &gotWrong)
+	if err == nil {
+		t.Fatalf("Unmarshal() should have failed with unknown part content type")
+	}
+	if err.Error() != "unknown part content type: [unknown]" {
+		t.Fatalf("got: %v, want: %v", err, "unknown part content type: [unknown]")
 	}
 }
 
@@ -97,14 +109,45 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	var decodedJSON NamedSecuritySchemes
 	mustUnmarshal(t, []byte(wantJSON), &decodedJSON)
 	if !reflect.DeepEqual(decodedJSON, schemes) {
-		t.Fatalf("Unmarshal() failed:\nwant %+v\ngot: %s", schemes, decodedJSON)
+		t.Fatalf("Unmarshal() failed:\ngot: %s \nwant: %s", decodedJSON, schemes)
 	}
 
 	encodedSchemes := mustMarshal(t, &schemes)
 	var decodedBack NamedSecuritySchemes
 	mustUnmarshal(t, []byte(encodedSchemes), &decodedBack)
 	if !reflect.DeepEqual(decodedJSON, decodedBack) {
-		t.Fatalf("Decoding back failed:\nwant %+v\ngot: %s", decodedJSON, decodedBack)
+		t.Fatalf("Decoding back failed:\ngot: %s \nwant: %s", decodedBack, decodedJSON)
+	}
+}
+
+func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantError string
+	}{
+		{
+			name:      "unknown security scheme type",
+			json:      `{"name1":{"unknown":"abc"}}`,
+			wantError: "unknown security scheme type for name1: [unknown]",
+		},
+		{
+			name:      "unknown oauth flow type",
+			json:      `{"name2":{"oauth2SecurityScheme":{"oauth2MetadataUrl": "https://test.com", "description": "test","flows":{"unknown":{"scopes":{"email":"read user emails"},"tokenUrl":"url"}}}}}`,
+			wantError: "unknown OAuth flow type: [unknown]",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotWrong NamedSecuritySchemes
+			err := json.Unmarshal([]byte(tc.json), &gotWrong)
+			if err == nil {
+				t.Fatalf("Unmarshal() should have failed with %s", tc.name)
+			}
+			if err.Error() != tc.wantError {
+				t.Fatalf("got: %v, want: %v", err, tc.wantError)
+			}
+		})
 	}
 }
 
@@ -261,7 +304,7 @@ func TestAgentCardParsing(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
+		t.Errorf("AgentCard codec diff(+got -want):\n%v", diff)
 	}
 }
 

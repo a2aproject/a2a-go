@@ -184,6 +184,10 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				yield(nil, err)
 				return
 			}
+			if restErr := parseErrorBytes(data); restErr != nil {
+				yield(nil, restErr)
+				return
+			}
 			// v0.3 SSE events use snake_case keys; transform to camelCase
 			// before legacy unmarshal.
 			camelData, err := transformJSONKeys(data, snakeToCamel)
@@ -440,4 +444,23 @@ func (t *restCompatTransport) GetExtendedAgentCard(ctx context.Context, params a
 // Destroy implements [a2aclient.Transport].
 func (t *restCompatTransport) Destroy() error {
 	return nil
+}
+
+// parseErrorBytes attempts to parse raw JSON bytes as a google.rpc.Status error.
+// Returns the corresponding A2A error if the bytes contain an "error" key, nil otherwise.
+// If the "error" key is present but malformed, it returns [a2a.ErrInternalError].
+func parseErrorBytes(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	rawErr, hasError := raw["error"]
+	if !hasError || bytes.Equal(rawErr, []byte("null")) {
+		return nil
+	}
+	var body rest.ErrorBodyJSON
+	if err := json.Unmarshal(rawErr, &body); err != nil {
+		return a2a.ErrInternalError
+	}
+	return rest.ConvertErrorBody(&body)
 }

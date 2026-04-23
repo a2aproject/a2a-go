@@ -120,7 +120,7 @@ func TestEventMarshalJSON(t *testing.T) {
 	}
 }
 
-// TestUnmarshalEventJSON tests that UnmarshalEventJSON correctly discriminates based on 'kind'.
+// TestUnmarshalEventJSON tests that "oneof" convention JSON is unmarshaled into the correct Event types.
 func TestUnmarshalEventJSON(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -130,7 +130,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 	}{
 		{
 			name:     "Message",
-			json:     `{"message":{"messageId":"msg-123","role":"ROLE_USER","parts":[{"kind":"text","text":"hello"}]}}`,
+			json:     `{"message":{"messageId":"msg-123","role":"ROLE_USER","parts":[{"text":"hello"}]}}`,
 			wantType: "*a2a.Message",
 			checkFunc: func(t *testing.T, event Event) {
 				msg, ok := event.(*Message)
@@ -181,7 +181,7 @@ func TestUnmarshalEventJSON(t *testing.T) {
 		},
 		{
 			name:     "TaskArtifactUpdateEvent",
-			json:     `{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-123","parts":[{"kind":"text","text":"result"}]}}}`,
+			json:     `{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-123","parts":[{"text":"result"}]}}}`,
 			wantType: "*a2a.TaskArtifactUpdateEvent",
 			checkFunc: func(t *testing.T, event Event) {
 				artifactUpdate, ok := event.(*TaskArtifactUpdateEvent)
@@ -230,12 +230,17 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 		{
 			name:    "unknown type",
 			json:    `{"unknown": {"id":"123"}}`,
-			wantErr: "unknown event type:",
+			wantErr: "unknown event type: [unknown]",
 		},
 		{
 			name:    "malformed task",
 			json:    `{"task":{"id":123}}`,
-			wantErr: "failed to unmarshal Task event",
+			wantErr: "failed to unmarshal event",
+		},
+		{
+			name:    "more than one event type",
+			json:    `{"task":{"id":"123"}, "message":{"id":"123"}}`,
+			wantErr: "expected exactly one event type, got 2",
 		},
 	}
 

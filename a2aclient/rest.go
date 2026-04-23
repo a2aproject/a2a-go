@@ -173,12 +173,11 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 				return
 			}
 
-			var sr a2a.StreamResponse
-			if err := json.Unmarshal(data, &sr); err != nil {
+			event, err := rest.ParseStreamResponse(data)
+			if err != nil {
 				yield(nil, err)
 				return
 			}
-			event := sr.Event
 
 			if !yield(event, nil) {
 				return

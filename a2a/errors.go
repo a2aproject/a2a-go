@@ -82,8 +82,12 @@ var (
 
 // ErrorReason returns the reason string for an error.
 func ErrorReason(err error) (string, bool) {
-	reason, exists := errorReason[err]
-	return reason, exists
+	for sentinel, reason := range errorReason {
+		if errors.Is(err, sentinel) {
+			return reason, true
+		}
+	}
+	return "", false
 }
 
 var errorReason = map[error]string{
