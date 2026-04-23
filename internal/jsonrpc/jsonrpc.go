@@ -19,8 +19,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/errordetails"
 )
 
 // JSON-RPC 2.0 protocol constants
@@ -48,9 +51,9 @@ const (
 // TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
 // This needs to be implemented across all transports (currently not in grpc either).
 type Error struct {
-	Code    int            `json:"code"`
-	Message string         `json:"message"`
-	Data    map[string]any `json:"data,omitempty"`
+	Code    int                   `json:"code"`
+	Message string                `json:"message"`
+	Data    []*errordetails.Typed `json:"data,omitempty"`
 }
 
 // Error implements the error interface for jsonrpcError.
@@ -81,8 +84,11 @@ var codeToError = map[int]error{
 	-31403: a2a.ErrUnauthorized,
 }
 
-// ToA2AError converts a JSON-RPC error to an [a2a.Error].
-func (e *Error) ToA2AError() error {
+// FromJSONRPCError converts a JSON-RPC error to an [a2a.Error].
+func FromJSONRPCError(e *Error) error {
+	if e == nil {
+		return nil
+	}
 	err, ok := codeToError[e.Code]
 	if !ok {
 		err = a2a.ErrInternalError
@@ -93,49 +99,81 @@ func (e *Error) ToA2AError() error {
 		msg = err.Error()
 	}
 
+	var typedDetails []*errordetails.Typed
+	firstStruct := true
+
 	result := a2a.NewError(err, msg)
-	if len(e.Data) > 0 {
-		result = result.WithDetails(e.Data)
+	for _, d := range e.Data {
+		if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
+			if m, ok := d.Value["metadata"].(map[string]string); ok {
+				result = result.WithErrorInfoMeta(m)
+			}
+		} else {
+			if firstStruct {
+				result = result.WithDetails(d.Value)
+				firstStruct = false
+			}
+			typedDetails = append(typedDetails, d)
+		}
 	}
+	result.TypedDetails = append(result.TypedDetails, typedDetails...)
 	return result
 }
 
 // ToJSONRPCError converts an error to a JSON-RPC [Error].
 func ToJSONRPCError(err error) *Error {
-	jsonrpcErr := &Error{}
+	if err == nil {
+		return nil
+	}
+	var jsonrpcErr *Error
 	if errors.As(err, &jsonrpcErr) {
 		return jsonrpcErr
 	}
 
+	code := -32603
+	reason := "INTERNAL_ERROR"
+	var data []*errordetails.Typed
+
 	var a2aErr *a2a.Error
-	if errors.As(err, &a2aErr) {
-		code := -32603
-		for c, target := range codeToError {
-			if errors.Is(a2aErr.Err, target) {
-				code = c
-				break
+	metadata := map[string]string{
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	for c, target := range codeToError {
+		if errors.Is(err, target) {
+			code = c
+			if r, ok := a2a.ErrorReason(target); ok {
+				reason = r
 			}
-		}
-		return &Error{
-			Code:    code,
-			Message: a2aErr.Error(),
-			Data:    a2aErr.Details,
+			break
 		}
 	}
 
-	for code, a2aErr := range codeToError {
-		if errors.Is(err, a2aErr) {
-			return &Error{
-				Code:    code,
-				Message: a2aErr.Error(),
-				Data:    map[string]any{"error": err.Error()},
+	if errors.As(err, &a2aErr) {
+		if len(a2aErr.Details) > 0 {
+			data = append(data, errordetails.NewTyped("google.protobuf.Struct", a2aErr.Details))
+		}
+		for _, d := range a2aErr.TypedDetails {
+			if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
+				if m, ok := d.Value["metadata"].(map[string]string); ok {
+					maps.Copy(metadata, m)
+				}
+			} else {
+				data = append(data, d)
 			}
 		}
 	}
+
+	data = append(data, errordetails.NewTyped("type.googleapis.com/google.rpc.ErrorInfo", map[string]any{
+		"reason":   reason,
+		"domain":   a2a.PROTOCOL_DOMAIN,
+		"metadata": metadata,
+	}))
+
 	return &Error{
-		Code:    -32603,
-		Message: a2a.ErrInternalError.Error(),
-		Data:    map[string]any{"error": err.Error()},
+		Code:    code,
+		Message: err.Error(),
+		Data:    data,
 	}
 }
 

@@ -130,7 +130,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}
 
 	if resp.Error != nil {
-		return nil, resp.Error.ToA2AError()
+		return nil, jsonrpc.FromJSONRPCError(resp.Error)
 	}
 
 	return resp.Result, nil
@@ -171,7 +171,7 @@ func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 				return
 			}
 			if resp.Error != nil {
-				yield(nil, resp.Error.ToA2AError())
+				yield(nil, jsonrpc.FromJSONRPCError(resp.Error))
 				return
 			}
 			if !yield(resp.Result, nil) {

@@ -20,6 +20,9 @@ import (
 	"fmt"
 )
 
+// PROTOCOL_DOMAIN is the domain used for A2A protocol.
+const PROTOCOL_DOMAIN = "a2a-protocol.org"
+
 // SecurityRequirements describes a set of security requirements that must be present on a request.
 // For example, to specify that mutual TLS AND an oauth2 token for specific scopes is required, the
 // following requirements object needs to be created:
