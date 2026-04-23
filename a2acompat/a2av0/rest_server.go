@@ -227,7 +227,7 @@ func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.E
 	}
 	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error)
+	sseChan, panicChan := make(chan []byte), make(chan error, 1)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

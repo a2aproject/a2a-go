@@ -584,6 +584,21 @@ func FromV1TaskPushConfig(c *a2a.TaskPushConfig) (*a2alegacy.TaskPushConfig, err
 	return res, nil
 }
 
+// ToV1TaskPushConfigs converts multiple legacy task push configs to v1 task push configs.
+func ToV1TaskPushConfigs(cs []*a2alegacy.TaskPushConfig) ([]*a2a.TaskPushConfig, error) {
+	var res []*a2a.TaskPushConfig
+	for _, c := range cs {
+		v1, err := ToV1TaskPushConfig(c)
+		if err != nil {
+			return nil, err
+		}
+		if v1 != nil {
+			res = append(res, v1)
+		}
+	}
+	return res, nil
+}
+
 // FromV1TaskPushConfigs converts multiple v1 task push configs to legacy task push configs.
 func FromV1TaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*a2alegacy.TaskPushConfig, error) {
 	var res []*a2alegacy.TaskPushConfig

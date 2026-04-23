@@ -60,7 +60,7 @@ func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
 
 	coreParts, err := ToV1Parts(compatParts)
 	if err != nil {
-		t.Fatalf("toCoreParts failed: %v", err)
+		t.Fatalf("ToV1Parts() error = %v", err)
 	}
 
 	if len(coreParts) != 1 {
