@@ -201,7 +201,8 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 }
 
 // FromRESTError converts an HTTP error response in google.rpc.Status format to an a2a error.
-func FromRESTError(resp *http.Response) error {	contentType := resp.Header.Get("Content-Type")
+func FromRESTError(resp *http.Response) error {
+	contentType := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "application/json") {
 		return a2a.ErrServerError
 	}
