@@ -106,7 +106,7 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 				"str": "hello",
 			}),
 			inputTypedDetails: []*errordetails.Typed{
-				errordetails.NewTyped("google.protobuf.Struct", map[string]any{
+				errordetails.NewFromStruct(map[string]any{
 					"extra": "should not leak into details",
 				}),
 			},
@@ -278,8 +278,8 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 					if v.Reason != tc.wantReason {
 						t.Errorf("ErrorInfo.Reason = %q, want %q", v.Reason, tc.wantReason)
 					}
-					if v.Domain != a2a.PROTOCOL_DOMAIN {
-						t.Errorf("ErrorInfo.Domain = %q, want %q", v.Domain, a2a.PROTOCOL_DOMAIN)
+					if v.Domain != a2a.ProtocolDomain {
+						t.Errorf("ErrorInfo.Domain = %q, want %q", v.Domain, a2a.ProtocolDomain)
 					}
 					if diff := cmp.Diff(tc.wantMeta, v.Metadata); diff != "" {
 						t.Errorf("ErrorInfo.Metadata mismatch (+got,-want):\n%s", diff)
@@ -302,8 +302,8 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 				t.Fatalf("Round-trip details mismatch (+got,-want):\n%s", diff)
 			}
 			errInfo := a2aBack.ErrorInfo()
-			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.PROTOCOL_DOMAIN {
-				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.PROTOCOL_DOMAIN)
+			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.ProtocolDomain {
+				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.ProtocolDomain)
 			}
 			if reason, ok := errInfo.Value["reason"].(string); !ok || reason != tc.wantReason {
 				t.Fatalf("Round-trip ErrorInfo reason = %q, want %q", reason, tc.wantReason)
@@ -322,7 +322,7 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 				foundDetailsInTypedDetails := false
 				structCount := 0
 				for _, td := range a2aBack.TypedDetails {
-					if td.TypeURL != "google.protobuf.Struct" {
+					if td.TypeURL != errordetails.StructType {
 						continue
 					}
 					structCount++
@@ -336,7 +336,7 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 				wantStructCount := 1
 				if tc.inputTypedDetails != nil {
 					for _, td := range tc.inputTypedDetails {
-						if td.TypeURL == "google.protobuf.Struct" {
+						if td.TypeURL == errordetails.StructType {
 							wantStructCount++
 						}
 					}

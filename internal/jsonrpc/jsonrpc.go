@@ -24,6 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // JSON-RPC 2.0 protocol constants
@@ -104,9 +105,12 @@ func FromJSONRPCError(e *Error) error {
 
 	result := a2a.NewError(err, msg)
 	for _, d := range e.Data {
-		if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
-			if m, ok := d.Value["metadata"].(map[string]string); ok {
-				result = result.WithErrorInfoMeta(m)
+		if d.TypeURL == errordetails.ErrorInfoType {
+			if rawMeta, ok := d.Value["metadata"]; ok {
+				m, ok := utils.ToStringMap(rawMeta)
+				if ok {
+					result = result.WithErrorInfoMeta(m)
+				}
 			}
 		} else {
 			if firstStruct {
@@ -142,21 +146,22 @@ func ToJSONRPCError(err error) *Error {
 	for c, target := range codeToError {
 		if errors.Is(err, target) {
 			code = c
-			if r, ok := a2a.ErrorReason(target); ok {
-				reason = r
-			}
+			reason = a2a.ErrorReason(target)
 			break
 		}
 	}
 
 	if errors.As(err, &a2aErr) {
 		if len(a2aErr.Details) > 0 {
-			data = append(data, errordetails.NewTyped("google.protobuf.Struct", a2aErr.Details))
+			data = append(data, errordetails.NewFromStruct(a2aErr.Details))
 		}
 		for _, d := range a2aErr.TypedDetails {
-			if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
-				if m, ok := d.Value["metadata"].(map[string]string); ok {
-					maps.Copy(metadata, m)
+			if d.TypeURL == errordetails.ErrorInfoType {
+				if rawMeta, ok := d.Value["metadata"]; ok {
+					m, ok := utils.ToStringMap(rawMeta)
+					if ok {
+						maps.Copy(metadata, m)
+					}
 				}
 			} else {
 				data = append(data, d)
@@ -164,11 +169,8 @@ func ToJSONRPCError(err error) *Error {
 		}
 	}
 
-	data = append(data, errordetails.NewTyped("type.googleapis.com/google.rpc.ErrorInfo", map[string]any{
-		"reason":   reason,
-		"domain":   a2a.PROTOCOL_DOMAIN,
-		"metadata": metadata,
-	}))
+	errorInfo := errordetails.NewErrorInfo(reason, a2a.ProtocolDomain, metadata)
+	data = append(data, errorInfo)
 
 	return &Error{
 		Code:    code,

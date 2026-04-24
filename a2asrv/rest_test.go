@@ -417,7 +417,7 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 
 			gotErr := rest.FromRESTError(resp)
 			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
-				t.Fatalf("rest.ToA2AError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+				t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
 			}
 		})
 	}

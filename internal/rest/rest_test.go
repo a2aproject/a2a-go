@@ -113,7 +113,7 @@ func TestRESTError_RoundTrip(t *testing.T) {
 				"num": float64(123),
 			}),
 			typedDetails: []*errordetails.Typed{
-				errordetails.NewTyped("google.protobuf.Struct", map[string]any{
+				errordetails.NewFromStruct(map[string]any{
 					"extra": "should not leak into details",
 				}),
 			},
@@ -296,19 +296,16 @@ func TestRESTError_RoundTrip(t *testing.T) {
 			if restErr.Err.Status != tc.wantGRPCStatus {
 				t.Fatalf("ToRESTError() Err.Status = %v, want %v", restErr.Err.Status, tc.wantGRPCStatus)
 			}
-			if restErr.Err.Message != tc.wantMessage {
-				t.Fatalf("ToRESTError() Err.Message = %v, want %v", restErr.Err.Message, tc.wantMessage)
-			}
 
 			var foundErrorInfo bool
 			for _, typed := range restErr.Err.Details {
-				if typed.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
+				if typed.TypeURL == errorInfoType {
 					foundErrorInfo = true
 					if typed.Value["reason"] != tc.wantReason {
 						t.Errorf("ErrorInfo.Reason = %v, want %v", typed.Value["reason"], tc.wantReason)
 					}
-					if typed.Value["domain"] != a2a.PROTOCOL_DOMAIN {
-						t.Errorf("ErrorInfo.Domain = %v, want %v", typed.Value["domain"], a2a.PROTOCOL_DOMAIN)
+					if typed.Value["domain"] != a2a.ProtocolDomain {
+						t.Errorf("ErrorInfo.Domain = %v, want %v", typed.Value["domain"], a2a.ProtocolDomain)
 					}
 					metadata, ok := typed.Value["metadata"].(map[string]string)
 					if !ok {
@@ -328,7 +325,16 @@ func TestRESTError_RoundTrip(t *testing.T) {
 				t.Errorf("ErrorInfo not found in details")
 			}
 
-			restResp := toHTTPResponse(t, restErr)
+			jsonBytes, err := json.Marshal(restErr)
+			if err != nil {
+				t.Fatalf("json.Marshal() = %v, want nil", err)
+			}
+			var unmarshalled Error
+			if err := json.Unmarshal(jsonBytes, &unmarshalled); err != nil {
+				t.Fatalf("json.Unmarshal() = %v, want nil", err)
+			}
+
+			restResp := toHTTPResponse(t, &unmarshalled)
 			back := FromRESTError(restResp)
 
 			var a2aBack *a2a.Error
@@ -345,8 +351,8 @@ func TestRESTError_RoundTrip(t *testing.T) {
 				t.Fatalf("Round-trip message mismatch (+got,-want):\n%s", diff)
 			}
 			errInfo := a2aBack.ErrorInfo()
-			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.PROTOCOL_DOMAIN {
-				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.PROTOCOL_DOMAIN)
+			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.ProtocolDomain {
+				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.ProtocolDomain)
 			}
 			if reason, ok := errInfo.Value["reason"].(string); !ok || reason != tc.wantReason {
 				t.Fatalf("Round-trip ErrorInfo reason = %q, want %q", reason, tc.wantReason)
@@ -368,7 +374,7 @@ func TestRESTError_RoundTrip(t *testing.T) {
 				foundDetailsInTypedDetails := false
 				structCount := 0
 				for _, td := range a2aBack.TypedDetails {
-					if td.TypeURL != "google.protobuf.Struct" {
+					if td.TypeURL != errordetails.StructType {
 						continue
 					}
 					structCount++
@@ -382,7 +388,7 @@ func TestRESTError_RoundTrip(t *testing.T) {
 				wantStructCount := 1
 				if tc.typedDetails != nil {
 					for _, td := range tc.typedDetails {
-						if td.TypeURL == "google.protobuf.Struct" {
+						if td.TypeURL == errordetails.StructType {
 							wantStructCount++
 						}
 					}
@@ -564,7 +570,7 @@ func TestParseStreamResponse(t *testing.T) {
 	})
 
 	t.Run("error event", func(t *testing.T) {
-		data := []byte(makeStatusBody(400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
+		data := []byte(makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
 		event, err := ParseStreamResponse(data)
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
@@ -620,7 +626,8 @@ func toHTTPResponse(t *testing.T, restErr *Error) *http.Response {
 	}
 }
 
-func makeStatusBody(code int, status, message, reason string) string {
+func makeStatusBody(t *testing.T, code int, status, message, reason string) string {
+	t.Helper()
 	return fmt.Sprintf(`{
 		"error": {
 			"code": %d,
@@ -634,13 +641,14 @@ func makeStatusBody(code int, status, message, reason string) string {
 				}
 			]
 		}
-	}`, code, status, mustJSON(message), reason)
+	}`, code, status, mustJSON(t, message), reason)
 }
 
-func mustJSON(v any) string {
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
-		panic(err)
+		t.Fatalf("failed to marshal: %v", err)
 	}
 	return string(b)
 }

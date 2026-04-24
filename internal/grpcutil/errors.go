@@ -22,6 +22,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -76,9 +77,7 @@ func ToGRPCError(err error) error {
 	for _, mapping := range errorMappings {
 		if errors.Is(err, mapping.err) {
 			code = mapping.code
-			if r, ok := a2a.ErrorReason(mapping.err); ok {
-				reason = r
-			}
+			reason = a2a.ErrorReason(mapping.err)
 			break
 		}
 	}
@@ -98,11 +97,11 @@ func ToGRPCError(err error) error {
 			}
 		}
 		for _, d := range a2aErr.TypedDetails {
-			if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
-				if m, ok := d.Value["metadata"].(map[string]string); ok {
-					errInfoMeta = m
-				} else {
-					log.Warn(context.Background(), "failed to convert error meta to proto", "error", err, "meta", d.Value)
+			if d.TypeURL == errordetails.ErrorInfoType {
+				if rawMeta, ok := d.Value["metadata"]; ok {
+					if m, ok := utils.ToStringMap(rawMeta); ok {
+						errInfoMeta = m
+					}
 				}
 			} else {
 				s, err := structpb.NewStruct(d.Value)
@@ -115,7 +114,7 @@ func ToGRPCError(err error) error {
 		}
 	}
 
-	errInfo := &errdetails.ErrorInfo{Reason: reason, Domain: a2a.PROTOCOL_DOMAIN}
+	errInfo := &errdetails.ErrorInfo{Reason: reason, Domain: a2a.ProtocolDomain}
 	if len(errInfoMeta) > 0 {
 		errInfo.Metadata = errInfoMeta
 	}
@@ -157,14 +156,14 @@ func FromGRPCError(err error) error {
 				firstStruct = false
 			}
 			// Add every struct including the first one to Err.TypedDetails.
-			typedDetails = append(typedDetails, errordetails.NewTyped("google.protobuf.Struct", v.AsMap()))
+			typedDetails = append(typedDetails, errordetails.NewFromStruct(v.AsMap()))
 		}
 	}
 
 	baseErr := a2a.ErrInternalError
 	if reason != "" {
 		for _, mapping := range errorMappings {
-			if r, ok := a2a.ErrorReason(mapping.err); ok && r == reason && s.Code() == mapping.code {
+			if a2a.ErrorReason(mapping.err) == reason && s.Code() == mapping.code {
 				baseErr = mapping.err
 				break
 			}

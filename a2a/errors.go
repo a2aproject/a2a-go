@@ -81,13 +81,13 @@ var (
 )
 
 // ErrorReason returns the reason string for an error.
-func ErrorReason(err error) (string, bool) {
+func ErrorReason(err error) string {
 	for sentinel, reason := range errorReason {
 		if errors.Is(err, sentinel) {
-			return reason, true
+			return reason
 		}
 	}
-	return "", false
+	return "INTERNAL_ERROR"
 }
 
 var errorReason = map[error]string{
@@ -125,20 +125,14 @@ type Error struct {
 // ErrorInfo returns the ErrorInfo typed detail. If not present, it will be created.
 func (e *Error) ErrorInfo() *errordetails.Typed {
 	existing := slices.IndexFunc(e.TypedDetails, func(d *errordetails.Typed) bool {
-		return d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo"
+		return d.TypeURL == errordetails.ErrorInfoType
 	})
 	if existing != -1 {
 		return e.TypedDetails[existing]
 	}
-	reason, _ := ErrorReason(e.Err)
+	reason := ErrorReason(e.Err)
 
-	e.TypedDetails = append(e.TypedDetails, &errordetails.Typed{
-		TypeURL: "type.googleapis.com/google.rpc.ErrorInfo",
-		Value: map[string]any{
-			"domain": PROTOCOL_DOMAIN,
-			"reason": reason,
-		},
-	})
+	e.TypedDetails = append(e.TypedDetails, errordetails.NewErrorInfo(reason, ProtocolDomain, nil))
 	return e.TypedDetails[len(e.TypedDetails)-1]
 }
 
@@ -173,5 +167,11 @@ func (e *Error) WithDetails(details map[string]any) *Error {
 func (e *Error) WithErrorInfoMeta(meta map[string]string) *Error {
 	typedErr := e.ErrorInfo()
 	typedErr.Value["metadata"] = meta
+	return e
+}
+
+// WithTypedDetails adds typed details to the error.
+func (e *Error) WithTypedDetails(details ...*errordetails.Typed) *Error {
+	e.TypedDetails = append(e.TypedDetails, details...)
 	return e
 }

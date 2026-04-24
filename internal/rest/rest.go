@@ -27,6 +27,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // MakeListTasksPath returns the REST path for listing tasks.
@@ -84,7 +85,10 @@ func MakeDeletePushConfigPath(taskID, configID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
-const errorInfoType = "type.googleapis.com/google.rpc.ErrorInfo"
+const (
+	errorInfoType = "type.googleapis.com/google.rpc.ErrorInfo"
+	structType    = "type.googleapis.com/google.protobuf.Struct"
+)
 
 // ErrorInfo represents a google.rpc.ErrorInfo message in the details array.
 type ErrorInfo struct {
@@ -162,7 +166,7 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 		}
 		if json.Unmarshal(raw, &hint) == nil && hint.Type == errorInfoType {
 			var info ErrorInfo
-			if json.Unmarshal(raw, &info) != nil || info.Domain != a2a.PROTOCOL_DOMAIN {
+			if json.Unmarshal(raw, &info) != nil || info.Domain != a2a.ProtocolDomain {
 				continue
 			}
 			reason = info.Reason
@@ -183,7 +187,7 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 
 	baseErr := a2a.ErrInternalError
 	for _, mapping := range errorMappings {
-		if r, ok := a2a.ErrorReason(mapping.err); ok && r == reason {
+		if a2a.ErrorReason(mapping.err) == reason {
 			baseErr = mapping.err
 			break
 		}
@@ -281,9 +285,7 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 		if errors.Is(err, mapping.err) {
 			httpStatus = mapping.httpStatus
 			grpcStatus = mapping.grpcStatus
-			if r, ok := a2a.ErrorReason(mapping.err); ok {
-				reason = r
-			}
+			reason = a2a.ErrorReason(mapping.err)
 			break
 		}
 	}
@@ -300,12 +302,14 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 
 	if errors.As(err, &a2aErr) {
 		if len(a2aErr.Details) > 0 {
-			details = append(details, errordetails.NewTyped("google.protobuf.Struct", a2aErr.Details))
+			details = append(details, errordetails.NewFromStruct(a2aErr.Details))
 		}
 		for _, d := range a2aErr.TypedDetails {
-			if d.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
-				if m, ok := d.Value["metadata"].(map[string]string); ok {
-					maps.Copy(metadata, m)
+			if d.TypeURL == errorInfoType {
+				if rawMeta, ok := d.Value["metadata"]; ok {
+					if m, ok := utils.ToStringMap(rawMeta); ok {
+						maps.Copy(metadata, m)
+					}
 				}
 			} else {
 				details = append(details, d)
@@ -313,11 +317,8 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 		}
 	}
 
-	details = append(details, errordetails.NewTyped(errorInfoType, map[string]any{
-		"reason":   reason,
-		"domain":   a2a.PROTOCOL_DOMAIN,
-		"metadata": metadata,
-	}))
+	errorInfo := errordetails.NewErrorInfo(reason, a2a.ProtocolDomain, metadata)
+	details = append(details, errorInfo)
 
 	return &Error{
 		httpStatus: httpStatus,

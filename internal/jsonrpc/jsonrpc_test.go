@@ -15,6 +15,7 @@
 package jsonrpc
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -42,6 +43,7 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 		wantDetails map[string]any
 	}{
 		{
+			name:     "Nil error",
 			checkNil: true,
 		},
 		{
@@ -106,7 +108,7 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 				"num": float64(123),
 			}),
 			typedDetails: []*errordetails.Typed{
-				errordetails.NewTyped("google.protobuf.Struct", map[string]any{
+				errordetails.NewFromStruct(map[string]any{
 					"extra": "should not leak into details",
 				}),
 			},
@@ -277,13 +279,13 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 
 			var foundErrorInfo bool
 			for _, typed := range got.Data {
-				if typed.TypeURL == "type.googleapis.com/google.rpc.ErrorInfo" {
+				if typed.TypeURL == errordetails.ErrorInfoType {
 					foundErrorInfo = true
 					if typed.Value["reason"] != tc.wantReason {
 						t.Errorf("ErrorInfo.Reason = %v, want %v", typed.Value["reason"], tc.wantReason)
 					}
-					if typed.Value["domain"] != a2a.PROTOCOL_DOMAIN {
-						t.Errorf("ErrorInfo.Domain = %v, want %v", typed.Value["domain"], a2a.PROTOCOL_DOMAIN)
+					if typed.Value["domain"] != a2a.ProtocolDomain {
+						t.Errorf("ErrorInfo.Domain = %v, want %v", typed.Value["domain"], a2a.ProtocolDomain)
 					}
 					metadata, ok := typed.Value["metadata"].(map[string]string)
 					if !ok {
@@ -303,7 +305,16 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 				t.Fatalf("ErrorInfo not found in details")
 			}
 
-			back := FromJSONRPCError(got)
+			jsonBytes, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("json.Marshal() = %v, want nil", err)
+			}
+			var unmarshalled Error
+			if err := json.Unmarshal(jsonBytes, &unmarshalled); err != nil {
+				t.Fatalf("json.Unmarshal() = %v, want nil", err)
+			}
+
+			back := FromJSONRPCError(&unmarshalled)
 			var a2aBack *a2a.Error
 			if !errors.As(back, &a2aBack) {
 				t.Fatalf("Expected *a2a.Error")
@@ -318,8 +329,8 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 				t.Fatalf("Round-trip message mismatch (+got,-want):\n%s", diff)
 			}
 			errInfo := a2aBack.ErrorInfo()
-			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.PROTOCOL_DOMAIN {
-				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.PROTOCOL_DOMAIN)
+			if domain, ok := errInfo.Value["domain"].(string); !ok || domain != a2a.ProtocolDomain {
+				t.Fatalf("Round-trip ErrorInfo domain = %q, want %q", domain, a2a.ProtocolDomain)
 			}
 			if reason, ok := errInfo.Value["reason"].(string); !ok || reason != tc.wantReason {
 				t.Fatalf("Round-trip ErrorInfo reason = %q, want %q", reason, tc.wantReason)
@@ -341,7 +352,7 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 				foundDetailsInTypedDetails := false
 				structCount := 0
 				for _, td := range a2aBack.TypedDetails {
-					if td.TypeURL != "google.protobuf.Struct" {
+					if td.TypeURL != errordetails.StructType {
 						continue
 					}
 					structCount++
@@ -355,7 +366,7 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 				wantStructCount := 1
 				if tc.typedDetails != nil {
 					for _, td := range tc.typedDetails {
-						if td.TypeURL == "google.protobuf.Struct" {
+						if td.TypeURL == errordetails.StructType {
 							wantStructCount++
 						}
 					}

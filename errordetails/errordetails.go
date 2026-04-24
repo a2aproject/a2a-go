@@ -22,6 +22,12 @@ import (
 	"maps"
 )
 
+// Error detail type URLs
+const (
+	ErrorInfoType = "type.googleapis.com/google.rpc.ErrorInfo"
+	StructType    = "type.googleapis.com/google.protobuf.Struct"
+)
+
 // Typed is a wrapper around a value that is marshaled with a type URL.
 type Typed struct {
 	TypeURL string
@@ -31,6 +37,23 @@ type Typed struct {
 // NewTyped creates a new Typed error detail.
 func NewTyped(t string, v map[string]any) *Typed {
 	return &Typed{TypeURL: t, Value: v}
+}
+
+// NewErrorInfo creates a new ErrorInfo error detail.
+func NewErrorInfo(reason string, domain string, metadata map[string]string) *Typed {
+	value := map[string]any{
+		"reason": reason,
+		"domain": domain,
+	}
+	if len(metadata) > 0 {
+		value["metadata"] = metadata
+	}
+	return NewTyped(ErrorInfoType, value)
+}
+
+// NewFromStruct creates a new StructType error detail from a map.
+func NewFromStruct(details map[string]any) *Typed {
+	return NewTyped(StructType, details)
 }
 
 // MarshalJSON implements json.Marshaler.

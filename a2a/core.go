@@ -23,6 +23,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ProtocolDomain is the domain used for A2A protocol.
+const ProtocolDomain = "a2a-protocol.org"
+
 // ProtocolVersion is a string constant which represents a version of the protocol.
 type ProtocolVersion string
 
