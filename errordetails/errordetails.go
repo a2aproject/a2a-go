@@ -73,7 +73,7 @@ func (w *Typed) UnmarshalJSON(data []byte) error {
 		w.TypeURL = t
 		delete(v, "@type")
 	} else {
-		w.TypeURL = "google.protobuf.Struct"
+		w.TypeURL = StructType
 	}
 	w.Value = v
 	return nil

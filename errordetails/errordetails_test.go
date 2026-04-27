@@ -36,31 +36,31 @@ func TestErrorDetailsJSONCodec(t *testing.T) {
 		// Round-trip
 		{
 			name:     "ErrorInfo with data",
-			input:    NewTyped("type.googleapis.com/google.rpc.ErrorInfo", map[string]any{"reason": "TASK_NOT_FOUND", "domain": "a2a-protocol.org"}),
+			input:    NewTyped(ErrorInfoType, map[string]any{"reason": "TASK_NOT_FOUND", "domain": "a2a-protocol.org"}),
 			wantJSON: `{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"a2a-protocol.org","reason":"TASK_NOT_FOUND"}`,
 		},
 		{
 			name:     "Struct with data",
-			input:    NewTyped("type.googleapis.com/google.protobuf.Struct", map[string]any{"foo": "bar"}),
+			input:    NewTyped(StructType, map[string]any{"foo": "bar"}),
 			wantJSON: `{"@type":"type.googleapis.com/google.protobuf.Struct","foo":"bar"}`,
 		},
 		{
 			name:     "empty value",
-			input:    NewTyped("type.googleapis.com/google.rpc.ErrorInfo", map[string]any{}),
+			input:    NewTyped(ErrorInfoType, map[string]any{}),
 			wantJSON: `{"@type":"type.googleapis.com/google.rpc.ErrorInfo"}`,
 		},
 		{
 			name:          "missing @type defaults to Struct",
 			unmarshalOnly: true,
 			inputJSON:     `{"foo":"bar"}`,
-			wantTypeURL:   "google.protobuf.Struct",
+			wantTypeURL:   StructType,
 			wantValue:     map[string]any{"foo": "bar"},
 		},
 		{
 			name:          "non-string @type defaults to Struct",
 			unmarshalOnly: true,
 			inputJSON:     `{"@type":123,"foo":"bar"}`,
-			wantTypeURL:   "google.protobuf.Struct",
+			wantTypeURL:   StructType,
 			wantValue:     map[string]any{"@type": float64(123), "foo": "bar"},
 		},
 	}

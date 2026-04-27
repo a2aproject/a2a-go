@@ -85,11 +85,6 @@ func MakeDeletePushConfigPath(taskID, configID string) string {
 	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
-const (
-	errorInfoType = "type.googleapis.com/google.rpc.ErrorInfo"
-	structType    = "type.googleapis.com/google.protobuf.Struct"
-)
-
 // ErrorInfo represents a google.rpc.ErrorInfo message in the details array.
 type ErrorInfo struct {
 	Type     string            `json:"@type"`
@@ -164,7 +159,7 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 		var hint struct {
 			Type string `json:"@type"`
 		}
-		if json.Unmarshal(raw, &hint) == nil && hint.Type == errorInfoType {
+		if json.Unmarshal(raw, &hint) == nil && hint.Type == errordetails.ErrorInfoType {
 			var info ErrorInfo
 			if json.Unmarshal(raw, &info) != nil || info.Domain != a2a.ProtocolDomain {
 				continue
@@ -305,7 +300,7 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 			details = append(details, errordetails.NewFromStruct(a2aErr.Details))
 		}
 		for _, d := range a2aErr.TypedDetails {
-			if d.TypeURL == errorInfoType {
+			if d.TypeURL == errordetails.ErrorInfoType {
 				if rawMeta, ok := d.Value["metadata"]; ok {
 					if m, ok := utils.ToStringMap(rawMeta); ok {
 						maps.Copy(metadata, m)
