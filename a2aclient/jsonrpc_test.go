@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/google/go-cmp/cmp"
 )
@@ -605,7 +606,9 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 }
 
 func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
-	wantMsg, wantDetails := "Access Denied", map[string]any{"reason": "expired_token", "scope": "read"}
+	wantMsg := "Access Denied"
+	wantDetails := map[string]any{"reason": "expired_token", "scope": "read"}
+	typedDetails := []*errordetails.Typed{errordetails.NewTyped("google.protobuf.Struct", wantDetails)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
@@ -615,7 +618,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 			Error: &jsonrpc.Error{
 				Code:    -31403,
 				Message: wantMsg,
-				Data:    wantDetails,
+				Data:    typedDetails,
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)

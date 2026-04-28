@@ -277,12 +277,12 @@ func TestJSONRPC_Validations(t *testing.T) {
 				if payload.Error == nil {
 					t.Errorf("payload.Error = nil, want %v", tc.wantErr)
 				}
-				if !errors.Is(payload.Error.ToA2AError(), tc.wantErr) {
-					t.Errorf("payload.Error = %v, want %v", payload.Error.ToA2AError(), tc.wantErr)
+				if !errors.Is(jsonrpc.FromJSONRPCError(payload.Error), tc.wantErr) {
+					t.Errorf("payload.Error = %v, want %v", jsonrpc.FromJSONRPCError(payload.Error), tc.wantErr)
 				}
 			} else {
 				if payload.Error != nil {
-					t.Errorf("payload.Error = %v, want nil", payload.Error.ToA2AError())
+					t.Errorf("payload.Error = %v, want nil", jsonrpc.FromJSONRPCError(payload.Error))
 				}
 				if diff := cmp.Diff(tc.want, payload.Result); diff != "" {
 					t.Errorf("payload.Result = %v, want %v", payload.Result, tc.want)

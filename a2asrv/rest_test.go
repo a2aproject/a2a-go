@@ -359,7 +359,7 @@ func TestREST_InvalidPayloads(t *testing.T) {
 				t.Errorf("got Content-Type %q, want application/json", contentType)
 			}
 
-			gotErr := rest.ToA2AError(resp)
+			gotErr := rest.FromRESTError(resp)
 
 			if !errors.Is(gotErr, expectedErr) {
 				t.Errorf("got error %v, want %v", gotErr, expectedErr)
@@ -415,9 +415,9 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 				t.Fatalf("resp.StatusCode = %d, want non-200 for invalid query params", resp.StatusCode)
 			}
 
-			gotErr := rest.ToA2AError(resp)
+			gotErr := rest.FromRESTError(resp)
 			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
-				t.Fatalf("rest.ToA2AError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+				t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
 			}
 		})
 	}

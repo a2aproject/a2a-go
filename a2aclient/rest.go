@@ -125,7 +125,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 				log.Error(ctx, "failed to close http response body", err)
 			}
 		}()
-		return nil, rest.ToA2AError(httpResp)
+		return nil, rest.FromRESTError(httpResp)
 	}
 
 	return httpResp, nil
