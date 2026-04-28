@@ -175,7 +175,7 @@ func TestHandler_Handle(t *testing.T) {
 					t.Fatalf("missing key %q in log output: %s", k, buf.String())
 				}
 				if diff := cmp.Diff(want, gotVal); diff != "" {
-					t.Fatalf("key %q wrong result (+got,-want) diff = %s", k, diff)
+					t.Fatalf("key %q wrong result (-want +got) diff = %s", k, diff)
 				}
 			}
 		})
@@ -212,7 +212,7 @@ func TestHandler_WithAttrs(t *testing.T) {
 		t.Fatalf("missing key \"task\" in log output: %s", buf.String())
 	}
 	if diff := cmp.Diff(want, gotTask); diff != "" {
-		t.Fatalf("Handler.WithAttrs() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("Handler.WithAttrs() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestHandler_WithGroup(t *testing.T) {
 		t.Fatalf("missing key \"task\" in group: %s", buf.String())
 	}
 	if diff := cmp.Diff(want, gotTask); diff != "" {
-		t.Fatalf("Handler.WithGroup() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("Handler.WithGroup() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -309,7 +309,7 @@ func TestHandler_nestedGroupFormatting(t *testing.T) {
 		t.Fatalf("missing key \"task\" in outer group: %s", buf.String())
 	}
 	if diff := cmp.Diff(want, gotTask); diff != "" {
-		t.Fatalf("nested group formatting wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("nested group formatting wrong result (-want +got) diff = %s", diff)
 	}
 }
 

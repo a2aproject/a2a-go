@@ -109,7 +109,7 @@ func TestActivator(t *testing.T) {
 
 			gotExtensions, _ := a2asrv.NewServiceParams(gotHeaders).Get(a2a.SvcParamExtensions)
 			if diff := cmp.Diff(tc.clientSends, gotExtensions, cmpIgnoreHeaderCase()); diff != "" {
-				t.Errorf("wrong extension headers (+got,-want), diff = %s", diff)
+				t.Errorf("wrong extension headers (-want +got), diff = %s", diff)
 			}
 		})
 	}

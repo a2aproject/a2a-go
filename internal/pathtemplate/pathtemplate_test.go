@@ -186,7 +186,7 @@ func TestMatch(t *testing.T) {
 				return
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Fatalf("Template(%q).Match(%q) wrong result (+got,-want) diff = %s", tt.template, tt.path, diff)
+				t.Fatalf("Template(%q).Match(%q) wrong result (-want +got) diff = %s", tt.template, tt.path, diff)
 			}
 		})
 	}

@@ -97,7 +97,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 					t.Errorf("fromProtoMessages() error = %v", err)
 				}
 				if diff := cmp.Diff([]*a2a.Message{tt.msg}, gotBack); diff != "" {
-					t.Errorf("fromProtoMessages() wrong result (+got,-want):\n diff = %s", diff)
+					t.Errorf("fromProtoMessages() wrong result (-want +got):\n diff = %s", diff)
 				}
 			}
 		})
@@ -945,7 +945,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				t.Errorf("FromProtoAgentCard() error = %v", err)
 			}
 			if diff := cmp.Diff(tt.card, gotBack); diff != "" {
-				t.Errorf("FromProtoAgentCard() wrong result (+got,-want):\ndiff = %s", diff)
+				t.Errorf("FromProtoAgentCard() wrong result (-want +got):\ndiff = %s", diff)
 			}
 		})
 	}

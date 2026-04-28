@@ -232,7 +232,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 				t.Fatalf("fromProtoSendMessageConfig() error = %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("fromProtoSendMessageConfig() wrong result (+got,-want)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
+				t.Errorf("fromProtoSendMessageConfig() wrong result (-want +got)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
 			}
 		})
 	}
@@ -509,7 +509,7 @@ func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
 				return
 			}
 			if diff := cmp.Diff(got, tt.want); diff != "" {
-				t.Errorf("fromProtoListTasksResponse() mismatch (+got -want):\n%s", diff)
+				t.Errorf("fromProtoListTasksResponse() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

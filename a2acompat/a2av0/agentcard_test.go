@@ -112,7 +112,7 @@ func TestAgentCard_NewToNew(t *testing.T) {
 		t.Fatalf("parser.Parse() error = %v", err)
 	}
 	if diff := cmp.Diff(newAgentCard, gotCard); diff != "" {
-		t.Errorf("parser.Parse() wrong result  (+got,-want) diff = %s", diff)
+		t.Errorf("parser.Parse() wrong result  (-want +got) diff = %s", diff)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestAgentCard_CompatToNew(t *testing.T) {
 		t.Fatalf("parser.Parse() error = %v", err)
 	}
 	if diff := cmp.Diff(newAgentCard, gotCard); diff != "" {
-		t.Errorf("parser.Parse() wrong result  (+got,-want) diff = %s", diff)
+		t.Errorf("parser.Parse() wrong result  (-want +got) diff = %s", diff)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestAgentCard_OldToNew(t *testing.T) {
 		t.Fatalf("parser.Parse() error = %v", err)
 	}
 	if diff := cmp.Diff(newAgentCard, gotCard); diff != "" {
-		t.Errorf("parser.Parse() wrong result  (+got,-want) diff = %s", diff)
+		t.Errorf("parser.Parse() wrong result  (-want +got) diff = %s", diff)
 	}
 }
 

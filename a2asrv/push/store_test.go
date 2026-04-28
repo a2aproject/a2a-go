@@ -210,7 +210,7 @@ func TestInMemoryPushConfigStore_Get(t *testing.T) {
 					t.Fatalf("Get() failed: %v", err)
 				}
 				if diff := cmp.Diff(tc.want, got); diff != "" {
-					t.Fatalf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, tc.want, diff)
+					t.Fatalf("Get() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, tc.want, diff)
 				}
 			} else {
 				if err == nil || err.Error() != tc.wantErr.Error() {
@@ -255,7 +255,7 @@ func TestInMemoryPushConfigStore_List(t *testing.T) {
 			want := sortConfigList(tc.want)
 			got := sortConfigList(configs)
 			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+				t.Errorf("Get() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 			}
 		})
 	}
@@ -312,7 +312,7 @@ func TestInMemoryPushConfigStore_Delete(t *testing.T) {
 			want := sortConfigList(tc.want)
 			got = sortConfigList(got)
 			if diff := cmp.Diff(want, got); diff != "" {
-				t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+				t.Errorf("Get() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 			}
 		})
 	}
@@ -415,7 +415,7 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 			t.Fatalf("Get() failed: %v", err)
 		}
 		if diff := cmp.Diff(c, got); diff != "" {
-			t.Errorf("Get() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, c, diff)
+			t.Errorf("Get() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, c, diff)
 		}
 	}
 }

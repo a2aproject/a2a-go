@@ -133,7 +133,7 @@ func TestJSONRPCTransport_ServiceParamsHeaders(t *testing.T) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
 		if diff := cmp.Diff(wantValues, r.Header.Values("foo")); diff != "" {
-			t.Fatalf("r.Header.Get() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("r.Header.Get() wrong result (-want +got) diff = %s", diff)
 		}
 
 		resp := newResponse(req, json.RawMessage(`{"kind":"task"}`))
@@ -231,7 +231,7 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(wantResult, tasks); diff != "" {
-		t.Fatalf("ListTasks wrong result (-got +want): %s", diff)
+		t.Fatalf("ListTasks wrong result (-want +got): %s", diff)
 	}
 }
 
@@ -425,7 +425,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 		Description: "test",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("got wrong card (+got,-want) diff = %s", diff)
+		t.Errorf("got wrong card (-want +got) diff = %s", diff)
 	}
 }
 
@@ -639,7 +639,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 		t.Errorf("got message %q, want %q", a2aErr.Message, wantMsg)
 	}
 	if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
-		t.Errorf("got wrong details (+got,-want) diff = %s", diff)
+		t.Errorf("got wrong details (-want +got) diff = %s", diff)
 	}
 }
 

@@ -58,7 +58,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 					t.Fatalf("client.CreateTaskPushConfig() error = %v", err)
 				}
 				if diff := cmp.Diff(&config, result); diff != "" {
-					t.Fatalf("client.CreateTaskPushConfig() returned diff (+got,-want): %s", diff)
+					t.Fatalf("client.CreateTaskPushConfig() returned diff (-want +got): %s", diff)
 				}
 			})
 			t.Run("GetTaskPushConfig", func(t *testing.T) {
@@ -71,7 +71,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 					t.Fatalf("client.GetTaskPushConfig() error = %v", err)
 				}
 				if diff := cmp.Diff(&config, result); diff != "" {
-					t.Fatalf("client.GetTaskPushConfig() returned diff (+got,-want): %s", diff)
+					t.Fatalf("client.GetTaskPushConfig() returned diff (-want +got): %s", diff)
 				}
 			})
 			t.Run("ListTaskPushConfigs", func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 					t.Fatalf("client.ListTaskPushConfigs() error = %v", err)
 				}
 				if diff := cmp.Diff(wantListResult, result); diff != "" {
-					t.Fatalf("client.ListTaskPushConfigs() returned diff (+got,-want): %s", diff)
+					t.Fatalf("client.ListTaskPushConfigs() returned diff (-want +got): %s", diff)
 				}
 			})
 			t.Run("DeleteTaskPushConfig", func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 					t.Fatalf("client.ListTaskPushConfigs() error = %v", err)
 				}
 				if diff := cmp.Diff(wantListResult, result); diff != "" {
-					t.Fatalf("client.ListTaskPushConfigs() returned diff (+got,-want): %s", diff)
+					t.Fatalf("client.ListTaskPushConfigs() returned diff (-want +got): %s", diff)
 				}
 			})
 		})

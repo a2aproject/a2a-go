@@ -113,7 +113,7 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(listTasksResult, wantResult); diff != "" {
-		t.Errorf("ListTasks() mismatch (+got -want):\n%s", diff)
+		t.Errorf("ListTasks() mismatch (-want +got):\n%s", diff)
 	}
 }
 

@@ -304,7 +304,7 @@ func TestAgentCardParsing(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AgentCard codec diff(+got -want):\n%v", diff)
+		t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
 	}
 }
 

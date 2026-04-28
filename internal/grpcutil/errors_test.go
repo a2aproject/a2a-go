@@ -270,7 +270,7 @@ func TestFromGRPCError(t *testing.T) {
 					t.Fatalf("got error type %T, want *a2a.Error", got)
 				}
 				if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
-					t.Fatalf("got wrong details (+got,-want) diff = %s", diff)
+					t.Fatalf("got wrong details (-want +got) diff = %s", diff)
 				}
 			}
 		})

@@ -290,7 +290,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					return
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
-					t.Errorf("SendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
+					t.Errorf("SendMessage() (-want +got):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -340,7 +340,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					eventI++
 				}
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("SendStreamingMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+					t.Errorf("SendStreamingMessage() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					return
 				}
 			}
@@ -1287,7 +1287,7 @@ func TestRequestHandler_SendMessage_NewTaskHistory(t *testing.T) {
 	}
 	if task, ok := result.(*a2a.Task); ok {
 		if diff := cmp.Diff([]*a2a.Message{msg}, task.History); diff != "" {
-			t.Fatalf("SendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
+			t.Fatalf("SendMessage() wrong result (-want +got):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
 		}
 	} else {
 		t.Fatalf("SendMessage() = %v, want a2a.Task", result)
@@ -1454,7 +1454,7 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 					return
 				}
 				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
-					t.Errorf("ListTasks() mismatch (+got -want): %s", diff)
+					t.Errorf("ListTasks() mismatch (-want +got): %s", diff)
 				}
 			} else {
 				if err == nil {
@@ -1777,10 +1777,10 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			}
 			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.Task{}, "History")}
 			if diff := cmp.Diff(tc.wantStoredTask, gotExecCtx.StoredTask, opts...); diff != "" {
-				t.Fatalf("wrong request context stored task (+got,-want): diff = %s", diff)
+				t.Fatalf("wrong request context stored task (-want +got): diff = %s", diff)
 			}
 			if diff := cmp.Diff(tc.wantExecCtxMeta, gotExecCtx.Metadata); diff != "" {
-				t.Fatalf("wrong request context meta (+got,-want): diff = %s", diff)
+				t.Fatalf("wrong request context meta (-want +got): diff = %s", diff)
 			}
 			if tc.wantContextID != "" {
 				if tc.wantContextID != gotExecCtx.ContextID {

@@ -201,14 +201,14 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 			Config: &a2a.SendMessageConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, ReturnImmediately: false},
 		}
 		if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
-			t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendMessage() wrong result (-want +got) diff = %s", diff)
 		}
 		wantReq := &a2a.SendMessageRequest{Config: &a2a.SendMessageConfig{}}
 		if wantNilConfigAfter {
 			wantReq = &a2a.SendMessageRequest{}
 		}
 		if diff := cmp.Diff(wantReq, req); diff != "" {
-			t.Fatalf("client.SendMessage() modified params (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendMessage() modified params (-want +got) diff = %s", diff)
 		}
 	}
 }
@@ -239,10 +239,10 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 		Config: &a2a.SendMessageConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, ReturnImmediately: false},
 	}
 	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(&a2a.SendMessageRequest{}, req); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() modified params (-want +got) diff = %s", diff)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 		t.Fatal("lastReq = nil, want GetExtendedAgentCard")
 	}
 	if diff := cmp.Diff(extendedCard, got); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() modified params (-want +got) diff = %s", diff)
 	}
 }
 
@@ -458,13 +458,13 @@ func TestClient_UpdateAgentCard(t *testing.T) {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
 	if diff := cmp.Diff(publicCard, interceptor.lastReq.Card); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Card (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Card (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(publicCard, interceptor.lastResp.Card); diff != "" {
-		t.Fatalf("wrong interceptor.lastResp.Card (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastResp.Card (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(extendedCard, card); diff != "" {
-		t.Fatalf("wrong client.GetExtendedAgentCard() (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong client.GetExtendedAgentCard() (-want +got) diff = %s", diff)
 	}
 }
 
@@ -501,7 +501,7 @@ func TestClient_FallbackToNonStreamingSend(t *testing.T) {
 			t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
-			t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 		}
 		eventCount++
 	}
@@ -620,10 +620,10 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 		t.Fatalf("client.SendMessage() = (%v, %v), want %v", resp, err, task)
 	}
 	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Payload (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(task, interceptor.lastResp.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastResp.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastResp.Payload (-want +got) diff = %s", diff)
 	}
 }
 
@@ -698,7 +698,7 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		t.Fatalf("lastResp.Method = %v, want SendStreamingMessage", interceptor.lastResp.Method)
 	}
 	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Payload (-want +got) diff = %s", diff)
 	}
 }
 
