@@ -306,7 +306,7 @@ func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params a2aclient
 }
 
 // GetTaskPushConfig retrieves the push notification configuration for a task.
-func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	compatReq := FromV1GetTaskPushConfigRequest(req)
 	result, err := t.sendRequest(ctx, methodPushConfigGet, params, compatReq)
 	if err != nil {
@@ -318,15 +318,12 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclie
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 
 // ListTaskPushConfig lists push notification configurations.
-func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	compatReq := FromV1ListTaskPushConfigRequest(req)
 	result, err := t.sendRequest(ctx, methodPushConfigList, params, compatReq)
 	if err != nil {
@@ -338,12 +335,9 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2acl
 		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
 
-	configs := make([]*a2a.TaskPushConfig, 0, len(compatConfigs))
+	configs := make([]*a2a.PushConfig, 0, len(compatConfigs))
 	for _, compatConfig := range compatConfigs {
-		config, err := ToV1TaskPushConfig(compatConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert config: %w", err)
-		}
+		config := ToV1PushConfig(compatConfig)
 		configs = append(configs, config)
 	}
 
@@ -351,8 +345,8 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2acl
 }
 
 // CreateTaskPushConfig sets or updates the push notification configuration for a task.
-func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	compatReq := FromV1CreateTaskPushConfigRequest(req)
+func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
+	compatReq := FromV1PushConfig(req)
 	result, err := t.sendRequest(ctx, methodPushConfigSet, params, compatReq)
 	if err != nil {
 		return nil, err
@@ -363,10 +357,7 @@ func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2ac
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 

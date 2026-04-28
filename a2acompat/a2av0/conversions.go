@@ -527,76 +527,60 @@ func FromV1TaskArtifactUpdateEvent(e *a2a.TaskArtifactUpdateEvent) *a2alegacy.Ta
 	}
 }
 
-// ToV1PushConfig converts a legacy push config to a v1 push config.
-func ToV1PushConfig(c a2alegacy.PushConfig) *a2a.PushConfig {
-	res := &a2a.PushConfig{
-		ID:    c.ID,
-		Token: c.Token,
-		URL:   c.URL,
+// ToV1PushConfig converts a legacy task push config to a v1 push config.
+func ToV1PushConfig(c *a2alegacy.TaskPushConfig) *a2a.PushConfig {
+	if c == nil {
+		return nil
 	}
-	if c.Auth != nil {
+	res := &a2a.PushConfig{
+		TaskID: a2a.TaskID(c.TaskID),
+		ID:     c.Config.ID,
+		Token:  c.Config.Token,
+		URL:    c.Config.URL,
+	}
+	if c.Config.Auth != nil {
 		res.Auth = &a2a.PushAuthInfo{
-			Credentials: c.Auth.Credentials,
+			Credentials: c.Config.Auth.Credentials,
 		}
-		if len(c.Auth.Schemes) > 0 {
-			res.Auth.Scheme = c.Auth.Schemes[0]
+		if len(c.Config.Auth.Schemes) > 0 {
+			res.Auth.Scheme = c.Config.Auth.Schemes[0]
 		}
 	}
 	return res
 }
 
 // FromV1PushConfig converts a v1 push config to a legacy push config.
-func FromV1PushConfig(c *a2a.PushConfig) *a2alegacy.PushConfig {
+func FromV1PushConfig(c *a2a.PushConfig) *a2alegacy.TaskPushConfig {
 	if c == nil {
 		return nil
 	}
-	res := &a2alegacy.PushConfig{
+	config := &a2alegacy.PushConfig{
 		ID:    c.ID,
 		Token: c.Token,
 		URL:   c.URL,
 	}
 	if c.Auth != nil {
-		res.Auth = &a2alegacy.PushAuthInfo{
+		config.Auth = &a2alegacy.PushAuthInfo{
 			Credentials: c.Auth.Credentials,
 			Schemes:     []string{c.Auth.Scheme},
 		}
 	}
-	return res
-}
-
-// ToV1TaskPushConfig converts a legacy task push config to a v1 task push config.
-func ToV1TaskPushConfig(comp *a2alegacy.TaskPushConfig) (*a2a.TaskPushConfig, error) {
-	if comp == nil {
-		return nil, nil
-	}
-	return &a2a.TaskPushConfig{TaskID: a2a.TaskID(comp.TaskID), Config: *ToV1PushConfig(comp.Config)}, nil
-}
-
-// FromV1TaskPushConfig converts a v1 task push config to a legacy task push config.
-func FromV1TaskPushConfig(c *a2a.TaskPushConfig) (*a2alegacy.TaskPushConfig, error) {
-	if c == nil {
-		return nil, nil
-	}
-	res := &a2alegacy.TaskPushConfig{
-		Config: *FromV1PushConfig(&c.Config),
+	return &a2alegacy.TaskPushConfig{
+		Config: *config,
 		TaskID: a2alegacy.TaskID(c.TaskID),
 	}
-	return res, nil
 }
 
-// FromV1TaskPushConfigs converts multiple v1 task push configs to legacy task push configs.
-func FromV1TaskPushConfigs(cs []*a2a.TaskPushConfig) ([]*a2alegacy.TaskPushConfig, error) {
+// FromV1PushConfigs converts multiple v1 push configs to legacy task push configs.
+func FromV1PushConfigs(cs []*a2a.PushConfig) []*a2alegacy.TaskPushConfig {
 	var res []*a2alegacy.TaskPushConfig
 	for _, c := range cs {
-		comp, err := FromV1TaskPushConfig(c)
-		if err != nil {
-			return nil, err
-		}
+		comp := FromV1PushConfig(c)
 		if comp != nil {
 			res = append(res, comp)
 		}
 	}
-	return res, nil
+	return res
 }
 
 // ToV1GetTaskRequest converts a legacy get task request to a v1 request.
@@ -650,7 +634,11 @@ func ToV1SendMessageRequest(p *a2alegacy.MessageSendParams) (*a2a.SendMessageReq
 			req.Config.ReturnImmediately = !(*p.Config.Blocking)
 		}
 		if p.Config.PushConfig != nil {
-			req.Config.PushConfig = ToV1PushConfig(*p.Config.PushConfig)
+			legacyTaskPushConfig := &a2alegacy.TaskPushConfig{
+				Config: *p.Config.PushConfig,
+				TaskID: a2alegacy.TaskID(req.Message.TaskID),
+			}
+			req.Config.PushConfig = ToV1PushConfig(legacyTaskPushConfig)
 		}
 	}
 	return req, nil
@@ -672,7 +660,8 @@ func FromV1SendMessageRequest(req *a2a.SendMessageRequest) *a2alegacy.MessageSen
 		}
 		res.Config.Blocking = utils.Ptr(!req.Config.ReturnImmediately)
 		if req.Config.PushConfig != nil {
-			res.Config.PushConfig = FromV1PushConfig(req.Config.PushConfig)
+			legacyTaskPushConfig := FromV1PushConfig(req.Config.PushConfig)
+			res.Config.PushConfig = &legacyTaskPushConfig.Config
 		}
 	}
 	return res
@@ -729,26 +718,6 @@ func FromV1ListTaskPushConfigRequest(req *a2a.ListTaskPushConfigRequest) *a2aleg
 	return &a2alegacy.ListTaskPushConfigParams{
 		TaskID: a2alegacy.TaskID(req.TaskID),
 	}
-}
-
-// ToV1CreateTaskPushConfigRequest converts a legacy create task push config request to a v1 request.
-func ToV1CreateTaskPushConfigRequest(p *a2alegacy.TaskPushConfig) *a2a.CreateTaskPushConfigRequest {
-	return &a2a.CreateTaskPushConfigRequest{
-		TaskID: a2a.TaskID(p.TaskID),
-		Config: *ToV1PushConfig(p.Config),
-	}
-}
-
-// FromV1CreateTaskPushConfigRequest converts a v1 create task push config request to a legacy request.
-func FromV1CreateTaskPushConfigRequest(req *a2a.CreateTaskPushConfigRequest) *a2alegacy.TaskPushConfig {
-	if req == nil {
-		return nil
-	}
-	cfg := FromV1PushConfig(&req.Config)
-	if cfg == nil {
-		cfg = &a2alegacy.PushConfig{}
-	}
-	return &a2alegacy.TaskPushConfig{TaskID: a2alegacy.TaskID(req.TaskID), Config: *cfg}
 }
 
 // ToV1DeleteTaskPushConfigRequest converts a legacy delete task push config request to a v1 request.

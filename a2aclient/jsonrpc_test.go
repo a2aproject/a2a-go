@@ -509,13 +509,13 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("Set", func(t *testing.T) {
+	t.Run("Create", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			req := mustDecodeJSONRPC(t, r, "CreateTaskPushNotificationConfig")
 
 			resp := newResponse(
 				req,
-				json.RawMessage(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`),
+				json.RawMessage(`{"taskId":"task-123","id":"config-123","url":"https://webhook.example.com"}`),
 			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
@@ -523,12 +523,10 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.CreateTaskPushConfigRequest{
+		config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.PushConfig{
 			TaskID: "task-123",
-			Config: a2a.PushConfig{
-				ID:  "config-123",
-				URL: "https://webhook.example.com",
-			},
+			ID:     "config-123",
+			URL:    "https://webhook.example.com",
 		})
 
 		if err != nil {
@@ -539,8 +537,8 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			t.Errorf("got taskId %s, want task-123", config.TaskID)
 		}
 
-		if config.Config.URL != "https://webhook.example.com" {
-			t.Errorf("got URL %s, want https://webhook.example.com", config.Config.URL)
+		if config.URL != "https://webhook.example.com" {
+			t.Errorf("got URL %s, want https://webhook.example.com", config.URL)
 		}
 	})
 

@@ -14,18 +14,6 @@
 
 package a2a
 
-// TaskPushConfig is a container associating a push notification configuration with a specific task.
-type TaskPushConfig struct {
-	// Tenant is an optional ID of the agent owner.
-	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
-
-	// Config is the push notification configuration for this task.
-	Config PushConfig `json:"config" yaml:"config" mapstructure:"config"`
-
-	// TaskID is the ID of the task.
-	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
-}
-
 // GetTaskPushConfigRequest defines request for fetching a specific push notification configuration for a task.
 type GetTaskPushConfigRequest struct {
 	// Tenant is an optional ID of the agent owner.
@@ -56,7 +44,7 @@ type ListTaskPushConfigRequest struct {
 // ListTaskPushConfigResponse defines the response for a request to list push notification configurations.
 type ListTaskPushConfigResponse struct {
 	// Configs is a list of push notification configurations for the task.
-	Configs []*TaskPushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`
+	Configs []*PushConfig `json:"configs" yaml:"configs" mapstructure:"configs"`
 
 	// NextPageToken is the token to use to retrieve the next page of push notification configurations.
 	NextPageToken string `json:"nextPageToken,omitempty" yaml:"nextPageToken,omitempty" mapstructure:"nextPageToken,omitempty"`
@@ -74,20 +62,14 @@ type DeleteTaskPushConfigRequest struct {
 	ID string `json:"id" yaml:"id" mapstructure:"id"`
 }
 
-// CreateTaskPushConfigRequest defines request for creating a push notification configuration for a task.
-type CreateTaskPushConfigRequest struct {
+// PushConfig defines the configuration for setting up push notifications for task updates.
+type PushConfig struct {
 	// Tenant is an optional ID of the agent owner.
 	Tenant string `json:"tenant,omitempty" yaml:"tenant,omitempty" mapstructure:"tenant,omitempty"`
 
-	// Config is the push notification configuration for this task.
-	Config PushConfig `json:"config" yaml:"config" mapstructure:"config"`
-
 	// TaskID is the ID of the task.
 	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
-}
 
-// PushConfig defines the configuration for setting up push notifications for task updates.
-type PushConfig struct {
 	// ID is an optional unique ID for the push notification configuration, set by the client
 	// to support multiple notification callbacks.
 	ID string `json:"id,omitempty" yaml:"id,omitempty" mapstructure:"id,omitempty"`
@@ -102,6 +84,9 @@ type PushConfig struct {
 	// URL is the callback URL where the agent should send push notifications.
 	URL string `json:"url" yaml:"url" mapstructure:"url"`
 }
+
+// TaskPushConfig is an alias for PushConfig for backward compatibility.
+type TaskPushConfig = PushConfig
 
 // PushAuthInfo defines authentication details for a push notification endpoint.
 type PushAuthInfo struct {

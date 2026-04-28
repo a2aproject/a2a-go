@@ -39,7 +39,8 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 		ID: a2a.NewTaskID(),
 	}
 	config := a2a.PushConfig{
-		ID: "config-123",
+		ID:     "config-123",
+		TaskID: task.ID,
 		Auth: &a2a.PushAuthInfo{
 			Scheme:      "Bearer",
 			Credentials: "token-123",
@@ -47,24 +48,16 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 		Token: "interop-token",
 		URL:   "https://example.invalid/webhook",
 	}
-	want := &a2a.TaskPushConfig{
-		TaskID: task.ID,
-		Config: config,
-	}
 
 	for _, transport := range []a2a.TransportProtocol{a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolJSONRPC, a2a.TransportProtocolGRPC} {
 		t.Run(string(transport), func(t *testing.T) {
 			client := startPushServer(t, task, transport)
 			t.Run("CreateTaskPushConfig", func(t *testing.T) {
-				createTaskPushConfigReq := &a2a.CreateTaskPushConfigRequest{
-					TaskID: task.ID,
-					Config: config,
-				}
-				result, err := client.CreateTaskPushConfig(ctx, createTaskPushConfigReq)
+				result, err := client.CreateTaskPushConfig(ctx, &config)
 				if err != nil {
 					t.Fatalf("client.CreateTaskPushConfig() error = %v", err)
 				}
-				if diff := cmp.Diff(want, result); diff != "" {
+				if diff := cmp.Diff(&config, result); diff != "" {
 					t.Fatalf("client.CreateTaskPushConfig() returned diff (+got,-want): %s", diff)
 				}
 			})
@@ -77,7 +70,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 				if err != nil {
 					t.Fatalf("client.GetTaskPushConfig() error = %v", err)
 				}
-				if diff := cmp.Diff(want, result); diff != "" {
+				if diff := cmp.Diff(&config, result); diff != "" {
 					t.Fatalf("client.GetTaskPushConfig() returned diff (+got,-want): %s", diff)
 				}
 			})
@@ -85,7 +78,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 				listTaskPushConfigsReq := &a2a.ListTaskPushConfigRequest{
 					TaskID: task.ID,
 				}
-				wantListResult := []*a2a.TaskPushConfig{want}
+				wantListResult := []*a2a.PushConfig{&config}
 				result, err := client.ListTaskPushConfigs(ctx, listTaskPushConfigsReq)
 				if err != nil {
 					t.Fatalf("client.ListTaskPushConfigs() error = %v", err)
@@ -106,7 +99,7 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 				listTaskPushConfigsReq := &a2a.ListTaskPushConfigRequest{
 					TaskID: task.ID,
 				}
-				wantListResult := []*a2a.TaskPushConfig{}
+				wantListResult := []*a2a.PushConfig{}
 				result, err := client.ListTaskPushConfigs(ctx, listTaskPushConfigsReq)
 				if err != nil {
 					t.Fatalf("client.ListTaskPushConfigs() error = %v", err)

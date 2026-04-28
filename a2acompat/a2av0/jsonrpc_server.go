@@ -345,7 +345,7 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	return FromV1TaskPushConfig(config)
+	return FromV1PushConfig(config), nil
 }
 
 func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2alegacy.TaskPushConfig, error) {
@@ -357,7 +357,7 @@ func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.Raw
 	if err != nil {
 		return nil, err
 	}
-	return FromV1TaskPushConfigs(configs)
+	return FromV1PushConfigs(configs), nil
 }
 
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {
@@ -365,11 +365,11 @@ func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMe
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
-	config, err := h.handler.CreateTaskPushConfig(ctx, ToV1CreateTaskPushConfigRequest(&params))
+	config, err := h.handler.CreateTaskPushConfig(ctx, ToV1PushConfig(&params))
 	if err != nil {
 		return nil, err
 	}
-	return FromV1TaskPushConfig(config)
+	return FromV1PushConfig(config), nil
 }
 
 func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.RawMessage) error {

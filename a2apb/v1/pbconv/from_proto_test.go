@@ -523,61 +523,6 @@ func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
 	}
 }
 
-func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *a2apb.TaskPushNotificationConfig
-		want    *a2a.CreateTaskPushConfigRequest
-		wantErr bool
-	}{
-		{
-			name: "success",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test-task",
-				Url:    "http://example.com/hook",
-				Id:     "test-config",
-			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config", URL: "http://example.com/hook"}},
-		},
-		{
-			name: "nil config",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test",
-			},
-			wantErr: true,
-		},
-		{
-			name: "nil push config",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test",
-				Url:    "",
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty optional ID conversion push config conversion",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "t1",
-				Id:     "",
-				Url:    "http://example.com/hook",
-			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{URL: "http://example.com/hook"}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := FromProtoCreateTaskPushConfigRequest(tt.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("fromProtoCreateTaskPushConfigRequest() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("fromProtoCreateTaskPushConfigRequest() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFromProto_fromProtoGetTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string

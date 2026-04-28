@@ -358,7 +358,7 @@ func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2acli
 }
 
 // GetTaskPushConfig implements [a2aclient.Transport].
-func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
@@ -367,15 +367,12 @@ func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2ac
 	}, &compatConfig); err != nil {
 		return nil, err
 	}
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 
 // ListTaskPushConfigs implements [a2aclient.Transport].
-func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	var compatConfigs []*a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
@@ -384,20 +381,17 @@ func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2
 	}, &compatConfigs); err != nil {
 		return nil, err
 	}
-	configs := make([]*a2a.TaskPushConfig, 0, len(compatConfigs))
+	configs := make([]*a2a.PushConfig, 0, len(compatConfigs))
 	for _, c := range compatConfigs {
-		config, err := ToV1TaskPushConfig(c)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert push config: %w", err)
-		}
+		config := ToV1PushConfig(c)
 		configs = append(configs, config)
 	}
 	return configs, nil
 }
 
 // CreateTaskPushConfig implements [a2aclient.Transport].
-func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	compatPushConfig := FromV1PushConfig(&req.Config)
+func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
+	compatPushConfig := FromV1PushConfig(req)
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method:  "POST",
@@ -407,10 +401,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 	}, &compatConfig); err != nil {
 		return nil, err
 	}
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 

@@ -86,7 +86,7 @@ func TestJSONRPC_RequestRouting(t *testing.T) {
 		{
 			method: "CreateTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{})
+				return client.CreateTaskPushConfig(ctx, &a2a.PushConfig{})
 			},
 		},
 		{

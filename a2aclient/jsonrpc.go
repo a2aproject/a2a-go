@@ -299,13 +299,13 @@ func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params ServicePa
 }
 
 // GetTaskPushConfig implements [a2a.Transport].
-func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigGet, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var config a2a.TaskPushConfig
+	var config a2a.PushConfig
 	if err := json.Unmarshal(result, &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -314,13 +314,13 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params Service
 }
 
 // ListTaskPushConfig implements [a2a.Transport].
-func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigList, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var configs []*a2a.TaskPushConfig
+	var configs []*a2a.PushConfig
 	if err := json.Unmarshal(result, &configs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
@@ -329,13 +329,13 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params Servi
 }
 
 // CreateTaskPushConfig implements [a2a.Transport].
-func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigSet, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	var config a2a.TaskPushConfig
+	var config a2a.PushConfig
 	if err := json.Unmarshal(result, &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}

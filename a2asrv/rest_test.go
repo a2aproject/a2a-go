@@ -79,7 +79,7 @@ func TestREST_RequestRouting(t *testing.T) {
 		{
 			method: "CreateTaskPushConfig",
 			call: func(ctx context.Context, client *a2aclient.Client) (any, error) {
-				return client.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{TaskID: a2a.TaskID("test-id")})
+				return client.CreateTaskPushConfig(ctx, &a2a.PushConfig{TaskID: a2a.TaskID("test-id")})
 			},
 		},
 		{
@@ -167,7 +167,7 @@ func TestREST_RequestRouting(t *testing.T) {
 func TestREST_Validations(t *testing.T) {
 	taskID := a2a.NewTaskID()
 	config := a2a.PushConfig{
-		ID:  string(taskID),
+		ID:  "test-config-id",
 		URL: "https://example.com/push",
 	}
 	task := &a2a.Task{ID: taskID}
@@ -219,7 +219,7 @@ func TestREST_Validations(t *testing.T) {
 			name:    "CreateAndListTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodPost},
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
-			body:    &a2a.CreateTaskPushConfigRequest{TaskID: taskID, Config: config},
+			body:    &a2a.PushConfig{ID: "test-config-id", TaskID: taskID, URL: "https://example.com/push"},
 		},
 		{
 			name:    "GetAndDeleteTaskPushConfig",
