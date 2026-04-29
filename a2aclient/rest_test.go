@@ -113,7 +113,7 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(listTasksResult, wantResult); diff != "" {
-		t.Errorf("ListTasks() mismatch (+got -want):\n%s", diff)
+		t.Errorf("ListTasks() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -337,7 +337,7 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","id":"config-123","url":"https://webhook.example.com"}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
@@ -354,11 +354,11 @@ func TestRESTTransport_GetTaskPushConfig(t *testing.T) {
 	if config.TaskID != "task-123" {
 		t.Errorf("got TaskID %s, want task-123", config.TaskID)
 	}
-	if config.Config.ID != "config-123" {
-		t.Errorf("got Config ID %s, want config-123", config.Config.ID)
+	if config.ID != "config-123" {
+		t.Errorf("got Config ID %s, want config-123", config.ID)
 	}
-	if config.Config.URL != "https://webhook.example.com" {
-		t.Errorf("got Config URL %s, want https://webhook.example.com", config.Config.URL)
+	if config.URL != "https://webhook.example.com" {
+		t.Errorf("got Config URL %s, want https://webhook.example.com", config.URL)
 	}
 }
 
@@ -373,8 +373,8 @@ func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[
-			{"taskId":"task-123","config":{"id":"config-1","url":"https://webhook1.example.com"}},
-			{"taskId":"task-123","config":{"id":"config-2","url":"https://webhook2.example.com"}}
+			{"taskId":"task-123","id":"config-1","url":"https://webhook1.example.com"},
+			{"taskId":"task-123","id":"config-2","url":"https://webhook2.example.com"}
 		]`))
 	}))
 	defer server.Close()
@@ -390,15 +390,15 @@ func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 	if len(configs) != 2 {
 		t.Errorf("got %d configs, want 2", len(configs))
 	}
-	if configs[0].TaskID != "task-123" || configs[0].Config.ID != "config-1" {
-		t.Errorf("got first config %+v, want taskId task-1 and configId config-1", configs[0])
+	if configs[0].TaskID != "task-123" || configs[0].ID != "config-1" {
+		t.Errorf("got first config %+v, want taskId task-123 and configId config-1", configs[0])
 	}
-	if configs[1].TaskID != "task-123" || configs[1].Config.ID != "config-2" {
-		t.Errorf("got second config %+v, want taskId task-2 and configId config-2", configs[1])
+	if configs[1].TaskID != "task-123" || configs[1].ID != "config-2" {
+		t.Errorf("got second config %+v, want taskId task-123 and configId config-2", configs[1])
 	}
 }
 
-func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
+func TestRESTTransport_CreateTaskPushConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected method POST, got %s", r.Method)
@@ -408,30 +408,28 @@ func TestRESTTransport_SetTaskPushConfig(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`))
+		_, _ = w.Write([]byte(`{"taskId":"task-123","id":"config-123","url":"https://webhook.example.com"}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
 
-	config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.CreateTaskPushConfigRequest{
+	config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.PushConfig{
 		TaskID: "task-123",
-		Config: a2a.PushConfig{
-			ID:  "config-123",
-			URL: "https://webhook.example.com",
-		},
+		ID:     "config-123",
+		URL:    "https://webhook.example.com",
 	})
 
 	if err != nil {
-		t.Fatalf("SetTaskPushConfig failed: %v", err)
+		t.Fatalf("CreateTaskPushConfig failed: %v", err)
 	}
 	if config.TaskID != "task-123" {
 		t.Errorf("got taskId %s, want task-123", config.TaskID)
 	}
-	if config.Config.ID != "config-123" {
-		t.Errorf("got config ID %s, want config-123", config.Config.ID)
+	if config.ID != "config-123" {
+		t.Errorf("got config ID %s, want config-123", config.ID)
 	}
-	if config.Config.URL != "https://webhook.example.com" {
-		t.Errorf("got config URL %s, want https://webhook.example.com", config.Config.URL)
+	if config.URL != "https://webhook.example.com" {
+		t.Errorf("got config URL %s, want https://webhook.example.com", config.URL)
 	}
 }
 

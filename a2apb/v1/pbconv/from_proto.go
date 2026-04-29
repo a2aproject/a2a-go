@@ -132,30 +132,6 @@ func fromProtoRole(role a2apb.Role) a2a.MessageRole {
 	}
 }
 
-func fromProtoPushConfig(pConf *a2apb.TaskPushNotificationConfig) (*a2a.PushConfig, error) {
-	if pConf == nil {
-		return nil, nil
-	}
-
-	auth, err := fromProtoAuthenticationInfo(pConf.GetAuthentication())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert authentication info: %w", err)
-	}
-	url := pConf.GetUrl()
-	if url == "" {
-		return nil, fmt.Errorf("url cannot be empty")
-	}
-
-	result := &a2a.PushConfig{
-		ID:    pConf.GetId(),
-		URL:   url,
-		Token: pConf.GetToken(),
-		Auth:  auth,
-	}
-
-	return result, nil
-}
-
 func fromProtoAuthenticationInfo(pAuth *a2apb.AuthenticationInfo) (*a2a.PushAuthInfo, error) {
 	if pAuth == nil {
 		return nil, nil
@@ -175,7 +151,7 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Send
 		return nil, nil
 	}
 
-	pConf, err := fromProtoPushConfig(conf.GetTaskPushNotificationConfig())
+	pConf, err := FromProtoTaskPushConfig(conf.GetTaskPushNotificationConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert push config: %w", err)
 	}
@@ -309,28 +285,6 @@ func FromProtoListTasksResponse(resp *a2apb.ListTasksResponse) (*a2a.ListTasksRe
 		TotalSize:     int(resp.GetTotalSize()),
 		PageSize:      int(resp.GetPageSize()),
 		NextPageToken: resp.GetNextPageToken(),
-	}, nil
-}
-
-// FromProtoCreateTaskPushConfigRequest converts a [a2apb.CreateTaskPushNotificationConfigRequest] to a [a2a.CreateTaskPushConfigRequest].
-func FromProtoCreateTaskPushConfigRequest(req *a2apb.TaskPushNotificationConfig) (*a2a.CreateTaskPushConfigRequest, error) {
-	if req == nil {
-		return nil, nil
-	}
-
-	pConf, err := fromProtoPushConfig(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
-	taskID := a2a.TaskID(req.GetTaskId())
-	if taskID == "" {
-		return nil, fmt.Errorf("task id cannot be empty")
-	}
-
-	return &a2a.CreateTaskPushConfigRequest{
-		Tenant: req.GetTenant(),
-		Config: *pConf,
-		TaskID: taskID,
 	}, nil
 }
 
@@ -577,31 +531,32 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 }
 
 // FromProtoTaskPushConfig converts a [a2apb.TaskPushNotificationConfig] to a [a2a.TaskPushConfig].
-func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2a.TaskPushConfig, error) {
+func FromProtoTaskPushConfig(pTaskConfig *a2apb.TaskPushNotificationConfig) (*a2a.PushConfig, error) {
 	if pTaskConfig == nil {
 		return nil, nil
 	}
-
-	taskID := a2a.TaskID(pTaskConfig.GetTaskId())
-	if taskID == "" {
-		return nil, fmt.Errorf("task id cannot be empty")
-	}
-
-	config, err := fromProtoPushConfig(pTaskConfig)
+	auth, err := fromProtoAuthenticationInfo(pTaskConfig.GetAuthentication())
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
+		return nil, fmt.Errorf("failed to convert authentication info: %w", err)
+	}
+	url := pTaskConfig.GetUrl()
+	if url == "" {
+		return nil, fmt.Errorf("url cannot be empty")
 	}
 
-	return &a2a.TaskPushConfig{
+	return &a2a.PushConfig{
 		Tenant: pTaskConfig.GetTenant(),
-		Config: *config,
-		TaskID: taskID,
+		TaskID: a2a.TaskID(pTaskConfig.GetTaskId()),
+		ID:     pTaskConfig.GetId(),
+		URL:    url,
+		Auth:   auth,
+		Token:  pTaskConfig.GetToken(),
 	}, nil
 }
 
 // FromProtoListTaskPushConfigResponse converts a [a2apb.ListTaskPushNotificationConfigResponse] to a [a2a.ListTaskPushConfigResponse].
 func FromProtoListTaskPushConfigResponse(resp *a2apb.ListTaskPushNotificationConfigsResponse) (*a2a.ListTaskPushConfigResponse, error) {
-	configs := make([]*a2a.TaskPushConfig, len(resp.GetConfigs()))
+	configs := make([]*a2a.PushConfig, len(resp.GetConfigs()))
 	for i, pConfig := range resp.GetConfigs() {
 		config, err := FromProtoTaskPushConfig(pConfig)
 		if err != nil {

@@ -225,7 +225,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 				t.Fatalf("fromProtoSendMessageConfig() error = %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("fromProtoSendMessageConfig() wrong result (+got,-want)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
+				t.Errorf("fromProtoSendMessageConfig() wrong result (-want +got)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
 			}
 		})
 	}
@@ -517,62 +517,7 @@ func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
 				return
 			}
 			if diff := cmp.Diff(got, tt.want); diff != "" {
-				t.Errorf("fromProtoListTasksResponse() mismatch (+got -want):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *a2apb.TaskPushNotificationConfig
-		want    *a2a.CreateTaskPushConfigRequest
-		wantErr bool
-	}{
-		{
-			name: "success",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test-task",
-				Url:    "http://example.com/hook",
-				Id:     "test-config",
-			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config", URL: "http://example.com/hook"}},
-		},
-		{
-			name: "nil config",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test",
-			},
-			wantErr: true,
-		},
-		{
-			name: "nil push config",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "test",
-				Url:    "",
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty optional ID conversion push config conversion",
-			req: &a2apb.TaskPushNotificationConfig{
-				TaskId: "t1",
-				Id:     "",
-				Url:    "http://example.com/hook",
-			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{URL: "http://example.com/hook"}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := FromProtoCreateTaskPushConfigRequest(tt.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("fromProtoCreateTaskPushConfigRequest() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("fromProtoCreateTaskPushConfigRequest() = %v, want %v", got, tt.want)
+				t.Errorf("fromProtoListTasksResponse() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

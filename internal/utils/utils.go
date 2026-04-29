@@ -17,7 +17,10 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
+
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // Ptr returns a pointer to the argument simplifying pointer to primitive literals creation.
@@ -41,4 +44,23 @@ func DeepCopy[T any](task *T) (*T, error) {
 	}
 
 	return &copy, nil
+}
+
+// ToStringMap converts a map[string]any to a map[string]string.
+// It logs a warning if a value cannot be converted to a string.
+func ToStringMap(raw any) (map[string]string, bool) {
+	if m, ok := raw.(map[string]string); ok {
+		return m, true
+	} else if m, ok := raw.(map[string]any); ok {
+		converted := make(map[string]string)
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				converted[k] = s
+			} else {
+				log.Warn(context.Background(), "failed to convert metadata value to string", "key", k, "value", v)
+			}
+		}
+		return converted, true
+	}
+	return nil, false
 }

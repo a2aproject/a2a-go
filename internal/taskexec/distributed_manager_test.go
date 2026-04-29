@@ -228,7 +228,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 					tc.wantQueueWrite.TaskID = wq.Payloads[0].TaskID
 				}
 				if diff := cmp.Diff(tc.wantQueueWrite, wq.Payloads[0]); diff != "" {
-					t.Errorf("Execute() payload mismatch (+got,-want):\n%s", diff)
+					t.Errorf("Execute() payload mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})

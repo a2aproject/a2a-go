@@ -137,7 +137,7 @@ func TestTripleHopPropagation(t *testing.T) {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
 			if diff := cmp.Diff(tc.wantPropagatedMeta, gotExecCtx.Metadata); diff != "" {
-				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
+				t.Fatalf("wrong end request meta (-want +got), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
 				return slices.Contains([]string{
@@ -145,7 +145,7 @@ func TestTripleHopPropagation(t *testing.T) {
 				}, k)
 			})
 			if diff := cmp.Diff(tc.wantPropagatedHeaders, gotHeaders, ignoreStdHeaders, cmpIgnoreHeaderCase()); diff != "" {
-				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)
+				t.Fatalf("wrong end request headers (-want +got), diff = %s", diff)
 			}
 		})
 	}
@@ -243,7 +243,7 @@ func TestDefaultPropagation(t *testing.T) {
 				t.Fatalf("client.SendMessage() = %v, want completed task", resp)
 			}
 			if diff := cmp.Diff(tc.wantBReceivedMeta, gotExecCtx.Metadata); diff != "" {
-				t.Fatalf("wrong end request meta (+got,-want), diff = %s", diff)
+				t.Fatalf("wrong end request meta (-want +got), diff = %s", diff)
 			}
 			ignoreStdHeaders := cmpopts.IgnoreMapEntries(func(k string, v any) bool {
 				return slices.Contains([]string{
@@ -251,7 +251,7 @@ func TestDefaultPropagation(t *testing.T) {
 				}, k)
 			})
 			if diff := cmp.Diff(tc.wantBReceivedHeaders, gotHeaders, ignoreStdHeaders, cmpIgnoreHeaderCase()); diff != "" {
-				t.Fatalf("wrong end request headers (+got,-want), diff = %s", diff)
+				t.Fatalf("wrong end request headers (-want +got), diff = %s", diff)
 			}
 		})
 	}

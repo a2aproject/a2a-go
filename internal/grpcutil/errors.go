@@ -21,6 +21,8 @@ import (
 	"maps"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -30,34 +32,33 @@ import (
 )
 
 var errorMappings = []struct {
-	code   codes.Code
-	err    error
-	reason string
+	code codes.Code
+	err  error
 }{
 	// Primary mappings (used for FromGRPCError as the first match is chosen)
-	{codes.NotFound, a2a.ErrTaskNotFound, "TASK_NOT_FOUND"},
-	{codes.FailedPrecondition, a2a.ErrTaskNotCancelable, "TASK_NOT_CANCELABLE"},
-	{codes.Unimplemented, a2a.ErrUnsupportedOperation, "UNSUPPORTED_OPERATION"},
-	{codes.InvalidArgument, a2a.ErrInvalidParams, "INVALID_PARAMS"},
-	{codes.Internal, a2a.ErrInternalError, "INTERNAL_ERROR"},
-	{codes.Unauthenticated, a2a.ErrUnauthenticated, "UNAUTHENTICATED"},
-	{codes.PermissionDenied, a2a.ErrUnauthorized, "UNAUTHORIZED"},
-	{codes.Canceled, context.Canceled, "INTERNAL_ERROR"},
-	{codes.DeadlineExceeded, context.DeadlineExceeded, "INTERNAL_ERROR"},
+	{codes.NotFound, a2a.ErrTaskNotFound},
+	{codes.FailedPrecondition, a2a.ErrTaskNotCancelable},
+	{codes.FailedPrecondition, a2a.ErrUnsupportedOperation},
+	{codes.InvalidArgument, a2a.ErrInvalidParams},
+	{codes.Internal, a2a.ErrInternalError},
+	{codes.Unauthenticated, a2a.ErrUnauthenticated},
+	{codes.PermissionDenied, a2a.ErrUnauthorized},
+	{codes.Canceled, context.Canceled},
+	{codes.DeadlineExceeded, context.DeadlineExceeded},
 
 	// Secondary mappings (only used for ToGRPCError)
-	{codes.FailedPrecondition, a2a.ErrExtendedCardNotConfigured, "EXTENDED_AGENT_CARD_NOT_CONFIGURED"},
-	{codes.Unimplemented, a2a.ErrPushNotificationNotSupported, "PUSH_NOTIFICATION_NOT_SUPPORTED"},
-	{codes.Unimplemented, a2a.ErrMethodNotFound, "METHOD_NOT_FOUND"},
-	{codes.InvalidArgument, a2a.ErrUnsupportedContentType, "UNSUPPORTED_CONTENT_TYPE"},
-	{codes.InvalidArgument, a2a.ErrInvalidRequest, "INVALID_REQUEST"},
-	{codes.Internal, a2a.ErrInvalidAgentResponse, "INVALID_AGENT_RESPONSE"},
+	{codes.FailedPrecondition, a2a.ErrExtendedCardNotConfigured},
+	{codes.FailedPrecondition, a2a.ErrPushNotificationNotSupported},
+	{codes.Unimplemented, a2a.ErrMethodNotFound},
+	{codes.InvalidArgument, a2a.ErrUnsupportedContentType},
+	{codes.InvalidArgument, a2a.ErrInvalidRequest},
+	{codes.Internal, a2a.ErrInvalidAgentResponse},
 
 	// Additional mappings from a2a/errors.go
-	{codes.FailedPrecondition, a2a.ErrExtensionSupportRequired, "EXTENSION_SUPPORT_REQUIRED"},
-	{codes.Unimplemented, a2a.ErrVersionNotSupported, "VERSION_NOT_SUPPORTED"},
-	{codes.InvalidArgument, a2a.ErrParseError, "PARSE_ERROR"},
-	{codes.Internal, a2a.ErrServerError, "SERVER_ERROR"},
+	{codes.FailedPrecondition, a2a.ErrExtensionSupportRequired},
+	{codes.FailedPrecondition, a2a.ErrVersionNotSupported},
+	{codes.InvalidArgument, a2a.ErrParseError},
+	{codes.Internal, a2a.ErrServerError},
 }
 
 // ToGRPCError translates a2a errors into gRPC status errors.
@@ -76,40 +77,48 @@ func ToGRPCError(err error) error {
 	for _, mapping := range errorMappings {
 		if errors.Is(err, mapping.err) {
 			code = mapping.code
-			reason = mapping.reason
+			reason = a2a.ErrorReason(mapping.err)
 			break
 		}
 	}
 
 	st := status.New(code, err.Error())
-
-	additionalMeta := map[string]any{}
-	errInfoMeta := map[string]string{}
+	var errInfoMeta map[string]string
 	var a2aErr *a2a.Error
-	if errors.As(err, &a2aErr) && len(a2aErr.Details) > 0 {
-		for k, v := range a2aErr.Details {
-			if s, ok := v.(string); ok {
-				errInfoMeta[k] = s
+	var messages []protoadapt.MessageV1
+
+	if errors.As(err, &a2aErr) {
+		if len(a2aErr.Details) > 0 {
+			s, err := structpb.NewStruct(a2aErr.Details)
+			if err == nil {
+				messages = append(messages, s)
 			} else {
-				additionalMeta[k] = v
+				log.Warn(context.Background(), "failed to convert error meta to proto", "error", err, "meta", a2aErr.Details)
+			}
+		}
+		for _, d := range a2aErr.TypedDetails {
+			if d.TypeURL == errordetails.ErrorInfoType {
+				if rawMeta, ok := d.Value["metadata"]; ok {
+					if m, ok := utils.ToStringMap(rawMeta); ok {
+						errInfoMeta = m
+					}
+				}
+			} else {
+				s, err := structpb.NewStruct(d.Value)
+				if err != nil {
+					log.Warn(context.Background(), "failed to convert error meta to proto", "error", err, "meta", d.Value)
+					continue
+				}
+				messages = append(messages, s)
 			}
 		}
 	}
 
-	errInfo := &errdetails.ErrorInfo{Reason: reason, Domain: "a2a-protocol.org"}
+	errInfo := &errdetails.ErrorInfo{Reason: reason, Domain: a2a.ProtocolDomain}
 	if len(errInfoMeta) > 0 {
 		errInfo.Metadata = errInfoMeta
 	}
-
-	var messages = []protoadapt.MessageV1{errInfo}
-	if len(additionalMeta) > 0 {
-		s, err := structpb.NewStruct(additionalMeta)
-		if err == nil {
-			messages = append(messages, s)
-		} else {
-			log.Warn(context.Background(), "failed to convert error meta to proto", "error", err, "meta", additionalMeta)
-		}
-	}
+	messages = append(messages, errInfo)
 
 	withDetails, err := st.WithDetails(messages...)
 	if err != nil {
@@ -130,24 +139,31 @@ func FromGRPCError(err error) error {
 	}
 
 	var reason string
-
+	var typedDetails []*errordetails.Typed
+	errInfoMeta := make(map[string]string)
 	details := make(map[string]any)
+	firstStruct := true
+
 	for _, d := range s.Details() {
 		switch v := d.(type) {
 		case *errdetails.ErrorInfo:
 			reason = v.Reason
-			for k, val := range v.Metadata {
-				details[k] = val
-			}
+			maps.Copy(errInfoMeta, v.Metadata)
 		case *structpb.Struct:
-			maps.Copy(details, v.AsMap())
+			// Add the first struct to Err.Details.
+			if firstStruct {
+				maps.Copy(details, v.AsMap())
+				firstStruct = false
+			}
+			// Add every struct including the first one to Err.TypedDetails.
+			typedDetails = append(typedDetails, errordetails.NewFromStruct(v.AsMap()))
 		}
 	}
 
 	baseErr := a2a.ErrInternalError
 	if reason != "" {
 		for _, mapping := range errorMappings {
-			if mapping.reason == reason && s.Code() == mapping.code {
+			if a2a.ErrorReason(mapping.err) == reason && s.Code() == mapping.code {
 				baseErr = mapping.err
 				break
 			}
@@ -162,8 +178,13 @@ func FromGRPCError(err error) error {
 	}
 
 	errOut := a2a.NewError(baseErr, s.Message())
+	if len(errInfoMeta) > 0 {
+		errOut = errOut.WithErrorInfoMeta(errInfoMeta)
+	}
 	if len(details) > 0 {
 		errOut = errOut.WithDetails(details)
 	}
+	errOut.TypedDetails = append(errOut.TypedDetails, typedDetails...)
+
 	return errOut
 }

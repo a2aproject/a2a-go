@@ -329,7 +329,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
-	v1req := ToV1CreateTaskPushConfigRequest(&a2alegacy.TaskPushConfig{
+	v1req := ToV1PushConfig(&a2alegacy.TaskPushConfig{
 		TaskID: a2alegacy.TaskID(taskID),
 		Config: config,
 	})
@@ -338,11 +338,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfig, err := FromV1TaskPushConfig(result)
-	if err != nil {
-		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
-		return
-	}
+	compatConfig := FromV1PushConfig(result)
 	writeSnakeCaseJSON(ctx, rw, compatConfig)
 }
 
@@ -362,11 +358,7 @@ func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req 
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfig, err := FromV1TaskPushConfig(result)
-	if err != nil {
-		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
-		return
-	}
+	compatConfig := FromV1PushConfig(result)
 	writeSnakeCaseJSON(ctx, rw, compatConfig)
 }
 
@@ -384,11 +376,7 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfigs, err := FromV1TaskPushConfigs(result)
-	if err != nil {
-		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
-		return
-	}
+	compatConfigs := FromV1PushConfigs(result)
 	if compatConfigs == nil {
 		compatConfigs = []*a2alegacy.TaskPushConfig{}
 	}

@@ -47,13 +47,13 @@ type Transport interface {
 	SendStreamingMessage(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
 
 	// GetTaskPushConfig calls the `GetTaskPushNotificationConfig` protocol method.
-	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
+	GetTaskPushConfig(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error)
 
 	// ListTaskPushConfigs calls the `ListTaskPushNotificationConfig` protocol method.
-	ListTaskPushConfigs(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
+	ListTaskPushConfigs(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error)
 
 	// CreateTaskPushConfig calls the `CreateTaskPushNotificationConfig` protocol method.
-	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
+	CreateTaskPushConfig(context.Context, ServiceParams, *a2a.PushConfig) (*a2a.PushConfig, error)
 
 	// DeleteTaskPushConfig calls the `DeleteTaskPushNotificationConfig` protocol method.
 	DeleteTaskPushConfig(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
@@ -113,15 +113,15 @@ func (unimplementedTransport) SendStreamingMessage(ctx context.Context, params S
 	}
 }
 
-func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	return nil, errNotImplemented
 }
 
-func (unimplementedTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (unimplementedTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	return nil, errNotImplemented
 }
 
@@ -191,17 +191,17 @@ func (d *tenantTransportDecorator) SendStreamingMessage(ctx context.Context, par
 	return d.base.SendStreamingMessage(ctx, params, req)
 }
 
-func (d *tenantTransportDecorator) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (d *tenantTransportDecorator) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.GetTaskPushConfig(ctx, params, req)
 }
 
-func (d *tenantTransportDecorator) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (d *tenantTransportDecorator) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.ListTaskPushConfigs(ctx, params, req)
 }
 
-func (d *tenantTransportDecorator) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (d *tenantTransportDecorator) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.CreateTaskPushConfig(ctx, params, req)
 }

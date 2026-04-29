@@ -56,7 +56,7 @@ func TestExecExecutor_PipesStdinToCommand(t *testing.T) {
 	}
 	got := allArtifactText(task)
 	if diff := cmp.Diff("echo back", got); diff != "" {
-		t.Fatalf("artifact text wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("artifact text wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestExecExecutor_CommandOutput(t *testing.T) {
 	}
 	got := allArtifactText(task)
 	if diff := cmp.Diff("hello\n", got); diff != "" {
-		t.Fatalf("artifact text wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("artifact text wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -164,7 +164,7 @@ func TestSplitByDelimiter(t *testing.T) {
 				data = data[advance:]
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Fatalf("splitByDelimiter(%q) wrong result (+got,-want) diff = %s", tt.delim, diff)
+				t.Fatalf("splitByDelimiter(%q) wrong result (-want +got) diff = %s", tt.delim, diff)
 			}
 		})
 	}

@@ -127,15 +127,15 @@ func (p *proxyHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMe
 	return p.client.SendStreamingMessage(p.withParams(ctx), req)
 }
 
-func (p *proxyHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (p *proxyHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	return p.client.GetTaskPushConfig(p.withParams(ctx), req)
 }
 
-func (p *proxyHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (p *proxyHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	return p.client.ListTaskPushConfigs(p.withParams(ctx), req)
 }
 
-func (p *proxyHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (p *proxyHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	return p.client.CreateTaskPushConfig(p.withParams(ctx), req)
 }
 

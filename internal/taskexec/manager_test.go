@@ -347,7 +347,7 @@ func TestManager_Execute(t *testing.T) {
 				t.Fatalf("subscription error = %v, want nil", subErr)
 			}
 			if diff := cmp.Diff([]a2a.Event{want}, subEvents); diff != "" {
-				t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+				t.Fatalf("subscription events incorrect (-want +got) diff = %s", diff)
 			}
 		})
 	}
@@ -374,7 +374,7 @@ func TestManager_EventProcessingFailureFailsExecution(t *testing.T) {
 		t.Fatalf("subscription error = %v, want %v", subErr, executor.processErr)
 	}
 	if diff := cmp.Diff([]a2a.Event{}, subEvents); diff != "" {
-		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+		t.Fatalf("subscription events incorrect (-want +got) diff = %s", diff)
 	}
 }
 
@@ -396,7 +396,7 @@ func TestManager_ExecuteFailureFailsExecution(t *testing.T) {
 		t.Fatalf("subscription error = %v, want %v", subErr, executor.executeErr)
 	}
 	if diff := cmp.Diff([]a2a.Event{}, subEvents); diff != "" {
-		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+		t.Fatalf("subscription events incorrect (-want +got) diff = %s", diff)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestManager_ExecuteErrorOverwriteByProcessorResult(t *testing.T) {
 	}
 	subEvents := <-subEventsChan
 	if diff := cmp.Diff([]a2a.Event{wantResult}, subEvents); diff != "" {
-		t.Fatalf("subscription events incorrect (+got,-want) diff = %s", diff)
+		t.Fatalf("subscription events incorrect (-want +got) diff = %s", diff)
 	}
 }
 

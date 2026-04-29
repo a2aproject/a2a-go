@@ -33,9 +33,9 @@ type testTransport struct {
 	SendMessageFn          func(context.Context, ServiceParams, *a2a.SendMessageRequest) (a2a.SendMessageResult, error)
 	SubscribeToTaskFn      func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 	SendStreamingMessageFn func(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error]
-	GetTaskPushConfigFn    func(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
-	ListTaskPushConfigFn   func(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error)
-	CreateTaskPushConfigFn func(context.Context, ServiceParams, *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error)
+	GetTaskPushConfigFn    func(context.Context, ServiceParams, *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error)
+	ListTaskPushConfigFn   func(context.Context, ServiceParams, *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error)
+	CreateTaskPushConfigFn func(context.Context, ServiceParams, *a2a.PushConfig) (*a2a.PushConfig, error)
 	DeleteTaskPushConfigFn func(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error
 	GetExtendedAgentCardFn func(context.Context, ServiceParams, *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error)
 }
@@ -66,15 +66,15 @@ func (t *testTransport) SendStreamingMessage(ctx context.Context, params Service
 	return t.SendStreamingMessageFn(ctx, params, req)
 }
 
-func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *testTransport) GetTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	return t.GetTaskPushConfigFn(ctx, sParams, req)
 }
 
-func (t *testTransport) ListTaskPushConfigs(ctx context.Context, sParams ServiceParams, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *testTransport) ListTaskPushConfigs(ctx context.Context, sParams ServiceParams, params *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	return t.ListTaskPushConfigFn(ctx, sParams, params)
 }
 
-func (t *testTransport) CreateTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *testTransport) CreateTaskPushConfig(ctx context.Context, sParams ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	return t.CreateTaskPushConfigFn(ctx, sParams, req)
 }
 
@@ -201,14 +201,14 @@ func TestClient_DefaultSendMessageConfig(t *testing.T) {
 			Config: &a2a.SendMessageConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, ReturnImmediately: false},
 		}
 		if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
-			t.Fatalf("client.SendMessage() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendMessage() wrong result (-want +got) diff = %s", diff)
 		}
 		wantReq := &a2a.SendMessageRequest{Config: &a2a.SendMessageConfig{}}
 		if wantNilConfigAfter {
 			wantReq = &a2a.SendMessageRequest{}
 		}
 		if diff := cmp.Diff(wantReq, req); diff != "" {
-			t.Fatalf("client.SendMessage() modified params (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendMessage() modified params (-want +got) diff = %s", diff)
 		}
 	}
 }
@@ -239,10 +239,10 @@ func TestClient_DefaultSendStreamingMessageConfig(t *testing.T) {
 		Config: &a2a.SendMessageConfig{AcceptedOutputModes: acceptedModes, PushConfig: pushConfig, ReturnImmediately: false},
 	}
 	if diff := cmp.Diff(want, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(&a2a.SendMessageRequest{}, req); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() modified params (-want +got) diff = %s", diff)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestClient_GetExtendedAgentCard(t *testing.T) {
 		t.Fatal("lastReq = nil, want GetExtendedAgentCard")
 	}
 	if diff := cmp.Diff(extendedCard, got); diff != "" {
-		t.Fatalf("client.SendStreamingMessage() modified params (+got,-want) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() modified params (-want +got) diff = %s", diff)
 	}
 }
 
@@ -458,13 +458,13 @@ func TestClient_UpdateAgentCard(t *testing.T) {
 		t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 	}
 	if diff := cmp.Diff(publicCard, interceptor.lastReq.Card); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Card (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Card (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(publicCard, interceptor.lastResp.Card); diff != "" {
-		t.Fatalf("wrong interceptor.lastResp.Card (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastResp.Card (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(extendedCard, card); diff != "" {
-		t.Fatalf("wrong client.GetExtendedAgentCard() (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong client.GetExtendedAgentCard() (-want +got) diff = %s", diff)
 	}
 }
 
@@ -501,7 +501,7 @@ func TestClient_FallbackToNonStreamingSend(t *testing.T) {
 			t.Fatalf("client.GetAgentCard() error = %v, want nil", err)
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
-			t.Fatalf("client.SendStreamingMessage() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("client.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 		}
 		eventCount++
 	}
@@ -620,10 +620,10 @@ func TestClient_InterceptSendMessage(t *testing.T) {
 		t.Fatalf("client.SendMessage() = (%v, %v), want %v", resp, err, task)
 	}
 	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Payload (-want +got) diff = %s", diff)
 	}
 	if diff := cmp.Diff(task, interceptor.lastResp.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastResp.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastResp.Payload (-want +got) diff = %s", diff)
 	}
 }
 
@@ -698,15 +698,15 @@ func TestClient_InterceptSendStreamingMessage(t *testing.T) {
 		t.Fatalf("lastResp.Method = %v, want SendStreamingMessage", interceptor.lastResp.Method)
 	}
 	if diff := cmp.Diff(req, interceptor.lastReq.Payload); diff != "" {
-		t.Fatalf("wrong interceptor.lastReq.Payload (+got,-want) diff = %s", diff)
+		t.Fatalf("wrong interceptor.lastReq.Payload (-want +got) diff = %s", diff)
 	}
 }
 
 func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 	ctx := t.Context()
-	config := &a2a.TaskPushConfig{}
+	config := &a2a.PushConfig{}
 	transport := &testTransport{
-		GetTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+		GetTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 			return config, nil
 		},
 	}
@@ -733,10 +733,10 @@ func TestClient_InterceptGetTaskPushConfig(t *testing.T) {
 
 func TestClient_InterceptListTaskPushConfigs(t *testing.T) {
 	ctx := t.Context()
-	config := &a2a.TaskPushConfig{}
+	config := &a2a.PushConfig{}
 	transport := &testTransport{
-		ListTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
-			return []*a2a.TaskPushConfig{config}, nil
+		ListTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
+			return []*a2a.PushConfig{config}, nil
 		},
 	}
 	interceptor := &testInterceptor{}
@@ -755,22 +755,22 @@ func TestClient_InterceptListTaskPushConfigs(t *testing.T) {
 	if interceptor.lastReq.Payload != req {
 		t.Fatalf("interceptor.Before payload = %v, want %v", interceptor.lastReq.Payload, req)
 	}
-	if interceptor.lastResp.Payload.([]*a2a.TaskPushConfig)[0] != config {
+	if interceptor.lastResp.Payload.([]*a2a.PushConfig)[0] != config {
 		t.Fatalf("interceptor.After payload = %v, want %v", interceptor.lastResp.Payload, config)
 	}
 }
 
 func TestClient_InterceptCreateTaskPushConfigFn(t *testing.T) {
 	ctx := t.Context()
-	config := &a2a.TaskPushConfig{}
+	config := &a2a.PushConfig{}
 	transport := &testTransport{
-		CreateTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+		CreateTaskPushConfigFn: func(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 			return config, nil
 		},
 	}
 	interceptor := &testInterceptor{}
 	client := newTestClient(transport, interceptor)
-	req := &a2a.CreateTaskPushConfigRequest{}
+	req := &a2a.PushConfig{}
 	resp, err := client.CreateTaskPushConfig(ctx, req)
 	if interceptor.lastReq.Method != "CreateTaskPushConfig" {
 		t.Fatalf("lastReq.Method = %v, want CreateTaskPushConfig", interceptor.lastReq.Method)

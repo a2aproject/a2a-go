@@ -23,6 +23,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ProtocolDomain is the domain used for A2A protocol.
+const ProtocolDomain = "a2a-protocol.org"
+
 // ProtocolVersion is a string constant which represents a version of the protocol.
 type ProtocolVersion string
 
@@ -774,7 +777,7 @@ type SendMessageConfig struct {
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
 	// PushConfig is configuration for the agent to send push notifications for updates after the initial response.
-	PushConfig *PushConfig `json:"pushNotificationConfig,omitempty" yaml:"pushNotificationConfig,omitempty" mapstructure:"pushNotificationConfig,omitempty"`
+	PushConfig *PushConfig `json:"taskPushNotificationConfig,omitempty" yaml:"taskPushNotificationConfig,omitempty" mapstructure:"taskPushNotificationConfig,omitempty"`
 }
 
 // SendMessageRequest defines the request to send a message to an agent. This can be used

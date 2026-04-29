@@ -97,7 +97,7 @@ func TestToProto_toProtoMessage(t *testing.T) {
 					t.Errorf("fromProtoMessages() error = %v", err)
 				}
 				if diff := cmp.Diff([]*a2a.Message{tt.msg}, gotBack); diff != "" {
-					t.Errorf("fromProtoMessages() wrong result (+got,-want):\n diff = %s", diff)
+					t.Errorf("fromProtoMessages() wrong result (-want +got):\n diff = %s", diff)
 				}
 			}
 		})
@@ -431,25 +431,23 @@ func TestToProto_toProtoTaskStatus(t *testing.T) {
 	}
 }
 
-func TestToProto_toProtoTaskPushConfig(t *testing.T) {
+func TestToProto_ToProtoTaskPushConfig(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *a2a.TaskPushConfig
+		config  *a2a.PushConfig
 		want    *a2apb.TaskPushNotificationConfig
 		wantErr bool
 	}{
 		{
 			name: "full config",
-			config: &a2a.TaskPushConfig{
+			config: &a2a.PushConfig{
 				TaskID: "t1",
-				Config: a2a.PushConfig{
-					ID:    "c1",
-					URL:   "http://a.com",
-					Token: "tok",
-					Auth: &a2a.PushAuthInfo{
-						Scheme:      "Bearer",
-						Credentials: "cred",
-					},
+				ID:     "c1",
+				URL:    "http://a.com",
+				Token:  "tok",
+				Auth: &a2a.PushAuthInfo{
+					Scheme:      "Bearer",
+					Credentials: "cred",
 				},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
@@ -465,9 +463,10 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "config without auth",
-			config: &a2a.TaskPushConfig{
+			config: &a2a.PushConfig{
 				TaskID: "t1",
-				Config: a2a.PushConfig{ID: "c1", URL: "http://a.com"},
+				ID:     "c1",
+				URL:    "http://a.com",
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "t1",
@@ -482,9 +481,8 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "empty inner push config",
-			config: &a2a.TaskPushConfig{
+			config: &a2a.PushConfig{
 				TaskID: "test-task",
-				Config: a2a.PushConfig{},
 			},
 			want: &a2apb.TaskPushNotificationConfig{
 				TaskId: "test-task",
@@ -508,9 +506,9 @@ func TestToProto_toProtoTaskPushConfig(t *testing.T) {
 
 func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 	configs := &a2a.ListTaskPushConfigResponse{
-		Configs: []*a2a.TaskPushConfig{
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config1"}},
-			{TaskID: "test-task", Config: a2a.PushConfig{ID: "test-config2"}},
+		Configs: []*a2a.PushConfig{
+			{TaskID: "test-task", ID: "test-config1"},
+			{TaskID: "test-task", ID: "test-config2"},
 		},
 		NextPageToken: "next",
 	}
@@ -537,11 +535,6 @@ func TestToProto_toProtoListTaskPushConfigResponse(t *testing.T) {
 			want: &a2apb.ListTaskPushNotificationConfigsResponse{
 				Configs: []*a2apb.TaskPushNotificationConfig{},
 			},
-		},
-		{
-			name:    "conversion error",
-			configs: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.TaskPushConfig{{TaskID: "", Config: a2a.PushConfig{ID: "test"}}}},
-			wantErr: true,
 		},
 	}
 
@@ -952,7 +945,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 				t.Errorf("FromProtoAgentCard() error = %v", err)
 			}
 			if diff := cmp.Diff(tt.card, gotBack); diff != "" {
-				t.Errorf("FromProtoAgentCard() wrong result (+got,-want):\ndiff = %s", diff)
+				t.Errorf("FromProtoAgentCard() wrong result (-want +got):\ndiff = %s", diff)
 			}
 		})
 	}

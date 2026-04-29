@@ -1,6 +1,9 @@
 #!/bin/bash
 set -ex
 
+# Set default log level
+export ITK_LOG_LEVEL="${ITK_LOG_LEVEL:-INFO}"
+
 # Initialize default exit code
 RESULT=1
 
@@ -66,13 +69,25 @@ ITK_DIR=$(pwd)
 # Stop existing container if any
 docker rm -f itk-service || true
 
+# Create logs directory if debug
+if [ "${ITK_LOG_LEVEL^^}" = "DEBUG" ]; then
+  mkdir -p "$ITK_DIR/logs"
+fi
+
+DOCKER_MOUNT_LOGS=""
+if [ "${ITK_LOG_LEVEL^^}" = "DEBUG" ]; then
+  DOCKER_MOUNT_LOGS="-v $ITK_DIR/logs:/app/logs"
+fi
+
 # Run container with protobuf registration conflict set to 'warn'
 # This is necessary because the SDK v2 depends on its predecessor v0.x,
 # causing global proto registration conflicts.
 docker run -d --name itk-service \
   -e GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn \
+  -e ITK_LOG_LEVEL="$ITK_LOG_LEVEL" \
   -v "$A2A_GO_ROOT:/app/agents/repo" \
   -v "$ITK_DIR:/app/agents/repo/itk" \
+  $DOCKER_MOUNT_LOGS \
   -p 8000:8000 \
   itk_service
 
