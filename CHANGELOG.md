@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.1](https://github.com/a2aproject/a2a-go/compare/v2.2.0...v2.2.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* compat package fixes ([#328](https://github.com/a2aproject/a2a-go/issues/328)) ([21e166c](https://github.com/a2aproject/a2a-go/commit/21e166cb7d023316d279810ba681347506b2e004))
+* deserialize REST streaming error events into typed A2A errors ([#318](https://github.com/a2aproject/a2a-go/issues/318)) ([#319](https://github.com/a2aproject/a2a-go/issues/319)) ([8a250ad](https://github.com/a2aproject/a2a-go/commit/8a250ad08334029820904142f8f387f7934dcb64))
+* extra query and fast client rejection in local executor ([#330](https://github.com/a2aproject/a2a-go/issues/330)) ([f307ca9](https://github.com/a2aproject/a2a-go/commit/f307ca926f84d6f31281d6c1cf5686b83c2ce415))
+* task push notification configurations ([#329](https://github.com/a2aproject/a2a-go/issues/329)) ([c78fb4d](https://github.com/a2aproject/a2a-go/commit/c78fb4d38a918689fe9356ca36fb984e8e41954c))
+* update error handling to match spec ([#327](https://github.com/a2aproject/a2a-go/issues/327)) ([1aa72ce](https://github.com/a2aproject/a2a-go/commit/1aa72ce1ef42e5414237332d171e5ebc5a740ebe))
+
 ## [2.2.0](https://github.com/a2aproject/a2a-go/compare/v2.1.0...v2.2.0) (2026-04-10)
 
 
