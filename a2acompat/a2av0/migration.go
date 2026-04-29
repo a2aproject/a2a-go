@@ -383,6 +383,8 @@ func fromV1Payload(payload any) (any, error) {
 		return FromV1DeleteTaskPushConfigRequest(v), nil
 	case *a2a.PushConfig:
 		return FromV1PushConfig(v), nil
+	case []*a2a.PushConfig:
+		return FromV1PushConfigs(v), nil
 	case *a2a.ListTasksResponse:
 		return FromV1ListTasksResponse(v), nil
 	case *a2a.AgentCard:

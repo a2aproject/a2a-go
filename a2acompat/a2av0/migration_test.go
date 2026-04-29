@@ -83,7 +83,8 @@ func TestToV1Payload(t *testing.T) {
 			},
 			want: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				Config: a2a.PushConfig{ID: "p1", URL: "http://example.com"},
+				ID:     "p1",
+				URL:    "http://example.com",
 			},
 		},
 		{
@@ -93,8 +94,8 @@ func TestToV1Payload(t *testing.T) {
 				{TaskID: "t2", Config: a2alegacy.PushConfig{ID: "p2"}},
 			},
 			want: []*a2a.TaskPushConfig{
-				{TaskID: "t1", Config: a2a.PushConfig{ID: "p1"}},
-				{TaskID: "t2", Config: a2a.PushConfig{ID: "p2"}},
+				{TaskID: "t1", ID: "p1"},
+				{TaskID: "t2", ID: "p2"},
 			},
 		},
 		{
@@ -205,7 +206,7 @@ func TestFromV1Payload(t *testing.T) {
 		},
 		{
 			name:  "CreateTaskPushConfigRequest",
-			input: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{ID: "p1", URL: "http://example.com"}},
+			input: &a2a.PushConfig{TaskID: "t1", ID: "p1", URL: "http://example.com"},
 			want: &a2alegacy.TaskPushConfig{
 				TaskID: "t1",
 				Config: a2alegacy.PushConfig{ID: "p1", URL: "http://example.com"},
@@ -215,7 +216,8 @@ func TestFromV1Payload(t *testing.T) {
 			name: "TaskPushConfig",
 			input: &a2a.TaskPushConfig{
 				TaskID: "t1",
-				Config: a2a.PushConfig{ID: "p1", URL: "http://example.com"},
+				ID:     "p1",
+				URL:    "http://example.com",
 			},
 			want: &a2alegacy.TaskPushConfig{
 				TaskID: "t1",
@@ -225,8 +227,8 @@ func TestFromV1Payload(t *testing.T) {
 		{
 			name: "TaskPushConfig slice",
 			input: []*a2a.TaskPushConfig{
-				{TaskID: "t1", Config: a2a.PushConfig{ID: "p1"}},
-				{TaskID: "t2", Config: a2a.PushConfig{ID: "p2"}},
+				{TaskID: "t1", ID: "p1"},
+				{TaskID: "t2", ID: "p2"},
 			},
 			want: []*a2alegacy.TaskPushConfig{
 				{TaskID: "t1", Config: a2alegacy.PushConfig{ID: "p1"}},
