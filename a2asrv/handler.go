@@ -385,6 +385,9 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 	if err != nil {
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
+	if configs == nil {
+		return []*a2a.PushConfig{}, nil
+	}
 	return configs, nil
 }
 
