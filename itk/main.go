@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -26,6 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -37,6 +38,8 @@ type V10AgentExecutor struct{}
 
 func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
+		log.Info(ctx, "Executing task", "taskId", string(execCtx.TaskID))
+
 		if execCtx.StoredTask == nil {
 			if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
 				return
@@ -49,21 +52,70 @@ func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executor
 
 		instruction, err := extractInstruction(execCtx.Message)
 		if err != nil {
-			yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, nil), nil)
+			log.Error(ctx, "Error", err)
+			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(err.Error())), nil)
 			return
 		}
 
 		results, err := e.handleInstruction(ctx, execCtx, instruction)
 		if err != nil {
+			log.Error(ctx, "Error handling instruction", err)
 			yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, nil), nil)
 			return
 		}
 
 		response := strings.Join(results, "\n")
-		if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(response))), nil) {
-			return
+		if shouldHold(instruction) {
+			log.Info(ctx, "Holding task as requested", "taskId", string(execCtx.TaskID))
+			
+			// Emitted event: response + task-finished
+			log.Info(ctx, "Emitting response and task-finished", "taskId", string(execCtx.TaskID))
+			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(response+"\ntask-finished"))), nil) {
+				return
+			}
+			
+			select {
+			case <-ctx.Done():
+				log.Info(ctx, "Task cancelled during sleep", "taskId", string(execCtx.TaskID))
+				return
+			case <-time.After(2 * time.Second):
+			}
+
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					log.Info(ctx, "Task cancelled, exiting hold loop", "taskId", string(execCtx.TaskID))
+					return
+				case <-ticker.C:
+					log.Info(ctx, "Emitting periodic status update", "taskId", string(execCtx.TaskID))
+					if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, nil), nil) {
+						return
+					}
+				}
+			}
+		} else {
+			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(response))), nil) {
+				return
+			}
 		}
 	}
+}
+
+func shouldHold(inst *pb.Instruction) bool {
+	if inst.GetReturnResponse() != nil && inst.GetReturnResponse().HoldTask {
+		return true
+	}
+	if inst.GetSteps() != nil {
+		for _, step := range inst.GetSteps().Instructions {
+			if shouldHold(step) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func extractInstruction(msg *a2a.Message) (*pb.Instruction, error) {
@@ -125,31 +177,45 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 		return nil, fmt.Errorf("failed to resolve agent card for %s: %w", call.AgentCardUri, err)
 	}
 
+	// Print parsed card for debugging as requested
 	if cardJSON, mErr := json.MarshalIndent(card, "", "  "); mErr == nil {
-		log.Info(ctx, "Parsed Agent Card", "agentCardUri", call.AgentCardUri, "card", string(cardJSON))
+		log.Write(ctx, slog.LevelDebug, "Parsed Agent Card", "agentCardUri", call.AgentCardUri, "card", string(cardJSON))
 	} else {
 		log.Warn(ctx, "Failed to marshal agent card for logging", "error", mErr)
 	}
 
 	protocol := mapTransport(call.Transport)
-	log.Info(ctx, "Mapped transport", "protocol", protocol)
+	log.Info(ctx, "Mapped transport", "transport", protocol)
 
-	// 2. Find all matching interfaces from the card
+	// 3. Find all matching interfaces from the card
 	matchedInterfaces := selectInterfaces(protocol, card)
 	if len(matchedInterfaces) == 0 {
 		return nil, fmt.Errorf("transport protocol %s is not supported by agent %s", protocol, call.AgentCardUri)
 	}
 
-	// 3. Create client using a factory
-	// We instantiate a client through factory.CreateFromEndpoints
-	// to strictly enforce the transport protocol. a2aclient.NewFromCard
-	// seems to be using the first available transport if the specified one
-	// is not supported.
+	// 4. Create client using a factory
+	var factory *a2aclient.Factory
 	compatFactory := a2av0.NewJSONRPCTransportFactory(a2av0.JSONRPCTransportConfig{})
-	factory := a2aclient.NewFactory(
+	
+	clientOpts := []a2aclient.FactoryOption{
 		a2agrpc.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		a2aclient.WithCompatTransport("0.3", a2a.TransportProtocolJSONRPC, compatFactory),
-	)
+	}
+
+	if call.GetPushNotification() != nil {
+		url := call.GetPushNotification().GetUrl()
+		if url == "" {
+			return nil, fmt.Errorf("URL not specified in push_notification behavior")
+		}
+		clientOpts = append(clientOpts, a2aclient.WithConfig(a2aclient.Config{
+			PushConfig: &a2a.PushConfig{
+				URL:   fmt.Sprintf("%s/notifications", url),
+				Token: "itk-token",
+			},
+		}))
+	}
+
+	factory = a2aclient.NewFactory(clientOpts...)
 
 	client, err := factory.CreateFromEndpoints(ctx, matchedInterfaces)
 	if err != nil {
@@ -162,10 +228,13 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 	}
 
 	var responses []string
-	if call.Streaming {
+	if call.GetResubscribe() != nil {
+		return e.handleCallAgentWithResubscribe(ctx, client, wrappedMsg, call.AgentCardUri)
+	} else if call.Streaming {
 		events := client.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: wrappedMsg})
 		for ev, err := range events {
 			if err != nil {
+				log.Error(ctx, "Error inside streaming call", err, "agentCardUri", call.AgentCardUri)
 				return nil, fmt.Errorf("streaming call failed to agent %s: %w", call.AgentCardUri, err)
 			}
 			responses = append(responses, extractResponses(ctx, ev)...)
@@ -175,16 +244,96 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 			Message: wrappedMsg,
 		})
 		if err != nil {
+			log.Error(ctx, "Error sending message", err, "agentCardUri", call.AgentCardUri)
 			return nil, fmt.Errorf("failed to send message to agent %s: %w", call.AgentCardUri, err)
 		}
 		responses = extractResponses(ctx, result)
 	}
+
+	log.Info(ctx, "Received responses", "agentCardUri", call.AgentCardUri)
+	return responses, nil
+}
+
+func (e *V10AgentExecutor) handleCallAgentWithResubscribe(ctx context.Context, client *a2aclient.Client, wrappedMsg *a2a.Message, agentCardUri string) ([]string, error) {
+	log.Info(ctx, "Executing re-subscribe behavior in client", "agentCardUri", agentCardUri)
+
+	initCtx, cancelInit := context.WithCancel(ctx)
+	defer cancelInit()
+
+	events := client.SendStreamingMessage(initCtx, &a2a.SendMessageRequest{Message: wrappedMsg})
+	var taskID string
+
+	for ev, err := range events {
+		if err != nil {
+			return nil, fmt.Errorf("initial call failed: %w", err)
+		}
+		switch r := ev.(type) {
+		case *a2a.Task:
+			taskID = string(r.ID)
+		case *a2a.TaskStatusUpdateEvent:
+			taskID = string(r.TaskID)
+		}
+		if taskID != "" {
+			break
+		}
+	}
+
+	cancelInit()
+	log.Info(ctx, "Disconnected from task, now re-subscribing", "taskId", taskID)
+
+	resubEvents := client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)})
+
+	var taskObj *a2a.Task
+	var responses []string
+	for ev, err := range resubEvents {
+		if err != nil {
+			return nil, fmt.Errorf("resubscribe failed: %w", err)
+		}
+		if r, ok := ev.(*a2a.Task); ok {
+			taskObj = r
+		}
+		resps := extractResponses(ctx, ev)
+		if len(resps) > 0 {
+			for _, r := range resps {
+				t := r
+				t = strings.ReplaceAll(t, "task-finished", "")
+				responses = append(responses, t)
+				
+				if strings.Contains(r, "task-finished") {
+					log.Info(ctx, "Received task-finished after re-subscribe, breaking loop.")
+					goto EndLoop
+				}
+			}
+		}
+	}
+EndLoop:
+
+	if len(responses) == 0 && taskObj != nil {
+		log.Info(ctx, "Responses empty after loop, reading from history.")
+		for _, msg := range taskObj.History {
+			if msg.Role == "ROLE_AGENT" || msg.Role == "agent" {
+				for _, part := range msg.Parts {
+					if t := part.Text(); t != "" {
+						t = strings.ReplaceAll(t, "task-finished", "")
+						responses = append(responses, t)
+					}
+				}
+			}
+		}
+	}
+
+	log.Info(ctx, "Canceling task after retrieval", "taskId", taskID)
+	_, err := client.CancelTask(ctx, &a2a.CancelTaskRequest{ID: a2a.TaskID(taskID)})
+	if err != nil {
+		return nil, fmt.Errorf("failed to cancel task after retrieval: %w", err)
+	}
+
 	return responses, nil
 }
 
 func extractResponses(ctx context.Context, result any) []string {
 	var responses []string
-	log.Debug(ctx, "Extracting responses", "resultType", fmt.Sprintf("%T", result))
+	log.Write(ctx, slog.LevelDebug, "Extracting responses", "type", fmt.Sprintf("%T", result))
 	switch r := result.(type) {
 	case *a2a.Message:
 		for _, part := range r.Parts {
@@ -193,7 +342,6 @@ func extractResponses(ctx context.Context, result any) []string {
 			}
 		}
 	case *a2a.Task:
-		// Check both Status.Message and History
 		if r.Status.Message != nil {
 			for _, part := range r.Status.Message.Parts {
 				if t := part.Text(); t != "" {
@@ -201,15 +349,7 @@ func extractResponses(ctx context.Context, result any) []string {
 				}
 			}
 		}
-		for _, msg := range r.History {
-			if msg.Role == a2a.MessageRoleAgent {
-				for _, part := range msg.Parts {
-					if t := part.Text(); t != "" {
-						responses = append(responses, t)
-					}
-				}
-			}
-		}
+
 	case *a2a.TaskStatusUpdateEvent:
 		if r.Status.Message != nil {
 			for _, part := range r.Status.Message.Parts {
@@ -219,13 +359,14 @@ func extractResponses(ctx context.Context, result any) []string {
 			}
 		}
 	default:
-		log.Warn(ctx, "Unexpected result type from SendMessage", "resultType", fmt.Sprintf("%T", result))
+		log.Warn(ctx, "Unexpected result type from SendMessage", "type", fmt.Sprintf("%T", result))
 	}
 	return responses
 }
 
 func (e *V10AgentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
+		log.Info(ctx, "Cancel requested", "taskId", string(execCtx.TaskID))
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
 	}
 }
@@ -254,7 +395,6 @@ func mapTransport(t string) a2a.TransportProtocol {
 	}
 }
 
-
 func selectInterfaces(protocol a2a.TransportProtocol, card *a2a.AgentCard) []*a2a.AgentInterface {
 	var matched []*a2a.AgentInterface
 	for _, iface := range card.SupportedInterfaces {
@@ -266,12 +406,14 @@ func selectInterfaces(protocol a2a.TransportProtocol, card *a2a.AgentCard) []*a2
 	return matched
 }
 
+
+
 var httpPort = flag.Int("httpPort", 10102, "HTTP port")
 var grpcPort = flag.Int("grpcPort", 11002, "gRPC port")
 
-
 func main() {
 	if err := run(); err != nil {
+		slog.Error("Server session ended with error", "error", err)
 		os.Exit(1)
 	}
 }
@@ -333,13 +475,16 @@ func run() error {
 		},
 	}
 
+	pushStore := push.NewInMemoryStore()
+	pushSender := push.NewHTTPPushSender(nil)
+
 	executor := &V10AgentExecutor{}
 	requestHandler := a2asrv.NewHandler(
 		executor,
 		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
+		a2asrv.WithPushNotifications(pushStore, pushSender),
 	)
 
-	// Servers
 	mux := http.NewServeMux()
 	agentCardRoute := fmt.Sprintf("/jsonrpc%s", a2asrv.WellKnownAgentCardPath)
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
@@ -357,6 +502,8 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	ctx = log.AttachLogger(ctx, logger)
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -388,7 +535,6 @@ func run() error {
 		return nil
 	})
 
-	// Wait for stop signal
 	g.Go(func() error {
 		<-ctx.Done()
 		log.Info(ctx, "Shutting down servers")
@@ -407,11 +553,10 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 			var err error
 			bodyBytes, err = io.ReadAll(r.Body)
 			if err != nil {
-				logger.Error("Failed to read request body", "error", err)
-				http.Error(w, "Failed to read request body", http.StatusBadRequest)
-				return
+				logger.Error("Failed to read request body", err)
+			} else {
+				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			}
-			r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		}
 		logger.Info("Incoming request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr, "body", string(bodyBytes))
 		next.ServeHTTP(w, r)
@@ -431,3 +576,4 @@ func streamLoggingInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor 
 		return handler(srv, ss)
 	}
 }
+
