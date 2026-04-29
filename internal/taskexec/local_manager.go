@@ -116,22 +116,6 @@ func NewLocalManager(cfg LocalManagerConfig) Manager {
 	return manager
 }
 
-// inactivityConfig builds the watcher configuration and the matching activity
-// tracker that should be used to wrap the producer's writer. When the
-// inactivity timeout is not configured both return values are zero, in which
-// case [newActivityTrackingWriter] is a no-op and the watcher goroutine is
-// not started.
-func (m *localManager) inactivityConfig() (*activityTracker, inactivityConfig) {
-	if m.inactivityTimeout <= 0 {
-		return nil, inactivityConfig{}
-	}
-	signal := make(chan struct{}, 1)
-	return &activityTracker{signal: signal}, inactivityConfig{
-		timeout: m.inactivityTimeout,
-		signal:  signal,
-	}
-}
-
 func newCancelation(req *a2a.CancelTaskRequest) *cancelation {
 	return &cancelation{req: req, result: newPromise()}
 }
@@ -307,7 +291,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		},
 		handleErrorFn: processor.ProcessError,
 	}
-	tracker, inactivity := m.inactivityConfig()
+	tracker := newInactivityTracker(m.inactivityTimeout)
 	producerWriter := newActivityTrackingWriter(execution.pipe.Writer, tracker)
 	result, err := runProducerConsumer(
 		ctx,
@@ -315,7 +299,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		handler.processEvents,
 		nil,
 		m.panicHandler,
-		inactivity,
+		tracker,
 	)
 
 	cleaner.Cleanup(ctx, result, err)
@@ -354,7 +338,7 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		handleEventFn: processor.Process,
 		handleErrorFn: func(ctx context.Context, err error) (a2a.SendMessageResult, error) { return nil, err },
 	}
-	tracker, inactivity := m.inactivityConfig()
+	tracker := newInactivityTracker(m.inactivityTimeout)
 	producerWriter := newActivityTrackingWriter(pipe.Writer, tracker)
 	result, err := runProducerConsumer(
 		ctx,
@@ -362,7 +346,7 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		handler.processEvents,
 		nil,
 		m.panicHandler,
-		inactivity,
+		tracker,
 	)
 
 	cleaner.Cleanup(ctx, result, err)

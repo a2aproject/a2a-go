@@ -82,27 +82,46 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 type eventProducerFn func(context.Context) error
 type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
 
-// activityTracker is wired into the producer's event pipe via
-// [newActivityTrackingWriter] so that successful writes signal the inactivity
-// watcher started in [runProducerConsumer]. A nil tracker disables tracking.
-type activityTracker struct {
-	signal chan<- struct{}
+// inactivityTracker bundles the inactivity watcher's configuration with the
+// activity-recording channel. Callers obtain one via [newInactivityTracker]
+// (returns nil when disabled), wrap the producer's writer with
+// [newActivityTrackingWriter], and pass the tracker to [runProducerConsumer]
+// to start the watcher. A nil tracker disables tracking end-to-end: the writer
+// wrapper is a no-op and the watcher goroutine is not started.
+type inactivityTracker struct {
+	config        inactivityConfig
+	writeRecorded chan struct{}
 }
 
-func (t *activityTracker) record() {
+// newInactivityTracker returns a tracker for the given timeout. A non-positive
+// timeout returns nil, disabling inactivity tracking.
+func newInactivityTracker(timeout time.Duration) *inactivityTracker {
+	if timeout <= 0 {
+		return nil
+	}
+	signal := make(chan struct{}, 1)
+	return &inactivityTracker{
+		config:        inactivityConfig{timeout: timeout, writeRecorded: signal},
+		writeRecorded: signal,
+	}
+}
+
+// record signals that a producer write just succeeded. Non-blocking: the
+// watcher only needs an "activity happened" hint, so a full channel is fine.
+func (t *inactivityTracker) record() {
 	if t == nil {
 		return
 	}
 	select {
-	case t.signal <- struct{}{}:
-	default: // non-blocking; the watcher only needs an "activity happened" hint
+	case t.writeRecorded <- struct{}{}:
+	default:
 	}
 }
 
 // newActivityTrackingWriter wraps an [eventpipe.Writer] so each successful
 // write signals the provided tracker. A nil tracker returns the writer
 // unchanged so callers without an inactivity timeout configured pay no cost.
-func newActivityTrackingWriter(inner eventpipe.Writer, tracker *activityTracker) eventpipe.Writer {
+func newActivityTrackingWriter(inner eventpipe.Writer, tracker *inactivityTracker) eventpipe.Writer {
 	if tracker == nil {
 		return inner
 	}
@@ -111,7 +130,7 @@ func newActivityTrackingWriter(inner eventpipe.Writer, tracker *activityTracker)
 
 type activityTrackingWriter struct {
 	inner   eventpipe.Writer
-	tracker *activityTracker
+	tracker *inactivityTracker
 }
 
 func (w *activityTrackingWriter) Write(ctx context.Context, event a2a.Event) error {
@@ -125,8 +144,8 @@ func (w *activityTrackingWriter) Write(ctx context.Context, event a2a.Event) err
 // inactivityConfig configures the inactivity watcher started by
 // [runProducerConsumer]. A zero or negative timeout disables the watcher.
 type inactivityConfig struct {
-	timeout time.Duration
-	signal  <-chan struct{}
+	timeout       time.Duration
+	writeRecorded <-chan struct{}
 }
 
 // runProducerConsumer starts producer and consumer goroutines in an error group and waits
@@ -138,7 +157,7 @@ func runProducerConsumer(
 	consumer eventConsumerFn,
 	heartbeater workqueue.Heartbeater,
 	panicHandler PanicHandlerFn,
-	inactivity inactivityConfig,
+	inactivity *inactivityTracker,
 ) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
 
@@ -148,22 +167,21 @@ func runProducerConsumer(
 	// to surface it via [context.Cause] on the producer and consumer ctx, and
 	// the existing TestRunProducerConsumer_CausePropagation regression test
 	// covers the same pattern.
-	if inactivity.timeout > 0 && inactivity.signal != nil {
+	if inactivity != nil && inactivity.config.timeout > 0 && inactivity.config.writeRecorded != nil {
+		cfg := inactivity.config
 		group.Go(func() error {
-			timer := time.NewTimer(inactivity.timeout)
+			// As of Go 1.23 a single Reset is sufficient: receives from t.C
+			// after Stop or Reset are guaranteed not to deliver a stale tick,
+			// so the previous Stop+drain dance is no longer required.
+			// See https://pkg.go.dev/time#Timer.Reset.
+			timer := time.NewTimer(cfg.timeout)
 			defer timer.Stop()
 			for {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-inactivity.signal:
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(inactivity.timeout)
+				case <-cfg.writeRecorded:
+					timer.Reset(cfg.timeout)
 				case <-timer.C:
 					return ErrAgentInactivityTimeout
 				}

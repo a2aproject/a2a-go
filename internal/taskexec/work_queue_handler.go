@@ -63,7 +63,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 	pipe := eventpipe.NewLocal()
 	defer pipe.Close()
 
-	tracker, inactivity := b.inactivityConfig()
+	tracker := newInactivityTracker(b.inactivityTimeout)
 	producerWriter := newActivityTrackingWriter(pipe.Writer, tracker)
 
 	var eventProducer eventProducerFn
@@ -123,23 +123,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler, inactivity)
+	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler, tracker)
 	cleaner.Cleanup(ctx, result, err)
 	return result, err
-}
-
-// inactivityConfig builds the watcher configuration for [runProducerConsumer]
-// and the matching activity tracker that should wrap the producer's writer.
-// Returns a nil tracker and zero config when the timeout is not configured,
-// in which case the watcher goroutine is not started and the writer wrapping
-// is a no-op.
-func (b *workQueueHandler) inactivityConfig() (*activityTracker, inactivityConfig) {
-	if b.inactivityTimeout <= 0 {
-		return nil, inactivityConfig{}
-	}
-	signal := make(chan struct{}, 1)
-	return &activityTracker{signal: signal}, inactivityConfig{
-		timeout: b.inactivityTimeout,
-		signal:  signal,
-	}
 }
