@@ -182,14 +182,17 @@ func ToJSONRPCError(err error) *Error {
 	}
 }
 
+// NewResultResponse returns a JSON-RPC response with result payload.
 func NewResultResponse(reqID any, result any) ServerResponse {
 	return ServerResponse{JSONRPC: Version, ID: reqID, Result: result}
 }
 
+// NewErrorResponse returns a JSON-RPC response with error payload.
 func NewErrorResponse(reqID any, err error) ServerResponse {
 	return ServerResponse{JSONRPC: Version, Error: ToJSONRPCError(err), ID: reqID}
 }
 
+// MarshalErrorResponse marshals an error as a JSON-RPC response.
 func MarshalErrorResponse(reqID any, respErr error) ([]byte, bool) {
 	bytes, err := json.Marshal(NewErrorResponse(reqID, respErr))
 	if err != nil {
@@ -198,6 +201,7 @@ func MarshalErrorResponse(reqID any, respErr error) ([]byte, bool) {
 	return bytes, true
 }
 
+// UnmarshalError maps JSON decoding errors to A2A protocol errors.
 func UnmarshalError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if errors.As(err, &typeErr) {
@@ -206,6 +210,7 @@ func UnmarshalError(err error) error {
 	return fmt.Errorf("%w: %w", a2a.ErrParseError, err)
 }
 
+// UnmarshalParams unmarshals JSON-RPC params into typed request params.
 func UnmarshalParams[T any](raw json.RawMessage) (*T, error) {
 	var params T
 	if err := json.Unmarshal(raw, &params); err != nil {
@@ -214,6 +219,7 @@ func UnmarshalParams[T any](raw json.RawMessage) (*T, error) {
 	return &params, nil
 }
 
+// UnmarshalResult unmarshals a JSON-RPC result into the requested type.
 func UnmarshalResult[T any](raw json.RawMessage, resultName string) (T, error) {
 	var result T
 	if err := json.Unmarshal(raw, &result); err != nil {
@@ -222,6 +228,7 @@ func UnmarshalResult[T any](raw json.RawMessage, resultName string) (T, error) {
 	return result, nil
 }
 
+// ParseSSEStream parses SSE data as JSON-RPC client responses.
 func ParseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
 		for data, err := range sse.ParseDataStream(body) {
