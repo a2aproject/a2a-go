@@ -136,6 +136,15 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	return resp.Result, nil
 }
 
+func sendRequestAs[T any](t *jsonrpcTransport, ctx context.Context, method string, params a2aclient.ServiceParams, req any, resultName string) (T, error) {
+	result, err := t.sendRequest(ctx, method, params, req)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return jsonrpc.UnmarshalResult[T](result, resultName)
+}
+
 func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params a2aclient.ServiceParams, req any) (io.ReadCloser, error) {
 	httpReq, err := t.newHTTPRequest(ctx, method, params, req)
 	if err != nil {
@@ -156,29 +165,6 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 
 	return httpResp.Body, nil
-}
-
-func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
-	return func(yield func(json.RawMessage, error) bool) {
-		for data, err := range sse.ParseDataStream(body) {
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-			var resp jsonrpc.ClientResponse
-			if err := json.Unmarshal(data, &resp); err != nil {
-				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
-				return
-			}
-			if resp.Error != nil {
-				yield(nil, jsonrpc.FromJSONRPCError(resp.Error))
-				return
-			}
-			if !yield(resp.Result, nil) {
-				return
-			}
-		}
-	}
 }
 
 // SendMessage sends a non-streaming message to the agent.
@@ -222,7 +208,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 			}
 		}()
 
-		for result, err := range parseSSEStream(body) {
+		for result, err := range jsonrpc.ParseSSEStream(body) {
 			if err != nil {
 				yield(nil, err)
 				return
@@ -256,14 +242,9 @@ func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, params a2ac
 // GetTask retrieves the current state of a task.
 func (t *jsonrpcTransport) GetTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 	compatReq := FromV1GetTaskRequest(req)
-	result, err := t.sendRequest(ctx, methodTasksGet, params, compatReq)
+	compatTask, err := sendRequestAs[a2alegacy.Task](t, ctx, methodTasksGet, params, compatReq, "task")
 	if err != nil {
 		return nil, err
-	}
-
-	var compatTask a2alegacy.Task
-	if err := json.Unmarshal(result, &compatTask); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	task, err := ToV1Task(&compatTask)
@@ -281,14 +262,9 @@ func (t *jsonrpcTransport) ListTasks(ctx context.Context, params a2aclient.Servi
 // CancelTask requests cancellation of a task.
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	compatReq := FromV1CancelTaskRequest(req)
-	result, err := t.sendRequest(ctx, methodTasksCancel, params, compatReq)
+	compatTask, err := sendRequestAs[a2alegacy.Task](t, ctx, methodTasksCancel, params, compatReq, "task")
 	if err != nil {
 		return nil, err
-	}
-
-	var compatTask a2alegacy.Task
-	if err := json.Unmarshal(result, &compatTask); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	task, err := ToV1Task(&compatTask)
@@ -308,14 +284,9 @@ func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params a2aclient
 // GetTaskPushConfig retrieves the push notification configuration for a task.
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	compatReq := FromV1GetTaskPushConfigRequest(req)
-	result, err := t.sendRequest(ctx, methodPushConfigGet, params, compatReq)
+	compatConfig, err := sendRequestAs[a2alegacy.TaskPushConfig](t, ctx, methodPushConfigGet, params, compatReq, "config")
 	if err != nil {
 		return nil, err
-	}
-
-	var compatConfig a2alegacy.TaskPushConfig
-	if err := json.Unmarshal(result, &compatConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	config := ToV1PushConfig(&compatConfig)
@@ -325,14 +296,9 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclie
 // ListTaskPushConfig lists push notification configurations.
 func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	compatReq := FromV1ListTaskPushConfigRequest(req)
-	result, err := t.sendRequest(ctx, methodPushConfigList, params, compatReq)
+	compatConfigs, err := sendRequestAs[[]*a2alegacy.TaskPushConfig](t, ctx, methodPushConfigList, params, compatReq, "configs")
 	if err != nil {
 		return nil, err
-	}
-
-	var compatConfigs []*a2alegacy.TaskPushConfig
-	if err := json.Unmarshal(result, &compatConfigs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
 
 	configs := make([]*a2a.PushConfig, 0, len(compatConfigs))
@@ -347,14 +313,9 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params a2acl
 // CreateTaskPushConfig sets or updates the push notification configuration for a task.
 func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	compatReq := FromV1PushConfig(req)
-	result, err := t.sendRequest(ctx, methodPushConfigSet, params, compatReq)
+	compatConfig, err := sendRequestAs[a2alegacy.TaskPushConfig](t, ctx, methodPushConfigSet, params, compatReq, "config")
 	if err != nil {
 		return nil, err
-	}
-
-	var compatConfig a2alegacy.TaskPushConfig
-	if err := json.Unmarshal(result, &compatConfig); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	config := ToV1PushConfig(&compatConfig)

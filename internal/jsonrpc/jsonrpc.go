@@ -19,11 +19,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"iter"
 	"maps"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
@@ -176,6 +179,69 @@ func ToJSONRPCError(err error) *Error {
 		Code:    code,
 		Message: err.Error(),
 		Data:    data,
+	}
+}
+
+func NewResultResponse(reqID any, result any) ServerResponse {
+	return ServerResponse{JSONRPC: Version, ID: reqID, Result: result}
+}
+
+func NewErrorResponse(reqID any, err error) ServerResponse {
+	return ServerResponse{JSONRPC: Version, Error: ToJSONRPCError(err), ID: reqID}
+}
+
+func MarshalErrorResponse(reqID any, respErr error) ([]byte, bool) {
+	bytes, err := json.Marshal(NewErrorResponse(reqID, respErr))
+	if err != nil {
+		return nil, false
+	}
+	return bytes, true
+}
+
+func UnmarshalError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
+	}
+	return fmt.Errorf("%w: %w", a2a.ErrParseError, err)
+}
+
+func UnmarshalParams[T any](raw json.RawMessage) (*T, error) {
+	var params T
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, UnmarshalError(err)
+	}
+	return &params, nil
+}
+
+func UnmarshalResult[T any](raw json.RawMessage, resultName string) (T, error) {
+	var result T
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return result, fmt.Errorf("failed to unmarshal %s: %w", resultName, err)
+	}
+	return result, nil
+}
+
+func ParseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
+	return func(yield func(json.RawMessage, error) bool) {
+		for data, err := range sse.ParseDataStream(body) {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			var resp ClientResponse
+			if err := json.Unmarshal(data, &resp); err != nil {
+				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
+				return
+			}
+			if resp.Error != nil {
+				yield(nil, FromJSONRPCError(resp.Error))
+				return
+			}
+			if !yield(resp.Result, nil) {
+				return
+			}
+		}
 	}
 }
 

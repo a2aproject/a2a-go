@@ -137,6 +137,15 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	return resp.Result, nil
 }
 
+func sendRequestAs[T any](t *jsonrpcTransport, ctx context.Context, method string, params ServiceParams, req any, resultName string) (T, error) {
+	result, err := t.sendRequest(ctx, method, params, req)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return jsonrpc.UnmarshalResult[T](result, resultName)
+}
+
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
 func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params ServiceParams, req any) (io.ReadCloser, error) {
 	httpReq, err := t.newHTTPRequest(ctx, method, params, req)
@@ -158,30 +167,6 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 
 	return httpResp.Body, nil
-}
-
-// parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
-func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
-	return func(yield func(json.RawMessage, error) bool) {
-		for data, err := range sse.ParseDataStream(body) {
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-			var resp jsonrpc.ClientResponse
-			if err := json.Unmarshal(data, &resp); err != nil {
-				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
-				return
-			}
-			if resp.Error != nil {
-				yield(nil, jsonrpc.FromJSONRPCError(resp.Error))
-				return
-			}
-			if !yield(resp.Result, nil) {
-				return
-			}
-		}
-	}
 }
 
 // SendMessage implements [a2a.Transport].
@@ -223,7 +208,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 			}
 		}()
 
-		for result, err := range parseSSEStream(body) {
+		for result, err := range jsonrpc.ParseSSEStream(body) {
 			if err != nil {
 				yield(nil, err)
 				return
@@ -250,14 +235,9 @@ func (t *jsonrpcTransport) SendStreamingMessage(ctx context.Context, params Serv
 
 // GetTask implements [a2a.Transport].
 func (t *jsonrpcTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksGet, params, req)
+	task, err := sendRequestAs[a2a.Task](t, ctx, jsonrpc.MethodTasksGet, params, req, "task")
 	if err != nil {
 		return nil, err
-	}
-
-	var task a2a.Task
-	if err := json.Unmarshal(result, &task); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	return &task, nil
@@ -265,14 +245,9 @@ func (t *jsonrpcTransport) GetTask(ctx context.Context, params ServiceParams, re
 
 // ListTasks implements [a2a.Transport].
 func (t *jsonrpcTransport) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksList, params, req)
+	response, err := sendRequestAs[a2a.ListTasksResponse](t, ctx, jsonrpc.MethodTasksList, params, req, "response")
 	if err != nil {
 		return nil, err
-	}
-
-	var response a2a.ListTasksResponse
-	if err := json.Unmarshal(result, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	return &response, nil
@@ -280,14 +255,9 @@ func (t *jsonrpcTransport) ListTasks(ctx context.Context, params ServiceParams, 
 
 // CancelTask implements [a2a.Transport].
 func (t *jsonrpcTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodTasksCancel, params, req)
+	task, err := sendRequestAs[a2a.Task](t, ctx, jsonrpc.MethodTasksCancel, params, req, "task")
 	if err != nil {
 		return nil, err
-	}
-
-	var task a2a.Task
-	if err := json.Unmarshal(result, &task); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal task: %w", err)
 	}
 
 	return &task, nil
@@ -300,14 +270,9 @@ func (t *jsonrpcTransport) SubscribeToTask(ctx context.Context, params ServicePa
 
 // GetTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigGet, params, req)
+	config, err := sendRequestAs[a2a.PushConfig](t, ctx, jsonrpc.MethodPushConfigGet, params, req, "config")
 	if err != nil {
 		return nil, err
-	}
-
-	var config a2a.PushConfig
-	if err := json.Unmarshal(result, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	return &config, nil
@@ -315,29 +280,14 @@ func (t *jsonrpcTransport) GetTaskPushConfig(ctx context.Context, params Service
 
 // ListTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigList, params, req)
-	if err != nil {
-		return nil, err
-	}
-
-	var configs []*a2a.PushConfig
-	if err := json.Unmarshal(result, &configs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
-	}
-
-	return configs, nil
+	return sendRequestAs[[]*a2a.PushConfig](t, ctx, jsonrpc.MethodPushConfigList, params, req, "configs")
 }
 
 // CreateTaskPushConfig implements [a2a.Transport].
 func (t *jsonrpcTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodPushConfigSet, params, req)
+	config, err := sendRequestAs[a2a.PushConfig](t, ctx, jsonrpc.MethodPushConfigSet, params, req, "config")
 	if err != nil {
 		return nil, err
-	}
-
-	var config a2a.PushConfig
-	if err := json.Unmarshal(result, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	return &config, nil
@@ -351,14 +301,9 @@ func (t *jsonrpcTransport) DeleteTaskPushConfig(ctx context.Context, params Serv
 
 // GetExtendedAgentCard implements [a2a.Transport].
 func (t *jsonrpcTransport) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-	result, err := t.sendRequest(ctx, jsonrpc.MethodGetExtendedAgentCard, params, req)
+	card, err := sendRequestAs[a2a.AgentCard](t, ctx, jsonrpc.MethodGetExtendedAgentCard, params, req, "agent card")
 	if err != nil {
 		return nil, err
-	}
-
-	var card a2a.AgentCard
-	if err := json.Unmarshal(result, &card); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent card: %w", err)
 	}
 	return &card, nil
 }

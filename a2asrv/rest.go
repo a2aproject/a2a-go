@@ -88,7 +88,7 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 
 		r2 := new(http.Request)
 		*r2 = *r
-		r2 = r2.WithContext(attachTenant(r.Context(), matchResult.Captured))
+		r2 = r2.WithContext(a2a.AttachTenant(r.Context(), matchResult.Captured))
 		r2.URL = new(url.URL)
 		*r2.URL = *r.URL
 		r2.URL.Path = matchResult.Rest
@@ -498,21 +498,8 @@ func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, task
 	}
 }
 
-type tenantKeyType struct{}
-
 func fillTenant(ctx context.Context, tenant *string) {
-	if t := tenantFromContext(ctx); t != "" {
+	if t, ok := a2a.TenantFrom(ctx); ok && t != "" {
 		*tenant = t
 	}
-}
-
-func attachTenant(parent context.Context, tenant string) context.Context {
-	return context.WithValue(parent, tenantKeyType{}, tenant)
-}
-
-func tenantFromContext(ctx context.Context) string {
-	if tenant, ok := ctx.Value(tenantKeyType{}).(string); ok {
-		return tenant
-	}
-	return ""
 }

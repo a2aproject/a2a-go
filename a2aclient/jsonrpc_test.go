@@ -331,7 +331,7 @@ data: {"jsonrpc":"2.0","id":"2","result":{"message":{"role":"agent"}}}
 	body := io.NopCloser(bytes.NewBufferString(sseData))
 
 	results := []json.RawMessage{}
-	for result, err := range parseSSEStream(body) {
+	for result, err := range jsonrpc.ParseSSEStream(body) {
 		if err != nil {
 			t.Fatalf("Parse error: %v", err)
 		}
