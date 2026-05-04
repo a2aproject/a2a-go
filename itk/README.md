@@ -36,7 +36,7 @@ You must set the `A2A_SAMPLES_REVISION` environment variable to specify which re
 
 Example:
 ```bash
-export A2A_SAMPLES_REVISION=fix-go-current-agent-in-info-mode
+export A2A_SAMPLES_REVISION=itk-v.021-alpha
 ```
 
 ### 2. Execute Tests
