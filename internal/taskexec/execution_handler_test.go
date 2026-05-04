@@ -162,10 +162,6 @@ func TestRunProducerConsumer_CausePropagation(t *testing.T) {
 	}
 }
 
-// TestRunProducerConsumer_InactivityTimeout exercises the inactivity watcher
-// added for issue #78. It uses a tight timeout and a synthetic activity
-// channel to keep the test fast and deterministic without sleeping for the
-// real timeout window.
 func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -266,9 +262,6 @@ func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
 	})
 }
 
-// TestActivityTrackingWriter ensures the writer wrapper signals on
-// successful writes only and is non-blocking when the signal channel is
-// full (the watcher only needs the "activity happened" hint).
 func TestActivityTrackingWriter(t *testing.T) {
 	t.Parallel()
 
@@ -291,7 +284,7 @@ func TestActivityTrackingWriter(t *testing.T) {
 			t.Fatalf("Write() error = %v, want nil", err)
 		}
 		select {
-		case <-tracker.config.writeRecorded:
+		case <-tracker.writeRecorded:
 		default:
 			t.Fatalf("expected signal after successful Write")
 		}
@@ -307,7 +300,7 @@ func TestActivityTrackingWriter(t *testing.T) {
 			t.Fatalf("Write() error = nil, want non-nil")
 		}
 		select {
-		case <-tracker.config.writeRecorded:
+		case <-tracker.writeRecorded:
 			t.Fatalf("expected no signal after failed Write")
 		default:
 		}

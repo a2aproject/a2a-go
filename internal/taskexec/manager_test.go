@@ -831,10 +831,6 @@ func TestManager_GetExecution(t *testing.T) {
 	}
 }
 
-// TestManager_AgentInactivityTimeout verifies that a localManager configured
-// with AgentInactivityTimeout terminates an executor that stalls without
-// writing any events. The executor's context must be canceled with
-// [ErrAgentInactivityTimeout] as the cause. Regression test for #78.
 func TestManager_AgentInactivityTimeout(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
