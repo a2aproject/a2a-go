@@ -68,7 +68,7 @@ type pullQueue struct {
 	onShutdown func()
 }
 
-// NewPullQueue creates a [Queue] implementation which starts runs a work polling loop until
+// NewPullQueue creates a [Queue] implementation which runs a work polling loop until
 // [ErrQueueClosed] is returned from Read.
 func NewPullQueue(rw ReadWriter, cfg *PullQueueConfig) Queue {
 	if cfg == nil {

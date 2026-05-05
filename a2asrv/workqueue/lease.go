@@ -46,15 +46,15 @@ type LeaseManager interface {
 
 type inMemoryLeaseManager struct {
 	mu           sync.Mutex
-	executions   map[a2a.TaskID]struct{}
-	cancelations map[a2a.TaskID]struct{}
+	executions   map[a2a.TaskID]*struct{}
+	cancelations map[a2a.TaskID]*struct{}
 }
 
 // NewInMemoryLeaseManager returns a [LeaseManager] that tracks leases in memory.
 func NewInMemoryLeaseManager() LeaseManager {
 	return &inMemoryLeaseManager{
-		executions:   make(map[a2a.TaskID]struct{}),
-		cancelations: make(map[a2a.TaskID]struct{}),
+		executions:   make(map[a2a.TaskID]*struct{}),
+		cancelations: make(map[a2a.TaskID]*struct{}),
 	}
 }
 
@@ -62,6 +62,9 @@ func NewInMemoryLeaseManager() LeaseManager {
 func (q *inMemoryLeaseManager) Acquire(ctx context.Context, p *Payload) (Lease, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	var tokenMap map[a2a.TaskID]*struct{}
+	leaseToken := &struct{}{}
 
 	tid := p.TaskID
 	switch p.Type {
@@ -72,21 +75,22 @@ func (q *inMemoryLeaseManager) Acquire(ctx context.Context, p *Payload) (Lease, 
 		if _, ok := q.cancelations[tid]; ok {
 			return nil, fmt.Errorf("task is being canceled: %w", ErrLeaseAlreadyTaken)
 		}
-		q.executions[tid] = struct{}{}
+		q.executions[tid] = leaseToken
+		tokenMap = q.executions
+
 	default:
 		if _, ok := q.cancelations[tid]; ok {
 			return nil, ErrLeaseAlreadyTaken
 		}
-		q.cancelations[tid] = struct{}{}
+		q.cancelations[tid] = leaseToken
+		tokenMap = q.cancelations
 	}
 
 	releaseFunc := func() {
 		q.mu.Lock()
 		defer q.mu.Unlock()
-		if p.Type == PayloadTypeExecute {
-			delete(q.executions, p.TaskID)
-		} else {
-			delete(q.cancelations, p.TaskID)
+		if token := tokenMap[tid]; token == leaseToken {
+			delete(tokenMap, tid)
 		}
 	}
 

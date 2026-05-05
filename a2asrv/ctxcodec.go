@@ -34,25 +34,32 @@ type callCtxCodec struct{}
 
 // Encode implements taskexec ContextCodec.Encode.
 func (c *callCtxCodec) Encode(ctx context.Context) map[string]any {
+	cc, ok := CallContextFrom(ctx)
+	if !ok {
+		return nil
+	}
 	data := map[string]any{}
-	if cc, ok := CallContextFrom(ctx); ok {
+	if cc.svcParams != nil {
 		data[svcParamsKey] = cc.svcParams.cloneRaw()
-		data[authKey] = map[string]any{
-			authNameKey:       cc.User.Name,
-			authStatusKey:     cc.User.Authenticated,
-			authAttributesKey: cc.User.Attributes,
-		}
-		if cc.Tenant() != "" {
-			data[tenantKey] = cc.Tenant()
-		}
+	}
+	data[authKey] = map[string]any{
+		authNameKey:       cc.User.Name,
+		authStatusKey:     cc.User.Authenticated,
+		authAttributesKey: cc.User.Attributes,
+	}
+	if cc.Tenant() != "" {
+		data[tenantKey] = cc.Tenant()
 	}
 	return data
 }
 
 // Decode implements taskexec ContextCodec.Decode.
 func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) context.Context {
+	if data == nil {
+		return ctx
+	}
+	
 	var svcParams *ServiceParams
-
 	if rawParams, ok := data[svcParamsKey]; ok {
 		if typedParams, ok := rawParams.(map[string][]string); ok {
 			svcParams = NewServiceParams(typedParams)
