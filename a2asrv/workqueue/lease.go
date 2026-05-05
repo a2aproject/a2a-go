@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,34 +24,21 @@ import (
 )
 
 // ErrLeaseAlreadyTaken is returned by [LeaseManager.Acquire] when a conflicting lease
-// is already held for the given TaskID.
+// is already held for the given task id.
 var ErrLeaseAlreadyTaken = errors.New("lease for this type of job is already taken")
 
 // Lease represents an acquired exclusive right to process a work item.
-// The holder must call [Lease.Release] when the work is done.
-//
-// TaskID returns the task identifier associated with the lease. Implementations may
-// return a TaskID different from the one in the [Payload] to support idempotency
-// (e.g. dedup by message ID and map to an existing TaskID).
+// Lease extension is supported by implementing [Heartbeater].
 type Lease interface {
 	// TaskID returns the task identifier associated with the lease.
+	// Implementations may return a TaskID different from the one in the [Payload] to
+	// support idempotency (e.g. dedup by message ID and map to an existing TaskID).
 	TaskID() a2a.TaskID
-	// Release releases the lease. Must be safe to call multiple times.
+	// Release releases the lease.
 	Release(context.Context)
 }
 
 // LeaseManager controls concurrent access to task execution and cancelation.
-// Implementations must enforce the following conflict rules:
-//
-//	Held lease type | Requested lease type | Result
-//	----------------|----------------------|---------------------------
-//	execute         | execute              | blocked (ErrLeaseAlreadyTaken)
-//	execute         | cancel               | allowed (cancel during active execution)
-//	cancel          | execute              | blocked (ErrLeaseAlreadyTaken)
-//	cancel          | cancel               | blocked (ErrLeaseAlreadyTaken)
-//
-// Acquire may inspect any field of [Payload] (e.g. for dedup by message ID).
-// Release must be safe to call multiple times (idempotent).
 type LeaseManager interface {
 	// Acquire attempts to acquire a lease for the given payload.
 	Acquire(context.Context, *Payload) (Lease, error)
@@ -71,6 +58,7 @@ func NewInMemoryLeaseManager() LeaseManager {
 	}
 }
 
+// Acquire implements [LeaseManager.Acquire].
 func (q *inMemoryLeaseManager) Acquire(ctx context.Context, p *Payload) (Lease, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -110,10 +98,12 @@ type inMemoryLease struct {
 	releaseFunc func()
 }
 
+// TaskID implements [Lease.TaskID].
 func (l *inMemoryLease) TaskID() a2a.TaskID {
 	return l.tid
 }
 
+// Release implements [Lease.Release].
 func (l *inMemoryLease) Release(context.Context) {
 	l.releaseFunc()
 }
