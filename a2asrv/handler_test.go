@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -289,7 +290,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					return
 				}
 				if diff := cmp.Diff(tt.wantResult, result); diff != "" {
-					t.Errorf("SendMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
+					t.Errorf("SendMessage() (-want +got):\ngot = %v\nwant %v\ndiff = %s", result, tt.wantResult, diff)
 				}
 			} else {
 				if gotErr == nil {
@@ -339,7 +340,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					eventI++
 				}
 				if diff := cmp.Diff(want, got); diff != "" {
-					t.Errorf("SendStreamingMessage() (+got,-want):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
+					t.Errorf("SendStreamingMessage() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, want, diff)
 					return
 				}
 			}
@@ -1230,38 +1231,64 @@ func TestRequestHandler_SendMessage_AgentExecutionFails(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_SendMessage_NoTaskCreated(t *testing.T) {
-	ctx := t.Context()
-	getCalled := 0
-	savedCalled := 0
-	mockStore := testutil.NewTestTaskStore()
-	mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
-		getCalled += 1
-		return nil, a2a.ErrTaskNotFound
-	}
-	mockStore.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
-		savedCalled += 1
-		return taskstore.TaskVersionMissing, nil
-	}
+func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
+	for _, clusterMode := range []bool{false, true} {
+		name := "local"
+		if clusterMode {
+			name = "cluster"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			var getCalled atomic.Int32
+			savedCalled := 0
+			mockStore := testutil.NewTestTaskStore()
+			mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+				getCalled.Add(1)
+				return nil, a2a.ErrTaskNotFound
+			}
+			mockStore.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+				savedCalled += 1
+				return taskstore.TaskVersionMissing, nil
+			}
 
-	executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
-	handler := NewHandler(executor, WithTaskStore(mockStore))
+			executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
+			var opts []RequestHandlerOption
+			if clusterMode {
+				opts = append(opts, WithClusterMode(ClusterConfig{
+					QueueManager: testutil.NewTestQueueManager(),
+					WorkQueue:    testutil.NewInMemoryWorkQueue(),
+					TaskStore:    mockStore,
+				}))
+			} else {
+				opts = append(opts, WithTaskStore(mockStore))
+			}
+			handler := NewHandler(executor, opts...)
 
-	result, gotErr := handler.SendMessage(ctx, &a2a.SendMessageRequest{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
-	})
-	if gotErr != nil {
-		t.Fatalf("SendMessage() error = %v, wantErr nil", gotErr)
-	}
-	if _, ok := result.(*a2a.Message); !ok {
-		t.Fatalf("SendMessage() = %v, want a2a.Message", result)
-	}
+			result, gotErr := handler.SendMessage(ctx, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
+			})
+			if gotErr != nil {
+				t.Fatalf("OnSendMessage() error = %v, wantErr nil", gotErr)
+			}
+			if _, ok := result.(*a2a.Message); !ok {
+				t.Fatalf("OnSendMessage() = %v, want a2a.Message", result)
+			}
 
-	if getCalled != 1 {
-		t.Fatalf("SendMessage() TaskStore.Get called %d times, want 1", getCalled)
-	}
-	if savedCalled > 0 {
-		t.Fatalf("SendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+			var wantGetCalls int32 = 0
+			if clusterMode {
+				// in cluster mode the first get call is performed on task submission to prevent work submission for
+				// tasks in finished state.
+				// the second get call is performed before starting an execution even when a message does not reference
+				// a task, because workqueue implementation can support retries
+				wantGetCalls = 2
+			}
+			if getCalled.Load() != wantGetCalls {
+				t.Fatalf("OnSendMessage() TaskStore.Get called %d times, want %d", getCalled.Load(), wantGetCalls)
+			}
+			if savedCalled > 0 {
+				t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+			}
+		})
 	}
 }
 
@@ -1286,7 +1313,7 @@ func TestRequestHandler_SendMessage_NewTaskHistory(t *testing.T) {
 	}
 	if task, ok := result.(*a2a.Task); ok {
 		if diff := cmp.Diff([]*a2a.Message{msg}, task.History); diff != "" {
-			t.Fatalf("SendMessage() wrong result (+got,-want):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
+			t.Fatalf("SendMessage() wrong result (-want +got):\ngot = %v\nwant = %v\ndiff = %s", task.History, []*a2a.Message{msg}, diff)
 		}
 	} else {
 		t.Fatalf("SendMessage() = %v, want a2a.Task", result)
@@ -1453,7 +1480,7 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 					return
 				}
 				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
-					t.Errorf("ListTasks() mismatch (+got -want): %s", diff)
+					t.Errorf("ListTasks() mismatch (-want +got): %s", diff)
 				}
 			} else {
 				if err == nil {
@@ -1776,10 +1803,10 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			}
 			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.Task{}, "History")}
 			if diff := cmp.Diff(tc.wantStoredTask, gotExecCtx.StoredTask, opts...); diff != "" {
-				t.Fatalf("wrong request context stored task (+got,-want): diff = %s", diff)
+				t.Fatalf("wrong request context stored task (-want +got): diff = %s", diff)
 			}
 			if diff := cmp.Diff(tc.wantExecCtxMeta, gotExecCtx.Metadata); diff != "" {
-				t.Fatalf("wrong request context meta (+got,-want): diff = %s", diff)
+				t.Fatalf("wrong request context meta (-want +got): diff = %s", diff)
 			}
 			if tc.wantContextID != "" {
 				if tc.wantContextID != gotExecCtx.ContextID {
@@ -1799,15 +1826,16 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *a2a.CreateTaskPushConfigRequest
+		req     *a2a.PushConfig
 		wantErr error
 		options []RequestHandlerOption
 	}{
 		{
 			name: "valid config with id",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+				ID:     "config-1",
+				URL:    "https://example.com/push",
 			},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
@@ -1815,9 +1843,9 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "valid config without id",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{URL: "https://example.com/push-no-id"},
+				URL:    "https://example.com/push-no-id",
 			},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
@@ -1825,9 +1853,9 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "invalid config - empty URL",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "config-invalid"},
+				ID:     "config-invalid",
 			},
 			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 			options: []RequestHandlerOption{
@@ -1836,9 +1864,10 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "pushNotifications not supported",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+				ID:     "config-1",
+				URL:    "https://example.com/push",
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 			options: []RequestHandlerOption{
@@ -1847,9 +1876,10 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "pushNotifications supported but not configured",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+				ID:     "config-1",
+				URL:    "https://example.com/push",
 			},
 			wantErr: a2a.ErrInternalError,
 			options: []RequestHandlerOption{
@@ -1858,9 +1888,10 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 		},
 		{
 			name: "without capability checks and pushNotifications not configured",
-			req: &a2a.CreateTaskPushConfigRequest{
+			req: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"},
+				ID:     "config-1",
+				URL:    "https://example.com/push",
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
@@ -1883,18 +1914,18 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 				return
 			}
 
-			if got.Config.ID == "" {
+			if got.ID == "" {
 				t.Errorf("CreateTaskPushConfig() expected a generated ID, but it was empty")
 				return
 			}
 
-			if tc.req.Config.ID == "" {
-				got.Config.ID = ""
+			if tc.req.ID == "" {
+				got.ID = ""
 			}
 
-			want := &a2a.TaskPushConfig{Config: tc.req.Config, TaskID: tc.req.TaskID}
-			if want.Config.ID == "" {
-				want.Config.ID = got.Config.ID
+			want := &a2a.PushConfig{TaskID: tc.req.TaskID, ID: tc.req.ID, URL: tc.req.URL}
+			if want.ID == "" {
+				want.ID = got.ID
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("CreateTaskPushConfig() mismatch (-want +got):\n%s", diff)
@@ -1913,14 +1944,14 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 	testCases := []struct {
 		name    string
 		req     *a2a.GetTaskPushConfigRequest
-		want    *a2a.TaskPushConfig
+		want    *a2a.PushConfig
 		options []RequestHandlerOption
 		wantErr error
 	}{
 		{
 			name: "success",
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			want: &a2a.TaskPushConfig{TaskID: taskID, Config: *config1},
+			want: &a2a.PushConfig{TaskID: taskID, ID: config1.ID, URL: config1.URL},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
@@ -2001,16 +2032,16 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 	testCases := []struct {
 		name    string
 		req     *a2a.ListTaskPushConfigRequest
-		want    []*a2a.TaskPushConfig
+		want    []*a2a.PushConfig
 		options []RequestHandlerOption
 		wantErr error
 	}{
 		{
 			name: "list existing",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			want: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
@@ -2019,7 +2050,7 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 		{
 			name: "list with empty task",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
-			want: []*a2a.TaskPushConfig{},
+			want: []*a2a.PushConfig{},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
@@ -2027,7 +2058,7 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 		{
 			name: "list non-existent task",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: "non-existent-task"},
-			want: []*a2a.TaskPushConfig{},
+			want: []*a2a.PushConfig{},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
@@ -2035,9 +2066,9 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 		{
 			name: "pushNotifications not supported",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			want: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
@@ -2047,9 +2078,9 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 		{
 			name: "pushNotifications supported but not configured",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			want: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
@@ -2059,9 +2090,9 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 		{
 			name: "without capability checks and pushNotifications not configured",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			want: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
@@ -2076,7 +2107,7 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 				return
 			}
 			if tc.wantErr == nil {
-				sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+				sort.Slice(got, func(i, j int) bool { return got[i].ID < got[j].ID })
 				if diff := cmp.Diff(tc.want, got); diff != "" {
 					t.Errorf("ListTaskPushConfigs() mismatch (-want +got):\n%s", diff)
 				}
@@ -2094,7 +2125,7 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	testCases := []struct {
 		name            string
 		req             *a2a.DeleteTaskPushConfigRequest
-		wantRemain      []*a2a.TaskPushConfig
+		wantRemain      []*a2a.PushConfig
 		options         []RequestHandlerOption
 		withPushConfigs bool
 		wantErr         error
@@ -2102,33 +2133,33 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 		{
 			name:            "delete existing",
 			req:             &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain:      []*a2a.TaskPushConfig{{TaskID: taskID, Config: config2}},
+			wantRemain:      []*a2a.PushConfig{{TaskID: taskID, ID: config2.ID, URL: config2.URL}},
 			withPushConfigs: true,
 		},
 		{
 			name: "delete non-existent config",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
-			wantRemain: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			wantRemain: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			withPushConfigs: true,
 		},
 		{
 			name: "delete from non-existent task",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			wantRemain: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			withPushConfigs: true,
 		},
 		{
 			name: "pushNotifications not supported",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			wantRemain: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
@@ -2138,9 +2169,9 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 		{
 			name: "pushNotifications supported but not configured",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			wantRemain: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			options: []RequestHandlerOption{
 				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
@@ -2150,9 +2181,9 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 		{
 			name: "without capability checks and pushNotifications not configured",
 			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.TaskPushConfig{
-				{TaskID: taskID, Config: config1},
-				{TaskID: taskID, Config: config2},
+			wantRemain: []*a2a.PushConfig{
+				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
+				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 		},
@@ -2179,7 +2210,7 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 					return
 				}
 
-				sort.Slice(got, func(i, j int) bool { return got[i].Config.ID < got[j].Config.ID })
+				sort.Slice(got, func(i, j int) bool { return got[i].ID < got[j].ID })
 				if diff := cmp.Diff(tc.wantRemain, got); diff != "" {
 					t.Errorf("Remaining configs mismatch (-want +got):\n%s", diff)
 				}

@@ -117,7 +117,7 @@ var defaultMockHandler = &mockRequestHandler{
 // mockRequestHandler is a mock of a2asrv.RequestHandler.
 type mockRequestHandler struct {
 	tasks       map[a2a.TaskID]*a2a.Task
-	pushConfigs map[a2a.TaskID]map[string]*a2a.TaskPushConfig
+	pushConfigs map[a2a.TaskID]map[string]*a2a.PushConfig
 
 	// Fields to capture call parameters
 	capturedGetTaskRequest              *a2a.GetTaskRequest
@@ -126,7 +126,7 @@ type mockRequestHandler struct {
 	capturedSendMessageRequest          *a2a.SendMessageRequest
 	capturedSendMessageStreamRequest    *a2a.SendMessageRequest
 	capturedSubscribeToTaskRequest      *a2a.SubscribeToTaskRequest
-	capturedCreateTaskPushConfigRequest *a2a.CreateTaskPushConfigRequest
+	capturedCreateTaskPushConfigRequest *a2a.PushConfig
 	capturedGetTaskPushConfigRequest    *a2a.GetTaskPushConfigRequest
 	capturedListTaskPushConfigRequest   *a2a.ListTaskPushConfigRequest
 	capturedDeleteTaskPushConfigRequest *a2a.DeleteTaskPushConfigRequest
@@ -216,21 +216,20 @@ func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 	}
 }
 
-func (m *mockRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (m *mockRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	m.capturedCreateTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if _, ok := m.pushConfigs[req.TaskID]; !ok {
-			m.pushConfigs[req.TaskID] = make(map[string]*a2a.TaskPushConfig)
+			m.pushConfigs[req.TaskID] = make(map[string]*a2a.PushConfig)
 		}
-		taskPushConfig := &a2a.TaskPushConfig{TaskID: req.TaskID, Config: req.Config}
-		m.pushConfigs[req.TaskID][req.Config.ID] = taskPushConfig
-		return taskPushConfig, nil
+		m.pushConfigs[req.TaskID][req.ID] = req
+		return req, nil
 	}
 
 	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	m.capturedGetTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
@@ -242,20 +241,20 @@ func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	m.capturedListTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
-			var result []*a2a.TaskPushConfig
+			var result []*a2a.PushConfig
 			for _, v := range pushConfigs {
 				result = append(result, v)
 			}
 			return result, nil
 		}
-		return []*a2a.TaskPushConfig{}, nil // no configs for task id
+		return []*a2a.PushConfig{}, nil // no configs for task id
 	}
 
-	return []*a2a.TaskPushConfig{}, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
+	return []*a2a.PushConfig{}, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
 func (m *mockRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
@@ -897,7 +896,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("test-task")
 	mockHandler := &mockRequestHandler{
-		pushConfigs: make(map[a2a.TaskID]map[string]*a2a.TaskPushConfig),
+		pushConfigs: make(map[a2a.TaskID]map[string]*a2a.PushConfig),
 		tasks: map[a2a.TaskID]*a2a.Task{
 			taskID: {ID: taskID, ContextID: "test-context"},
 		},
@@ -908,7 +907,7 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 		name        string
 		req         *a2apb.TaskPushNotificationConfig
 		want        *a2apb.TaskPushNotificationConfig
-		wantRequest *a2a.CreateTaskPushConfigRequest
+		wantRequest *a2a.PushConfig
 		wantErr     codes.Code
 	}{
 		{
@@ -923,9 +922,10 @@ func TestGrpcHandler_CreateTaskPushNotificationConfig(t *testing.T) {
 				Id:     "test-config",
 				Url:    "https://example.com",
 			},
-			wantRequest: &a2a.CreateTaskPushConfigRequest{
+			wantRequest: &a2a.PushConfig{
 				TaskID: taskID,
-				Config: a2a.PushConfig{ID: "test-config", URL: "https://example.com"},
+				ID:     "test-config",
+				URL:    "https://example.com",
 			},
 		},
 		{
@@ -974,9 +974,9 @@ func TestGrpcHandler_GetTaskPushNotificationConfig(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 	configID := "test-config"
 	mockHandler := &mockRequestHandler{
-		pushConfigs: map[a2a.TaskID]map[string]*a2a.TaskPushConfig{
+		pushConfigs: map[a2a.TaskID]map[string]*a2a.PushConfig{
 			taskID: {
-				configID: {TaskID: taskID, Config: a2a.PushConfig{ID: configID}},
+				configID: {TaskID: taskID, ID: configID},
 			},
 		},
 		tasks: map[a2a.TaskID]*a2a.Task{
@@ -1049,10 +1049,10 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 	configID := "test-config"
 	mockHandler := &mockRequestHandler{
-		pushConfigs: map[a2a.TaskID]map[string]*a2a.TaskPushConfig{
+		pushConfigs: map[a2a.TaskID]map[string]*a2a.PushConfig{
 			taskID: {
-				fmt.Sprintf("%s-1", configID): {TaskID: taskID, Config: a2a.PushConfig{ID: fmt.Sprintf("%s-1", configID)}},
-				fmt.Sprintf("%s-2", configID): {TaskID: taskID, Config: a2a.PushConfig{ID: fmt.Sprintf("%s-2", configID)}},
+				fmt.Sprintf("%s-1", configID): {TaskID: taskID, ID: fmt.Sprintf("%s-1", configID)},
+				fmt.Sprintf("%s-2", configID): {TaskID: taskID, ID: fmt.Sprintf("%s-2", configID)},
 			},
 		},
 		tasks: map[a2a.TaskID]*a2a.Task{
@@ -1133,9 +1133,9 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 	taskID := a2a.TaskID("test-task")
 	configID := "test-config"
 	mockHandler := &mockRequestHandler{
-		pushConfigs: map[a2a.TaskID]map[string]*a2a.TaskPushConfig{
+		pushConfigs: map[a2a.TaskID]map[string]*a2a.PushConfig{
 			taskID: {
-				configID: {TaskID: taskID, Config: a2a.PushConfig{ID: configID}},
+				configID: {TaskID: taskID, ID: configID},
 			},
 		},
 		tasks: map[a2a.TaskID]*a2a.Task{

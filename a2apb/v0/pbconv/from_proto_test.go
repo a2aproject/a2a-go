@@ -232,7 +232,7 @@ func TestFromProto_fromProtoSendMessageConfig(t *testing.T) {
 				t.Fatalf("fromProtoSendMessageConfig() error = %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("fromProtoSendMessageConfig() wrong result (+got,-want)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
+				t.Errorf("fromProtoSendMessageConfig() wrong result (-want +got)\ngot = %v\n want %v\ndiff = %s", got, tt.want, diff)
 			}
 		})
 	}
@@ -509,7 +509,7 @@ func TestFromProto_fromProtoListTasksResponse(t *testing.T) {
 				return
 			}
 			if diff := cmp.Diff(got, tt.want); diff != "" {
-				t.Errorf("fromProtoListTasksResponse() mismatch (+got -want):\n%s", diff)
+				t.Errorf("fromProtoListTasksResponse() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -519,7 +519,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		req     *a2apb.CreateTaskPushNotificationConfigRequest
-		want    *a2a.CreateTaskPushConfigRequest
+		want    *a2a.PushConfig
 		wantErr bool
 	}{
 		{
@@ -530,7 +530,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: "test-config"},
 				},
 			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "test", Config: a2a.PushConfig{ID: "test-config"}},
+			want: &a2a.PushConfig{TaskID: "test", ID: "test-config"},
 		},
 		{
 			name: "nil config",
@@ -562,7 +562,7 @@ func TestFromProto_fromProtoCreateTaskPushConfigRequest(t *testing.T) {
 					PushNotificationConfig: &a2apb.PushNotificationConfig{Id: ""},
 				},
 			},
-			want: &a2a.CreateTaskPushConfigRequest{TaskID: "t1", Config: a2a.PushConfig{}},
+			want: &a2a.PushConfig{TaskID: "t1", ID: ""},
 		},
 	}
 	for _, tt := range tests {

@@ -47,7 +47,7 @@ func TestLocalPipe_WriteRead(t *testing.T) {
 	mustWrite(t, pipe, want)
 	got := mustRead(t, pipe)
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("Read() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("Read() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -59,7 +59,7 @@ func TestLocalPipe_WriteCloseRead(t *testing.T) {
 	pipe.Close()
 	got := mustRead(t, pipe)
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("Read() wrong result (+got,-want) diff = %s", diff)
+		t.Fatalf("Read() wrong result (-want +got) diff = %s", diff)
 	}
 }
 

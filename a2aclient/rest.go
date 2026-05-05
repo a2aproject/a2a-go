@@ -125,7 +125,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 				log.Error(ctx, "failed to close http response body", err)
 			}
 		}()
-		return nil, rest.ToA2AError(httpResp)
+		return nil, rest.FromRESTError(httpResp)
 	}
 
 	return httpResp, nil
@@ -173,12 +173,11 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 				return
 			}
 
-			var sr a2a.StreamResponse
-			if err := json.Unmarshal(data, &sr); err != nil {
+			event, err := rest.ParseStreamResponse(data)
+			if err != nil {
 				yield(nil, err)
 				return
 			}
-			event := sr.Event
 
 			if !yield(event, nil) {
 				return
@@ -330,9 +329,9 @@ func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params Service
 }
 
 // GetTaskPushConfig implements [a2a.Transport].
-func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	path := rest.MakeGetPushConfigPath(string(req.TaskID), string(req.ID))
-	var config a2a.TaskPushConfig
+	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
 		method:  "GET",
@@ -347,9 +346,9 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 }
 
 // ListTaskPushConfigs implements [a2a.Transport].
-func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	path := rest.MakeListPushConfigsPath(string(req.TaskID))
-	var configs []*a2a.TaskPushConfig
+	var configs []*a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
 		method:  "GET",
@@ -364,9 +363,9 @@ func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceP
 }
 
 // CreateTaskPushConfig implements [a2a.Transport].
-func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	path := rest.MakeCreatePushConfigPath(string(req.TaskID))
-	var config a2a.TaskPushConfig
+	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
 		method:  "POST",

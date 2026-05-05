@@ -192,7 +192,7 @@ func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], y
 	}
 }
 
-func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	pbReq, err := pbconv.ToProtoGetTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, err
@@ -206,7 +206,7 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.
 	return pbconv.FromProtoTaskPushConfig(pbConfig)
 }
 
-func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	pbReq, err := pbconv.ToProtoListTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclien
 	return resp.Configs, nil
 }
 
-func (c *grpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (c *grpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	pbReq, err := pbconv.ToProtoCreateTaskPushConfigRequest(req)
 	if err != nil {
 		return nil, err

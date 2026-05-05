@@ -290,7 +290,7 @@ func TestAuthInterceptor(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(tc.want, params); diff != "" {
-				t.Errorf("wrong ServiceParams (+got,-want) diff = %s", diff)
+				t.Errorf("wrong ServiceParams (-want +got) diff = %s", diff)
 			}
 		})
 	}

@@ -21,14 +21,278 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestToGRPCError(t *testing.T) {
+func TestGRPCErrorRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		inputError        *a2a.Error
+		inputTypedDetails []*errordetails.Typed
+		wantCode          codes.Code
+		want              *a2a.Error
+	}{
+		{
+			name: "TaskNotFound with details and metadata",
+			inputError: a2a.NewError(a2a.ErrTaskNotFound, "task not found").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}).WithDetails(map[string]any{
+				"num": float64(123),
+			}),
+			wantCode: codes.NotFound,
+			want: &a2a.Error{
+				Err:     a2a.ErrTaskNotFound,
+				Message: "task not found",
+				Details: map[string]any{
+					"num": float64(123),
+				},
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("TASK_NOT_FOUND", a2a.ProtocolDomain, map[string]string{
+						"foo": "bar",
+					}),
+					errordetails.NewFromStruct(map[string]any{
+						"num": float64(123),
+					}),
+				},
+			},
+		},
+		{
+			name: "Wrapped ParseError with details and metadata",
+			inputError: a2a.NewError(fmt.Errorf("wrapped error: %w", a2a.ErrParseError), "wrapped parse error").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}).WithDetails(map[string]any{
+				"num": float64(123),
+			}),
+			wantCode: codes.InvalidArgument,
+			want: &a2a.Error{
+				Err:     a2a.ErrParseError,
+				Message: "wrapped parse error",
+				Details: map[string]any{
+					"num": float64(123),
+				},
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("PARSE_ERROR", a2a.ProtocolDomain, map[string]string{
+						"foo": "bar",
+					}),
+					errordetails.NewFromStruct(map[string]any{
+						"num": float64(123),
+					}),
+				},
+			},
+		},
+		{
+			name: "InvalidParams with details and metadata",
+			inputError: a2a.NewError(a2a.ErrInvalidParams, "invalid params").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}).WithDetails(map[string]any{
+				"str": "hello",
+			}),
+			wantCode: codes.InvalidArgument,
+			want: &a2a.Error{
+				Err:     a2a.ErrInvalidParams,
+				Message: "invalid params",
+				Details: map[string]any{
+					"str": "hello",
+				},
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("INVALID_PARAMS", a2a.ProtocolDomain, map[string]string{
+						"foo": "bar",
+					}),
+					errordetails.NewFromStruct(map[string]any{
+						"str": "hello",
+					}),
+				},
+			},
+		},
+		{
+			name: "ExtensionSupportRequired with details, typed details and metadata",
+			inputError: a2a.NewError(a2a.ErrExtensionSupportRequired, "extension support required").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}).WithDetails(map[string]any{
+				"str": "hello",
+			}),
+			inputTypedDetails: []*errordetails.Typed{
+				errordetails.NewFromStruct(map[string]any{
+					"extra": "should not leak into details",
+				}),
+			},
+			wantCode: codes.FailedPrecondition,
+			want: &a2a.Error{
+				Err:     a2a.ErrExtensionSupportRequired,
+				Message: "extension support required",
+				Details: map[string]any{
+					"str": "hello",
+				},
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("EXTENSION_SUPPORT_REQUIRED", a2a.ProtocolDomain, map[string]string{
+						"foo": "bar",
+					}),
+					errordetails.NewFromStruct(map[string]any{
+						"str": "hello",
+					}),
+					errordetails.NewFromStruct(map[string]any{
+						"extra": "should not leak into details",
+					}),
+				},
+			},
+		},
+		{
+			name:       "InvalidRequest without extra details",
+			inputError: a2a.NewError(a2a.ErrInvalidRequest, "invalid request"),
+			wantCode:   codes.InvalidArgument,
+		},
+		{
+			name: "MethodNotFound with details only",
+			inputError: a2a.NewError(a2a.ErrMethodNotFound, "method not found").WithDetails(map[string]any{
+				"str": "hello",
+			}),
+			wantCode: codes.Unimplemented,
+			want: &a2a.Error{
+				Err:     a2a.ErrMethodNotFound,
+				Message: "method not found",
+				Details: map[string]any{
+					"str": "hello",
+				},
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewFromStruct(map[string]any{
+						"str": "hello",
+					}),
+				},
+			},
+		},
+		{
+			name: "ServerError with ErrorInfo only",
+			inputError: a2a.NewError(a2a.ErrServerError, "server error").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}),
+			wantCode: codes.Internal,
+			want: &a2a.Error{
+				Err:     a2a.ErrServerError,
+				Message: "server error",
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("SERVER_ERROR", a2a.ProtocolDomain, map[string]string{
+						"foo": "bar",
+					}),
+				},
+			},
+		},
+		{
+			name: "TaskNotCancelable ErrorInfo override",
+			inputError: a2a.NewError(a2a.ErrTaskNotCancelable, "task not cancelable").WithErrorInfoMeta(map[string]string{
+				"foo": "bar",
+			}).WithErrorInfoMeta(map[string]string{
+				"new_key": "new_value",
+			}),
+			wantCode: codes.FailedPrecondition,
+			want: &a2a.Error{
+				Err:     a2a.ErrTaskNotCancelable,
+				Message: "task not cancelable",
+				TypedDetails: []*errordetails.Typed{
+					errordetails.NewErrorInfo("TASK_NOT_CANCELABLE", a2a.ProtocolDomain, map[string]string{
+						"new_key": "new_value",
+					}),
+				},
+			},
+		},
+		{
+			name:       "PushNotificationNotSupported",
+			inputError: a2a.NewError(a2a.ErrPushNotificationNotSupported, "push notification not supported"),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "UnsupportedOperation",
+			inputError: a2a.NewError(a2a.ErrUnsupportedOperation, "unsupported operation"),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "UnsupportedContentType",
+			inputError: a2a.NewError(a2a.ErrUnsupportedContentType, "unsupported content type"),
+			wantCode:   codes.InvalidArgument,
+		},
+		{
+			name:       "InvalidAgentResponse",
+			inputError: a2a.NewError(a2a.ErrInvalidAgentResponse, "invalid agent response"),
+			wantCode:   codes.Internal,
+		},
+		{
+			name:       "ExtendedCardNotConfigured",
+			inputError: a2a.NewError(a2a.ErrExtendedCardNotConfigured, "extended card not configured"),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "VersionNotSupported",
+			inputError: a2a.NewError(a2a.ErrVersionNotSupported, "version not supported"),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "Unauthenticated",
+			inputError: a2a.NewError(a2a.ErrUnauthenticated, "unauthenticated"),
+			wantCode:   codes.Unauthenticated,
+		},
+		{
+			name:       "Unauthorized",
+			inputError: a2a.NewError(a2a.ErrUnauthorized, "unauthorized"),
+			wantCode:   codes.PermissionDenied,
+		},
+		{
+			name:       "InternalError",
+			inputError: a2a.NewError(a2a.ErrInternalError, "internal error"),
+			wantCode:   codes.Internal,
+		},
+		{
+			name:       "Unknown error roundtrips to Internal",
+			inputError: a2a.NewError(errors.New("unknown error"), "unknown error"),
+			wantCode:   codes.Internal,
+			want:       a2a.NewError(a2a.ErrInternalError, "unknown error"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tc.inputTypedDetails != nil {
+				tc.inputError.TypedDetails = append(tc.inputError.TypedDetails, tc.inputTypedDetails...)
+			}
+			got := ToGRPCError(tc.inputError)
+			st, ok := status.FromError(got)
+			if !ok {
+				t.Fatalf("Expected gRPC status error")
+			}
+			if st.Code() != tc.wantCode {
+				t.Fatalf("ToGRPCError() code = %v, want %v", st.Code(), tc.wantCode)
+			}
+
+			back := FromGRPCError(got)
+			var a2aBack *a2a.Error
+			if !errors.As(back, &a2aBack) {
+				t.Fatalf("Expected *a2a.Error")
+			}
+			want := tc.want
+			if want == nil {
+				want = tc.inputError
+			}
+			if diff := cmp.Diff(*want, *a2aBack,
+				cmpopts.EquateErrors(),
+				cmpopts.IgnoreMapEntries(func(k string, _ string) bool {
+					return k == "timestamp"
+				}),
+			); diff != "" {
+				t.Fatalf("Round-trip error mismatch (+got, -want):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestToGRPCErrorEdgeCases(t *testing.T) {
+	t.Parallel()
+
 	wrappedTaskNotFound := fmt.Errorf("wrapping: %w", a2a.ErrTaskNotFound)
 	unknownError := errors.New("some unknown error")
 	grpcError := status.Error(codes.AlreadyExists, "already there")
@@ -45,7 +309,7 @@ func TestToGRPCError(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name: "ErrTaskNotFound",
+			name: "plain sentinel error",
 			err:  a2a.ErrTaskNotFound,
 			want: status.Error(codes.NotFound, a2a.ErrTaskNotFound.Error()),
 		},
@@ -53,46 +317,6 @@ func TestToGRPCError(t *testing.T) {
 			name: "wrapped ErrTaskNotFound",
 			err:  wrappedTaskNotFound,
 			want: status.Error(codes.NotFound, wrappedTaskNotFound.Error()),
-		},
-		{
-			name: "ErrTaskNotCancelable",
-			err:  a2a.ErrTaskNotCancelable,
-			want: status.Error(codes.FailedPrecondition, a2a.ErrTaskNotCancelable.Error()),
-		},
-		{
-			name: "ErrPushNotificationNotSupported",
-			err:  a2a.ErrPushNotificationNotSupported,
-			want: status.Error(codes.Unimplemented, a2a.ErrPushNotificationNotSupported.Error()),
-		},
-		{
-			name: "ErrUnsupportedOperation",
-			err:  a2a.ErrUnsupportedOperation,
-			want: status.Error(codes.Unimplemented, a2a.ErrUnsupportedOperation.Error()),
-		},
-		{
-			name: "ErrUnsupportedContentType",
-			err:  a2a.ErrUnsupportedContentType,
-			want: status.Error(codes.InvalidArgument, a2a.ErrUnsupportedContentType.Error()),
-		},
-		{
-			name: "ErrInvalidRequest",
-			err:  a2a.ErrInvalidRequest,
-			want: status.Error(codes.InvalidArgument, a2a.ErrInvalidRequest.Error()),
-		},
-		{
-			name: "ErrInvalidParams",
-			err:  a2a.ErrInvalidParams,
-			want: status.Error(codes.InvalidArgument, a2a.ErrInvalidParams.Error()),
-		},
-		{
-			name: "ErrExtendedCardNotConfigured",
-			err:  a2a.ErrExtendedCardNotConfigured,
-			want: status.Error(codes.FailedPrecondition, a2a.ErrExtendedCardNotConfigured.Error()),
-		},
-		{
-			name: "ErrInvalidAgentResponse",
-			err:  a2a.ErrInvalidAgentResponse,
-			want: status.Error(codes.Internal, a2a.ErrInvalidAgentResponse.Error()),
 		},
 		{
 			name: "context canceled",
@@ -110,11 +334,6 @@ func TestToGRPCError(t *testing.T) {
 			want: status.Error(codes.Internal, unknownError.Error()),
 		},
 		{
-			name: "a2a error unwrapped",
-			err:  a2a.NewError(a2a.ErrInvalidParams, "custom message"),
-			want: status.Error(codes.InvalidArgument, "custom message"),
-		},
-		{
 			name: "structpb conversion failure",
 			err:  a2a.NewError(errors.New("bad details"), "oops").WithDetails(map[string]any{"func": func() {}}),
 			want: status.Error(codes.Internal, "oops"),
@@ -128,6 +347,8 @@ func TestToGRPCError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := ToGRPCError(tt.err)
 			if tt.wantNil {
 				if got != nil {
@@ -145,41 +366,15 @@ func TestToGRPCError(t *testing.T) {
 			if gotSt.Code() != wantSt.Code() {
 				t.Fatalf("ToGRPCError() code = %v, want %v", gotSt.Code(), wantSt.Code())
 			}
-			if len(wantSt.Details()) == 0 {
-				return
-			}
-			if len(gotSt.Details()) != len(wantSt.Details()) {
-				t.Fatalf("ToGRPCError() details len = %d, want %d", len(gotSt.Details()), len(wantSt.Details()))
-			}
-			for i := range gotSt.Details() {
-				gotDetail, ok1 := gotSt.Details()[i].(*structpb.Struct)
-				wantDetail, ok2 := wantSt.Details()[i].(*structpb.Struct)
-				if !ok1 || !ok2 {
-					t.Fatalf("ToGRPCError() details expected structpb.Struct")
-				}
-				if len(gotDetail.Fields) != len(wantDetail.Fields) {
-					t.Errorf("ToGRPCError() details fields len = %d, want %d", len(gotDetail.Fields), len(wantDetail.Fields))
-				}
-				if v, ok := wantDetail.Fields["reason"]; ok {
-					if gotV, ok := gotDetail.Fields["reason"]; !ok || gotV.GetStringValue() != v.GetStringValue() {
-						t.Errorf("ToGRPCError() details field 'reason' mismatch")
-					}
-				}
+			if gotSt.Message() != wantSt.Message() {
+				t.Fatalf("ToGRPCError() message = %q, want %q", gotSt.Message(), wantSt.Message())
 			}
 		})
 	}
 }
 
-func TestFromGRPCError(t *testing.T) {
-	testDetails := map[string]any{"reason": "test"}
-	stDetails, err := structpb.NewStruct(testDetails)
-	if err != nil {
-		t.Fatalf("Failed to create structpb: %v", err)
-	}
-	stWithDetails, err := status.New(codes.NotFound, "not found").WithDetails(stDetails)
-	if err != nil {
-		t.Fatalf("Failed to attach details: %v", err)
-	}
+func TestFromGRPCErrorEdgeCases(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name string
@@ -197,34 +392,16 @@ func TestFromGRPCError(t *testing.T) {
 			want: errors.New("simple error"), // Should return as is
 		},
 		{
-			name: "NotFound -> ErrTaskNotFound",
-			err:  status.Error(codes.NotFound, "foo"),
-			want: a2a.NewError(a2a.ErrTaskNotFound, "foo"),
-		},
-		{
 			name: "Unknown code -> ErrInternalError",
 			err:  status.Error(codes.Unknown, "unknown"),
 			want: a2a.NewError(a2a.ErrInternalError, "unknown"),
-		},
-		{
-			name: "Unauthenticated -> ErrUnauthenticated",
-			err:  status.Error(codes.Unauthenticated, "auth failed"),
-			want: a2a.NewError(a2a.ErrUnauthenticated, "auth failed"),
-		},
-		{
-			name: "PermissionDenied -> ErrUnauthorized",
-			err:  status.Error(codes.PermissionDenied, "forbidden"),
-			want: a2a.NewError(a2a.ErrUnauthorized, "forbidden"),
-		},
-		{
-			name: "with details",
-			err:  stWithDetails.Err(),
-			want: a2a.NewError(a2a.ErrTaskNotFound, "not found").WithDetails(testDetails),
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := FromGRPCError(tc.err)
 			if tc.want == nil {
 				if got != nil {
@@ -257,119 +434,6 @@ func TestFromGRPCError(t *testing.T) {
 			if !errors.Is(gotBaseErr, wantErr) {
 				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
 			}
-
-			var wantDetails map[string]any
-			var wantA2AErr *a2a.Error
-			if errors.As(tc.want, &wantA2AErr) {
-				wantDetails = wantA2AErr.Details
-			}
-
-			if wantDetails != nil {
-				var a2aErr *a2a.Error
-				if !errors.As(got, &a2aErr) {
-					t.Fatalf("got error type %T, want *a2a.Error", got)
-				}
-				if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
-					t.Fatalf("got wrong details (+got,-want) diff = %s", diff)
-				}
-			}
 		})
-	}
-}
-
-func TestFromGRPCError_RoundTrip(t *testing.T) {
-	t.Parallel()
-
-	errsToTest := []error{
-		a2a.ErrTaskNotFound,
-		a2a.ErrTaskNotCancelable,
-		a2a.ErrUnsupportedOperation,
-		a2a.ErrPushNotificationNotSupported,
-		a2a.ErrMethodNotFound,
-		a2a.ErrInvalidParams,
-		a2a.ErrUnsupportedContentType,
-		a2a.ErrInvalidRequest,
-		a2a.ErrInternalError,
-		a2a.ErrInvalidAgentResponse,
-		a2a.ErrExtendedCardNotConfigured,
-		a2a.ErrExtensionSupportRequired,
-		a2a.ErrVersionNotSupported,
-		a2a.ErrParseError,
-		a2a.ErrServerError,
-		a2a.ErrUnauthenticated,
-		a2a.ErrUnauthorized,
-	}
-
-	for _, sentinel := range errsToTest {
-		t.Run(sentinel.Error(), func(t *testing.T) {
-			t.Parallel()
-
-			got := FromGRPCError(ToGRPCError(sentinel))
-			if !errors.Is(got, sentinel) {
-				t.Fatalf("FromGRPCError(ToGRPCError(%v)) = %v, want errors.Is to match", sentinel, got)
-			}
-		})
-	}
-}
-
-func TestErrorInfo(t *testing.T) {
-	err := a2a.NewError(a2a.ErrTaskNotFound, "oops").WithDetails(map[string]any{
-		"foo": "bar",
-		"num": 123,
-	})
-	grpcErr := ToGRPCError(err)
-
-	st, ok := status.FromError(grpcErr)
-	if !ok {
-		t.Fatalf("Expected gRPC status error")
-	}
-
-	var foundErrorInfo bool
-	var foundStruct bool
-	for _, d := range st.Details() {
-		switch v := d.(type) {
-		case *errdetails.ErrorInfo:
-			foundErrorInfo = true
-			if v.Reason != "TASK_NOT_FOUND" {
-				t.Errorf("ErrorInfo.Reason = %q, want %q", v.Reason, "TASK_NOT_FOUND")
-			}
-			if v.Domain != "a2a-protocol.org" {
-				t.Errorf("ErrorInfo.Domain = %q, want %q", v.Domain, "a2a-protocol.org")
-			}
-			if v.Metadata["foo"] != "bar" {
-				t.Errorf("ErrorInfo.Metadata[foo] = %q, want %q", v.Metadata["foo"], "bar")
-			}
-			if _, ok := v.Metadata["num"]; ok {
-				t.Errorf("ErrorInfo.Metadata[num] should not be present")
-			}
-		case *structpb.Struct:
-			foundStruct = true
-			if v.AsMap()["num"].(float64) != 123 {
-				t.Errorf("Struct.num = %v, want %v", v.AsMap()["num"], 123)
-			}
-		}
-	}
-
-	if !foundErrorInfo {
-		t.Errorf("ErrorInfo not found in details")
-	}
-	if !foundStruct {
-		t.Errorf("structpb.Struct not found in details")
-	}
-
-	// Test round-trip
-	back := FromGRPCError(grpcErr)
-	var a2aBack *a2a.Error
-	if !errors.As(back, &a2aBack) {
-		t.Fatalf("Expected *a2a.Error")
-	}
-	if !errors.Is(a2aBack.Err, a2a.ErrTaskNotFound) {
-		t.Errorf("Round-trip error = %v, want %v", a2aBack.Err, a2a.ErrTaskNotFound)
-	}
-	if a2aBack.Details["num"].(float64) != 123 {
-		t.Errorf("Round-trip details[num] = %v, want %v", a2aBack.Details["num"], 123)
-	}
-	if a2aBack.Details["foo"] != "bar" {
-		t.Errorf("Round-trip details[foo] = %v, want %v", a2aBack.Details["foo"], "bar")
 	}
 }

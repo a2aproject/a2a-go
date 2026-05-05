@@ -74,6 +74,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	if toSave.ID == "" {
 		toSave.ID = newID()
 	}
+	toSave.TaskID = taskID
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

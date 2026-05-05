@@ -75,13 +75,18 @@ func walkJSON(v any, fn func(string) string) any {
 }
 
 // camelToSnake converts a camelCase string to snake_case.
-// e.g. "messageId" → "message_id", "contextId" → "context_id"
+// e.g. "messageId" → "message_id", "URLField" → "url_field"
 func camelToSnake(s string) string {
+	runes := []rune(s)
 	var b strings.Builder
-	for i, r := range s {
+	for i, r := range runes {
 		if unicode.IsUpper(r) {
 			if i > 0 {
-				b.WriteByte('_')
+				prev := runes[i-1]
+				nextIsLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+				if unicode.IsLower(prev) || (unicode.IsUpper(prev) && nextIsLower) {
+					b.WriteByte('_')
+				}
 			}
 			b.WriteRune(unicode.ToLower(r))
 		} else {

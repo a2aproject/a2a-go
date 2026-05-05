@@ -82,6 +82,71 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 type eventProducerFn func(context.Context) error
 type eventConsumerFn func(context.Context) (a2a.SendMessageResult, error)
 
+// inactivityTracker bundles the inactivity watcher's configuration with the
+// activity-recording channel. Callers obtain one via [newInactivityTracker]
+// (returns nil when disabled), wrap the producer's writer with
+// [newActivityTrackingWriter], and pass the tracker to [runProducerConsumer]
+// to start the watcher. A nil tracker disables tracking end-to-end: the writer
+// wrapper is a no-op and the watcher goroutine is not started.
+type inactivityTracker struct {
+	config        inactivityConfig
+	writeRecorded chan struct{}
+}
+
+// newInactivityTracker returns a tracker for the given timeout. A non-positive
+// timeout returns nil, disabling inactivity tracking.
+func newInactivityTracker(timeout time.Duration) *inactivityTracker {
+	if timeout <= 0 {
+		return nil
+	}
+	signal := make(chan struct{}, 1)
+	return &inactivityTracker{
+		config:        inactivityConfig{timeout: timeout},
+		writeRecorded: signal,
+	}
+}
+
+// record signals that a producer write just succeeded. Non-blocking: the
+// watcher only needs an "activity happened" hint, so a full channel is fine.
+func (t *inactivityTracker) record() {
+	if t == nil {
+		return
+	}
+	select {
+	case t.writeRecorded <- struct{}{}:
+	default:
+	}
+}
+
+// newActivityTrackingWriter wraps an [eventpipe.Writer] so each successful
+// write signals the provided tracker. A nil tracker returns the writer
+// unchanged so callers without an inactivity timeout configured pay no cost.
+func newActivityTrackingWriter(inner eventpipe.Writer, tracker *inactivityTracker) eventpipe.Writer {
+	if tracker == nil {
+		return inner
+	}
+	return &activityTrackingWriter{inner: inner, tracker: tracker}
+}
+
+type activityTrackingWriter struct {
+	inner   eventpipe.Writer
+	tracker *inactivityTracker
+}
+
+func (w *activityTrackingWriter) Write(ctx context.Context, event a2a.Event) error {
+	if err := w.inner.Write(ctx, event); err != nil {
+		return err
+	}
+	w.tracker.record()
+	return nil
+}
+
+// inactivityConfig configures the inactivity watcher started by
+// [runProducerConsumer]. A zero or negative timeout disables the watcher.
+type inactivityConfig struct {
+	timeout time.Duration
+}
+
 // runProducerConsumer starts producer and consumer goroutines in an error group and waits
 // for both of them to finish or one of them to fail. If both complete successfuly and consumer produces a result,
 // the result is returned, otherwise an error is returned.
@@ -91,8 +156,27 @@ func runProducerConsumer(
 	consumer eventConsumerFn,
 	heartbeater workqueue.Heartbeater,
 	panicHandler PanicHandlerFn,
+	inactivity *inactivityTracker,
 ) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
+
+	if inactivity != nil && inactivity.config.timeout > 0 && inactivity.writeRecorded != nil {
+		cfg := inactivity.config
+		group.Go(func() error {
+			timer := time.NewTimer(cfg.timeout)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-inactivity.writeRecorded:
+					timer.Reset(cfg.timeout)
+				case <-timer.C:
+					return ErrAgentInactivityTimeout
+				}
+			}
+		})
+	}
 
 	if heartbeater != nil {
 		group.Go(func() error {

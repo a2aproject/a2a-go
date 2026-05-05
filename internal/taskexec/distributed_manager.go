@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
@@ -40,6 +41,11 @@ type DistributedManagerConfig struct {
 	Logger            *slog.Logger
 	PanicHandler      PanicHandlerFn
 	ContextCodec      ContextCodec
+	// AgentInactivityTimeout, if positive, terminates an execution when the
+	// agent's producer has not written any events to the pipe for the
+	// configured duration. The terminating cause is [ErrAgentInactivityTimeout].
+	// A value of 0 disables the watcher, preserving prior behavior.
+	AgentInactivityTimeout time.Duration
 }
 
 type distributedManager struct {

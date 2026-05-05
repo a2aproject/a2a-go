@@ -104,10 +104,10 @@ func TestManager_TaskSaved(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(saver.saved, updated); diff != "" {
-		t.Fatalf("wrong saved task state (+got,-want):\n%s", diff)
+		t.Fatalf("wrong saved task state (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(result.Task, updated); diff != "" {
-		t.Fatalf("wrong result task (+got,-want):\n%s", diff)
+		t.Fatalf("wrong result task (-want +got):\n%s", diff)
 	}
 	if result.Task.Status.State != newState {
 		t.Fatalf("task state not updated: got = %v, want = %v", result.Task.Status.State, newState)
@@ -483,10 +483,10 @@ func TestManager_ArtifactUpdates(t *testing.T) {
 				got = lastResult.Task.Artifacts
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("wrong result (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", got, tc.want, diff)
+				t.Errorf("wrong result (-want +got)\ngot = %v\nwant = %v\ndiff=%s", got, tc.want, diff)
 			}
 			if diff := cmp.Diff(tc.want, saved); diff != "" {
-				t.Errorf("wrong artifacts saved (+got,-want)\ngot = %v\nwant = %v\ndiff=%s", saved, tc.want, diff)
+				t.Errorf("wrong artifacts saved (-want +got)\ngot = %v\nwant = %v\ndiff=%s", saved, tc.want, diff)
 			}
 		})
 	}

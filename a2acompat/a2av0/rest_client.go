@@ -138,7 +138,7 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 				log.Error(ctx, "failed to close http response body", err)
 			}
 		}()
-		return nil, rest.ToA2AError(resp)
+		return nil, rest.FromRESTError(resp)
 	}
 	return resp, nil
 }
@@ -182,6 +182,10 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 		for data, err := range sse.ParseDataStream(resp.Body) {
 			if err != nil {
 				yield(nil, err)
+				return
+			}
+			if restErr := parseErrorBytes(data); restErr != nil {
+				yield(nil, restErr)
 				return
 			}
 			// v0.3 SSE events use snake_case keys; transform to camelCase
@@ -354,7 +358,7 @@ func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2acli
 }
 
 // GetTaskPushConfig implements [a2aclient.Transport].
-func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
@@ -363,15 +367,12 @@ func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2ac
 	}, &compatConfig); err != nil {
 		return nil, err
 	}
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 
 // ListTaskPushConfigs implements [a2aclient.Transport].
-func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	var compatConfigs []*a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
@@ -380,20 +381,17 @@ func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2
 	}, &compatConfigs); err != nil {
 		return nil, err
 	}
-	configs := make([]*a2a.TaskPushConfig, 0, len(compatConfigs))
+	configs := make([]*a2a.PushConfig, 0, len(compatConfigs))
 	for _, c := range compatConfigs {
-		config, err := ToV1TaskPushConfig(c)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert push config: %w", err)
-		}
+		config := ToV1PushConfig(c)
 		configs = append(configs, config)
 	}
 	return configs, nil
 }
 
 // CreateTaskPushConfig implements [a2aclient.Transport].
-func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
-	compatPushConfig := FromV1PushConfig(&req.Config)
+func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
+	compatPushConfig := FromV1PushConfig(req)
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method:  "POST",
@@ -403,10 +401,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 	}, &compatConfig); err != nil {
 		return nil, err
 	}
-	config, err := ToV1TaskPushConfig(&compatConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert push config: %w", err)
-	}
+	config := ToV1PushConfig(&compatConfig)
 	return config, nil
 }
 
@@ -440,4 +435,23 @@ func (t *restCompatTransport) GetExtendedAgentCard(ctx context.Context, params a
 // Destroy implements [a2aclient.Transport].
 func (t *restCompatTransport) Destroy() error {
 	return nil
+}
+
+// parseErrorBytes attempts to parse raw JSON bytes as a google.rpc.Status error.
+// Returns the corresponding A2A error if the bytes contain an "error" key, nil otherwise.
+// If the "error" key is present but malformed, it returns [a2a.ErrInternalError].
+func parseErrorBytes(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	rawErr, hasError := raw["error"]
+	if !hasError || bytes.Equal(rawErr, []byte("null")) {
+		return nil
+	}
+	var body rest.ErrorBodyJSON
+	if err := json.Unmarshal(rawErr, &body); err != nil {
+		return a2a.ErrInternalError
+	}
+	return rest.ConvertErrorBody(&body)
 }

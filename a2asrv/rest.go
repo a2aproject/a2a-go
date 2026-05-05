@@ -375,7 +375,7 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 		return
 	}
 
-	request := &a2a.CreateTaskPushConfigRequest{}
+	request := &a2a.PushConfig{}
 	if err := json.NewDecoder(req.Body).Decode(request); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return

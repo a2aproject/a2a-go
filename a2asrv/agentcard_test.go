@@ -146,7 +146,7 @@ func TestAgentCardHandler(t *testing.T) {
 						t.Errorf("json.Decode() error = %v", err)
 					}
 					if diff := cmp.Diff(card, &gotCard); diff != "" {
-						t.Errorf("wrong card (+got,-want) diff = %s", diff)
+						t.Errorf("wrong card (-want +got) diff = %s", diff)
 					}
 				}
 			})

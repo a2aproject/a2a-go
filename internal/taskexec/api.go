@@ -16,12 +16,19 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"iter"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 )
+
+// ErrAgentInactivityTimeout is the cancellation cause set on the producer
+// context when an agent fails to write any events to the event pipe within
+// the configured inactivity timeout window. Callers can check for this
+// condition with errors.Is.
+var ErrAgentInactivityTimeout = errors.New("agent inactivity timeout")
 
 // Manager provides an API for executing and canceling tasks.
 type Manager interface {

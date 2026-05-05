@@ -356,14 +356,14 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 					t.Fatalf("Expected error but got nil")
 				}
 				if diff := cmp.Diff(err.Error(), tc.wantErr.Error()); diff != "" {
-					t.Fatalf("Error mismatch (+got -want):\n%s", diff)
+					t.Fatalf("Error mismatch (-want +got):\n%s", diff)
 				}
 			} else {
 				if err != nil {
 					t.Fatalf("Unexpected error: got = %v, want nil", err)
 				}
 				if diff := cmp.Diff(listResponse.Tasks, tc.wantResponse.Tasks); diff != "" {
-					t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+					t.Fatalf("Tasks mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})
@@ -443,7 +443,7 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 				}
 			}
 			if diff := cmp.Diff(result, tc.result); diff != "" {
-				t.Fatalf("Tasks mismatch (+got -want):\n%s", diff)
+				t.Fatalf("Tasks mismatch (-want +got):\n%s", diff)
 			}
 			if actualCalls != tc.wantCalls {
 				t.Fatalf("Unexpected number of calls: got = %v, want %v", actualCalls, tc.wantCalls)

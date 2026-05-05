@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/google/go-cmp/cmp"
 )
@@ -133,7 +134,7 @@ func TestJSONRPCTransport_ServiceParamsHeaders(t *testing.T) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
 		if diff := cmp.Diff(wantValues, r.Header.Values("foo")); diff != "" {
-			t.Fatalf("r.Header.Get() wrong result (+got,-want) diff = %s", diff)
+			t.Fatalf("r.Header.Get() wrong result (-want +got) diff = %s", diff)
 		}
 
 		resp := newResponse(req, json.RawMessage(`{"kind":"task"}`))
@@ -231,7 +232,7 @@ func TestJSONRPCTransport_ListTasks(t *testing.T) {
 	}
 
 	if diff := cmp.Diff(wantResult, tasks); diff != "" {
-		t.Fatalf("ListTasks wrong result (-got +want): %s", diff)
+		t.Fatalf("ListTasks wrong result (-want +got): %s", diff)
 	}
 }
 
@@ -425,7 +426,7 @@ func TestJSONRPCTransport_GetAgentCard(t *testing.T) {
 		Description: "test",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("got wrong card (+got,-want) diff = %s", diff)
+		t.Errorf("got wrong card (-want +got) diff = %s", diff)
 	}
 }
 
@@ -509,13 +510,13 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("Set", func(t *testing.T) {
+	t.Run("Create", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			req := mustDecodeJSONRPC(t, r, "CreateTaskPushNotificationConfig")
 
 			resp := newResponse(
 				req,
-				json.RawMessage(`{"taskId":"task-123","config":{"id":"config-123","url":"https://webhook.example.com"}}`),
+				json.RawMessage(`{"taskId":"task-123","id":"config-123","url":"https://webhook.example.com"}`),
 			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))
@@ -523,12 +524,10 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 		transport := NewJSONRPCTransport(server.URL, nil)
 
-		config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.CreateTaskPushConfigRequest{
+		config, err := transport.CreateTaskPushConfig(t.Context(), ServiceParams{}, &a2a.PushConfig{
 			TaskID: "task-123",
-			Config: a2a.PushConfig{
-				ID:  "config-123",
-				URL: "https://webhook.example.com",
-			},
+			ID:     "config-123",
+			URL:    "https://webhook.example.com",
 		})
 
 		if err != nil {
@@ -539,8 +538,8 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 			t.Errorf("got taskId %s, want task-123", config.TaskID)
 		}
 
-		if config.Config.URL != "https://webhook.example.com" {
-			t.Errorf("got URL %s, want https://webhook.example.com", config.Config.URL)
+		if config.URL != "https://webhook.example.com" {
+			t.Errorf("got URL %s, want https://webhook.example.com", config.URL)
 		}
 	})
 
@@ -607,7 +606,9 @@ func TestJSONRPCTransport_WithHTTPClient(t *testing.T) {
 }
 
 func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
-	wantMsg, wantDetails := "Access Denied", map[string]any{"reason": "expired_token", "scope": "read"}
+	wantMsg := "Access Denied"
+	wantDetails := map[string]any{"reason": "expired_token", "scope": "read"}
+	typedDetails := []*errordetails.Typed{errordetails.NewTyped("google.protobuf.Struct", wantDetails)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
@@ -617,7 +618,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 			Error: &jsonrpc.Error{
 				Code:    -31403,
 				Message: wantMsg,
-				Data:    wantDetails,
+				Data:    typedDetails,
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -641,7 +642,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 		t.Errorf("got message %q, want %q", a2aErr.Message, wantMsg)
 	}
 	if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
-		t.Errorf("got wrong details (+got,-want) diff = %s", diff)
+		t.Errorf("got wrong details (-want +got) diff = %s", diff)
 	}
 }
 

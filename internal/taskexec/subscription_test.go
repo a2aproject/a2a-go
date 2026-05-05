@@ -186,7 +186,7 @@ func TestRemoteSubscription_Events(t *testing.T) {
 				t.Fatalf("Events() error = nil, want %v", tc.wantErrContain)
 			}
 			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
-				t.Fatalf("Events() result mismatch (+got,-want):\n%s", diff)
+				t.Fatalf("Events() result mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

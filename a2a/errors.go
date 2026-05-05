@@ -14,9 +14,14 @@
 
 package a2a
 
-import "errors"
+import (
+	"errors"
+	"slices"
 
-// https://a2a-protocol.org/latest/specification/#8-error-handling
+	"github.com/a2aproject/a2a-go/v2/errordetails"
+)
+
+// https://a2a-protocol.org/latest/specification/#332-error-handling
 var (
 	// ErrParseError indicates that server received payload that was not well-formed.
 	ErrParseError = errors.New("parse error")
@@ -75,6 +80,36 @@ var (
 	ErrUnauthorized = errors.New("permission denied")
 )
 
+// ErrorReason returns the reason string for an error.
+func ErrorReason(err error) string {
+	for sentinel, reason := range errorReason {
+		if errors.Is(err, sentinel) {
+			return reason
+		}
+	}
+	return "INTERNAL_ERROR"
+}
+
+var errorReason = map[error]string{
+	ErrParseError:                   "PARSE_ERROR",
+	ErrInvalidRequest:               "INVALID_REQUEST",
+	ErrMethodNotFound:               "METHOD_NOT_FOUND",
+	ErrInvalidParams:                "INVALID_PARAMS",
+	ErrInternalError:                "INTERNAL_ERROR",
+	ErrServerError:                  "SERVER_ERROR",
+	ErrTaskNotFound:                 "TASK_NOT_FOUND",
+	ErrTaskNotCancelable:            "TASK_NOT_CANCELABLE",
+	ErrPushNotificationNotSupported: "PUSH_NOTIFICATION_NOT_SUPPORTED",
+	ErrUnsupportedOperation:         "UNSUPPORTED_OPERATION",
+	ErrUnsupportedContentType:       "CONTENT_TYPE_NOT_SUPPORTED",
+	ErrInvalidAgentResponse:         "INVALID_AGENT_RESPONSE",
+	ErrExtendedCardNotConfigured:    "EXTENDED_AGENT_CARD_NOT_CONFIGURED",
+	ErrExtensionSupportRequired:     "EXTENSION_SUPPORT_REQUIRED",
+	ErrVersionNotSupported:          "VERSION_NOT_SUPPORTED",
+	ErrUnauthenticated:              "UNAUTHENTICATED",
+	ErrUnauthorized:                 "UNAUTHORIZED",
+}
+
 // Error provides control over the message and details returned to clients.
 type Error struct {
 	// Err is the underlying error. It will be used for transport-specific code selection.
@@ -83,6 +118,22 @@ type Error struct {
 	Message string
 	// Details can contain additional structured information about the error.
 	Details map[string]any
+	// TypedDetails contains typed details about the error.
+	TypedDetails []*errordetails.Typed
+}
+
+// ErrorInfo returns the ErrorInfo typed detail. If not present, it will be created.
+func (e *Error) ErrorInfo() *errordetails.Typed {
+	existing := slices.IndexFunc(e.TypedDetails, func(d *errordetails.Typed) bool {
+		return d.TypeURL == errordetails.ErrorInfoType
+	})
+	if existing != -1 {
+		return e.TypedDetails[existing]
+	}
+	reason := ErrorReason(e.Err)
+
+	e.TypedDetails = append(e.TypedDetails, errordetails.NewErrorInfo(reason, ProtocolDomain, nil))
+	return e.TypedDetails[len(e.TypedDetails)-1]
 }
 
 // Error returns the error message.
@@ -109,5 +160,18 @@ func NewError(err error, message string) *Error {
 // WithDetails attaches structured data to the error.
 func (e *Error) WithDetails(details map[string]any) *Error {
 	e.Details = details
+	return e
+}
+
+// WithErrorInfoMeta adds metadata to the ErrorInfo typed detail.
+func (e *Error) WithErrorInfoMeta(meta map[string]string) *Error {
+	typedErr := e.ErrorInfo()
+	typedErr.Value["metadata"] = meta
+	return e
+}
+
+// WithTypedDetails adds typed details to the error.
+func (e *Error) WithTypedDetails(details ...*errordetails.Typed) *Error {
+	e.TypedDetails = append(e.TypedDetails, details...)
 	return e
 }

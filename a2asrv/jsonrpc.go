@@ -315,7 +315,7 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 	}
 }
 
-func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
+func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.PushConfig, error) {
 	var params a2a.GetTaskPushConfigRequest
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
@@ -323,7 +323,7 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return h.handler.GetTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2a.TaskPushConfig, error) {
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2a.PushConfig, error) {
 	var params a2a.ListTaskPushConfigRequest
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
@@ -331,8 +331,8 @@ func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.Raw
 	return h.handler.ListTaskPushConfigs(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.TaskPushConfig, error) {
-	var params a2a.CreateTaskPushConfigRequest
+func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2a.PushConfig, error) {
+	var params a2a.PushConfig
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)
 	}

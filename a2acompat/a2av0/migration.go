@@ -29,7 +29,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // NewServerInterceptor adapts a legacy server call interceptor to the v1 interceptor interface.
@@ -58,7 +57,10 @@ type srvInterceptorAdapter struct {
 
 func (s *srvInterceptorAdapter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
 	ctx, legacyCallCtx := toLegacyCallContext(ctx, callCtx)
-	legacyReq := toLegacyRequest(req)
+	legacyReq, err := toLegacyRequest(req)
+	if err != nil {
+		return ctx, nil, err
+	}
 	newCtx, err := s.CallInterceptor.Before(ctx, legacyCallCtx, legacyReq)
 	if err != nil {
 		return newCtx, nil, err
@@ -70,14 +72,20 @@ func (s *srvInterceptorAdapter) Before(ctx context.Context, callCtx *a2asrv.Call
 		}
 		req.Payload = v1Payload
 	}
+	if legacyCallCtx != nil {
+		callCtx.User = fromLegacyUser(legacyCallCtx.User)
+	}
 	return newCtx, nil, nil
 }
 
 func (s *srvInterceptorAdapter) After(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error {
 	_, legacyCallCtx := toLegacyCallContext(ctx, callCtx)
-	legacyResp := toLegacyResponse(resp)
+	legacyResp, err := toLegacyResponse(resp)
+	if err != nil {
+		return err
+	}
 
-	err := s.CallInterceptor.After(ctx, legacyCallCtx, legacyResp)
+	err = s.CallInterceptor.After(ctx, legacyCallCtx, legacyResp)
 	if err != nil {
 		return err
 	}
@@ -90,6 +98,9 @@ func (s *srvInterceptorAdapter) After(ctx context.Context, callCtx *a2asrv.CallC
 		resp.Payload = v1Payload
 	}
 	resp.Err = legacyResp.Err
+	if legacyCallCtx != nil {
+		callCtx.User = fromLegacyUser(legacyCallCtx.User)
+	}
 
 	return nil
 }
@@ -99,7 +110,10 @@ type clientInterceptorAdapter struct {
 }
 
 func (s *clientInterceptorAdapter) Before(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
-	legacyReq := toLegacyClientRequest(req)
+	legacyReq, err := toLegacyClientRequest(req)
+	if err != nil {
+		return ctx, nil, err
+	}
 	newCtx, err := s.CallInterceptor.Before(ctx, legacyReq)
 	if err != nil {
 		return newCtx, nil, err
@@ -114,17 +128,18 @@ func (s *clientInterceptorAdapter) Before(ctx context.Context, req *a2aclient.Re
 	if legacyReq.Meta != nil {
 		maps.Copy(req.ServiceParams, legacyReq.Meta)
 	}
-	// No early response in legacy client interceptor before
 	return newCtx, nil, nil
 }
 
 func (s *clientInterceptorAdapter) After(ctx context.Context, resp *a2aclient.Response) error {
-	legacyResp := toLegacyClientResponse(resp)
-	err := s.CallInterceptor.After(ctx, legacyResp)
+	legacyResp, err := toLegacyClientResponse(resp)
 	if err != nil {
 		return err
 	}
-	// Copy back potential changes from legacyResp to resp
+	err = s.CallInterceptor.After(ctx, legacyResp)
+	if err != nil {
+		return err
+	}
 	resp.Err = legacyResp.Err
 	if legacyResp.Payload != nil {
 		v1Payload, v1Err := toV1Payload(legacyResp.Payload)
@@ -276,18 +291,36 @@ func (w *legacyUserWrapper) Authenticated() bool {
 	return w.user.Authenticated
 }
 
-func toLegacyRequest(v1 *a2asrv.Request) *legacysrv.Request {
-	if v1 == nil {
-		return nil
+func fromLegacyUser(u legacysrv.User) *a2asrv.User {
+	if u == nil {
+		return &a2asrv.User{}
 	}
-	return &legacysrv.Request{Payload: fromV1Payload(v1.Payload)}
+	return &a2asrv.User{
+		Name:          u.Name(),
+		Authenticated: u.Authenticated(),
+	}
 }
 
-func toLegacyResponse(v1 *a2asrv.Response) *legacysrv.Response {
+func toLegacyRequest(v1 *a2asrv.Request) (*legacysrv.Request, error) {
 	if v1 == nil {
-		return nil
+		return nil, nil
 	}
-	return &legacysrv.Response{Payload: fromV1Payload(v1.Payload), Err: v1.Err}
+	payload, err := fromV1Payload(v1.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &legacysrv.Request{Payload: payload}, nil
+}
+
+func toLegacyResponse(v1 *a2asrv.Response) (*legacysrv.Response, error) {
+	if v1 == nil {
+		return nil, nil
+	}
+	payload, err := fromV1Payload(v1.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &legacysrv.Response{Payload: payload, Err: v1.Err}, nil
 }
 
 func toV1Payload(legacyPayload any) (any, error) {
@@ -303,45 +336,75 @@ func toV1Payload(legacyPayload any) (any, error) {
 		return ToV1CancelTaskRequest(v), nil
 	case *legacya2a.MessageSendParams:
 		return ToV1SendMessageRequest(v)
+	case *legacya2a.GetTaskPushConfigParams:
+		return ToV1GetTaskPushConfigRequest(v), nil
+	case *legacya2a.ListTaskPushConfigParams:
+		return ToV1ListTaskPushConfigRequest(v), nil
+	case *legacya2a.DeleteTaskPushConfigParams:
+		return ToV1DeleteTaskPushConfigRequest(v), nil
+	case *legacya2a.TaskPushConfig:
+		return ToV1PushConfig(v), nil
+	case []*legacya2a.TaskPushConfig:
+		return ToV1PushConfigs(v)
 	case *legacya2a.ListTasksResponse:
 		return ToV1ListTasksResponse(v)
+	case *legacya2a.AgentCard:
+		return ToV1AgentCard(v), nil
 	case legacya2a.Event:
 		return ToV1Event(v)
 	default:
-		return legacyPayload, nil
+		return nil, fmt.Errorf("unsupported legacy payload type %T", legacyPayload)
 	}
 }
 
-func fromV1Payload(payload any) any {
+func fromV1Payload(payload any) (any, error) {
 	if payload == nil {
-		return nil
+		return nil, nil
 	}
 	switch v := payload.(type) {
 	case *a2a.GetTaskRequest:
-		return FromV1GetTaskRequest(v)
+		return FromV1GetTaskRequest(v), nil
 	case *a2a.ListTasksRequest:
-		return FromV1ListTasksRequest(v)
+		return FromV1ListTasksRequest(v), nil
 	case *a2a.CancelTaskRequest:
-		return FromV1CancelTaskRequest(v)
+		return FromV1CancelTaskRequest(v), nil
+	case *a2a.SubscribeToTaskRequest:
+		return FromV1SubscribeToTaskRequest(v), nil
 	case *a2a.SendMessageRequest:
-		return FromV1SendMessageRequest(v)
+		return FromV1SendMessageRequest(v), nil
+	case *a2a.GetExtendedAgentCardRequest:
+		// No legacy equivalent; return nil so the original v1 payload is preserved.
+		return nil, nil
+	case *a2a.GetTaskPushConfigRequest:
+		return FromV1GetTaskPushConfigRequest(v), nil
+	case *a2a.ListTaskPushConfigRequest:
+		return FromV1ListTaskPushConfigRequest(v), nil
+	case *a2a.DeleteTaskPushConfigRequest:
+		return FromV1DeleteTaskPushConfigRequest(v), nil
+	case *a2a.PushConfig:
+		return FromV1PushConfig(v), nil
+	case []*a2a.PushConfig:
+		return FromV1PushConfigs(v), nil
 	case *a2a.ListTasksResponse:
-		return FromV1ListTasksResponse(v)
+		return FromV1ListTasksResponse(v), nil
+	case *a2a.AgentCard:
+		return FromV1AgentCard(v), nil
+	case struct{}:
+		return v, nil
 	case a2a.Event:
-		legacy, err := FromV1Event(v)
-		if err != nil {
-			log.Warn(context.Background(), "failed to convert v1 event to legacy", "error", err)
-			return payload
-		}
-		return legacy
+		return FromV1Event(v)
 	default:
-		return payload
+		return nil, fmt.Errorf("unsupported v1 payload type %T", payload)
 	}
 }
 
-func toLegacyClientRequest(v1 *a2aclient.Request) *legacyclient.Request {
+func toLegacyClientRequest(v1 *a2aclient.Request) (*legacyclient.Request, error) {
 	if v1 == nil {
-		return nil
+		return nil, nil
+	}
+	payload, err := fromV1Payload(v1.Payload)
+	if err != nil {
+		return nil, err
 	}
 	m := make(map[string][]string)
 	maps.Copy(m, v1.ServiceParams)
@@ -350,13 +413,17 @@ func toLegacyClientRequest(v1 *a2aclient.Request) *legacyclient.Request {
 		BaseURL: v1.BaseURL,
 		Meta:    legacyclient.CallMeta(m),
 		Card:    FromV1AgentCard(v1.Card),
-		Payload: fromV1Payload(v1.Payload),
-	}
+		Payload: payload,
+	}, nil
 }
 
-func toLegacyClientResponse(v1 *a2aclient.Response) *legacyclient.Response {
+func toLegacyClientResponse(v1 *a2aclient.Response) (*legacyclient.Response, error) {
 	if v1 == nil {
-		return nil
+		return nil, nil
+	}
+	payload, err := fromV1Payload(v1.Payload)
+	if err != nil {
+		return nil, err
 	}
 	m := make(map[string][]string)
 	maps.Copy(m, v1.ServiceParams)
@@ -366,8 +433,8 @@ func toLegacyClientResponse(v1 *a2aclient.Response) *legacyclient.Response {
 		Err:     v1.Err,
 		Meta:    legacyclient.CallMeta(m),
 		Card:    FromV1AgentCard(v1.Card),
-		Payload: fromV1Payload(v1.Payload),
-	}
+		Payload: payload,
+	}, nil
 }
 
 func toLegacyRequestContext(v1 *a2asrv.ExecutorContext) *legacysrv.RequestContext {

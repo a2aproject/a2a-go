@@ -99,28 +99,28 @@ func (h *mockHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToT
 	}
 }
 
-func (h *mockHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
 	}
-	return &a2a.TaskPushConfig{}, h.resultErr
+	return &a2a.PushConfig{}, h.resultErr
 }
 
-func (h *mockHandler) ListTaskPushConfigs(ctx context.Context, params *a2a.ListTaskPushConfigRequest) ([]*a2a.TaskPushConfig, error) {
+func (h *mockHandler) ListTaskPushConfigs(ctx context.Context, params *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
 	}
-	return []*a2a.TaskPushConfig{{}}, nil
+	return []*a2a.PushConfig{{}}, nil
 }
 
-func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.CreateTaskPushConfigRequest) (*a2a.TaskPushConfig, error) {
+func (h *mockHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {
 	h.lastCallContext, _ = CallContextFrom(ctx)
 	if h.resultErr != nil {
 		return nil, h.resultErr
 	}
-	return &a2a.TaskPushConfig{}, h.resultErr
+	return &a2a.PushConfig{}, h.resultErr
 }
 
 func (h *mockHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
@@ -217,7 +217,7 @@ var methodCalls = []struct {
 	{
 		method: "CreateTaskPushConfig",
 		call: func(ctx context.Context, h RequestHandler) (any, error) {
-			return h.CreateTaskPushConfig(ctx, &a2a.CreateTaskPushConfigRequest{})
+			return h.CreateTaskPushConfig(ctx, &a2a.PushConfig{})
 		},
 	},
 	{
