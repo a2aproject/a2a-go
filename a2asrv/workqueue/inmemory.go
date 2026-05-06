@@ -58,7 +58,6 @@ func (q *inMemoryQueue) Write(ctx context.Context, p *Payload) (a2a.TaskID, erro
 		return "", ErrConcurrencyLimitExceeded
 	}
 
-	detachedCtx := context.WithoutCancel(ctx)
 	go func(ctx context.Context) {
 		defer q.concurrencyQuota.release()
 		defer lease.Release(ctx)
@@ -66,7 +65,7 @@ func (q *inMemoryQueue) Write(ctx context.Context, p *Payload) (a2a.TaskID, erro
 			ctx = AttachHeartbeater(ctx, hb)
 		}
 		_, _ = q.handlerFn(ctx, p) // result is logged by the handler
-	}(detachedCtx)
+	}(context.Background())
 
 	return lease.TaskID(), nil
 }

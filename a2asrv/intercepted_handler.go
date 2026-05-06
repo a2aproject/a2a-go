@@ -307,7 +307,7 @@ func attachMethodCallContext(ctx context.Context, method string, tenant string) 
 
 func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
-	transportCall func(context.Context, Req) (Resp, error),
+	handlerCall func(context.Context, Req) (Resp, error),
 ) (Resp, error) {
 	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
@@ -321,7 +321,7 @@ func doCall[Req any, Resp any](
 		var zero Resp
 		return zero, err
 	}
-	response, err := transportCall(ctx, res.reqOverride)
+	response, err := handlerCall(ctx, res.reqOverride)
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 

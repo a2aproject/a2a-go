@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -90,4 +91,13 @@ func FromMapStruct[T any](value map[string]any) (*T, error) {
 		return nil, err
 	}
 	return &zero, nil
+}
+
+// MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.
+func MustPrettyPrint(value any) {
+	raw, err := json.MarshalIndent(value, "", " ")
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println(string(raw))
 }

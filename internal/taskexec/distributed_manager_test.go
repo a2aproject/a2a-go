@@ -235,6 +235,64 @@ func TestClusterFrontend_Execute(t *testing.T) {
 	}
 }
 
+func TestClusterFrontend_EncodeContextError(t *testing.T) {
+	t.Parallel()
+
+	codec := &testContextCodec{encodeErr: fmt.Errorf("encode failed")}
+
+	t.Run("execute", func(t *testing.T) {
+		t.Parallel()
+
+		frontend := NewDistributedManager(DistributedManagerConfig{
+			TaskStore:    testutil.NewTestTaskStore(),
+			QueueManager: testutil.NewTestQueueManager(),
+			WorkQueue:    testutil.NewTestWorkQueue(),
+			ContextCodec: codec,
+		})
+
+		_, err := frontend.Execute(t.Context(), &a2a.SendMessageRequest{
+			Message: &a2a.Message{Role: a2a.MessageRoleUser},
+		})
+		if err == nil || !strings.Contains(err.Error(), "encode failed") {
+			t.Fatalf("Execute() error = %v, want to contain %q", err, "encode failed")
+		}
+	})
+
+	t.Run("cancel", func(t *testing.T) {
+		t.Parallel()
+
+		tid := a2a.NewTaskID()
+		store := testutil.NewTestTaskStore().WithTasks(t,
+			&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+		)
+
+		frontend := NewDistributedManager(DistributedManagerConfig{
+			TaskStore:    store,
+			QueueManager: testutil.NewTestQueueManager(),
+			WorkQueue:    testutil.NewTestWorkQueue(),
+			ContextCodec: codec,
+		})
+
+		_, err := frontend.Cancel(t.Context(), &a2a.CancelTaskRequest{ID: tid})
+		if err == nil || !strings.Contains(err.Error(), "encode failed") {
+			t.Fatalf("Cancel() error = %v, want to contain %q", err, "encode failed")
+		}
+	})
+}
+
+type testContextCodec struct {
+	encodeErr error
+	decodeErr error
+}
+
+func (c *testContextCodec) Encode(ctx context.Context) (map[string]any, error) {
+	return nil, c.encodeErr
+}
+
+func (c *testContextCodec) Decode(ctx context.Context, data map[string]any) (context.Context, error) {
+	return ctx, c.decodeErr
+}
+
 func TestClusterFrontend_Cancel(t *testing.T) {
 	tid := a2a.NewTaskID()
 

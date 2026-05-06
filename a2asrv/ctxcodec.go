@@ -41,10 +41,10 @@ type callCtxCodec struct {
 func (c *callCtxCodec) Encode(ctx context.Context) (map[string]any, error) {
 	result := encodedCtx{}
 
-	if ac := c.AttrCodec; ac != nil {
-		attrs, err := ac.Encode(ctx)
+	if c.AttrCodec != nil {
+		attrs, err := c.AttrCodec.Encode(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("context attr encoding failed: %w", err)
+			return nil, fmt.Errorf("custom attr encoding failed: %w", err)
 		}
 		result.Attributes = attrs
 	}
@@ -65,6 +65,7 @@ func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) (context
 	if data == nil {
 		return ctx, nil
 	}
+
 	encodedCtx, err := utils.FromMapStruct[encodedCtx](data)
 	if err != nil {
 		return ctx, err
@@ -78,10 +79,13 @@ func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) (context
 		ctx = localCtx
 	}
 
-	if ac := c.AttrCodec; ac != nil && encodedCtx.Attributes != nil {
-		localCtx, err := ac.Decode(ctx, encodedCtx.Attributes)
+	if encodedCtx.Attributes != nil {
+		if c.AttrCodec == nil {
+			return ctx, fmt.Errorf("custom attr decoding failed, codec not set")
+		}
+		localCtx, err := c.AttrCodec.Decode(ctx, encodedCtx.Attributes)
 		if err != nil {
-			return nil, fmt.Errorf("context attr decoding failed: %w", err)
+			return nil, fmt.Errorf("custom attr decoding failed: %w", err)
 		}
 		ctx = localCtx
 	}

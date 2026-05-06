@@ -166,6 +166,31 @@ func TestClusterBackend(t *testing.T) {
 	}
 }
 
+func TestClusterBackend_DecodeContextError(t *testing.T) {
+	t.Parallel()
+
+	codec := &testContextCodec{decodeErr: fmt.Errorf("decode failed")}
+
+	wq := testutil.NewTestWorkQueue()
+	_ = newWorkQueueHandler(DistributedManagerConfig{
+		QueueManager: testutil.NewTestQueueManager(),
+		TaskStore:    testutil.NewTestTaskStore(),
+		Factory:      newStaticFactory(nil, nil),
+		WorkQueue:    wq,
+		ContextCodec: codec,
+	})
+
+	_, err := wq.HandlerFn(t.Context(), &workqueue.Payload{
+		Type:           workqueue.PayloadTypeExecute,
+		TaskID:         a2a.NewTaskID(),
+		ExecuteRequest: &a2a.SendMessageRequest{},
+		CallContext:    map[string]any{"key": "value"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode failed") {
+		t.Fatalf("handler() error = %v, want to contain %q", err, "decode failed")
+	}
+}
+
 func TestClusterBackend_Heartbeater(t *testing.T) {
 	executorBlock := make(chan struct{})
 	heartbeats := 0

@@ -187,9 +187,9 @@ type ClusterConfig struct {
 func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.workQueue = config.WorkQueue
-		h.ctxCodec = config.ContextCodec
 		h.taskStore = config.TaskStore
 		h.queueManager = config.QueueManager
+		h.ctxCodec = config.ContextCodec
 	}
 }
 
