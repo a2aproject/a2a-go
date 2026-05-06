@@ -37,7 +37,10 @@ func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
 	callCtx.User = &User{Name: "alice", Authenticated: true, Attributes: map[string]any{"role": "admin"}}
 	callCtx.tenant = "acme"
 
-	encoded := codec.Encode(ctx)
+	encoded, err := codec.Encode(ctx)
+	if err != nil {
+		t.Fatalf("codec.Encode(ctx) error = %v", err)
+	}
 
 	// Simulate JSON serialization round-trip (as a real queue backend would do).
 	jsonBytes, err := json.Marshal(encoded)
@@ -49,7 +52,11 @@ func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	decodedCtx := codec.Decode(context.Background(), deserialized)
+	decodedCtx, err := codec.Decode(context.Background(), deserialized)
+	if err != nil {
+		t.Fatalf("codec.Decode(ctx) error = %v", err)
+	}
+
 	got, ok := CallContextFrom(decodedCtx)
 	if !ok {
 		t.Fatalf("CallContextFrom() = _, false, want true")

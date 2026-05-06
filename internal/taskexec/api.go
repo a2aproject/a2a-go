@@ -109,7 +109,7 @@ type PanicHandlerFn func(r any) error
 // ContextCodec is used to propagate context information between processes.
 type ContextCodec interface {
 	// Encode encodes context information which will propagate through the work queue.
-	Encode(context.Context) map[string]any
+	Encode(context.Context) (map[string]any, error)
 	// Decode is used to restore context which then gets passed to an agent execution.
-	Decode(context.Context, map[string]any) context.Context
+	Decode(context.Context, map[string]any) (context.Context, error)
 }

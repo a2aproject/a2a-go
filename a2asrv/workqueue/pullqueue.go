@@ -37,7 +37,7 @@ type Message interface {
 	Return(ctx context.Context, cause error) error
 }
 
-// ReadWriter is the neccessary pull-queue dependency.
+// ReadWriter is the necessary pull-queue dependency.
 // Write is used by executor frontend to submit work when a message is received from a client.
 // Read is called periodically from background goroutine to request work. Read blocks if no work is available.
 // [ErrQueueClosed] will stop the polling loop.

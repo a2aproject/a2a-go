@@ -35,7 +35,7 @@ func New(t testing.TB) *slog.Logger {
 }
 
 // NewLeveled returns an [slog.Logger] that directs all output to t.Log.
-// Log statements are printed only in case of a failed text or if go test was invoked with -v flag.
+// Log statements are printed only in case of a failed test or if go test was invoked with -v flag.
 func NewLeveled(t testing.TB, level slog.Level) *slog.Logger {
 	handler := slog.New(slog.NewTextHandler(&tWriter{t: t}, &slog.HandlerOptions{
 		Level: level,

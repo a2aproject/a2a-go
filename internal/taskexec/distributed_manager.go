@@ -114,11 +114,16 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 	}
 
+	encodedCtx, err := m.encodeContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         requestedTaskID,
 		ExecuteRequest: req,
-		CallContext:    m.encodeContext(ctx),
+		CallContext:    encodedCtx,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work item: %w", err)
@@ -159,11 +164,16 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("failed to get or create queue: %w", err)
 	}
 
+	encodedCtx, err := m.encodeContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeCancel,
 		TaskID:        req.ID,
 		CancelRequest: req,
-		CallContext:   m.encodeContext(ctx),
+		CallContext:   encodedCtx,
 	})
 	if err != nil {
 		// if cancelation lease is already taken we can tap into the running cancellation events
@@ -206,9 +216,13 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	return convertToCancelationResult(ctx, storedTask.Task, nil)
 }
 
-func (m *distributedManager) encodeContext(ctx context.Context) map[string]any {
+func (m *distributedManager) encodeContext(ctx context.Context) (map[string]any, error) {
 	if m.ctxCodec == nil {
-		return nil
+		return nil, nil
 	}
-	return m.ctxCodec.Encode(ctx)
+	r, err := m.ctxCodec.Encode(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("context encoding failed: %w", err)
+	}
+	return r, nil
 }

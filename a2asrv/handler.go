@@ -86,6 +86,7 @@ type defaultRequestHandler struct {
 	pushConfigStore        push.ConfigStore
 	taskStore              taskstore.Store
 	workQueue              workqueue.Queue
+	ctxCodec               ContextCodec
 	reqContextInterceptors []ExecutorContextInterceptor
 
 	agentInactivityTimeout time.Duration
@@ -171,17 +172,22 @@ func WithTaskStore(store taskstore.Store) RequestHandlerOption {
 	}
 }
 
+// ContextCodec is used for propagating context values through [workqueue.Queue].
+type ContextCodec = taskexec.ContextCodec
+
 // ClusterConfig groups the necessary dependencies for A2A cluster mode operation.
 type ClusterConfig struct {
 	QueueManager eventqueue.Manager
 	WorkQueue    workqueue.Queue
 	TaskStore    taskstore.Store
+	ContextCodec ContextCodec
 }
 
 // WithClusterMode is an experimental feature where work queue is used to distribute tasks across multiple instances.
 func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.workQueue = config.WorkQueue
+		h.ctxCodec = config.ContextCodec
 		h.taskStore = config.TaskStore
 		h.queueManager = config.QueueManager
 	}
@@ -216,7 +222,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			QueueManager:           h.queueManager,
 			ConcurrencyConfig:      h.concurrencyConfig,
 			Factory:                execFactory,
-			ContextCodec:           &callCtxCodec{},
+			ContextCodec:           &callCtxCodec{AttrCodec: h.ctxCodec},
 			PanicHandler:           h.panicHandler,
 			AgentInactivityTimeout: h.agentInactivityTimeout,
 		})

@@ -18,99 +18,73 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/a2aproject/a2a-go/v2/log"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
-const (
-	authKey           = "auth"
-	authNameKey       = "name"
-	authStatusKey     = "authenticated"
-	authAttributesKey = "attributes"
-	svcParamsKey      = "svcParams"
-	tenantKey         = "tenant"
-)
-
-type callCtxCodec struct{}
-
-// Encode implements taskexec ContextCodec.Encode.
-func (c *callCtxCodec) Encode(ctx context.Context) map[string]any {
-	cc, ok := CallContextFrom(ctx)
-	if !ok {
-		return nil
-	}
-	data := map[string]any{}
-	if cc.svcParams != nil {
-		data[svcParamsKey] = cc.svcParams.cloneRaw()
-	}
-	data[authKey] = map[string]any{
-		authNameKey:       cc.User.Name,
-		authStatusKey:     cc.User.Authenticated,
-		authAttributesKey: cc.User.Attributes,
-	}
-	if cc.Tenant() != "" {
-		data[tenantKey] = cc.Tenant()
-	}
-	return data
+type encodedCtx struct {
+	CallContext *encodedCallCtx `json:"callContext,omitempty"`
+	Attributes  map[string]any  `json:"attrs,omitempty"`
 }
 
-// Decode implements taskexec ContextCodec.Decode.
-func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) context.Context {
+type encodedCallCtx struct {
+	Tenant    string              `json:"tenant,omitempty"`
+	SvcParams map[string][]string `json:"svcParams,omitempty"`
+	User      *User               `json:"user,omitempty"`
+}
+
+type callCtxCodec struct {
+	// AttrCodec is an extension point for values users want to propagate.
+	AttrCodec ContextCodec
+}
+
+// Encode implements taskexec [ContextCodec.Encode].
+func (c *callCtxCodec) Encode(ctx context.Context) (map[string]any, error) {
+	result := encodedCtx{}
+
+	if ac := c.AttrCodec; ac != nil {
+		attrs, err := ac.Encode(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("context attr encoding failed: %w", err)
+		}
+		result.Attributes = attrs
+	}
+
+	if cc, ok := CallContextFrom(ctx); ok {
+		result.CallContext = &encodedCallCtx{
+			Tenant:    cc.tenant,
+			SvcParams: cc.svcParams.cloneRaw(),
+			User:      cc.User,
+		}
+	}
+
+	return utils.ToMapStruct(result)
+}
+
+// Decode implements taskexec [ContextCodec.Decode].
+func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) (context.Context, error) {
 	if data == nil {
-		return ctx
+		return ctx, nil
 	}
-	
-	var svcParams *ServiceParams
-	if rawParams, ok := data[svcParamsKey]; ok {
-		if typedParams, ok := rawParams.(map[string][]string); ok {
-			svcParams = NewServiceParams(typedParams)
-		} else if anyParams, ok := rawParams.(map[string]any); ok {
-			// Handle type-erasure map[string]any with []any values.
-			converted := make(map[string][]string, len(anyParams))
-			for k, v := range anyParams {
-				if arr, ok := v.([]any); ok {
-					strs := make([]string, 0, len(arr))
-					for _, elem := range arr {
-						if s, ok := elem.(string); ok {
-							strs = append(strs, s)
-						}
-					}
-					converted[k] = strs
-				}
-			}
-			svcParams = NewServiceParams(converted)
-		} else {
-			log.Warn(ctx, "unexpected service params type", "type", fmt.Sprintf("%T", rawParams))
+	encodedCtx, err := utils.FromMapStruct[encodedCtx](data)
+	if err != nil {
+		return ctx, err
+	}
+
+	if ecc := encodedCtx.CallContext; ecc != nil {
+		svcParams := NewServiceParams(ecc.SvcParams)
+		localCtx, callCtx := NewCallContext(ctx, svcParams)
+		callCtx.tenant = ecc.Tenant
+		callCtx.User = ecc.User
+		ctx = localCtx
+	}
+
+	if ac := c.AttrCodec; ac != nil && encodedCtx.Attributes != nil {
+		localCtx, err := ac.Decode(ctx, encodedCtx.Attributes)
+		if err != nil {
+			return nil, fmt.Errorf("context attr decoding failed: %w", err)
 		}
+		ctx = localCtx
 	}
 
-	ctx, callCtx := NewCallContext(ctx, svcParams)
-
-	callCtx.User = &User{}
-	if d, ok := data[authKey]; ok {
-		if authInfo, ok := d.(map[string]any); ok {
-			user := &User{}
-			if userName, ok := authInfo[authNameKey].(string); ok {
-				user.Name = userName
-			}
-			if authenticated, ok := authInfo[authStatusKey].(bool); ok {
-				user.Authenticated = authenticated
-			}
-			if attributes, ok := authInfo[authAttributesKey].(map[string]any); ok {
-				user.Attributes = attributes
-			}
-			callCtx.User = user
-		} else {
-			log.Warn(ctx, "unexpected auth type", "type", fmt.Sprintf("%T", d))
-		}
-	}
-
-	if d, ok := data[tenantKey]; ok {
-		if t, ok := d.(string); ok {
-			callCtx.tenant = t
-		} else {
-			log.Warn(ctx, "unexpected tenant type", "type", fmt.Sprintf("%T", d))
-		}
-	}
-
-	return ctx
+	return ctx, nil
 }

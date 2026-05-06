@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"encoding/json"
 
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -63,4 +64,30 @@ func ToStringMap(raw any) (map[string]string, bool) {
 		return converted, true
 	}
 	return nil, false
+}
+
+// ToMapStruct converts an any struct to map[string]any using json roundtrip.
+func ToMapStruct(value any) (map[string]any, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var r map[string]any
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// FromMapStruct converts map[string]any to a typed value using json roundtrip.
+func FromMapStruct[T any](value map[string]any) (*T, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var zero T
+	if err := json.Unmarshal(raw, &zero); err != nil {
+		return nil, err
+	}
+	return &zero, nil
 }

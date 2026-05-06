@@ -55,13 +55,21 @@ func newWorkQueueHandler(cfg DistributedManagerConfig) *workQueueHandler {
 			slog.String("task_id", string(p.TaskID)),
 			slog.String("work_type", string(p.Type)),
 		}
+
 		if p.ExecuteRequest != nil && p.ExecuteRequest.Message != nil {
 			attrs = append(attrs, slog.String("message_id", p.ExecuteRequest.Message.ID))
 		}
-		ctx = log.AttachLogger(ctx, cfg.Logger.WithGroup("a2a").With(attrs...))
+
 		if cfg.ContextCodec != nil && p.CallContext != nil {
-			ctx = cfg.ContextCodec.Decode(ctx, p.CallContext)
+			localCtx, err := cfg.ContextCodec.Decode(ctx, p.CallContext)
+			if err != nil {
+				return nil, fmt.Errorf("context decoding failed: %w", err)
+			}
+			ctx = localCtx
 		}
+
+		ctx = log.AttachLogger(ctx, cfg.Logger.WithGroup("a2a").With(attrs...))
+
 		return backend.handle(ctx, p)
 	})
 	return backend
