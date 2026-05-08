@@ -225,3 +225,122 @@ type staticCardProducer struct {
 func (s *staticCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	return s.card, nil
 }
+
+// oauth2Card returns a minimal AgentCard with a single OAuth2 scheme
+// using the given flow. newAgentCard above only covers OpenIDConnect,
+// which doesn't go through the OAuth2-specific marshal path.
+func oauth2Card(flow a2a.OAuthFlows) *a2a.AgentCard {
+	return &a2a.AgentCard{
+		Name:    "OAuth2 Agent",
+		Version: "1.0.0",
+		SupportedInterfaces: []*a2a.AgentInterface{{
+			URL:             "https://example.com/a2a/v1",
+			ProtocolBinding: a2a.TransportProtocolJSONRPC,
+			ProtocolVersion: Version,
+		}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			"oauth2": a2a.OAuth2SecurityScheme{
+				Description:       "OAuth2",
+				Oauth2MetadataURL: "https://example.com/.well-known/oauth-authorization-server",
+				Flows:             flow,
+			},
+		},
+		SecurityRequirements: a2a.SecurityRequirementsOptions{
+			a2a.SecurityRequirements{"oauth2": {"openid", "profile"}},
+		},
+	}
+}
+
+func TestAgentCard_OAuth2_AllFlows_RoundTrip(t *testing.T) {
+	cases := []struct {
+		name    string
+		flow    a2a.OAuthFlows
+		flowKey a2a.OAuthFlowName
+	}{
+		{"authorizationCode", a2a.AuthorizationCodeOAuthFlow{
+			AuthorizationURL: "https://example.com/authorize",
+			TokenURL:         "https://example.com/token",
+			Scopes:           map[string]string{"openid": "OpenID Connect"},
+		}, a2a.AuthorizationCodeOAuthFlowName},
+		{"clientCredentials", a2a.ClientCredentialsOAuthFlow{
+			TokenURL: "https://example.com/token",
+			Scopes:   map[string]string{"api": "API access"},
+		}, a2a.ClientCredentialsOAuthFlowName},
+		{"implicit", a2a.ImplicitOAuthFlow{
+			AuthorizationURL: "https://example.com/authorize",
+			Scopes:           map[string]string{"profile": "User profile"},
+		}, a2a.ImplicitOAuthFlowName},
+		{"password", a2a.PasswordOAuthFlow{
+			TokenURL: "https://example.com/token",
+			Scopes:   map[string]string{"openid": "OpenID Connect"},
+		}, a2a.PasswordOAuthFlowName},
+		{"deviceCode", a2a.DeviceCodeOAuthFlow{
+			DeviceAuthorizationURL: "https://example.com/device",
+			TokenURL:               "https://example.com/token",
+			Scopes:                 map[string]string{"openid": "OpenID Connect"},
+		}, a2a.DeviceCodeOAuthFlowName},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			card := oauth2Card(tc.flow)
+
+			prod := &compatProducer{&staticCardProducer{card: card}}
+			body, err := prod.CardJSON(context.Background())
+			if err != nil {
+				t.Fatalf("CardJSON: %v", err)
+			}
+
+			// The producer's wire format must wrap the flow under its
+			// canonical name; otherwise the parser counts the bare flow's
+			// fields as flow keys.
+			var raw struct {
+				SecuritySchemes map[string]struct {
+					Type  string                     `json:"type"`
+					Flows map[string]json.RawMessage `json:"flows"`
+				} `json:"securitySchemes"`
+			}
+			if err := json.Unmarshal(body, &raw); err != nil {
+				t.Fatalf("unmarshal raw: %v", err)
+			}
+			scheme := raw.SecuritySchemes["oauth2"]
+			if scheme.Type != "oauth2" {
+				t.Errorf("scheme.type = %q, want %q (parser dispatch needs the discriminator)", scheme.Type, "oauth2")
+			}
+			if got := len(scheme.Flows); got != 1 {
+				t.Errorf("flows: want exactly 1 entry, got %d (%v)\nbody:\n%s",
+					got, keysOf(scheme.Flows), string(body))
+			}
+			if _, ok := scheme.Flows[string(tc.flowKey)]; !ok {
+				t.Errorf("flows: missing key %q, got %v", tc.flowKey, keysOf(scheme.Flows))
+			}
+
+			// The parser must accept its own producer's output and recover
+			// the OAuth2 scheme with all fields intact.
+			parser := NewAgentCardParser()
+			got, err := parser(body)
+			if err != nil {
+				t.Fatalf("parser round-trip: %v", err)
+			}
+			gotScheme, ok := got.SecuritySchemes["oauth2"].(a2a.OAuth2SecurityScheme)
+			if !ok {
+				t.Fatalf("scheme oauth2: type %T, want a2a.OAuth2SecurityScheme", got.SecuritySchemes["oauth2"])
+			}
+			wantScheme := card.SecuritySchemes["oauth2"]
+			if diff := cmp.Diff(wantScheme, gotScheme); diff != "" {
+				t.Errorf("scheme round-trip mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func keysOf(m map[string]json.RawMessage) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
