@@ -131,8 +131,12 @@ func (p *proxyHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPu
 	return p.client.GetTaskPushConfig(p.withParams(ctx), req)
 }
 
-func (p *proxyHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
-	return p.client.ListTaskPushConfigs(p.withParams(ctx), req)
+func (p *proxyHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
+	resp, err := p.client.ListTaskPushConfigs(p.withParams(ctx), req)
+	if err != nil {
+		return nil, err
+	}
+	return &a2a.ListTaskPushConfigResponse{Configs: resp}, nil
 }
 
 func (p *proxyHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {

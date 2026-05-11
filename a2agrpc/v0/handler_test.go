@@ -243,7 +243,7 @@ func (m *mockRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.Get
 	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
-func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
+func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
 	m.capturedListTaskPushConfigRequest = req
 	if _, ok := m.tasks[req.TaskID]; ok {
 		if pushConfigs, ok := m.pushConfigs[req.TaskID]; ok {
@@ -251,12 +251,12 @@ func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.L
 			for _, v := range pushConfigs {
 				result = append(result, v)
 			}
-			return result, nil
+			return &a2a.ListTaskPushConfigResponse{Configs: result}, nil
 		}
-		return []*a2a.PushConfig{}, nil // no configs for task id
+		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil // no configs for task id
 	}
 
-	return []*a2a.PushConfig{}, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
+	return nil, fmt.Errorf("task for push config not found, taskID: %s", req.TaskID)
 }
 
 func (m *mockRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {

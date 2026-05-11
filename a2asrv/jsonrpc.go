@@ -323,7 +323,7 @@ func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMe
 	return h.handler.GetTaskPushConfig(ctx, &params)
 }
 
-func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) ([]*a2a.PushConfig, error) {
+func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.RawMessage) (*a2a.ListTaskPushConfigResponse, error) {
 	var params a2a.ListTaskPushConfigRequest
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, handleUnmarshalError(err)

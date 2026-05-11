@@ -372,10 +372,10 @@ func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[
+		_, _ = w.Write([]byte(`{"configs": [
 			{"taskId":"task-123","id":"config-1","url":"https://webhook1.example.com"},
 			{"taskId":"task-123","id":"config-2","url":"https://webhook2.example.com"}
-		]`))
+		]}`))
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
