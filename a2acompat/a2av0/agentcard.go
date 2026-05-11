@@ -178,7 +178,11 @@ func mapFromCompatSecuritySchemes(schemes namedSecuritySchemes) a2a.NamedSecurit
 			if v.OAuth2 != nil {
 				result[name] = *v.OAuth2
 			} else {
-				result[name] = a2a.OAuth2SecurityScheme{Description: v.Description}
+				result[name] = a2a.OAuth2SecurityScheme{
+					Description:       v.Description,
+					Flows:             v.Flows,
+					Oauth2MetadataURL: v.Oauth2MetadataURL,
+				}
 			}
 		}
 	}
@@ -476,13 +480,17 @@ type oauth2SecurityScheme struct {
 	OAuth2            *a2a.OAuth2SecurityScheme `json:"oauth2"`
 }
 
-func (s *oauth2SecurityScheme) MarshalJSON() ([]byte, error) {
+// Value receiver so json.Marshal invokes it when the scheme is held in
+// the `map[name]any` namedSecuritySchemes (map values aren't addressable,
+// so a pointer-receiver Marshaler isn't satisfied).
+func (s oauth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	type wrapper struct {
+		Type              string                    `json:"type"`
 		Description       string                    `json:"description,omitempty"`
 		Oauth2MetadataURL string                    `json:"oauth2MetadataUrl,omitempty"`
 		Flows             map[a2a.OAuthFlowName]any `json:"flows,omitempty"`
 	}
-	wrapped := wrapper{Description: s.Description, Oauth2MetadataURL: s.Oauth2MetadataURL}
+	wrapped := wrapper{Type: "oauth2", Description: s.Description, Oauth2MetadataURL: s.Oauth2MetadataURL}
 	switch v := s.Flows.(type) {
 	case a2a.AuthorizationCodeOAuthFlow:
 		wrapped.Flows = map[a2a.OAuthFlowName]any{a2a.AuthorizationCodeOAuthFlowName: v}
@@ -514,6 +522,9 @@ func (s *oauth2SecurityScheme) UnmarshalJSON(b []byte) error {
 	if len(scheme.Flows) != 1 {
 		return fmt.Errorf("expected exactly one OAuth flow, got %d", len(scheme.Flows))
 	}
+
+	s.Description = scheme.Description
+	s.Oauth2MetadataURL = scheme.Oauth2MetadataURL
 
 	for name, rawMessage := range scheme.Flows {
 		switch name {
