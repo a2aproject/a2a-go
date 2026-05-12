@@ -362,7 +362,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 	ctx := t.Context()
 	ts := testutil.NewTestTaskStore()
-	authCredentialsChan := make(chan struct{})
+	authCredentialsChan, execEndChan := make(chan struct{}), make(chan struct{})
 	executor := &mockAgentExecutor{
 		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
@@ -375,6 +375,9 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 				<-authCredentialsChan
 				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
 			}
+		},
+		CleanupFn: func(ctx context.Context, result a2a.SendMessageResult, err error) {
+			close(execEndChan)
 		},
 	}
 	handler := NewHandler(executor, WithTaskStore(ts))
@@ -401,7 +404,7 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 	}
 
 	authCredentialsChan <- struct{}{}
-	time.Sleep(time.Millisecond * 10)
+	<-execEndChan
 
 	task, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
 	if task.Status.State != a2a.TaskStateCompleted {
@@ -2281,6 +2284,7 @@ type mockAgentExecutor struct {
 
 	ExecuteFunc func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 	CancelFunc  func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
+	CleanupFn   func(ctx context.Context, result a2a.SendMessageResult, err error)
 }
 
 var _ AgentExecutor = (*mockAgentExecutor)(nil)
@@ -2301,6 +2305,12 @@ func (m *mockAgentExecutor) Cancel(ctx context.Context, execCtx *ExecutorContext
 	}
 	return func(yield func(a2a.Event, error) bool) {
 		yield(nil, errors.New("Cancel() not implemented"))
+	}
+}
+
+func (m *mockAgentExecutor) Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+	if m.CleanupFn != nil {
+		m.CleanupFn(ctx, result, err)
 	}
 }
 
