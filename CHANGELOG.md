@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.0](https://github.com/a2aproject/a2a-go/compare/v2.2.1...v2.3.0) (2026-05-12)
+
+
+### Features
+
+* add WithAgentInactivityTimeout option for terminating stalled a… ([#315](https://github.com/a2aproject/a2a-go/issues/315)) ([357bb11](https://github.com/a2aproject/a2a-go/commit/357bb110a0529cfdbc8cdba69b37d3932a4259c6))
+* workqueue finalization ([#324](https://github.com/a2aproject/a2a-go/issues/324)) ([8b4bbf6](https://github.com/a2aproject/a2a-go/commit/8b4bbf6512ba67b73debe402ee7eed142ea6734f)), closes [#200](https://github.com/a2aproject/a2a-go/issues/200)
+
+
+### Bug Fixes
+
+* **a2acompat:** correct OAuth2 round-trip through compat producer/parser ([#337](https://github.com/a2aproject/a2a-go/issues/337)) ([4dfb802](https://github.com/a2aproject/a2a-go/commit/4dfb8025a0fba94bb43bd21004af614a4ea24eeb))
+* make push config listing return correct json response ([#338](https://github.com/a2aproject/a2a-go/issues/338)) ([7c89490](https://github.com/a2aproject/a2a-go/commit/7c89490c01c85c93e2cd5e3b3ef2bb6004f88a8c))
+
 ## [2.2.1](https://github.com/a2aproject/a2a-go/compare/v2.2.0...v2.2.1) (2026-04-29)
 
 
