@@ -376,7 +376,7 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfigs := FromV1PushConfigs(result)
+	compatConfigs := FromV1PushConfigs(result.Configs)
 	if compatConfigs == nil {
 		compatConfigs = []*a2alegacy.TaskPushConfig{}
 	}

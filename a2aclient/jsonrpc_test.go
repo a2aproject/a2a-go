@@ -491,7 +491,7 @@ func TestJSONRPCTransport_PushNotificationConfig(t *testing.T) {
 
 			resp := newResponse(
 				req,
-				json.RawMessage(`[{"taskId":"task-1","config":{"id":"config-1","url":"https://webhook1.example.com"}},{"taskId":"task-2","config":{"id":"config-2","url":"https://webhook2.example.com"}}]`),
+				json.RawMessage(`{"configs": [{"taskId":"task-1","config":{"id":"config-1","url":"https://webhook1.example.com"}},{"taskId":"task-2","config":{"id":"config-2","url":"https://webhook2.example.com"}}]}`),
 			)
 			_ = json.NewEncoder(w).Encode(resp)
 		}))

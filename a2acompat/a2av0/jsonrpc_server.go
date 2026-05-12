@@ -358,7 +358,7 @@ func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.Raw
 	if err != nil {
 		return nil, err
 	}
-	return FromV1PushConfigs(configs), nil
+	return FromV1PushConfigs(configs.Configs), nil
 }
 
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {

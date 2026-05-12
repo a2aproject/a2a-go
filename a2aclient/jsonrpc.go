@@ -320,12 +320,12 @@ func (t *jsonrpcTransport) ListTaskPushConfigs(ctx context.Context, params Servi
 		return nil, err
 	}
 
-	var configs []*a2a.PushConfig
-	if err := json.Unmarshal(result, &configs); err != nil {
+	var resp a2a.ListTaskPushConfigResponse
+	if err := json.Unmarshal(result, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal configs: %w", err)
 	}
 
-	return configs, nil
+	return resp.Configs, nil
 }
 
 // CreateTaskPushConfig implements [a2a.Transport].

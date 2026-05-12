@@ -61,7 +61,7 @@ type RequestHandler interface {
 	GetTaskPushConfig(context.Context, *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error)
 
 	// ListTaskPushConfigs handles the `ListTaskPushNotificationConfigs` protocol method.
-	ListTaskPushConfigs(context.Context, *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error)
+	ListTaskPushConfigs(context.Context, *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error)
 
 	// CreateTaskPushConfig handles the `CreateTaskPushNotificationConfig` protocol method.
 	CreateTaskPushConfig(context.Context, *a2a.PushConfig) (*a2a.PushConfig, error)
@@ -414,7 +414,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 // ListTaskPushConfigs implements RequestHandler.
-func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
+func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
 	if err := checkPushNotificationSupport(h, ctx); err != nil {
 		return nil, err
 	}
@@ -423,9 +423,9 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
 	if configs == nil {
-		return []*a2a.PushConfig{}, nil
+		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil
 	}
-	return configs, nil
+	return &a2a.ListTaskPushConfigResponse{Configs: configs}, nil
 }
 
 // CreateTaskPushConfig implements RequestHandler.
