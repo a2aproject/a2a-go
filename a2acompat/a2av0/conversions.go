@@ -321,7 +321,7 @@ func ToV1Part(p a2alegacy.Part) *a2a.Part {
 			bytes, err := base64.StdEncoding.DecodeString(f.Bytes)
 			if err != nil {
 				bytes = []byte(f.Bytes)
-				log.Warn(context.Background(), "failed to decode base64 content", "error", err)
+				log.Warn(context.TODO(), "failed to decode base64 content", "error", err)
 			}
 			return &a2a.Part{
 				Content:   a2a.Raw(bytes),
@@ -337,11 +337,11 @@ func ToV1Part(p a2alegacy.Part) *a2a.Part {
 				Filename:  f.Name,
 			}
 		default:
-			log.Warn(context.Background(), fmt.Sprintf("unknown file type %T", f))
+			log.Warn(context.TODO(), fmt.Sprintf("unknown file type %T", f))
 			return &a2a.Part{Content: a2a.Data{Value: f}, Metadata: c.Metadata}
 		}
 	default:
-		log.Warn(context.Background(), fmt.Sprintf("unknown part type %T", c))
+		log.Warn(context.TODO(), fmt.Sprintf("unknown part type %T", c))
 		return &a2a.Part{Content: a2a.Data{Value: c}, Metadata: p.Meta()}
 	}
 }
@@ -915,7 +915,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 		res.Signatures[i] = a2a.AgentCardSignature(s)
 	}
 	var ifaces []*a2a.AgentInterface
-	if card.URL != "" {
+	if card.URL != "" || card.PreferredTransport != "" {
 		iface := &a2a.AgentInterface{
 			URL:             card.URL,
 			ProtocolBinding: a2a.TransportProtocol(card.PreferredTransport),
