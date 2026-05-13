@@ -36,5 +36,5 @@ jobs:
         run: bash run_itk.sh
         working-directory: itk
         env:
-          A2A_SAMPLES_REVISION: itk-v.021-alpha
+          A2A_ITK_REVISION: main
 

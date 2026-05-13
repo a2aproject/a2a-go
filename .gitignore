@@ -62,5 +62,5 @@ aiwt-*
 # ITK artifacts
 itk/instruction.proto
 itk/pb
-itk/a2a-samples
+itk/a2a-itk
 itk/logs
