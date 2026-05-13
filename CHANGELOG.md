@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/a2aproject/a2a-go/compare/v2.3.0...v2.3.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* workqueue implementation missed events ([#340](https://github.com/a2aproject/a2a-go/issues/340)) ([d1b9a6b](https://github.com/a2aproject/a2a-go/commit/d1b9a6bbc615b1c52bda8d922cceaf8a513419ed))
+
 ## [2.3.0](https://github.com/a2aproject/a2a-go/compare/v2.2.1...v2.3.0) (2026-05-12)
 
 
