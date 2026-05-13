@@ -119,6 +119,13 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		return nil, err
 	}
 
+	// Subscribe before submitting work so that a fast (eg. in-memory) workqueue
+	// implementation cannot broadcast an event before there's a reader
+	queue, err := m.queueManager.CreateReader(ctx, requestedTaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to execution events: %w", err)
+	}
+
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:           workqueue.PayloadTypeExecute,
 		TaskID:         requestedTaskID,
@@ -126,19 +133,22 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		CallContext:    encodedCtx,
 	})
 	if err != nil {
+		safeCloseReader(ctx, queue)
 		return nil, fmt.Errorf("failed to create work item: %w", err)
 	}
 
 	if taskID != requestedTaskID {
+		safeCloseReader(ctx, queue)
+
 		if req.Message.TaskID != "" {
 			return nil, fmt.Errorf("bug: work queue task id override only allowed for new tasks")
 		}
 		log.Info(ctx, "work queue task id override", "provided", string(requestedTaskID), "used", taskID)
-	}
 
-	queue, err := m.queueManager.CreateReader(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to execution events: %w", err)
+		queue, err = m.queueManager.CreateReader(ctx, taskID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to subscribe to execution events after task id override: %w", err)
+		}
 	}
 
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
@@ -225,4 +235,10 @@ func (m *distributedManager) encodeContext(ctx context.Context) (map[string]any,
 		return nil, fmt.Errorf("context encoding failed: %w", err)
 	}
 	return r, nil
+}
+
+func safeCloseReader(ctx context.Context, r eventqueue.Reader) {
+	if closeErr := r.Close(); closeErr != nil {
+		log.Warn(ctx, "event queue reader close failed", "error", closeErr)
+	}
 }

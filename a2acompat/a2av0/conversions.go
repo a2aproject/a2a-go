@@ -301,6 +301,9 @@ func FromV1Message(m *a2a.Message) *a2alegacy.Message {
 
 // ToV1Part converts a legacy part to a v1 part.
 func ToV1Part(p a2alegacy.Part) *a2a.Part {
+	if p == nil {
+		return nil
+	}
 	switch c := p.(type) {
 	case a2alegacy.TextPart:
 		return &a2a.Part{

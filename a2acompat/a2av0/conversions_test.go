@@ -15,90 +15,98 @@
 package a2av0
 
 import (
-	"reflect"
 	"testing"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/google/go-cmp/cmp"
 )
 
-func TestToCompatParts_PrimitiveData(t *testing.T) {
-	val := "hello"
-	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := FromV1Parts(parts)
-
-	if len(compatParts) != 1 {
-		t.Fatalf("Expected 1 part, got %d", len(compatParts))
-	}
-
-	dp, ok := compatParts[0].(a2alegacy.DataPart)
-	if !ok {
-		t.Fatalf("Expected DataPart, got %T", compatParts[0])
-	}
-
-	// Verify it's wrapped in a map
-	m := dp.Data
-
-	if m["value"] != val {
-		t.Errorf("Expected value %q, got %v", val, m["value"])
-	}
-
-	// Verify metadata flag
-	if compat, ok := dp.Metadata["data_part_compat"].(bool); !ok || !compat {
-		t.Errorf("Expected data_part_compat=true in metadata")
-	}
-}
-
-func TestToCoreParts_PrimitiveDataUnwrap(t *testing.T) {
-	val := "hello"
-	compatParts := a2alegacy.ContentParts{
-		a2alegacy.DataPart{
-			Data:     map[string]any{"value": val},
-			Metadata: map[string]any{"data_part_compat": true},
+func TestToV1Part(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   a2alegacy.Part
+		want *a2a.Part
+	}{
+		{
+			name: "nil part",
+			in:   nil,
+			want: nil,
+		},
+		{
+			name: "text part",
+			in:   a2alegacy.TextPart{Text: "hello"},
+			want: &a2a.Part{Content: a2a.Text("hello")},
+		},
+		{
+			name: "data part with compat metadata unwraps value",
+			in: a2alegacy.DataPart{
+				Data:     map[string]any{"value": "hello"},
+				Metadata: map[string]any{"data_part_compat": true},
+			},
+			want: &a2a.Part{Content: a2a.Data{Value: "hello"}, Metadata: map[string]any{}},
+		},
+		{
+			name: "data part without compat metadata keeps map",
+			in: a2alegacy.DataPart{
+				Data:     map[string]any{"key": "value"},
+				Metadata: map[string]any{"other": "meta"},
+			},
+			want: &a2a.Part{
+				Content:  a2a.Data{Value: map[string]any{"key": "value"}},
+				Metadata: map[string]any{"other": "meta"},
+			},
+		},
+		{
+			name: "data part with nil metadata",
+			in:   a2alegacy.DataPart{Data: map[string]any{"key": "value"}},
+			want: &a2a.Part{Content: a2a.Data{Value: map[string]any{"key": "value"}}},
 		},
 	}
 
-	coreParts, err := ToV1Parts(compatParts)
-	if err != nil {
-		t.Fatalf("ToV1Parts() error = %v", err)
-	}
-
-	if len(coreParts) != 1 {
-		t.Fatalf("Expected 1 part, got %d", len(coreParts))
-	}
-
-	dataVal := coreParts[0].Data()
-	if dataVal != val {
-		t.Errorf("Expected data value %q, got %v", val, dataVal)
-	}
-
-	// Verify metadata flag is removed (optional but good practice)
-	if _, ok := coreParts[0].Metadata["data_part_compat"]; ok {
-		t.Errorf("Expected data_part_compat to be removed from metadata")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ToV1Part(tc.in)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("ToV1Part() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 
-func TestToCompatParts_MapDataNoWrap(t *testing.T) {
-	val := map[string]any{"key": "value"}
-	parts := a2a.ContentParts{a2a.NewDataPart(val)}
-	compatParts := FromV1Parts(parts)
-
-	if len(compatParts) != 1 {
-		t.Fatalf("Expected 1 part, got %d", len(compatParts))
+func TestFromV1Part(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   *a2a.Part
+		want a2alegacy.Part
+	}{
+		{
+			name: "primitive data wraps with compat flag",
+			in:   a2a.NewDataPart("hello"),
+			want: a2alegacy.DataPart{
+				Data:     map[string]any{"value": "hello"},
+				Metadata: map[string]any{"data_part_compat": true},
+			},
+		},
+		{
+			name: "map data not wrapped",
+			in:   a2a.NewDataPart(map[string]any{"key": "value"}),
+			want: a2alegacy.DataPart{
+				Data: map[string]any{"key": "value"},
+			},
+		},
 	}
 
-	dp, ok := compatParts[0].(a2alegacy.DataPart)
-	if !ok {
-		t.Fatalf("Expected DataPart, got %T", compatParts[0])
-	}
-
-	// Verify it's NOT wrapped
-	if !reflect.DeepEqual(dp.Data, val) {
-		t.Errorf("Expected data %v, got %v", val, dp.Data)
-	}
-
-	// Verify metadata flag is NOT present
-	if _, ok := dp.Metadata["data_part_compat"]; ok {
-		t.Errorf("Expected data_part_compat to NOT be present")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := FromV1Part(tc.in)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("FromV1Part() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
