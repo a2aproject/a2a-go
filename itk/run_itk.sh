@@ -126,14 +126,16 @@ RESPONSE=$(curl -s -X POST http://127.0.0.1:8000/run \
         "sdks": ["current", "python_v10", "python_v03", "go_v10", "go_v03"],
         "traversal": "euler",
         "edges": ["0->1", "0->2", "0->3", "0->4", "1->0", "2->0", "3->0", "4->0"],
-        "protocols": ["jsonrpc"]
+        "protocols": ["jsonrpc"],
+        "behavior": "send_message"
       },
       {
         "name": "Star Topology (No Backwards Compatibility) - GRPC & HTTP_JSON",
         "sdks": ["current", "python_v10", "go_v10"],
         "traversal": "euler",
         "edges": ["0->1", "0->2", "1->0", "2->0"],
-        "protocols": ["grpc", "http_json"]
+        "protocols": ["grpc", "http_json"],
+        "behavior": "send_message"
       },
       {
         "name": "Star Topology (Full) - JSONRPC (Streaming)",
@@ -141,7 +143,8 @@ RESPONSE=$(curl -s -X POST http://127.0.0.1:8000/run \
         "traversal": "euler",
         "edges": ["0->1", "0->2", "0->3", "0->4", "1->0", "2->0", "3->0", "4->0"],
         "protocols": ["jsonrpc"],
-        "streaming": true
+        "streaming": true,
+        "behavior": "send_message"
       },
       {
         "name": "Star Topology (No Backwards Compatibility) - GRPC & HTTP_JSON (Streaming)",
@@ -149,7 +152,42 @@ RESPONSE=$(curl -s -X POST http://127.0.0.1:8000/run \
         "traversal": "euler",
         "edges": ["0->1", "0->2", "1->0", "2->0"],
         "protocols": ["grpc", "http_json"],
-        "streaming": true
+        "streaming": true,
+        "behavior": "send_message"
+      },
+      {
+        "name": "Push Notification Test - Full Topology (JSONRPC)",
+        "sdks": ["current", "python_v10", "python_v03", "go_v10", "go_v03"],
+        "traversal": "euler",
+        "edges": ["0->1", "0->2", "0->3", "0->4", "1->0", "2->0", "3->0", "4->0"],
+        "protocols": ["jsonrpc"],
+        "behavior": "push_notification"
+      },
+      {
+        "name": "Push Notification Test - Non-JSONRPC Topology (GRPC & HTTP_JSON)",
+        "sdks": ["current", "python_v10", "go_v10"],
+        "traversal": "euler",
+        "edges": ["0->1", "0->2", "1->0", "2->0"],
+        "protocols": ["grpc", "http_json"],
+        "behavior": "push_notification"
+      },
+      {
+        "name": "Resubscribe Test - Full Topology (JSONRPC)",
+        "sdks": ["current", "python_v10", "python_v03", "go_v10", "go_v03"],
+        "traversal": "euler",
+        "edges": ["0->1", "0->2", "0->3", "0->4", "1->0", "2->0", "3->0", "4->0"],
+        "protocols": ["jsonrpc"],
+        "streaming": true,
+        "behavior": "resubscribe"
+      },
+      {
+        "name": "Resubscribe Test - Non-JSONRPC Topology (GRPC & HTTP_JSON)",
+        "sdks": ["current", "python_v10", "go_v10"],
+        "traversal": "euler",
+        "edges": ["0->1", "0->2", "1->0", "2->0"],
+        "protocols": ["grpc", "http_json"],
+        "streaming": true,
+        "behavior": "resubscribe"
       }
     ]
   }')
