@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -196,11 +196,10 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 
 	// 4. Create client using a factory
 	var factory *a2aclient.Factory
-	compatFactory := a2av0.NewJSONRPCTransportFactory(a2av0.JSONRPCTransportConfig{})
-	
 	clientOpts := []a2aclient.FactoryOption{
 		a2agrpc.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
-		a2aclient.WithCompatTransport("0.3", a2a.TransportProtocolJSONRPC, compatFactory),
+		a2av0.WithJSONRPCTransport(a2av0.JSONRPCTransportConfig{}),
+		a2av0.WithRESTTransport(a2av0.RESTTransportConfig{}),
 	}
 
 	if call.GetPushNotification() != nil {
@@ -478,6 +477,11 @@ func run() error {
 				ProtocolVersion: a2a.Version,
 			},
 			{
+				URL:             fmt.Sprintf("http://127.0.0.1:%d/restv0", *httpPort),
+				ProtocolBinding: a2a.TransportProtocolHTTPJSON,
+				ProtocolVersion: a2av0.Version,
+			},
+			{
 				URL:             fmt.Sprintf("127.0.0.1:%d", *grpcPort),
 				ProtocolBinding: a2a.TransportProtocolGRPC,
 				ProtocolVersion: a2a.Version,
@@ -500,6 +504,7 @@ func run() error {
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/jsonrpc", a2asrv.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/rest/", http.StripPrefix("/rest", a2asrv.NewRESTHandler(requestHandler)))
+	mux.Handle("/restv0/v1/", http.StripPrefix("/restv0/v1", a2av0.NewRESTHandler(requestHandler)))
 
 	cardProducer := a2av0.NewStaticAgentCardProducer(agentCard)
 	mux.Handle(agentCardRoute, a2asrv.NewAgentCardHandler(cardProducer))
@@ -587,4 +592,3 @@ func streamLoggingInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor 
 		return handler(srv, ss)
 	}
 }
-
