@@ -120,6 +120,74 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
+func TestSecuritySchemeJSONUnmarshalDirectOAuth2Scheme(t *testing.T) {
+	const cardJSON = `{
+		"name": "A2AT-Test-Agent",
+		"description": "Helps with event",
+		"version": "1.0.0",
+		"capabilities": {
+			"streaming": true,
+			"pushNotifications": true,
+			"extendedAgentCard": false
+		},
+		"defaultInputModes": ["text"],
+		"defaultOutputModes": ["text"],
+		"skills": [{
+			"id": "event_publish",
+			"name": "Event publish",
+			"description": "Helps with event publish",
+			"tags": ["event"],
+			"examples": ["push current event"]
+		}],
+		"securitySchemes": {
+			"oauth2SecurityScheme": {
+				"flows": {
+					"authorizationCode": null,
+					"clientCredentials": {
+						"refreshUrl": null,
+						"scopes": {
+							"profile": "profile",
+							"openid": "openid"
+						},
+						"tokenUrl": "http://a2a-agent-backend:27561/auth"
+					},
+					"deviceCode": null
+				},
+				"description": "Enables client credentials flow for authentication and authorization",
+				"oauth2MetadataUrl": null
+			}
+		},
+		"securityRequirements": null,
+		"supportedInterfaces": [{
+			"protocolBinding": "HTTP+JSON",
+			"url": "http://a2a-agent-backend:27561",
+			"tenant": "",
+			"protocolVersion": "1.0"
+		}]
+	}`
+
+	var card AgentCard
+	mustUnmarshal(t, []byte(cardJSON), &card)
+
+	scheme, ok := card.SecuritySchemes["oauth2SecurityScheme"].(OAuth2SecurityScheme)
+	if !ok {
+		t.Fatalf("scheme oauth2SecurityScheme: type %T, want OAuth2SecurityScheme", card.SecuritySchemes["oauth2SecurityScheme"])
+	}
+	if scheme.Description != "Enables client credentials flow for authentication and authorization" {
+		t.Fatalf("scheme description = %q", scheme.Description)
+	}
+	flow, ok := scheme.Flows.(ClientCredentialsOAuthFlow)
+	if !ok {
+		t.Fatalf("scheme flow: type %T, want ClientCredentialsOAuthFlow", scheme.Flows)
+	}
+	if flow.TokenURL != "http://a2a-agent-backend:27561/auth" {
+		t.Fatalf("flow token URL = %q", flow.TokenURL)
+	}
+	if !reflect.DeepEqual(flow.Scopes, map[string]string{"openid": "openid", "profile": "profile"}) {
+		t.Fatalf("flow scopes = %v", flow.Scopes)
+	}
+}
+
 func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
 	tests := []struct {
 		name      string
