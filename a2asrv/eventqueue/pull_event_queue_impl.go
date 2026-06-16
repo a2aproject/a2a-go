@@ -51,8 +51,6 @@ type Puller interface {
 type PullerProvider func(ctx context.Context, taskID a2a.TaskID) (Puller, error)
 
 // NewStaticPullerProvider returns a PullerProvider that always returns the same Puller.
-// The returned Puller's Close method is a no-op to prevent premature closing when
-// multiple readers share the same puller.
 func NewStaticPullerProvider(es Puller) PullerProvider {
 	return func(ctx context.Context, taskID a2a.TaskID) (Puller, error) {
 		return es, nil
@@ -147,40 +145,39 @@ func (m *pullQueueManager) Destroy(ctx context.Context, taskID a2a.TaskID) error
 var _ Reader = (*pullReader)(nil)
 
 type pullReader struct {
-	taskID      a2a.TaskID
-	snapshot    *Message
-	puller      Puller
-	manager     *pullQueueManager
-	eventsChan  chan *Message
-	closed      chan struct{}
-	closeSignal chan struct{}
+	taskID     a2a.TaskID
+	snapshot   *Message
+	puller     Puller
+	manager    *pullQueueManager
+	eventsChan chan *Message
+	closed     chan struct{}
+	ctxCancel  context.CancelFunc
 
 	emittedSnapshot bool
 }
 
 func newPullReader(p Puller, taskID a2a.TaskID, queueManager *pullQueueManager, snapshot *Message) *pullReader {
+	ctx, cancel := context.WithCancel(context.Background())
 	reader := &pullReader{
-		taskID:      taskID,
-		snapshot:    snapshot,
-		puller:      p,
-		manager:     queueManager,
-		eventsChan:  make(chan *Message),
-		closed:      make(chan struct{}),
-		closeSignal: make(chan struct{}),
+		taskID:     taskID,
+		snapshot:   snapshot,
+		puller:     p,
+		manager:    queueManager,
+		eventsChan: make(chan *Message),
+		closed:     make(chan struct{}),
+		ctxCancel:  cancel,
 	}
-	go reader.poll()
+	go reader.poll(ctx)
 	return reader
 }
 
-func (r *pullReader) poll() {
-	bgCtx, cancelBg := context.WithCancel(context.Background())
+func (r *pullReader) poll(ctx context.Context) {
 	ticker := time.NewTicker(r.manager.cfg.PollInterval)
 
 	defer func() {
 		ticker.Stop()
-		cancelBg()
 		if err := r.puller.Close(context.Background()); err != nil {
-			log.Warn(bgCtx, "Error closing puller: %v", err)
+			log.Warn(context.Background(), "Error closing puller: %v", err)
 		}
 		close(r.eventsChan)
 		close(r.closed)
@@ -188,17 +185,20 @@ func (r *pullReader) poll() {
 
 	var cursor PullCursor
 	for {
-		resp, err := r.puller.Pull(bgCtx, r.taskID, cursor)
+		resp, err := r.puller.Pull(ctx, r.taskID, cursor)
 		if err != nil {
-			log.Warn(bgCtx, "Error polling for events: %v", err)
+			if ctx.Err() != nil {
+				return
+			}
+			log.Warn(ctx, "Error polling for events: %v", err)
 		} else {
 			cursor = resp.Cursor
-			if r.dispatchMessages(resp) {
+			if r.dispatchMessages(ctx, resp) {
 				return
 			}
 		}
 		select {
-		case <-r.closeSignal:
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
@@ -207,7 +207,7 @@ func (r *pullReader) poll() {
 
 type stopPolling bool
 
-func (r *pullReader) dispatchMessages(resp *PullResponse) stopPolling {
+func (r *pullReader) dispatchMessages(ctx context.Context, resp *PullResponse) stopPolling {
 	if resp == nil {
 		return false
 	}
@@ -221,7 +221,7 @@ func (r *pullReader) dispatchMessages(resp *PullResponse) stopPolling {
 		}
 		select {
 		case r.eventsChan <- msg:
-		case <-r.closeSignal:
+		case <-ctx.Done():
 			return true
 		}
 		if taskupdate.IsFinal(msg.Event) {
@@ -269,11 +269,7 @@ func (r *pullReader) Read(ctx context.Context) (*Message, error) {
 				return nil, fmt.Errorf("%w: failed to call inactivity callback:%w", ErrInactivityTimeout, err)
 			}
 			if task != nil {
-				msg, err := newMessage(task)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create new snapshot: %w", err)
-				}
-				r.snapshot = msg
+				r.snapshot = newMessage(task)
 				r.emittedSnapshot = false
 			}
 		}
@@ -283,12 +279,7 @@ func (r *pullReader) Read(ctx context.Context) (*Message, error) {
 
 // Close implements Reader.Close. It stops the polling goroutine and closes the underlying puller.
 func (r *pullReader) Close() error {
-	select {
-	case r.closeSignal <- struct{}{}:
-	case <-r.closed:
-		return nil
-	}
-
+	r.ctxCancel()
 	<-r.closed
 	return nil
 }
@@ -339,14 +330,10 @@ func closePullerOnError(ctx context.Context, puller Puller) {
 	}
 }
 
-func newMessage(event a2a.Event) (*Message, error) {
-	task, ok := event.(*a2a.Task)
-	if !ok {
-		return nil, fmt.Errorf("event is not a task: %T", event)
-	}
+func newMessage(task *a2a.Task) *Message {
 	return &Message{
 		Event:       task,
 		TaskVersion: taskstore.TaskVersionMissing,
 		Protocol:    a2a.Version,
-	}, nil
+	}
 }
