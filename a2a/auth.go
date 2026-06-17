@@ -17,7 +17,6 @@ package a2a
 import (
 	"encoding/gob"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -147,8 +146,8 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 		}
 		if n == 0 {
 			// No discriminator found — this may be a raw scheme object from
-			// a non-Go SDK (e.g., Java Jackson serialization). Try each known
-			// concrete type directly based on distinctive fields.
+			// a non-Go SDK (e.g., Java Jackson serialization). Unmarshal once
+			// into a map of fields and dispatch based on distinctive keys.
 			// MutualTLS is intentionally excluded — it has no distinctive
 			// fields and would falsely match arbitrary JSON.
 			var raw map[SecuritySchemeName]json.RawMessage
@@ -156,23 +155,43 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 				return fmt.Errorf("unknown security scheme for %s: %w", name, err)
 			}
 			rawJSON := raw[name]
-			if scheme, err := tryParseOAuth2(rawJSON); err == nil {
-				result[name] = scheme
-				continue
+
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(rawJSON, &fields); err != nil {
+				return fmt.Errorf("unknown security scheme for %s: invalid JSON: %w", name, err)
 			}
-			if scheme, err := tryParseAPIKey(rawJSON); err == nil {
-				result[name] = scheme
-				continue
+
+			var scheme SecurityScheme
+			switch {
+			case fields["flows"] != nil:
+				var s OAuth2SecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["location"] != nil:
+				var s APIKeySecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["scheme"] != nil:
+				var s HTTPAuthSecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["openIdConnectUrl"] != nil:
+				var s OpenIDConnectSecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			default:
+				return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(rawJSON)))
 			}
-			if scheme, err := tryParseHTTPAuth(rawJSON); err == nil {
-				result[name] = scheme
-				continue
-			}
-			if scheme, err := tryParseOpenIDConnect(rawJSON); err == nil {
-				result[name] = scheme
-				continue
-			}
-			return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(rawJSON)))
+			result[name] = scheme
+			continue
 		}
 		if n != 1 {
 			return fmt.Errorf("expected exactly one security scheme type for %s, got %d", name, n)
@@ -181,67 +200,6 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 
 	*s = result
 	return nil
-}
-
-// tryParseDirect attempts to unmarshal raw JSON as a concrete security scheme type.
-// Unlike the discriminator-based approach, this works with raw scheme objects from
-// non-Go SDKs (e.g., Java Jackson) that omit the discriminator wrapper.
-//
-// Each tryParse* function checks for the presence of a distinctive field before
-// attempting full unmarshal, avoiding false positives on empty/ambiguous payloads.
-
-func tryParseOAuth2(raw json.RawMessage) (SecurityScheme, error) {
-	if !jsonHasKey(raw, "flows") {
-		return nil, errors.New("not OAuth2: missing 'flows'")
-	}
-	var s OAuth2SecurityScheme
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func tryParseAPIKey(raw json.RawMessage) (SecurityScheme, error) {
-	if !jsonHasKey(raw, "location") {
-		return nil, errors.New("not APIKey: missing 'location'")
-	}
-	var s APIKeySecurityScheme
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func tryParseHTTPAuth(raw json.RawMessage) (SecurityScheme, error) {
-	if !jsonHasKey(raw, "scheme") {
-		return nil, errors.New("not HTTPAuth: missing 'scheme'")
-	}
-	var s HTTPAuthSecurityScheme
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func tryParseOpenIDConnect(raw json.RawMessage) (SecurityScheme, error) {
-	if !jsonHasKey(raw, "openIdConnectUrl") {
-		return nil, errors.New("not OpenIDConnect: missing 'openIdConnectUrl'")
-	}
-	var s OpenIDConnectSecurityScheme
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-// jsonHasKey reports whether the JSON object contains a top-level key.
-func jsonHasKey(raw json.RawMessage, key string) bool {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return false
-	}
-	_, ok := m[key]
-	return ok
 }
 
 // SecurityScheme is a sealed discriminated type union for supported security schemes.
