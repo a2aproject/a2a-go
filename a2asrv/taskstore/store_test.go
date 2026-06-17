@@ -508,3 +508,53 @@ func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }
+
+func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
+	ctx := t.Context()
+
+	// Create store with authenticator that identifies callers.
+	store := NewInMemory(&InMemoryStoreConfig{
+		Authenticator: func(ctx context.Context) (string, error) {
+			user, _ := ctx.Value("user").(string)
+			return user, nil
+		},
+	})
+
+	// Alice creates a task.
+	aliceCtx := context.WithValue(ctx, "user", "alice")
+	task := &a2a.Task{
+		ID:     a2a.NewTaskID(),
+		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+	}
+	_, err := store.Create(aliceCtx, task)
+	if err != nil {
+		t.Fatalf("alice Create failed: %v", err)
+	}
+
+	// Bob attempts to read Alice's task — must return ErrTaskNotFound.
+	bobCtx := context.WithValue(ctx, "user", "bob")
+	_, err = store.Get(bobCtx, task.ID)
+	if err == nil || err != a2a.ErrTaskNotFound {
+		t.Fatalf("bob Get: want ErrTaskNotFound, got %v", err)
+	}
+
+	// Bob's ListTasks excludes Alice's task.
+	resp, err := store.List(bobCtx, &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("bob List failed: %v", err)
+	}
+	for _, tsk := range resp.Tasks {
+		if tsk.ID == task.ID {
+			t.Fatal("bob List should not include alice's task")
+		}
+	}
+
+	// Alice can still Get her own task.
+	stored, err := store.Get(aliceCtx, task.ID)
+	if err != nil {
+		t.Fatalf("alice Get failed: %v", err)
+	}
+	if stored.Task.ID != task.ID {
+		t.Fatalf("alice task ID mismatch")
+	}
+}
