@@ -509,19 +509,23 @@ func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 	}
 }
 
+type ctxKey string
+
+const userKey ctxKey = "user"
+
 func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	ctx := t.Context()
 
 	// Create store with authenticator that identifies callers.
 	store := NewInMemory(&InMemoryStoreConfig{
 		Authenticator: func(ctx context.Context) (string, error) {
-			user, _ := ctx.Value("user").(string)
+			user, _ := ctx.Value(userKey).(string)
 			return user, nil
 		},
 	})
 
 	// Alice creates a task.
-	aliceCtx := context.WithValue(ctx, "user", "alice")
+	aliceCtx := context.WithValue(ctx, userKey, "alice")
 	task := &a2a.Task{
 		ID:     a2a.NewTaskID(),
 		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
@@ -532,7 +536,7 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	}
 
 	// Bob attempts to read Alice's task — must return ErrTaskNotFound.
-	bobCtx := context.WithValue(ctx, "user", "bob")
+	bobCtx := context.WithValue(ctx, userKey, "bob")
 	_, err = store.Get(bobCtx, task.ID)
 	if err == nil || err != a2a.ErrTaskNotFound {
 		t.Fatalf("bob Get: want ErrTaskNotFound, got %v", err)

@@ -440,18 +440,22 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 	return result
 }
 
+type ctxKey string
+
+const userKey ctxKey = "user"
+
 func TestInMemoryPushConfigStore_CrossTenantIsolation(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("task-1")
 
 	// Create store with authenticator that identifies callers.
 	store := NewInMemoryStore().WithAuthenticator(func(ctx context.Context) (string, error) {
-		user, _ := ctx.Value("user").(string)
+		user, _ := ctx.Value(userKey).(string)
 		return user, nil
 	})
 
 	// Alice creates a push config.
-	aliceCtx := context.WithValue(ctx, "user", "alice")
+	aliceCtx := context.WithValue(ctx, userKey, "alice")
 	cfg, err := store.Save(aliceCtx, taskID, &a2a.PushConfig{
 		URL:   "https://alice.example/webhook",
 		Token: "alice-secret-token",
@@ -462,7 +466,7 @@ func TestInMemoryPushConfigStore_CrossTenantIsolation(t *testing.T) {
 	}
 
 	// Bob attempts to read Alice's configs — must fail.
-	bobCtx := context.WithValue(ctx, "user", "bob")
+	bobCtx := context.WithValue(ctx, userKey, "bob")
 	if _, err := store.Get(bobCtx, taskID, cfg.ID); err == nil {
 		t.Fatal("bob Get should have failed with cross-tenant access")
 	}
