@@ -25,6 +25,9 @@ import (
 // ErrQueueClosed indicates that the event queue has been closed.
 var ErrQueueClosed = errors.New("queue is closed")
 
+// ErrInactivityTimeout indicates that the event queue has timed out due to inactivity.
+var ErrInactivityTimeout = errors.New("queue read timeout due to inactivity")
+
 // Message represents the data broadcasted to event subscribers through event queue.
 type Message struct {
 	// Event is the event which was applied to task store.
