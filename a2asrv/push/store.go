@@ -29,17 +29,49 @@ import (
 // ErrPushConfigNotFound indicates that a push config with the provided ID was not found.
 var ErrPushConfigNotFound = errors.New("push config not found")
 
-// InMemoryPushConfigStore implements a2asrv.PushConfigStore.
+// InMemoryPushConfigStore implements a2asrv.PushConfigStore with per-tenant isolation.
 type InMemoryPushConfigStore struct {
 	mu      sync.RWMutex
 	configs map[a2a.TaskID]map[string]*a2a.PushConfig
+	// owners maps taskID → owner identity (recorded on first Save for that task).
+	owners map[a2a.TaskID]string
+	// authenticator resolves the caller identity from the context.
+	authenticator func(context.Context) (string, error)
 }
 
-// NewInMemoryStore creates an empty store.
+// NewInMemoryStore creates an empty store with a no-op authenticator.
 func NewInMemoryStore() *InMemoryPushConfigStore {
 	return &InMemoryPushConfigStore{
-		configs: make(map[a2a.TaskID]map[string]*a2a.PushConfig),
+		configs:       make(map[a2a.TaskID]map[string]*a2a.PushConfig),
+		owners:        make(map[a2a.TaskID]string),
+		authenticator: func(ctx context.Context) (string, error) { return "default", nil },
 	}
+}
+
+// WithAuthenticator sets the caller identity resolver for cross-tenant isolation.
+func (s *InMemoryPushConfigStore) WithAuthenticator(auth func(context.Context) (string, error)) *InMemoryPushConfigStore {
+	s.authenticator = auth
+	return s
+}
+
+// ownerOrFail returns the owner of taskID. If no owner is recorded yet,
+// the caller becomes the owner (first-write-wins). Returns an error
+// equivalent to a2a.ErrTaskNotFound when the caller is not the owner
+// (per A2A spec §13.1 non-disclosure requirement).
+func (s *InMemoryPushConfigStore) ownerOrFail(ctx context.Context, taskID a2a.TaskID) (string, error) {
+	caller, err := s.authenticator(ctx)
+	if err != nil || caller == "" {
+		return "", a2a.ErrTaskNotFound
+	}
+	if owner, ok := s.owners[taskID]; ok {
+		if owner != caller {
+			return "", a2a.ErrTaskNotFound
+		}
+		return owner, nil
+	}
+	// First access — record the caller as owner.
+	s.owners[taskID] = caller
+	return caller, nil
 }
 
 // newID creates a time-based random ID.
@@ -60,10 +92,15 @@ func validateConfig(config *a2a.PushConfig) error {
 	return nil
 }
 
-// Save adds a copy of push config to the store.
+// Save adds a copy of push config to the store. The caller must own the task.
 func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
 	if err := validateConfig(config); err != nil {
 		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
+	}
+
+	// Enforce cross-tenant isolation.
+	if _, err := s.ownerOrFail(ctx, taskID); err != nil {
+		return nil, err
 	}
 
 	toSave, err := utils.DeepCopy(config)
@@ -92,8 +129,12 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	return savedCopy, nil
 }
 
-// Get returns a copy of stored config for a task and with given ID.
+// Get returns a copy of stored config for a task owned by the caller.
 func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error) {
+	if _, err := s.ownerOrFail(ctx, taskID); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -106,8 +147,12 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, co
 	return nil, ErrPushConfigNotFound
 }
 
-// List returns a copy of stored configs for a task.
+// List returns a copy of stored configs for a task owned by the caller.
 func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
+	if _, err := s.ownerOrFail(ctx, taskID); err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -127,8 +172,12 @@ func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) (
 	return result, nil
 }
 
-// Delete removes a single config from a store.
+// Delete removes a single config from a task owned by the caller.
 func (s *InMemoryPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID, configID string) error {
+	if _, err := s.ownerOrFail(ctx, taskID); err != nil {
+		return err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
