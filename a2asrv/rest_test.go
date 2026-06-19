@@ -23,6 +23,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -32,7 +33,9 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -385,6 +388,14 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			name:  "multiple invalid params",
 			query: "?pageSize=abc&includeArtifacts=notbool",
 		},
+		{
+			name:  "invalid historyLength",
+			query: "?historyLength=abc",
+		},
+		{
+			name:  "invalid statusTimestampAfter",
+			query: "?statusTimestampAfter=not-a-timestamp",
+		},
 	}
 
 	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
@@ -418,6 +429,119 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			gotErr := rest.FromRESTError(resp)
 			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
 				t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+			}
+		})
+	}
+}
+
+// capturingListTasksHandler is a minimal RequestHandler used only to record the
+// ListTasksRequest produced by the REST layer's query parsing.
+type capturingListTasksHandler struct {
+	RequestHandler           // embed the interface; only ListTasks is exercised
+	capturedListTasksRequest *a2a.ListTasksRequest
+}
+
+func (h *capturingListTasksHandler) ListTasks(_ context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	h.capturedListTasksRequest = req
+	return &a2a.ListTasksResponse{}, nil
+}
+
+func TestREST_ListTasksQueryParsing(t *testing.T) {
+	t.Parallel()
+	fixedTime := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	ts := url.QueryEscape(fixedTime.Format(time.RFC3339))
+	tests := []struct {
+		name  string
+		query string
+		want  *a2a.ListTasksRequest
+	}{
+		{
+			name:  "empty query",
+			query: "",
+			want:  &a2a.ListTasksRequest{},
+		},
+		{
+			name:  "contextId",
+			query: "contextId=ctx-123",
+			want:  &a2a.ListTasksRequest{ContextID: "ctx-123"},
+		},
+		{
+			name:  "status",
+			query: "status=TASK_STATE_SUBMITTED",
+			want:  &a2a.ListTasksRequest{Status: a2a.TaskStateSubmitted},
+		},
+		{
+			name:  "pageSize",
+			query: "pageSize=11",
+			want:  &a2a.ListTasksRequest{PageSize: 11},
+		},
+		{
+			name:  "pageToken",
+			query: "pageToken=tok-abc",
+			want:  &a2a.ListTasksRequest{PageToken: "tok-abc"},
+		},
+		{
+			name:  "historyLength",
+			query: "historyLength=5",
+			want:  &a2a.ListTasksRequest{HistoryLength: utils.Ptr(5)},
+		},
+		{
+			name:  "statusTimestampAfter",
+			query: "statusTimestampAfter=" + ts,
+			want:  &a2a.ListTasksRequest{StatusTimestampAfter: utils.Ptr(fixedTime)},
+		},
+		{
+			name:  "includeArtifacts",
+			query: "includeArtifacts=true",
+			want:  &a2a.ListTasksRequest{IncludeArtifacts: true},
+		},
+		{
+			name: "all fields",
+			query: "contextId=ctx-123" +
+				"&status=TASK_STATE_SUBMITTED" +
+				"&pageSize=11" +
+				"&pageToken=tok-abc" +
+				"&historyLength=5" +
+				"&statusTimestampAfter=" + ts +
+				"&includeArtifacts=true",
+			want: &a2a.ListTasksRequest{
+				ContextID:            "ctx-123",
+				Status:               a2a.TaskStateSubmitted,
+				PageSize:             11,
+				PageToken:            "tok-abc",
+				HistoryLength:        utils.Ptr(5),
+				StatusTimestampAfter: utils.Ptr(fixedTime),
+				IncludeArtifacts:     true,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			capturingHandler := &capturingListTasksHandler{
+				RequestHandler: NewHandler(&mockAgentExecutor{}),
+			}
+			server := httptest.NewServer(NewRESTHandler(capturingHandler))
+			t.Cleanup(server.Close)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/tasks?"+tc.query, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("resp.StatusCode = %d, want 200 OK; body=%s", resp.StatusCode, string(body))
+			}
+			if capturingHandler.capturedListTasksRequest == nil {
+				t.Fatalf("capturingListTasksHandler.ListTasks() not called")
+			}
+			if diff := cmp.Diff(tc.want, capturingHandler.capturedListTasksRequest); diff != "" {
+				t.Fatalf("ListTasksRequest wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}

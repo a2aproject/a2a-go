@@ -132,20 +132,17 @@ func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Requ
 func (h *restHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	taskID := req.PathValue("id")
-	historyLengthRaw := req.URL.Query().Get("historyLength")
-	var historyLength *int
-	if historyLengthRaw != "" {
-		val, err := strconv.Atoi(historyLengthRaw)
-		if err != nil {
-			writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
-			return
-		}
-		historyLength = &val
-	}
+
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
+	historyLength, err := parseHistoryLength(req.URL.Query())
+	if err != nil {
+		writeRESTError(ctx, rw, fmt.Errorf("%w: invalid historyLength %v", a2a.ErrInvalidRequest, err), a2a.TaskID(taskID))
+		return
+	}
+
 	params := &a2a.GetTaskRequest{
 		ID:            a2a.TaskID(taskID),
 		HistoryLength: historyLength,
@@ -166,53 +163,13 @@ func (h *restHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
 func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	query := req.URL.Query()
-	request := &a2a.ListTasksRequest{}
-	var parseErrors []error
-	parse := func(key string, target any) {
-		val := query.Get(key)
-		if val == "" {
-			return
-		}
-		switch t := target.(type) {
-		case *string:
-			*t = val
-		case *a2a.TaskState:
-			*t = a2a.TaskState(val)
-		case *int:
-			v, err := strconv.Atoi(val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = v
-		case *bool:
-			v, err := strconv.ParseBool(val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = v
-		case *time.Time:
-			parsedTime, err := time.Parse(time.RFC3339, val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = parsedTime
-		}
-	}
-	parse("contextId", &request.ContextID)
-	parse("status", &request.Status)
-	parse("pageSize", &request.PageSize)
-	parse("pageToken", &request.PageToken)
-	parse("historyLength", &request.HistoryLength)
-	parse("statusTimestampAfter", &request.StatusTimestampAfter)
-	parse("includeArtifacts", &request.IncludeArtifacts)
-	fillTenant(ctx, &request.Tenant)
-	if len(parseErrors) > 0 {
-		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+	request, err := parseListTasksQueryParams(query)
+	if err != nil {
+		writeRESTError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
+
+	fillTenant(ctx, &request.Tenant)
 	result, err := h.handler.ListTasks(ctx, request)
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(""))
@@ -496,6 +453,75 @@ func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, task
 	if err := json.NewEncoder(rw).Encode(errResp); err != nil {
 		log.Error(ctx, "failed to write error response", err)
 	}
+}
+
+func parseListTasksQueryParams(query url.Values) (*a2a.ListTasksRequest, error) {
+	request := &a2a.ListTasksRequest{}
+	contextID := query.Get("contextId")
+	if contextID != "" {
+		request.ContextID = contextID
+	}
+	status := query.Get("status")
+	if status != "" {
+		request.Status = a2a.TaskState(status)
+	}
+	pageSize := query.Get("pageSize")
+	if pageSize != "" {
+		val, err := strconv.Atoi(pageSize)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid pageSize %v", a2a.ErrInvalidRequest, err)
+		}
+		request.PageSize = val
+	}
+	pageToken := query.Get("pageToken")
+	if pageToken != "" {
+		request.PageToken = pageToken
+	}
+	includeArtifacts := query.Get("includeArtifacts")
+	if includeArtifacts != "" {
+		val, err := strconv.ParseBool(includeArtifacts)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid includeArtifacts %v", a2a.ErrInvalidRequest, err)
+		}
+		request.IncludeArtifacts = val
+	}
+	historyLength, err := parseHistoryLength(query)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid historyLength %v", a2a.ErrInvalidRequest, err)
+	}
+	request.HistoryLength = historyLength
+	statusTimestampAfter, err := parseStatusTimestampAfter(query)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid statusTimestampAfter %v", a2a.ErrInvalidRequest, err)
+	}
+	request.StatusTimestampAfter = statusTimestampAfter
+	return request, nil
+}
+
+func parseHistoryLength(query url.Values) (*int, error) {
+	historyLengthRaw := query.Get("historyLength")
+	var historyLength *int
+	if historyLengthRaw != "" {
+		val, err := strconv.Atoi(historyLengthRaw)
+		if err != nil {
+			return nil, err
+		}
+		historyLength = &val
+	}
+	return historyLength, nil
+}
+
+func parseStatusTimestampAfter(query url.Values) (*time.Time, error) {
+	statusTimestampAfterRaw := query.Get("statusTimestampAfter")
+	var statusTimestampAfter *time.Time
+	if statusTimestampAfterRaw != "" {
+		val, err := time.Parse(time.RFC3339Nano, statusTimestampAfterRaw)
+		if err != nil {
+			return nil, err
+		}
+		statusTimestampAfter = &val
+	}
+	return statusTimestampAfter, nil
 }
 
 type tenantKeyType struct{}
