@@ -192,7 +192,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	storedTask, lastVersion := taskStoreTask.Task, taskStoreTask.Version
-	if message.TaskID != tid {
+	if message.TaskID != "" && message.TaskID != tid {
 		return nil, fmt.Errorf("bug: message task id different from executor task id")
 	}
 
