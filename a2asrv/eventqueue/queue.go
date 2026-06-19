@@ -16,6 +16,7 @@ package eventqueue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -36,6 +37,36 @@ type Message struct {
 	TaskVersion taskstore.TaskVersion
 	// Protocol is the version of the protocol which emitting process running.
 	Protocol a2a.ProtocolVersion
+}
+
+// messageJSON is the JSON-serializable representation of Message.
+// It uses a2a.StreamResponse as an intermediate type for the Event field
+// so that a2a.Event (an interface) survives a JSON roundtrip.
+type messageJSON struct {
+	Event       a2a.StreamResponse `json:"event"`
+	TaskVersion taskstore.TaskVersion `json:"taskVersion"`
+	Protocol    a2a.ProtocolVersion   `json:"protocol"`
+}
+
+// MarshalJSON implements json.Marshaler.
+func (m Message) MarshalJSON() ([]byte, error) {
+	return json.Marshal(messageJSON{
+		Event:       a2a.StreamResponse{Event: m.Event},
+		TaskVersion: m.TaskVersion,
+		Protocol:    m.Protocol,
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	var wrapper messageJSON
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return err
+	}
+	m.Event = wrapper.Event.Event
+	m.TaskVersion = wrapper.TaskVersion
+	m.Protocol = wrapper.Protocol
+	return nil
 }
 
 // Reader defines the interface for reading events from a queue.
