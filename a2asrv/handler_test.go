@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
@@ -1290,6 +1291,74 @@ func TestRequestHandler_OnSendMessage_NoTaskCreated(t *testing.T) {
 			}
 			if savedCalled > 0 {
 				t.Fatalf("OnSendMessage() TaskStore.Save called %d times, want 0", savedCalled)
+			}
+		})
+	}
+}
+
+func TestRequestHandler_ClusterMode_MessageTaskIDValidation(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	payloadTaskID := a2a.NewTaskID()
+	mismatchTaskID := a2a.NewTaskID()
+
+	tests := []struct {
+		name             string
+		msgTaskID        a2a.TaskID
+		wantErrorContain string
+	}{
+		{
+			name:             "should not fail for messages that do not reference any task",
+			msgTaskID:        "",
+			wantErrorContain: "",
+		},
+		{
+			name:             "should fail for messages that reference a different task",
+			msgTaskID:        mismatchTaskID,
+			wantErrorContain: "message task id different from executor task id",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockStore := testutil.NewTestTaskStore()
+			mockStore.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+				return &taskstore.StoredTask{Task: &a2a.Task{ID: taskID, ContextID: a2a.NewContextID()}}, nil
+			}
+			mockStore.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+				return taskstore.TaskVersion(1), nil
+			}
+			wq := testutil.NewTestWorkQueue()
+			executor := newEventReplayAgent([]a2a.Event{newAgentMessage("hello")}, nil)
+			_ = NewHandler(executor, WithClusterMode(ClusterConfig{
+				QueueManager: testutil.NewTestQueueManager(),
+				WorkQueue:    wq,
+				TaskStore:    mockStore,
+			}))
+
+			payload := &workqueue.Payload{
+				Type:   workqueue.PayloadTypeExecute,
+				TaskID: payloadTaskID,
+				ExecuteRequest: &a2a.SendMessageRequest{
+					Message: &a2a.Message{
+						ID:     a2a.NewMessageID(),
+						Parts:  a2a.ContentParts{a2a.NewTextPart("Work")},
+						Role:   a2a.MessageRoleUser,
+						TaskID: tc.msgTaskID,
+					},
+				},
+			}
+			_, err := wq.HandlerFn(ctx, payload)
+			if tc.wantErrorContain != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrorContain) {
+					t.Fatalf("HandlerFn() error = %v, want err containing %q", err, tc.wantErrorContain)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("HandlerFn() error = %v, want err nil", err)
+				}
 			}
 		})
 	}
