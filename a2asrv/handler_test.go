@@ -2396,3 +2396,33 @@ func (m *cleanerAgentExecutor) Cleanup(ctx context.Context, execCtx *ExecutorCon
 		m.CleanupFunc(ctx, execCtx, result, err)
 	}
 }
+
+// TestLoadExecutionContext_EmptyTaskIDWithRetry verifies that a message
+// without a TaskID is accepted by loadExecutionContext when task retry is
+// enabled and the task exists in the store. Regression test for #350.
+func TestLoadExecutionContext_EmptyTaskIDWithRetry(t *testing.T) {
+	t.Parallel()
+
+	store := taskstore.NewInMemory(nil)
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	if _, err := store.Create(t.Context(), task); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	f := &factory{
+		taskStore:          store,
+		taskRetrySupported: true,
+	}
+
+	// Message without TaskID, but task exists in store (retry scenario).
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("retry"))
+	params := &a2a.SendMessageRequest{Message: msg}
+
+	execCtx, err := f.loadExecutionContext(t.Context(), task.ID, params)
+	if err != nil {
+		t.Fatalf("loadExecutionContext() error = %v", err)
+	}
+	if execCtx == nil {
+		t.Fatal("loadExecutionContext() returned nil")
+	}
+}
