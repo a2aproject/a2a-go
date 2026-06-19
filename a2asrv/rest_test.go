@@ -23,6 +23,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -385,6 +386,14 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			name:  "multiple invalid params",
 			query: "?pageSize=abc&includeArtifacts=notbool",
 		},
+		{
+			name:  "invalid historyLength",
+			query: "?historyLength=not-an-int",
+		},
+		{
+			name:  "invalid statusTimestampAfter",
+			query: "?statusTimestampAfter=2024/01/01",
+		},
 	}
 
 	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
@@ -557,4 +566,168 @@ func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req 
 		return i.BeforeFn(ctx, callCtx, req)
 	}
 	return ctx, nil, nil
+}
+
+type mockRequestHandler struct {
+	RequestHandler
+	listTasksFunc func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	getTaskFunc   func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+}
+
+func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	if m.listTasksFunc != nil {
+		return m.listTasksFunc(ctx, req)
+	}
+	return &a2a.ListTasksResponse{}, nil
+}
+
+func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	if m.getTaskFunc != nil {
+		return m.getTaskFunc(ctx, req)
+	}
+	return &a2a.Task{ID: req.ID}, nil
+}
+
+func TestREST_ListTasks_Success(t *testing.T) {
+	var capturedReq *a2a.ListTasksRequest
+
+	mock := &mockRequestHandler{
+		listTasksFunc: func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+			capturedReq = req
+			return &a2a.ListTasksResponse{}, nil
+		},
+	}
+	handler := NewRESTHandler(mock)
+
+	testTime := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	endpoint := rest.MakeListTasksPath()
+
+	query := url.Values{}
+	query.Set("contextId", "ctx-999")
+	query.Set("status", "running")
+	query.Set("pageSize", "50")
+	query.Set("pageToken", "next-page-token")
+	query.Set("historyLength", "100")
+	query.Set("statusTimestampAfter", testTime.Format(time.RFC3339))
+	query.Set("includeArtifacts", "true")
+
+	reqUrl := endpoint + "?" + query.Encode()
+	req := httptest.NewRequest(http.MethodGet, reqUrl, nil)
+	rw := httptest.NewRecorder()
+
+	handler.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d. body: %s", rw.Code, rw.Body.String())
+	}
+
+	if capturedReq == nil {
+		t.Fatal("expected request to be captured, but got nil")
+	}
+
+	if capturedReq.ContextID != "ctx-999" {
+		t.Errorf("expected ContextID 'ctx-999', got %q", capturedReq.ContextID)
+	}
+	if capturedReq.Status != a2a.TaskState("running") {
+		t.Errorf("expected Status 'running', got %q", capturedReq.Status)
+	}
+	if capturedReq.PageSize != 50 {
+		t.Errorf("expected PageSize 50, got %d", capturedReq.PageSize)
+	}
+	if capturedReq.PageToken != "next-page-token" {
+		t.Errorf("expected PageToken 'next-page-token', got %q", capturedReq.PageToken)
+	}
+	if !capturedReq.IncludeArtifacts {
+		t.Errorf("expected IncludeArtifacts true, got %v", capturedReq.IncludeArtifacts)
+	}
+
+	if capturedReq.HistoryLength == nil || *capturedReq.HistoryLength != 100 {
+		val := -1
+		if capturedReq.HistoryLength != nil {
+			val = *capturedReq.HistoryLength
+		}
+		t.Errorf("expected HistoryLength 100, got %v", val)
+	}
+
+	if capturedReq.StatusTimestampAfter == nil || !capturedReq.StatusTimestampAfter.Equal(testTime) {
+		t.Errorf("expected StatusTimestampAfter %v, got %v", testTime, capturedReq.StatusTimestampAfter)
+	}
+}
+
+func TestREST_GetTask_Success(t *testing.T) {
+	var capturedReq *a2a.GetTaskRequest
+
+	mock := &mockRequestHandler{
+		getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			capturedReq = req
+			return &a2a.Task{ID: req.ID}, nil
+		},
+	}
+
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	intPtr := func(i int) *int { return &i }
+
+	tests := []struct {
+		name              string
+		path              string
+		wantTaskID        string
+		wantHistoryLength *int
+	}{
+		{
+			name:              "without historyLength",
+			path:              "/tasks/task-123",
+			wantTaskID:        "task-123",
+			wantHistoryLength: nil,
+		},
+		{
+			name:              "with historyLength",
+			path:              "/tasks/task-456?historyLength=50",
+			wantTaskID:        "task-456",
+			wantHistoryLength: intPtr(50),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			capturedReq = nil
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d", resp.StatusCode)
+			}
+
+			if capturedReq == nil {
+				t.Fatal("expected request to be captured, but got nil")
+			}
+
+			if string(capturedReq.ID) != tc.wantTaskID {
+				t.Errorf("expected TaskID %q, got %q", tc.wantTaskID, capturedReq.ID)
+			}
+
+			if tc.wantHistoryLength == nil {
+				if capturedReq.HistoryLength != nil {
+					t.Errorf("expected HistoryLength to be nil, got %d", *capturedReq.HistoryLength)
+				}
+			} else {
+				if capturedReq.HistoryLength == nil {
+					t.Errorf("expected HistoryLength to be %d, got nil", *tc.wantHistoryLength)
+				} else if *capturedReq.HistoryLength != *tc.wantHistoryLength {
+					t.Errorf("expected HistoryLength %d, got %d", *tc.wantHistoryLength, *capturedReq.HistoryLength)
+				}
+			}
+		})
+	}
 }
