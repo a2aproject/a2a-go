@@ -185,6 +185,13 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 				return
 			}
 			*t = v
+		case **int:
+			v, err := strconv.Atoi(val)
+			if err != nil {
+				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
+				return
+			}
+			*t = &v
 		case *bool:
 			v, err := strconv.ParseBool(val)
 			if err != nil {
