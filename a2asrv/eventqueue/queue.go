@@ -43,7 +43,7 @@ type Message struct {
 // It uses a2a.StreamResponse as an intermediate type for the Event field
 // so that a2a.Event (an interface) survives a JSON roundtrip.
 type messageJSON struct {
-	Event       a2a.StreamResponse `json:"event"`
+	Event       a2a.StreamResponse    `json:"event"`
 	TaskVersion taskstore.TaskVersion `json:"taskVersion"`
 	Protocol    a2a.ProtocolVersion   `json:"protocol"`
 }
