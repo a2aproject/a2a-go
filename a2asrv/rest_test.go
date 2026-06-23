@@ -34,6 +34,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/log"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -625,32 +626,19 @@ func TestREST_ListTasks_Success(t *testing.T) {
 		t.Fatal("expected request to be captured, but got nil")
 	}
 
-	if capturedReq.ContextID != "ctx-999" {
-		t.Errorf("expected ContextID 'ctx-999', got %q", capturedReq.ContextID)
-	}
-	if capturedReq.Status != a2a.TaskState("running") {
-		t.Errorf("expected Status 'running', got %q", capturedReq.Status)
-	}
-	if capturedReq.PageSize != 50 {
-		t.Errorf("expected PageSize 50, got %d", capturedReq.PageSize)
-	}
-	if capturedReq.PageToken != "next-page-token" {
-		t.Errorf("expected PageToken 'next-page-token', got %q", capturedReq.PageToken)
-	}
-	if !capturedReq.IncludeArtifacts {
-		t.Errorf("expected IncludeArtifacts true, got %v", capturedReq.IncludeArtifacts)
+	intPtr := func(i int) *int { return &i }
+	want := &a2a.ListTasksRequest{
+		ContextID:            "ctx-999",
+		Status:               a2a.TaskState("running"),
+		PageSize:             50,
+		PageToken:            "next-page-token",
+		IncludeArtifacts:     true,
+		HistoryLength:        intPtr(100),
+		StatusTimestampAfter: &testTime,
 	}
 
-	if capturedReq.HistoryLength == nil || *capturedReq.HistoryLength != 100 {
-		val := -1
-		if capturedReq.HistoryLength != nil {
-			val = *capturedReq.HistoryLength
-		}
-		t.Errorf("expected HistoryLength 100, got %v", val)
-	}
-
-	if capturedReq.StatusTimestampAfter == nil || !capturedReq.StatusTimestampAfter.Equal(testTime) {
-		t.Errorf("expected StatusTimestampAfter %v, got %v", testTime, capturedReq.StatusTimestampAfter)
+	if diff := cmp.Diff(want, capturedReq); diff != "" {
+		t.Fatalf("listTasks request mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -670,22 +658,25 @@ func TestREST_GetTask_Success(t *testing.T) {
 	intPtr := func(i int) *int { return &i }
 
 	tests := []struct {
-		name              string
-		path              string
-		wantTaskID        string
-		wantHistoryLength *int
+		name    string
+		path    string
+		wantReq *a2a.GetTaskRequest
 	}{
 		{
-			name:              "without historyLength",
-			path:              "/tasks/task-123",
-			wantTaskID:        "task-123",
-			wantHistoryLength: nil,
+			name: "without historyLength",
+			path: "/tasks/task-123",
+			wantReq: &a2a.GetTaskRequest{
+				ID:            "task-123",
+				HistoryLength: nil,
+			},
 		},
 		{
-			name:              "with historyLength",
-			path:              "/tasks/task-456?historyLength=50",
-			wantTaskID:        "task-456",
-			wantHistoryLength: intPtr(50),
+			name: "with historyLength",
+			path: "/tasks/task-456?historyLength=50",
+			wantReq: &a2a.GetTaskRequest{
+				ID:            "task-456",
+				HistoryLength: intPtr(50),
+			},
 		},
 	}
 
@@ -713,20 +704,8 @@ func TestREST_GetTask_Success(t *testing.T) {
 				t.Fatal("expected request to be captured, but got nil")
 			}
 
-			if string(capturedReq.ID) != tc.wantTaskID {
-				t.Errorf("expected TaskID %q, got %q", tc.wantTaskID, capturedReq.ID)
-			}
-
-			if tc.wantHistoryLength == nil {
-				if capturedReq.HistoryLength != nil {
-					t.Errorf("expected HistoryLength to be nil, got %d", *capturedReq.HistoryLength)
-				}
-			} else {
-				if capturedReq.HistoryLength == nil {
-					t.Errorf("expected HistoryLength to be %d, got nil", *tc.wantHistoryLength)
-				} else if *capturedReq.HistoryLength != *tc.wantHistoryLength {
-					t.Errorf("expected HistoryLength %d, got %d", *tc.wantHistoryLength, *capturedReq.HistoryLength)
-				}
+			if diff := cmp.Diff(tc.wantReq, capturedReq); diff != "" {
+				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
