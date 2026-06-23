@@ -23,6 +23,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/log"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestREST_RequestRouting(t *testing.T) {
@@ -385,6 +387,14 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			name:  "multiple invalid params",
 			query: "?pageSize=abc&includeArtifacts=notbool",
 		},
+		{
+			name:  "invalid historyLength",
+			query: "?historyLength=not-an-int",
+		},
+		{
+			name:  "invalid statusTimestampAfter",
+			query: "?statusTimestampAfter=2024/01/01",
+		},
 	}
 
 	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
@@ -557,4 +567,146 @@ func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req 
 		return i.BeforeFn(ctx, callCtx, req)
 	}
 	return ctx, nil, nil
+}
+
+type mockRequestHandler struct {
+	RequestHandler
+	listTasksFunc func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	getTaskFunc   func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+}
+
+func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	if m.listTasksFunc != nil {
+		return m.listTasksFunc(ctx, req)
+	}
+	return &a2a.ListTasksResponse{}, nil
+}
+
+func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	if m.getTaskFunc != nil {
+		return m.getTaskFunc(ctx, req)
+	}
+	return &a2a.Task{ID: req.ID}, nil
+}
+
+func TestREST_ListTasks_Success(t *testing.T) {
+	var capturedReq *a2a.ListTasksRequest
+
+	mock := &mockRequestHandler{
+		listTasksFunc: func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+			capturedReq = req
+			return &a2a.ListTasksResponse{}, nil
+		},
+	}
+	handler := NewRESTHandler(mock)
+
+	testTime := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	endpoint := rest.MakeListTasksPath()
+
+	query := url.Values{}
+	query.Set("contextId", "ctx-999")
+	query.Set("status", "running")
+	query.Set("pageSize", "50")
+	query.Set("pageToken", "next-page-token")
+	query.Set("historyLength", "100")
+	query.Set("statusTimestampAfter", testTime.Format(time.RFC3339))
+	query.Set("includeArtifacts", "true")
+
+	reqUrl := endpoint + "?" + query.Encode()
+	req := httptest.NewRequest(http.MethodGet, reqUrl, nil)
+	rw := httptest.NewRecorder()
+
+	handler.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d. body: %s", rw.Code, rw.Body.String())
+	}
+
+	if capturedReq == nil {
+		t.Fatal("expected request to be captured, but got nil")
+	}
+
+	intPtr := func(i int) *int { return &i }
+	want := &a2a.ListTasksRequest{
+		ContextID:            "ctx-999",
+		Status:               a2a.TaskState("running"),
+		PageSize:             50,
+		PageToken:            "next-page-token",
+		IncludeArtifacts:     true,
+		HistoryLength:        intPtr(100),
+		StatusTimestampAfter: &testTime,
+	}
+
+	if diff := cmp.Diff(want, capturedReq); diff != "" {
+		t.Fatalf("listTasks request mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestREST_GetTask_Success(t *testing.T) {
+	var capturedReq *a2a.GetTaskRequest
+
+	mock := &mockRequestHandler{
+		getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			capturedReq = req
+			return &a2a.Task{ID: req.ID}, nil
+		},
+	}
+
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	intPtr := func(i int) *int { return &i }
+
+	tests := []struct {
+		name    string
+		path    string
+		wantReq *a2a.GetTaskRequest
+	}{
+		{
+			name: "without historyLength",
+			path: "/tasks/task-123",
+			wantReq: &a2a.GetTaskRequest{
+				ID:            "task-123",
+				HistoryLength: nil,
+			},
+		},
+		{
+			name: "with historyLength",
+			path: "/tasks/task-456?historyLength=50",
+			wantReq: &a2a.GetTaskRequest{
+				ID:            "task-456",
+				HistoryLength: intPtr(50),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			capturedReq = nil
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d", resp.StatusCode)
+			}
+
+			if capturedReq == nil {
+				t.Fatal("expected request to be captured, but got nil")
+			}
+
+			if diff := cmp.Diff(tc.wantReq, capturedReq); diff != "" {
+				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
