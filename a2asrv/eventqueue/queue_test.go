@@ -23,6 +23,36 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestMessageNilEventError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("MarshalJSON", func(t *testing.T) {
+		t.Parallel()
+		msg := Message{Event: nil}
+		_, err := msg.MarshalJSON()
+		if err == nil {
+			t.Fatal("MarshalJSON with nil Event should return error")
+		}
+		if err != ErrNilEvent {
+			t.Fatalf("MarshalJSON with nil Event returned %v, want ErrNilEvent", err)
+		}
+	})
+
+	t.Run("UnmarshalJSON", func(t *testing.T) {
+		t.Parallel()
+		// JSON missing "event" field entirely
+		data := []byte(`{"taskVersion":1,"protocol":"1.0"}`)
+		var msg Message
+		err := msg.UnmarshalJSON(data)
+		if err == nil {
+			t.Fatal("UnmarshalJSON without event field should return error")
+		}
+		if err != ErrNilEvent {
+			t.Fatalf("UnmarshalJSON without event field returned %v, want ErrNilEvent", err)
+		}
+	})
+}
+
 func TestMessageJSONRoundtrip(t *testing.T) {
 	t.Parallel()
 

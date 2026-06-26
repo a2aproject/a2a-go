@@ -48,8 +48,14 @@ type messageJSON struct {
 	Protocol    a2a.ProtocolVersion   `json:"protocol"`
 }
 
+// ErrNilEvent indicates that a Message has a nil Event field, which is an invalid state.
+var ErrNilEvent = errors.New("Message.Event is nil")
+
 // MarshalJSON implements json.Marshaler.
 func (m Message) MarshalJSON() ([]byte, error) {
+	if m.Event == nil {
+		return nil, ErrNilEvent
+	}
 	return json.Marshal(messageJSON{
 		Event:       a2a.StreamResponse{Event: m.Event},
 		TaskVersion: m.TaskVersion,
@@ -62,6 +68,9 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	var wrapper messageJSON
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return err
+	}
+	if wrapper.Event.Event == nil {
+		return ErrNilEvent
 	}
 	m.Event = wrapper.Event.Event
 	m.TaskVersion = wrapper.TaskVersion
