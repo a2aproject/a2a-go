@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.4.0](https://github.com/a2aproject/a2a-go/compare/v2.3.1...v2.4.0) (2026-06-26)
+
+
+### Features
+
+* provide generic pull event queue ([#354](https://github.com/a2aproject/a2a-go/issues/354)) ([6a48d4b](https://github.com/a2aproject/a2a-go/commit/6a48d4b5bb731b647d13ff61b0fefb21f053916b))
+
+
+### Bug Fixes
+
+* **a2asrv:** skip TaskID mismatch check when message has no task reference (fixes [#350](https://github.com/a2aproject/a2a-go/issues/350)) ([#359](https://github.com/a2aproject/a2a-go/issues/359)) ([8c0dd99](https://github.com/a2aproject/a2a-go/commit/8c0dd999621972e04fe6574c68cfbd5d25d4b20e))
+* **eventqueue:** add JSON marshal/unmarshal to Message so events survive roundtrip (fixes [#349](https://github.com/a2aproject/a2a-go/issues/349)) ([#360](https://github.com/a2aproject/a2a-go/issues/360)) ([d52d5a1](https://github.com/a2aproject/a2a-go/commit/d52d5a1a78b7d1f2ae628e689a8aabdb87209eab))
+* ListTaskshistoryLength missing  ([8b91364](https://github.com/a2aproject/a2a-go/commit/8b91364b50987462f9e949b5cef206523dcc254e))
+* ListTaskshistoryLength missing (issue [#355](https://github.com/a2aproject/a2a-go/issues/355)) ([#361](https://github.com/a2aproject/a2a-go/issues/361)) ([8b91364](https://github.com/a2aproject/a2a-go/commit/8b91364b50987462f9e949b5cef206523dcc254e))
+
 ## [2.3.1](https://github.com/a2aproject/a2a-go/compare/v2.3.0...v2.3.1) (2026-05-13)
 
 
