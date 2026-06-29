@@ -145,11 +145,53 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 			n++
 		}
 		if n == 0 {
+			// No discriminator found — this may be a raw scheme object from
+			// a non-Go SDK (e.g., Java Jackson serialization). Unmarshal once
+			// into a map of fields and dispatch based on distinctive keys.
+			// MutualTLS is intentionally excluded — it has no distinctive
+			// fields and would falsely match arbitrary JSON.
 			var raw map[SecuritySchemeName]json.RawMessage
 			if err := json.Unmarshal(b, &raw); err != nil {
 				return fmt.Errorf("unknown security scheme for %s: %w", name, err)
 			}
-			return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(raw[name])))
+			rawJSON := raw[name]
+
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(rawJSON, &fields); err != nil {
+				return fmt.Errorf("unknown security scheme for %s: invalid JSON: %w", name, err)
+			}
+
+			var scheme SecurityScheme
+			switch {
+			case fields["flows"] != nil:
+				var s OAuth2SecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["location"] != nil:
+				var s APIKeySecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["scheme"] != nil:
+				var s HTTPAuthSecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			case fields["openIdConnectUrl"] != nil:
+				var s OpenIDConnectSecurityScheme
+				if err := json.Unmarshal(rawJSON, &s); err != nil {
+					return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+				}
+				scheme = s
+			default:
+				return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(rawJSON)))
+			}
+			result[name] = scheme
+			continue
 		}
 		if n != 1 {
 			return fmt.Errorf("expected exactly one security scheme type for %s, got %d", name, n)
