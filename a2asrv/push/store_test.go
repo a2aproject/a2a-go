@@ -15,6 +15,7 @@
 package push
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -437,4 +438,62 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 		result[taskID] = sortConfigList(configs)
 	}
 	return result
+}
+
+type ctxKey string
+
+const userKey ctxKey = "user"
+
+func TestInMemoryPushConfigStore_CrossTenantIsolation(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("task-1")
+
+	// Create store with authenticator that identifies callers.
+	store := NewInMemoryStore().WithAuthenticator(func(ctx context.Context) (string, error) {
+		user, _ := ctx.Value(userKey).(string)
+		return user, nil
+	})
+
+	// Alice creates a push config.
+	aliceCtx := context.WithValue(ctx, userKey, "alice")
+	cfg, err := store.Save(aliceCtx, taskID, &a2a.PushConfig{
+		URL:   "https://alice.example/webhook",
+		Token: "alice-secret-token",
+		Auth:  &a2a.PushAuthInfo{Scheme: "bearer", Credentials: "alice-bearer"},
+	})
+	if err != nil {
+		t.Fatalf("alice Save failed: %v", err)
+	}
+
+	// Bob attempts to read Alice's configs — must fail.
+	bobCtx := context.WithValue(ctx, userKey, "bob")
+	if _, err := store.Get(bobCtx, taskID, cfg.ID); err == nil {
+		t.Fatal("bob Get should have failed with cross-tenant access")
+	}
+	if _, err := store.List(bobCtx, taskID); err == nil {
+		t.Fatal("bob List should have failed with cross-tenant access")
+	}
+	if _, err := store.Save(bobCtx, taskID, &a2a.PushConfig{URL: "https://bob.example/webhook"}); err == nil {
+		t.Fatal("bob Save should have failed with cross-tenant access")
+	}
+	if err := store.Delete(bobCtx, taskID, cfg.ID); err == nil {
+		t.Fatal("bob Delete should have failed with cross-tenant access")
+	}
+
+	// Alice can still access her own configs.
+	got, err := store.Get(aliceCtx, taskID, cfg.ID)
+	if err != nil {
+		t.Fatalf("alice Get failed: %v", err)
+	}
+	if got.Token != "alice-secret-token" {
+		t.Fatalf("alice token mismatch: got %q", got.Token)
+	}
+
+	list, err := store.List(aliceCtx, taskID)
+	if err != nil {
+		t.Fatalf("alice List failed: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("alice List length: got %d want 1", len(list))
+	}
 }

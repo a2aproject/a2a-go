@@ -159,12 +159,23 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 		return nil, a2a.ErrTaskNotFound
 	}
 
+	// Enforce cross-tenant isolation: verify the caller owns this task.
+	// Per A2A spec §13.1, the server MUST NOT reveal the existence of
+	// resources the caller is not authorized to access, so we return
+	// ErrTaskNotFound (not ErrUnauthenticated) on ownership mismatch.
+	// When no authenticator is configured (userName is empty), we skip
+	// the check for backward compatibility with single-tenant deployments.
+	userName, _ := s.config.Authenticator(ctx)
+	if userName != "" && storedTask.user != userName {
+		return nil, a2a.ErrTaskNotFound
+	}
+
 	task, err := utils.DeepCopy(storedTask.task)
 	if err != nil {
 		return nil, fmt.Errorf("task copy failed: %w", err)
 	}
 
-	return &StoredTask{Task: task, Version: storedTask.version}, nil
+	return &StoredTask{Task: task, Version: storedTask.version, User: storedTask.user}, nil
 }
 
 // List implements [Store] interface.
