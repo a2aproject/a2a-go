@@ -93,9 +93,11 @@ func send(ctx context.Context, client *a2aclient.Client, text string) error {
 	}
 	final := false
 	taskID := a2a.TaskID("")
+	var streamErr error
 	for event, err := range client.SendStreamingMessage(ctx, msg) {
 		if err != nil {
-			return fmt.Errorf("error receiving event: %w", err)
+			streamErr = fmt.Errorf("error receiving event: %w", err)
+			break
 		}
 		if err := printEvent(event); err != nil {
 			return fmt.Errorf("error printing event: %w", err)
@@ -111,7 +113,7 @@ func send(ctx context.Context, client *a2aclient.Client, text string) error {
 	if !final && taskID != "" {
 		return subscribe(ctx, client, taskID)
 	}
-	return nil
+	return streamErr
 }
 
 func cancel(ctx context.Context, client *a2aclient.Client, id string) error {
