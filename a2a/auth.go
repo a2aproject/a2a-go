@@ -117,12 +117,16 @@ func (s NamedSecuritySchemes) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
-	var schemes map[SecuritySchemeName]securityScheme
+	var schemes map[SecuritySchemeName]json.RawMessage
 	if err := json.Unmarshal(b, &schemes); err != nil {
 		return err
 	}
 	result := make(NamedSecuritySchemes, len(schemes))
-	for name, wrapper := range schemes {
+	for name, raw := range schemes {
+		var wrapper securityScheme
+		if err := json.Unmarshal(raw, &wrapper); err != nil {
+			return err
+		}
 		var n int
 		if wrapper.APIKey != nil {
 			result[name] = *wrapper.APIKey
@@ -145,11 +149,14 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 			n++
 		}
 		if n == 0 {
-			var raw map[SecuritySchemeName]json.RawMessage
-			if err := json.Unmarshal(b, &raw); err != nil {
-				return fmt.Errorf("unknown security scheme for %s: %w", name, err)
+			if scheme, ok, err := unmarshalDirectSecurityScheme(raw); ok {
+				if err != nil {
+					return err
+				}
+				result[name] = scheme
+				continue
 			}
-			return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys([]byte(raw[name])))
+			return fmt.Errorf("unknown security scheme type for %s: %v", name, jsonKeys(raw))
 		}
 		if n != 1 {
 			return fmt.Errorf("expected exactly one security scheme type for %s, got %d", name, n)
@@ -158,6 +165,23 @@ func (s *NamedSecuritySchemes) UnmarshalJSON(b []byte) error {
 
 	*s = result
 	return nil
+}
+
+func unmarshalDirectSecurityScheme(raw json.RawMessage) (SecurityScheme, bool, error) {
+	var fields struct {
+		Flows json.RawMessage `json:"flows"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, false, err
+	}
+	if len(fields.Flows) == 0 {
+		return nil, false, nil
+	}
+	var scheme OAuth2SecurityScheme
+	if err := json.Unmarshal(raw, &scheme); err != nil {
+		return nil, true, err
+	}
+	return scheme, true, nil
 }
 
 // SecurityScheme is a sealed discriminated type union for supported security schemes.
