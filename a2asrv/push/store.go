@@ -220,10 +220,19 @@ func (s *InMemoryPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID,
 	return nil
 }
 
-// DeleteAll removes all stored configs for a task.
+// DeleteAll removes all stored configs for a task owned by the caller.
 func (s *InMemoryPushConfigStore) DeleteAll(ctx context.Context, taskID a2a.TaskID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if err := s.checkOwner(ctx, taskID); err != nil {
+		if errors.Is(err, errNoOwner) {
+			return nil // idempotent — task never existed
+		}
+		return err
+	}
+
 	delete(s.configs, taskID)
+	delete(s.owners, taskID)
 	return nil
 }

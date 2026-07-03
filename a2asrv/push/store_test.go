@@ -479,6 +479,9 @@ func TestInMemoryPushConfigStore_CrossTenantIsolation(t *testing.T) {
 	if err := store.Delete(bobCtx, taskID, cfg.ID); err == nil {
 		t.Fatal("bob Delete should have failed with cross-tenant access")
 	}
+	if err := store.DeleteAll(bobCtx, taskID); err == nil {
+		t.Fatal("bob DeleteAll should have failed with cross-tenant access")
+	}
 
 	// Alice can still access her own configs.
 	got, err := store.Get(aliceCtx, taskID, cfg.ID)
