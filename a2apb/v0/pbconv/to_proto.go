@@ -303,11 +303,13 @@ func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
 	}
 	switch fc := part.Content.(type) {
 	case a2a.Raw:
+		buf := make([]byte, base64.StdEncoding.EncodedLen(len(fc)))
+		base64.StdEncoding.Encode(buf, []byte(fc))
 		return &a2apb.Part{
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: part.MediaType,
 				Name:     part.Filename,
-				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(base64.StdEncoding.EncodeToString(fc))},
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: buf},
 			}},
 			Metadata: meta,
 		}, nil
