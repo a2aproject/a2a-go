@@ -15,6 +15,7 @@
 package pbconv
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -159,6 +160,7 @@ func TestToProto_toProtoMessges(t *testing.T) {
 
 func TestToProto_toProtoPart(t *testing.T) {
 	pData, _ := structpb.NewStruct(map[string]any{"key": "value"})
+	base64Content := base64.StdEncoding.EncodeToString([]byte("content"))
 	tests := []struct {
 		name    string
 		p       a2a.Part
@@ -183,7 +185,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 			},
 			want: &a2apb.Part{Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: "text/plain",
-				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(base64Content)},
 			}}},
 		},
 		{
@@ -234,7 +236,7 @@ func TestToProto_toProtoPart(t *testing.T) {
 				Metadata: map[string]any{"hello": "world"}},
 			want: &a2apb.Part{
 				Part: &a2apb.Part_File{File: &a2apb.FilePart{
-					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte("content")},
+					File: &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(base64Content)},
 				}},
 				Metadata: mustMakeProtoMetadata(t, map[string]any{"hello": "world"}),
 			},

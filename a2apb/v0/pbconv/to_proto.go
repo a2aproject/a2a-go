@@ -15,6 +15,7 @@
 package pbconv
 
 import (
+	"encoding/base64"
 	"fmt"
 	"maps"
 	"slices"
@@ -306,7 +307,7 @@ func toProtoFilePart(part *a2a.Part) (*a2apb.Part, error) {
 			Part: &a2apb.Part_File{File: &a2apb.FilePart{
 				MimeType: part.MediaType,
 				Name:     part.Filename,
-				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: fc},
+				File:     &a2apb.FilePart_FileWithBytes{FileWithBytes: []byte(base64.StdEncoding.EncodeToString(fc))},
 			}},
 			Metadata: meta,
 		}, nil
