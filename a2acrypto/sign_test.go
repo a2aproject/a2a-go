@@ -6,6 +6,8 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -176,5 +178,53 @@ func TestSignAndVerifyEd25519(t *testing.T) {
 	verifier := NewVerifier(VerifierConfig{KeyResolver: staticResolver})
 	if err := verifier.Verify(card, sig); err != nil {
 		t.Fatalf("Verify() error = %v", err)
+	}
+}
+
+func TestSign_excludes_signatures_from_payload(t *testing.T) {
+	t.Parallel()
+
+	key := mustGenerateECDSAP256Key(t)
+	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+
+	card := makeTestCard()
+	card.Signatures = []a2a.AgentCardSignature{
+		{Protected: "existing", Signature: "sig"},
+	}
+
+	sig, err := signer.Sign(card)
+	if err != nil {
+		t.Fatalf("Sign() error = %v", err)
+	}
+
+	// Verify should succeed because signatures are excluded from canonical payload.
+	staticResolver := &staticKeyResolver{pub: key.Public()}
+	verifier := NewVerifier(VerifierConfig{KeyResolver: staticResolver})
+	if err := verifier.Verify(card, sig); err != nil {
+		t.Fatalf("Verify() with pre-existing signatures error = %v", err)
+	}
+}
+
+func TestSign_protected_header_has_typ(t *testing.T) {
+	t.Parallel()
+
+	key := mustGenerateECDSAP256Key(t)
+	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+
+	sig, err := signer.Sign(makeTestCard())
+	if err != nil {
+		t.Fatalf("Sign() error = %v", err)
+	}
+
+	protectedJSON, err := base64.RawURLEncoding.DecodeString(sig.Protected)
+	if err != nil {
+		t.Fatalf("failed to decode protected header: %v", err)
+	}
+	var protected map[string]any
+	if err := json.Unmarshal(protectedJSON, &protected); err != nil {
+		t.Fatalf("failed to parse protected header: %v", err)
+	}
+	if typ, ok := protected["typ"].(string); !ok || typ != "JOSE+JSON" {
+		t.Errorf("protected header typ = %v, want JOSE+JSON", protected["typ"])
 	}
 }
