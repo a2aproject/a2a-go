@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	"golang.org/x/mod/semver"
@@ -33,6 +34,7 @@ type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
 	transports   map[transportKey]TransportFactory
+	cardVerifier *a2acrypto.Verifier
 }
 
 type transportKey struct {
@@ -109,6 +111,13 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
 	client.card.Store(card)
+	if f.cardVerifier != nil && len(card.Signatures) > 0 {
+		for _, sig := range card.Signatures {
+			if err := f.cardVerifier.Verify(card, &sig); err != nil {
+				return nil, fmt.Errorf("agent card signature verification failed: %w", err)
+			}
+		}
+	}
 	return client, nil
 }
 
@@ -270,6 +279,14 @@ func (defaultsDisabledOpt) apply(f *Factory) {}
 // WithDefaultsDisabled attaches call interceptors to clients created by the factory.
 func WithDefaultsDisabled() FactoryOption {
 	return defaultsDisabledOpt{}
+}
+
+// WithCardVerifier sets a verifier to validate AgentCard signatures when creating clients.
+// If set, signed cards are verified in CreateFromCard; unsigned cards pass through.
+func WithCardVerifier(v *a2acrypto.Verifier) FactoryOption {
+	return factoryOptionFn(func(f *Factory) {
+		f.cardVerifier = v
+	})
 }
 
 // NewFactory creates a new Factory applying the provided configurations.
