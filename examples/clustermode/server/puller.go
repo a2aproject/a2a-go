@@ -1,4 +1,16 @@
-// Copyright 2026 The A2A Authors
+// Copyright 20\d\d The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,49 +46,37 @@ type dbPuller struct {
 	store taskstore.Store
 }
 
-func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, cursor eventqueue.PullCursor) (*eventqueue.PullResponse, error) {
-	if cursor == nil {
-		storedTask, err := p.store.Get(ctx, taskID)
-		if err == a2a.ErrTaskNotFound {
-			// In cluster mode the frontend creates the reader before the worker has had a chance to INSERT
-			// the initial task row. Tolerate ErrTaskNotFound by returning a synthetic SUBMITTED snapshot
-			// so the reader can register
-			return &eventqueue.PullResponse{
-				Messages: []*eventqueue.Message{
-					{
-						Event:       &a2a.Task{ID: taskID, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
-						TaskVersion: taskstore.TaskVersionMissing,
-						Protocol:    a2a.Version,
-					},
-				},
-				Cursor: "",
-			}, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		var nextCursor sql.NullString
-		err = p.db.QueryRowContext(ctx, `SELECT MAX(id) FROM task_event WHERE task_id = ?`, taskID).Scan(&nextCursor)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query latest event version: %w", err)
-		}
-		return &eventqueue.PullResponse{
-			Messages: []*eventqueue.Message{{Event: storedTask.Task, TaskVersion: storedTask.Version, Protocol: a2a.Version}},
-			Cursor:   nextCursor.String,
-		}, nil
+func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor eventqueue.PullCursor) (*eventqueue.PullResponse, error) {
+	cursor, _ := pullCursor.(string)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if cursor == "" {
+		rows, err = p.db.QueryContext(ctx, `
+			SELECT event_json, task_version, id
+			FROM task_event
+			WHERE task_id = ?
+			ORDER BY id ASC
+			LIMIT 10
+		`, taskID)
+	} else {
+		rows, err = p.db.QueryContext(ctx, `
+			SELECT event_json, task_version, id
+			FROM task_event
+			WHERE task_id = ? AND id > ?
+			ORDER BY id ASC
+			LIMIT 10
+		`, taskID, cursor)
 	}
-	rows, err := p.db.QueryContext(ctx, `
-   SELECT event_json, task_version, id
-   FROM task_event
-   WHERE task_id = ? AND id > ?
-   ORDER BY id ASC
-   LIMIT 10
- `, taskID, cursor)
-	var messages []*eventqueue.Message
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query events: %w", err)
 	}
 	defer closeSQLRows(ctx, rows)
+
+	nextCursor := cursor
+	var messages []*eventqueue.Message
 	for rows.Next() {
 		var version int64
 		var eventJSON, id string
@@ -89,11 +89,11 @@ func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, cursor eventqueu
 			continue
 		}
 		messages = append(messages, &msg)
-		cursor = id
+		nextCursor = id
 	}
 	return &eventqueue.PullResponse{
 		Messages: messages,
-		Cursor:   cursor,
+		Cursor:   nextCursor,
 	}, nil
 }
 
@@ -106,9 +106,15 @@ func newDBPuller(db *sql.DB, store taskstore.Store) *dbPuller {
 }
 
 func newPullQueueManager(db *sql.DB, store taskstore.Store) eventqueue.Manager {
-	pp := eventqueue.NewStaticPullerProvider(newDBPuller(db, store))
+	pp := newPullerProvider(db, store)
 	cfg := eventqueue.PullConfig{
 		PollInterval: 500 * time.Millisecond,
 	}
 	return eventqueue.NewPullQueueManager(pp, cfg)
+}
+
+func newPullerProvider(db *sql.DB, store taskstore.Store) eventqueue.PullerProvider {
+	return func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Puller, error) {
+		return newDBPuller(db, store), nil
+	}
 }

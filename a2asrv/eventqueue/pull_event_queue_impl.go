@@ -50,13 +50,6 @@ type Puller interface {
 // PullerProvider is a function that returns a puller for the given task ID.
 type PullerProvider func(ctx context.Context, taskID a2a.TaskID) (Puller, error)
 
-// NewStaticPullerProvider returns a PullerProvider that always returns the same Puller.
-func NewStaticPullerProvider(es Puller) PullerProvider {
-	return func(ctx context.Context, taskID a2a.TaskID) (Puller, error) {
-		return es, nil
-	}
-}
-
 // PullConfig configures the behavior of a pull-based event queue manager.
 type PullConfig struct {
 	// PollInterval is the interval at which the puller is polled for new events.
@@ -65,9 +58,6 @@ type PullConfig struct {
 	// InactivityTimeout is the duration of inactivity after which the reader will time out.
 	// Defaults to 5 minutes. Set to 0 to disable inactivity timeout.
 	InactivityTimeout time.Duration
-	// AccessCheck is an optional callback executed before emitting the initial snapshot
-	// of a task to verify that the calling context has permission to access the task.
-	AccessCheck func(context.Context, *a2a.Task) error
 	// OnInactivity is an optional callback function that is called when a task has exceeded the
 	// InactivityTimeout. It's only triggered from Reader.Read().
 	// The returned task is used to update the snapshot.
@@ -124,12 +114,7 @@ func (m *pullQueueManager) CreateReader(ctx context.Context, taskID a2a.TaskID) 
 		return nil, fmt.Errorf("failed to get puller: %w", err)
 	}
 
-	snapshot, err := getSnapshot(ctx, puller, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get snapshot: %w", err)
-	}
-
-	return newPullReader(puller, taskID, m, snapshot), nil
+	return newPullReader(puller, taskID, m), nil
 }
 
 // CreateWriter implements Manager.CreateWriter. It delegates to the in-memory manager.
@@ -146,21 +131,17 @@ var _ Reader = (*pullReader)(nil)
 
 type pullReader struct {
 	taskID     a2a.TaskID
-	snapshot   *Message
 	puller     Puller
 	manager    *pullQueueManager
 	eventsChan chan *Message
 	closed     chan struct{}
 	ctxCancel  context.CancelFunc
-
-	emittedSnapshot bool
 }
 
-func newPullReader(p Puller, taskID a2a.TaskID, queueManager *pullQueueManager, snapshot *Message) *pullReader {
+func newPullReader(p Puller, taskID a2a.TaskID, queueManager *pullQueueManager) *pullReader {
 	ctx, cancel := context.WithCancel(context.Background())
 	reader := &pullReader{
 		taskID:     taskID,
-		snapshot:   snapshot,
 		puller:     p,
 		manager:    queueManager,
 		eventsChan: make(chan *Message),
@@ -215,10 +196,6 @@ func (r *pullReader) dispatchMessages(ctx context.Context, resp *PullResponse) s
 		if msg == nil || msg.Event == nil {
 			continue
 		}
-		// Snapshot is emitted directly from r.snapshot by Read, so filter out to not send duplicate.
-		if _, isTask := msg.Event.(*a2a.Task); isTask {
-			continue
-		}
 		select {
 		case r.eventsChan <- msg:
 		case <-ctx.Done():
@@ -237,17 +214,6 @@ func (r *pullReader) dispatchMessages(ctx context.Context, resp *PullResponse) s
 // If the inactivity timeout is reached, it will trigger the OnInactivity callback if configured,
 // and return ErrInactivityTimeout.
 func (r *pullReader) Read(ctx context.Context) (*Message, error) {
-	if !r.emittedSnapshot {
-		if err := r.accessCheck(ctx); err != nil {
-			return nil, err
-		}
-		r.emittedSnapshot = true
-		return r.snapshot, nil
-	}
-	if taskupdate.IsFinal(r.snapshot.Event) {
-		return nil, ErrQueueClosed
-	}
-
 	var timeout <-chan time.Time
 	if r.manager.cfg.InactivityTimeout > 0 {
 		timer := time.NewTimer(r.manager.cfg.InactivityTimeout)
@@ -269,8 +235,7 @@ func (r *pullReader) Read(ctx context.Context) (*Message, error) {
 				return nil, fmt.Errorf("%w: failed to call inactivity callback:%w", ErrInactivityTimeout, err)
 			}
 			if task != nil {
-				r.snapshot = newMessage(task)
-				r.emittedSnapshot = false
+				return newMessage(task), nil
 			}
 		}
 		return nil, fmt.Errorf("%w after %v", ErrInactivityTimeout, r.manager.cfg.InactivityTimeout)
@@ -282,52 +247,6 @@ func (r *pullReader) Close() error {
 	r.ctxCancel()
 	<-r.closed
 	return nil
-}
-
-func (r *pullReader) accessCheck(ctx context.Context) error {
-	if r.manager.cfg.AccessCheck == nil {
-		return nil
-	}
-	task, ok := r.snapshot.Event.(*a2a.Task)
-	if !ok {
-		return fmt.Errorf("snapshot event is not a task: %T", r.snapshot.Event)
-	}
-	return r.manager.cfg.AccessCheck(ctx, task)
-}
-
-func getSnapshot(ctx context.Context, puller Puller, taskID a2a.TaskID) (*Message, error) {
-	resp, err := puller.Pull(ctx, taskID, nil)
-	if err != nil {
-		closePullerOnError(ctx, puller)
-		return nil, fmt.Errorf("snapshot pull failed for task %v: %w", taskID, err)
-	}
-	if resp == nil || len(resp.Messages) == 0 {
-		closePullerOnError(ctx, puller)
-		return nil, fmt.Errorf("puller returned no snapshot for task %v", taskID)
-	}
-	snapshotMsg := resp.Messages[0]
-	if snapshotMsg == nil || snapshotMsg.Event == nil {
-		closePullerOnError(ctx, puller)
-		return nil, fmt.Errorf("pull queue: puller returned nil snapshot message for task %q", taskID)
-	}
-	task, ok := snapshotMsg.Event.(*a2a.Task)
-	if !ok {
-		closePullerOnError(ctx, puller)
-		return nil, fmt.Errorf("pull queue: puller's first message for task %q is %T, want *a2a.Task",
-			taskID, snapshotMsg.Event)
-	}
-	if task.ID != taskID {
-		closePullerOnError(ctx, puller)
-		return nil, fmt.Errorf("pull queue: task ID mismatch in snapshot for task %q: got %q",
-			taskID, task.ID)
-	}
-	return snapshotMsg, nil
-}
-
-func closePullerOnError(ctx context.Context, puller Puller) {
-	if err := puller.Close(ctx); err != nil {
-		log.Warn(ctx, "Error closing puller: %v", err)
-	}
 }
 
 func newMessage(task *a2a.Task) *Message {
