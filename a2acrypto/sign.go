@@ -12,16 +12,19 @@ import (
 )
 
 // Sign computes a JWS signature for the given AgentCard.
-// It serializes the card to JSON, builds the protected header, and signs.
+// It serializes the card using RFC 8785 JSON Canonicalization Scheme (JCS),
+// which excludes the signatures field and sorts object keys, then builds the
+// protected header and signs.
 func (s *Signer) Sign(card *a2a.AgentCard) (*a2a.AgentCardSignature, error) {
-	payload, err := json.Marshal(card)
+	payload, err := canonicalPayload(card)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal agent card: %w", err)
+		return nil, fmt.Errorf("failed to canonicalize agent card: %w", err)
 	}
 
 	protected := map[string]any{
 		"alg": s.algorithm,
 		"kid": s.kid,
+		"typ": "JOSE+JSON",
 	}
 	if s.jwksURL != "" {
 		protected["jku"] = s.jwksURL

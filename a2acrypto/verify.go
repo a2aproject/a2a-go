@@ -45,9 +45,9 @@ func (v *Verifier) Verify(card *a2a.AgentCard, sig *a2a.AgentCardSignature) erro
 		return fmt.Errorf("%w: key resolution failed: %v", ErrVerificationFailed, err)
 	}
 
-	payload, err := json.Marshal(card)
+	payload, err := canonicalPayload(card)
 	if err != nil {
-		return fmt.Errorf("%w: failed to marshal card for verification: %v", ErrVerificationFailed, err)
+		return fmt.Errorf("%w: failed to canonicalize card for verification: %v", ErrVerificationFailed, err)
 	}
 
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
