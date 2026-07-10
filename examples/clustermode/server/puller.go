@@ -1,4 +1,4 @@
-// Copyright 20\d\d The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -6,18 +6,6 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -42,8 +30,9 @@ import (
 var _ eventqueue.Puller = (*dbPuller)(nil)
 
 type dbPuller struct {
-	db    *sql.DB
-	store taskstore.Store
+	db        *sql.DB
+	store     taskstore.Store
+	startFrom string
 }
 
 func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor eventqueue.PullCursor) (*eventqueue.PullResponse, error) {
@@ -54,22 +43,15 @@ func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor event
 	)
 
 	if cursor == "" {
-		rows, err = p.db.QueryContext(ctx, `
-			SELECT event_json, task_version, id
-			FROM task_event
-			WHERE task_id = ?
-			ORDER BY id ASC
-			LIMIT 10
-		`, taskID)
-	} else {
-		rows, err = p.db.QueryContext(ctx, `
-			SELECT event_json, task_version, id
-			FROM task_event
-			WHERE task_id = ? AND id > ?
-			ORDER BY id ASC
-			LIMIT 10
-		`, taskID, cursor)
+		cursor = p.startFrom
 	}
+	rows, err = p.db.QueryContext(ctx, `
+		SELECT event_json, task_version, id
+		FROM task_event
+		WHERE task_id = ? AND id > ?
+		ORDER BY id ASC
+		LIMIT 10
+	`, taskID, cursor)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query events: %w", err)
 	}
@@ -91,6 +73,9 @@ func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor event
 		messages = append(messages, &msg)
 		nextCursor = id
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to query events: %w", err)
+	}
 	return &eventqueue.PullResponse{
 		Messages: messages,
 		Cursor:   nextCursor,
@@ -101,8 +86,8 @@ func (p *dbPuller) Close(ctx context.Context) error {
 	return nil
 }
 
-func newDBPuller(db *sql.DB, store taskstore.Store) *dbPuller {
-	return &dbPuller{db: db, store: store}
+func newDBPuller(db *sql.DB, store taskstore.Store, startFrom string) *dbPuller {
+	return &dbPuller{db: db, store: store, startFrom: startFrom}
 }
 
 func newPullQueueManager(db *sql.DB, store taskstore.Store) eventqueue.Manager {
@@ -115,6 +100,14 @@ func newPullQueueManager(db *sql.DB, store taskstore.Store) eventqueue.Manager {
 
 func newPullerProvider(db *sql.DB, store taskstore.Store) eventqueue.PullerProvider {
 	return func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Puller, error) {
-		return newDBPuller(db, store), nil
+		var startFrom sql.NullString
+		if err := db.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(id), "")
+			FROM task_event
+			WHERE task_id = ?
+		`, taskID).Scan(&startFrom); err != nil {
+			return nil, fmt.Errorf("failed to query task: %w", err)
+		}
+		return newDBPuller(db, store, startFrom.String), nil
 	}
 }
