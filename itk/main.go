@@ -25,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	a2agrpcv0 "github.com/a2aproject/a2a-go/v2/a2agrpc/v0"
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -197,6 +198,7 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 	// 4. Create client using a factory
 	var factory *a2aclient.Factory
 	clientOpts := []a2aclient.FactoryOption{
+		a2agrpcv0.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		a2agrpc.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		a2av0.WithJSONRPCTransport(a2av0.JSONRPCTransportConfig{}),
 		a2av0.WithRESTTransport(a2av0.RESTTransportConfig{}),
@@ -486,6 +488,11 @@ func run() error {
 				ProtocolBinding: a2a.TransportProtocolGRPC,
 				ProtocolVersion: a2a.Version,
 			},
+			{
+				URL:             fmt.Sprintf("127.0.0.1:%d", *grpcPort),
+				ProtocolBinding: a2a.TransportProtocolGRPC,
+				ProtocolVersion: a2av0.Version,
+			},
 		},
 	}
 
@@ -534,6 +541,7 @@ func run() error {
 		grpc.UnaryInterceptor(unaryLoggingInterceptor(logger)),
 		grpc.StreamInterceptor(streamLoggingInterceptor(logger)),
 	)
+	a2agrpcv0.NewHandler(requestHandler).RegisterWith(grpcServer)
 	a2agrpc.NewHandler(requestHandler).RegisterWith(grpcServer)
 	g.Go(func() error {
 		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *grpcPort))
