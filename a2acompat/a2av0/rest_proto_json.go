@@ -235,13 +235,6 @@ func marshalRESTTask(task *a2a.Task) ([]byte, error) {
 	return json.Marshal(taskToWire(task))
 }
 
-func marshalRESTMessage(msg *a2a.Message) ([]byte, error) {
-	if msg == nil {
-		return json.Marshal(map[string]any{})
-	}
-	return json.Marshal(messageToWire(msg))
-}
-
 // marshalRESTSendMessageResult encodes either a Task or a Message as the
 // on-message-send response body, wrapped in a SendMessageResponse envelope
 // (either {"message": Message} or {"task": Task}).
@@ -604,8 +597,14 @@ func taskPushNotificationConfigToWire(pc *a2a.PushConfig) map[string]any {
 
 // ---- core decoders ------------------------------------------------------
 
+// isJSONNull reports whether raw is empty or represents the JSON literal `null`
+// (with any surrounding whitespace).
+func isJSONNull(raw json.RawMessage) bool {
+	return len(raw) == 0 || strings.TrimSpace(string(raw)) == "null"
+}
+
 func unmarshalMessage(raw json.RawMessage) (*a2a.Message, error) {
-	if len(raw) == 0 || string(raw) == "null" {
+	if isJSONNull(raw) {
 		return nil, nil
 	}
 	var wire struct {
@@ -656,7 +655,7 @@ func unmarshalPart(raw json.RawMessage) (*a2a.Part, error) {
 	switch {
 	case wire.Text != nil:
 		part.Content = a2a.Text(*wire.Text)
-	case len(wire.File) > 0 && string(wire.File) != "null":
+	case !isJSONNull(wire.File):
 		var f struct {
 			FileWithURI   string `json:"fileWithUri"`
 			FileWithBytes string `json:"fileWithBytes"`
@@ -683,7 +682,7 @@ func unmarshalPart(raw json.RawMessage) (*a2a.Part, error) {
 			}
 			part.Content = a2a.Raw(inner)
 		}
-	case len(wire.Data) > 0 && string(wire.Data) != "null":
+	case !isJSONNull(wire.Data):
 		var d struct {
 			Data any `json:"data"`
 		}
@@ -692,13 +691,13 @@ func unmarshalPart(raw json.RawMessage) (*a2a.Part, error) {
 		}
 		part.Content = a2a.Data{Value: d.Data}
 	default:
-		return nil, fmt.Errorf("Part has no known oneof key")
+		return nil, fmt.Errorf("part has no known oneof key")
 	}
 	return part, nil
 }
 
 func unmarshalTask(raw json.RawMessage) (*a2a.Task, error) {
-	if len(raw) == 0 || string(raw) == "null" {
+	if isJSONNull(raw) {
 		return nil, nil
 	}
 	var wire struct {
@@ -751,7 +750,7 @@ func unmarshalTaskStatus(raw json.RawMessage) (a2a.TaskStatus, error) {
 		return a2a.TaskStatus{}, fmt.Errorf("failed to decode TaskStatus: %w", err)
 	}
 	status := a2a.TaskStatus{State: decodeTaskState(wire.State)}
-	if len(wire.Message) > 0 && string(wire.Message) != "null" {
+	if !isJSONNull(wire.Message) {
 		m, err := unmarshalMessage(wire.Message)
 		if err != nil {
 			return a2a.TaskStatus{}, err
@@ -843,7 +842,7 @@ func unmarshalArtifactUpdate(raw json.RawMessage) (*a2a.TaskArtifactUpdateEvent,
 		LastChunk: wire.LastChunk,
 		Metadata:  wire.Metadata,
 	}
-	if len(wire.Artifact) > 0 && string(wire.Artifact) != "null" {
+	if !isJSONNull(wire.Artifact) {
 		a, err := unmarshalArtifact(wire.Artifact)
 		if err != nil {
 			return nil, err
@@ -870,7 +869,7 @@ func unmarshalSendMessageConfig(raw json.RawMessage) (*a2a.SendMessageConfig, er
 	if wire.Blocking != nil {
 		cfg.ReturnImmediately = !*wire.Blocking
 	}
-	if len(wire.PushNotification) > 0 && string(wire.PushNotification) != "null" {
+	if !isJSONNull(wire.PushNotification) {
 		pc, err := unmarshalPushNotificationConfig(wire.PushNotification)
 		if err != nil {
 			return nil, err
