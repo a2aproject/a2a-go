@@ -41,26 +41,28 @@ type restCompatHandler struct {
 
 // NewRESTHandler creates an [http.Handler] that serves A2A-protocol over HTTP+JSON v0.3.
 //
-// It exposes the same URL routes as the v1.0 REST handler but accepts and returns
-// v0.3-compatible JSON payloads. This allows v0.3 clients (e.g. Python ADK Agent Engine
-// deployments) to communicate with a v1.0 Go server.
+// It exposes the A2A v0.3 REST routes (mounted under the "/v1" path prefix
+// per the v0.3 spec) and accepts and returns v0.3-compatible JSON payloads.
+// This allows v0.3 clients (e.g. Python ADK Agent Engine deployments) to
+// communicate with a v1.0 Go server.
 func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOption) http.Handler {
 	h := &restCompatHandler{handler: handler, cfg: &a2asrv.TransportConfig{}}
 	for _, opt := range opts {
 		opt(h.cfg)
 	}
 
+	paths := rest.NewPathBuilder(RESTPathPrefix)
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage)
-	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage)
-	mux.HandleFunc("GET "+rest.MakeGetTaskPath("{id}"), h.handleGetTask)
-	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks)
-	mux.HandleFunc("POST /tasks/{idAndAction}", h.handlePOSTTasks)
-	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), h.handleCreateTaskPushConfig)
-	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), h.handleGetTaskPushConfig)
-	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), h.handleListTaskPushConfigs)
-	mux.HandleFunc("DELETE "+rest.MakeDeletePushConfigPath("{id}", "{configId}"), h.handleDeleteTaskPushConfig)
-	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
+	mux.HandleFunc("POST "+paths.SendMessage(), h.handleSendMessage)
+	mux.HandleFunc("POST "+paths.StreamMessage(), h.handleStreamMessage)
+	mux.HandleFunc("GET "+paths.GetTask("{id}"), h.handleGetTask)
+	mux.HandleFunc("GET "+paths.ListTasks(), h.handleListTasks)
+	mux.HandleFunc("POST "+paths.PostTasksActionRoute(), h.handlePOSTTasks)
+	mux.HandleFunc("POST "+paths.CreatePushConfig("{id}"), h.handleCreateTaskPushConfig)
+	mux.HandleFunc("GET "+paths.GetPushConfig("{id}", "{configId}"), h.handleGetTaskPushConfig)
+	mux.HandleFunc("GET "+paths.ListPushConfigs("{id}"), h.handleListTaskPushConfigs)
+	mux.HandleFunc("DELETE "+paths.DeletePushConfig("{id}", "{configId}"), h.handleDeleteTaskPushConfig)
+	mux.HandleFunc("GET "+paths.GetExtendedAgentCard(), h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")

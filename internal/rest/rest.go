@@ -30,59 +30,120 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
-// MakeListTasksPath returns the REST path for listing tasks.
-func MakeListTasksPath() string {
-	return "/tasks"
+// PathBuilder constructs REST paths for A2A endpoints, optionally rooted
+// under a version prefix. The zero value builds v1.0 paths (no prefix); the
+// v0.3 compat binding uses NewPathBuilder("/v1") to prepend "/v1" to every
+// path, matching the A2A v0.3 spec.
+type PathBuilder struct {
+	prefix string
 }
+
+// NewPathBuilder returns a [PathBuilder] that prepends prefix to every path.
+// Pass an empty string for v1.0 (default) paths.
+func NewPathBuilder(prefix string) PathBuilder {
+	return PathBuilder{prefix: prefix}
+}
+
+// ListTasks returns the REST path for listing tasks.
+func (p PathBuilder) ListTasks() string {
+	return p.prefix + "/tasks"
+}
+
+// SendMessage returns the REST path for sending a message.
+func (p PathBuilder) SendMessage() string {
+	return p.prefix + "/message:send"
+}
+
+// StreamMessage returns the REST path for streaming messages.
+func (p PathBuilder) StreamMessage() string {
+	return p.prefix + "/message:stream"
+}
+
+// GetExtendedAgentCard returns the REST path for getting an extended agent card.
+func (p PathBuilder) GetExtendedAgentCard() string {
+	return p.prefix + "/extendedAgentCard"
+}
+
+// GetTask returns the REST path for getting a specific task.
+func (p PathBuilder) GetTask(taskID string) string {
+	return p.prefix + "/tasks/" + taskID
+}
+
+// CancelTask returns the REST path for cancelling a task.
+func (p PathBuilder) CancelTask(taskID string) string {
+	return p.prefix + "/tasks/" + taskID + ":cancel"
+}
+
+// SubscribeTask returns the REST path for subscribing to task updates.
+func (p PathBuilder) SubscribeTask(taskID string) string {
+	return p.prefix + "/tasks/" + taskID + ":subscribe"
+}
+
+// CreatePushConfig returns the REST path for creating a push notification config for a task.
+func (p PathBuilder) CreatePushConfig(taskID string) string {
+	return p.prefix + "/tasks/" + taskID + "/pushNotificationConfigs"
+}
+
+// GetPushConfig returns the REST path for getting a specific push notification config for a task.
+func (p PathBuilder) GetPushConfig(taskID, configID string) string {
+	return p.prefix + "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+}
+
+// ListPushConfigs returns the REST path for listing push notification configs for a task.
+func (p PathBuilder) ListPushConfigs(taskID string) string {
+	return p.prefix + "/tasks/" + taskID + "/pushNotificationConfigs"
+}
+
+// DeletePushConfig returns the REST path for deleting a push notification config for a task.
+func (p PathBuilder) DeletePushConfig(taskID, configID string) string {
+	return p.prefix + "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+}
+
+// PostTasksActionRoute returns the mux route pattern for handling any
+// POST /tasks/{id}:action verb (e.g. :cancel, :subscribe).
+func (p PathBuilder) PostTasksActionRoute() string {
+	return p.prefix + "/tasks/{idAndAction}"
+}
+
+// defaultBuilder is the v1.0 (no prefix) path builder used by the package-level
+// helpers below. They exist for backwards compatibility with the v1.0 handlers.
+var defaultBuilder = PathBuilder{}
+
+// MakeListTasksPath returns the REST path for listing tasks.
+func MakeListTasksPath() string { return defaultBuilder.ListTasks() }
 
 // MakeSendMessagePath returns the REST path for sending a message.
-func MakeSendMessagePath() string {
-	return "/message:send"
-}
+func MakeSendMessagePath() string { return defaultBuilder.SendMessage() }
 
 // MakeStreamMessagePath returns the REST path for streaming messages.
-func MakeStreamMessagePath() string {
-	return "/message:stream"
-}
+func MakeStreamMessagePath() string { return defaultBuilder.StreamMessage() }
 
 // MakeGetExtendedAgentCardPath returns the REST path for getting an extended agent card.
-func MakeGetExtendedAgentCardPath() string {
-	return "/extendedAgentCard"
-}
+func MakeGetExtendedAgentCardPath() string { return defaultBuilder.GetExtendedAgentCard() }
 
 // MakeGetTaskPath returns the REST path for getting a specific task.
-func MakeGetTaskPath(taskID string) string {
-	return "/tasks/" + taskID
-}
+func MakeGetTaskPath(taskID string) string { return defaultBuilder.GetTask(taskID) }
 
 // MakeCancelTaskPath returns the REST path for cancelling a task.
-func MakeCancelTaskPath(taskID string) string {
-	return "/tasks/" + taskID + ":cancel"
-}
+func MakeCancelTaskPath(taskID string) string { return defaultBuilder.CancelTask(taskID) }
 
 // MakeSubscribeTaskPath returns the REST path for subscribing to task updates.
-func MakeSubscribeTaskPath(taskID string) string {
-	return "/tasks/" + taskID + ":subscribe"
-}
+func MakeSubscribeTaskPath(taskID string) string { return defaultBuilder.SubscribeTask(taskID) }
 
 // MakeCreatePushConfigPath returns the REST path for creating a push notification config for a task.
-func MakeCreatePushConfigPath(taskID string) string {
-	return "/tasks/" + taskID + "/pushNotificationConfigs"
-}
+func MakeCreatePushConfigPath(taskID string) string { return defaultBuilder.CreatePushConfig(taskID) }
 
 // MakeGetPushConfigPath returns the REST path for getting a specific push notification config for a task.
 func MakeGetPushConfigPath(taskID, configID string) string {
-	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+	return defaultBuilder.GetPushConfig(taskID, configID)
 }
 
 // MakeListPushConfigsPath returns the REST path for listing push notification configs for a task.
-func MakeListPushConfigsPath(taskID string) string {
-	return "/tasks/" + taskID + "/pushNotificationConfigs"
-}
+func MakeListPushConfigsPath(taskID string) string { return defaultBuilder.ListPushConfigs(taskID) }
 
 // MakeDeletePushConfigPath returns the REST path for deleting a push notification config for a task.
 func MakeDeletePushConfigPath(taskID, configID string) string {
-	return "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
+	return defaultBuilder.DeletePushConfig(taskID, configID)
 }
 
 // ErrorInfo represents a google.rpc.ErrorInfo message in the details array.

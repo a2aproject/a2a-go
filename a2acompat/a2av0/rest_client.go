@@ -74,12 +74,13 @@ func NewRESTTransport(cfg RESTTransportConfig) (a2aclient.Transport, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 3 * time.Minute}
 	}
-	return &restCompatTransport{base: u, httpClient: client}, nil
+	return &restCompatTransport{base: u, httpClient: client, paths: rest.NewPathBuilder(RESTPathPrefix)}, nil
 }
 
 type restCompatTransport struct {
 	base       *url.URL
 	httpClient *http.Client
+	paths      rest.PathBuilder
 }
 
 type compatRestReq struct {
@@ -217,7 +218,7 @@ func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.
 	compatReq := FromV1SendMessageRequest(req)
 	resp, err := t.sendRequest(ctx, &compatRestReq{
 		method:  "POST",
-		path:    rest.MakeSendMessagePath(),
+		path:    t.paths.SendMessage(),
 		params:  params,
 		payload: compatReq,
 	})
@@ -261,7 +262,7 @@ func (t *restCompatTransport) SendStreamingMessage(ctx context.Context, params a
 	compatReq := FromV1SendMessageRequest(req)
 	return t.doStreamingRequest(ctx, &compatRestReq{
 		method:  "POST",
-		path:    rest.MakeStreamMessagePath(),
+		path:    t.paths.StreamMessage(),
 		params:  params,
 		payload: compatReq,
 	})
@@ -276,7 +277,7 @@ func (t *restCompatTransport) GetTask(ctx context.Context, params a2aclient.Serv
 	var compatTask a2alegacy.Task
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetTaskPath(string(req.ID)),
+		path:   t.paths.GetTask(string(req.ID)),
 		query:  q,
 		params: params,
 	}, &compatTask); err != nil {
@@ -318,7 +319,7 @@ func (t *restCompatTransport) ListTasks(ctx context.Context, params a2aclient.Se
 	var compatResp a2alegacy.ListTasksResponse
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeListTasksPath(),
+		path:   t.paths.ListTasks(),
 		query:  q,
 		params: params,
 	}, &compatResp); err != nil {
@@ -336,7 +337,7 @@ func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.S
 	var compatTask a2alegacy.Task
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "POST",
-		path:   rest.MakeCancelTaskPath(string(req.ID)),
+		path:   t.paths.CancelTask(string(req.ID)),
 		params: params,
 	}, &compatTask); err != nil {
 		return nil, err
@@ -352,7 +353,7 @@ func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.S
 func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return t.doStreamingRequest(ctx, &compatRestReq{
 		method: "POST",
-		path:   rest.MakeSubscribeTaskPath(string(req.ID)),
+		path:   t.paths.SubscribeTask(string(req.ID)),
 		params: params,
 	})
 }
@@ -362,7 +363,7 @@ func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2ac
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetPushConfigPath(string(req.TaskID), req.ID),
+		path:   t.paths.GetPushConfig(string(req.TaskID), req.ID),
 		params: params,
 	}, &compatConfig); err != nil {
 		return nil, err
@@ -376,7 +377,7 @@ func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2
 	var compatConfigs []*a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeListPushConfigsPath(string(req.TaskID)),
+		path:   t.paths.ListPushConfigs(string(req.TaskID)),
 		params: params,
 	}, &compatConfigs); err != nil {
 		return nil, err
@@ -395,7 +396,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 	var compatConfig a2alegacy.TaskPushConfig
 	if err := t.doRequest(ctx, &compatRestReq{
 		method:  "POST",
-		path:    rest.MakeCreatePushConfigPath(string(req.TaskID)),
+		path:    t.paths.CreatePushConfig(string(req.TaskID)),
 		params:  params,
 		payload: compatPushConfig,
 	}, &compatConfig); err != nil {
@@ -409,7 +410,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 func (t *restCompatTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
 	return t.doRequest(ctx, &compatRestReq{
 		method: "DELETE",
-		path:   rest.MakeDeletePushConfigPath(string(req.TaskID), req.ID),
+		path:   t.paths.DeletePushConfig(string(req.TaskID), req.ID),
 		params: params,
 	}, nil)
 }
@@ -419,7 +420,7 @@ func (t *restCompatTransport) GetExtendedAgentCard(ctx context.Context, params a
 	var rawCard json.RawMessage
 	if err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetExtendedAgentCardPath(),
+		path:   t.paths.GetExtendedAgentCard(),
 		params: params,
 	}, &rawCard); err != nil {
 		return nil, err

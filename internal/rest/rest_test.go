@@ -31,6 +31,64 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+func TestPathBuilder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		builder PathBuilder
+		got     string
+		want    string
+	}{
+		{"v1 ListTasks", PathBuilder{}, PathBuilder{}.ListTasks(), "/tasks"},
+		{"v1 SendMessage", PathBuilder{}, PathBuilder{}.SendMessage(), "/message:send"},
+		{"v1 StreamMessage", PathBuilder{}, PathBuilder{}.StreamMessage(), "/message:stream"},
+		{"v1 GetTask", PathBuilder{}, PathBuilder{}.GetTask("t1"), "/tasks/t1"},
+		{"v1 CancelTask", PathBuilder{}, PathBuilder{}.CancelTask("t1"), "/tasks/t1:cancel"},
+		{"v1 SubscribeTask", PathBuilder{}, PathBuilder{}.SubscribeTask("t1"), "/tasks/t1:subscribe"},
+		{"v1 CreatePushConfig", PathBuilder{}, PathBuilder{}.CreatePushConfig("t1"), "/tasks/t1/pushNotificationConfigs"},
+		{"v1 GetPushConfig", PathBuilder{}, PathBuilder{}.GetPushConfig("t1", "c1"), "/tasks/t1/pushNotificationConfigs/c1"},
+		{"v1 ListPushConfigs", PathBuilder{}, PathBuilder{}.ListPushConfigs("t1"), "/tasks/t1/pushNotificationConfigs"},
+		{"v1 DeletePushConfig", PathBuilder{}, PathBuilder{}.DeletePushConfig("t1", "c1"), "/tasks/t1/pushNotificationConfigs/c1"},
+		{"v1 GetExtendedAgentCard", PathBuilder{}, PathBuilder{}.GetExtendedAgentCard(), "/extendedAgentCard"},
+		{"v1 PostTasksActionRoute", PathBuilder{}, PathBuilder{}.PostTasksActionRoute(), "/tasks/{idAndAction}"},
+
+		{"v03 ListTasks", NewPathBuilder("/v1"), NewPathBuilder("/v1").ListTasks(), "/v1/tasks"},
+		{"v03 SendMessage", NewPathBuilder("/v1"), NewPathBuilder("/v1").SendMessage(), "/v1/message:send"},
+		{"v03 StreamMessage", NewPathBuilder("/v1"), NewPathBuilder("/v1").StreamMessage(), "/v1/message:stream"},
+		{"v03 GetTask", NewPathBuilder("/v1"), NewPathBuilder("/v1").GetTask("t1"), "/v1/tasks/t1"},
+		{"v03 CancelTask", NewPathBuilder("/v1"), NewPathBuilder("/v1").CancelTask("t1"), "/v1/tasks/t1:cancel"},
+		{"v03 SubscribeTask", NewPathBuilder("/v1"), NewPathBuilder("/v1").SubscribeTask("t1"), "/v1/tasks/t1:subscribe"},
+		{"v03 CreatePushConfig", NewPathBuilder("/v1"), NewPathBuilder("/v1").CreatePushConfig("t1"), "/v1/tasks/t1/pushNotificationConfigs"},
+		{"v03 GetPushConfig", NewPathBuilder("/v1"), NewPathBuilder("/v1").GetPushConfig("t1", "c1"), "/v1/tasks/t1/pushNotificationConfigs/c1"},
+		{"v03 ListPushConfigs", NewPathBuilder("/v1"), NewPathBuilder("/v1").ListPushConfigs("t1"), "/v1/tasks/t1/pushNotificationConfigs"},
+		{"v03 DeletePushConfig", NewPathBuilder("/v1"), NewPathBuilder("/v1").DeletePushConfig("t1", "c1"), "/v1/tasks/t1/pushNotificationConfigs/c1"},
+		{"v03 GetExtendedAgentCard", NewPathBuilder("/v1"), NewPathBuilder("/v1").GetExtendedAgentCard(), "/v1/extendedAgentCard"},
+		{"v03 PostTasksActionRoute", NewPathBuilder("/v1"), NewPathBuilder("/v1").PostTasksActionRoute(), "/v1/tasks/{idAndAction}"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if tc.got != tc.want {
+				t.Fatalf("PathBuilder path = %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+// v03PathPrefix is duplicated from a2acompat/a2av0 to avoid an import cycle;
+// this ensures the compat client/server default matches the A2A v0.3 REST spec.
+const v03PathPrefix = "/v1"
+
+func TestPathBuilder_V03SendMessagePathMatchesSpec(t *testing.T) {
+	t.Parallel()
+	got := NewPathBuilder(v03PathPrefix).SendMessage()
+	want := "/v1/message:send"
+	if got != want {
+		t.Fatalf("v0.3 SendMessage path = %q, want %q", got, want)
+	}
+}
+
 func TestRESTError_RoundTrip(t *testing.T) {
 	t.Parallel()
 

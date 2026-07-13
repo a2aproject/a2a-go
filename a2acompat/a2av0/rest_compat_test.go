@@ -38,9 +38,9 @@ func TestREST_ServerSendMessage(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	// v0.3 REST uses snake_case JSON keys
+	// v0.3 REST uses snake_case JSON keys and mounts routes under /v1
 	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
-	req, _ := http.NewRequest("POST", server.URL+"/message:send", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", server.URL+"/v1/message:send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -74,7 +74,7 @@ func TestREST_ServerGetTask(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	req, _ := http.NewRequest("GET", server.URL+"/tasks/task-123", nil)
+	req, _ := http.NewRequest("GET", server.URL+"/v1/tasks/task-123", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -105,9 +105,9 @@ func TestREST_ServerExtensionsFrom(t *testing.T) {
 	defer server.Close()
 
 	legacyKey := "x-" + strings.ToLower(a2a.SvcParamExtensions)
-	// v0.3 REST uses snake_case JSON keys
+	// v0.3 REST uses snake_case JSON keys and mounts routes under /v1
 	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
-	req, _ := http.NewRequest("POST", server.URL+"/message:send", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", server.URL+"/v1/message:send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(legacyKey, "uri1")
 
@@ -132,9 +132,9 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	// v0.3 REST uses snake_case JSON keys
+	// v0.3 REST uses snake_case JSON keys and mounts routes under /v1
 	body := `{"message":{"message_id":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}`
-	req, _ := http.NewRequest("POST", server.URL+"/message:stream", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", server.URL+"/v1/message:stream", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
@@ -190,7 +190,9 @@ func TestREST_ClientSendMessage(t *testing.T) {
 			a2alegacy.TextPart{Text: "hi from v0.3"},
 		},
 	}
+	var gotPath string
 	fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		gotPath = req.URL.Path
 		rw.Header().Set("Content-Type", "application/json")
 		// v0.3 REST server responds with snake_case JSON
 		data, _ := marshalSnakeCase(legacyMsg)
@@ -211,6 +213,9 @@ func TestREST_ClientSendMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
+	if gotPath != "/v1/message:send" {
+		t.Fatalf("client sent to %q, want %q", gotPath, "/v1/message:send")
+	}
 	msg, ok := result.(*a2a.Message)
 	if !ok {
 		t.Fatalf("expected *a2a.Message, got %T", result)
@@ -225,7 +230,9 @@ func TestREST_ClientGetTask(t *testing.T) {
 		ID:     "task-456",
 		Status: a2alegacy.TaskStatus{State: a2alegacy.TaskStateCompleted},
 	}
+	var gotPath string
 	fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		gotPath = req.URL.Path
 		rw.Header().Set("Content-Type", "application/json")
 		// v0.3 REST server responds with snake_case JSON
 		data, _ := marshalSnakeCase(legacyTask)
@@ -243,6 +250,9 @@ func TestREST_ClientGetTask(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("GetTask failed: %v", err)
+	}
+	if gotPath != "/v1/tasks/task-456" {
+		t.Fatalf("client sent to %q, want %q", gotPath, "/v1/tasks/task-456")
 	}
 	if task.ID != "task-456" {
 		t.Errorf("expected task id 'task-456', got %q", task.ID)
