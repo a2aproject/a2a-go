@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
@@ -42,9 +41,9 @@ type restCompatHandler struct {
 // NewRESTHandler creates an [http.Handler] that serves A2A-protocol over HTTP+JSON v0.3.
 //
 // It exposes the A2A v0.3 REST routes (mounted under the "/v1" path prefix
-// per the v0.3 spec) and accepts and returns v0.3-compatible JSON payloads.
-// This allows v0.3 clients (e.g. Python ADK Agent Engine deployments) to
-// communicate with a v1.0 Go server.
+// per the v0.3 spec) and accepts and returns proto-JSON payloads of the
+// google.a2a.v1 proto. This allows v0.3 clients (e.g. Python ADK Agent Engine
+// deployments) to communicate with a v1.0 Go server.
 func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOption) http.Handler {
 	h := &restCompatHandler{handler: handler, cfg: &a2asrv.TransportConfig{}}
 	for _, opt := range opts {
@@ -55,14 +54,14 @@ func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOptio
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+paths.SendMessage(), h.handleSendMessage)
 	mux.HandleFunc("POST "+paths.StreamMessage(), h.handleStreamMessage)
-	mux.HandleFunc("GET "+paths.GetTask("{id}"), h.handleGetTask)
 	mux.HandleFunc("GET "+paths.ListTasks(), h.handleListTasks)
+	mux.HandleFunc("GET "+paths.PostTasksActionRoute(), h.handleGETTasks)
 	mux.HandleFunc("POST "+paths.PostTasksActionRoute(), h.handlePOSTTasks)
 	mux.HandleFunc("POST "+paths.CreatePushConfig("{id}"), h.handleCreateTaskPushConfig)
-	mux.HandleFunc("GET "+paths.GetPushConfig("{id}", "{configId}"), h.handleGetTaskPushConfig)
 	mux.HandleFunc("GET "+paths.ListPushConfigs("{id}"), h.handleListTaskPushConfigs)
+	mux.HandleFunc("GET "+paths.GetPushConfig("{id}", "{configId}"), h.handleGetTaskPushConfig)
 	mux.HandleFunc("DELETE "+paths.DeletePushConfig("{id}", "{configId}"), h.handleDeleteTaskPushConfig)
-	mux.HandleFunc("GET "+paths.GetExtendedAgentCard(), h.handleGetExtendedAgentCard)
+	mux.HandleFunc("GET "+RESTPathPrefix+"/card", h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
@@ -73,12 +72,12 @@ func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOptio
 
 func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	var params a2alegacy.MessageSendParams
-	if err := readSnakeCaseBody(req.Body, &params); err != nil {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
-	v1req, err := ToV1SendMessageRequest(&params)
+	v1req, err := unmarshalRESTSendMessageRequest(body)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
@@ -88,22 +87,22 @@ func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	compatEvent, err := FromV1Event(result)
+	data, err := marshalRESTSendMessageResult(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	writeSnakeCaseJSON(ctx, rw, compatEvent)
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	var params a2alegacy.MessageSendParams
-	if err := readSnakeCaseBody(req.Body, &params); err != nil {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
-	v1req, err := ToV1SendMessageRequest(&params)
+	v1req, err := unmarshalRESTSendMessageRequest(body)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
@@ -111,86 +110,32 @@ func (h *restCompatHandler) handleStreamMessage(rw http.ResponseWriter, req *htt
 	h.handleStreamingRequest(h.handler.SendStreamingMessage(ctx, v1req), rw, req)
 }
 
-func (h *restCompatHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
+func (h *restCompatHandler) handleGetTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	taskID := req.PathValue("id")
 	if taskID == "" {
 		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-	query := &a2alegacy.TaskQueryParams{ID: a2alegacy.TaskID(taskID)}
+	getTaskReq := &a2a.GetTaskRequest{ID: a2a.TaskID(taskID)}
 	if raw := req.URL.Query().Get("historyLength"); raw != "" {
 		val, err := strconv.Atoi(raw)
 		if err != nil {
 			writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
 			return
 		}
-		query.HistoryLength = &val
+		getTaskReq.HistoryLength = &val
 	}
-	result, err := h.handler.GetTask(ctx, ToV1GetTaskRequest(query))
+	result, err := h.handler.GetTask(ctx, getTaskReq)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	writeSnakeCaseJSON(ctx, rw, FromV1Task(result))
-}
-
-func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	qv := req.URL.Query()
-	legacyReq := &a2alegacy.ListTasksRequest{}
-	var parseErrors []error
-	parse := func(key string, target any) {
-		val := qv.Get(key)
-		if val == "" {
-			return
-		}
-		switch t := target.(type) {
-		case *string:
-			*t = val
-		case *a2alegacy.TaskState:
-			*t = a2alegacy.TaskState(val)
-		case *int:
-			v, err := strconv.Atoi(val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = v
-		case *bool:
-			v, err := strconv.ParseBool(val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = v
-		case **time.Time:
-			parsed, err := time.Parse(time.RFC3339, val)
-			if err != nil {
-				parseErrors = append(parseErrors, fmt.Errorf("invalid %s: %w", key, err))
-				return
-			}
-			*t = &parsed
-		}
-	}
-	parse("contextId", &legacyReq.ContextID)
-	parse("status", &legacyReq.Status)
-	parse("pageSize", &legacyReq.PageSize)
-	parse("pageToken", &legacyReq.PageToken)
-	parse("historyLength", &legacyReq.HistoryLength)
-	parse("lastUpdatedAfter", &legacyReq.LastUpdatedAfter)
-	parse("includeArtifacts", &legacyReq.IncludeArtifacts)
-
-	if len(parseErrors) > 0 {
-		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
-		return
-	}
-	result, err := h.handler.ListTasks(ctx, ToV1ListTasksRequest(legacyReq))
+	data, err := marshalRESTTask(result)
 	if err != nil {
-		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	writeSnakeCaseJSON(ctx, rw, FromV1ListTasksResponse(result))
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Request) {
@@ -202,22 +147,38 @@ func (h *restCompatHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Re
 	}
 	if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok {
 		h.handleCancelTask(before, rw, req)
-	} else if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
-		subscribeReq := ToV1SubscribeToTaskRequest(&a2alegacy.TaskIDParams{ID: a2alegacy.TaskID(before)})
-		h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, subscribeReq), rw, req)
-	} else {
-		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+		return
 	}
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+		h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(before)}), rw, req)
+		return
+	}
+	writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+}
+
+func (h *restCompatHandler) handleGETTasks(rw http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	idAndAction := req.PathValue("idAndAction")
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+		h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(before)}), rw, req)
+		return
+	}
+	h.handleGetTask(idAndAction, rw, req)
 }
 
 func (h *restCompatHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	result, err := h.handler.CancelTask(ctx, ToV1CancelTaskRequest(&a2alegacy.TaskIDParams{ID: a2alegacy.TaskID(taskID)}))
+	result, err := h.handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: a2a.TaskID(taskID)})
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	writeSnakeCaseJSON(ctx, rw, FromV1Task(result))
+	data, err := marshalRESTTask(result)
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
+		return
+	}
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, error], rw http.ResponseWriter, req *http.Request) {
@@ -259,12 +220,7 @@ func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.E
 				handleError(err)
 				return
 			}
-			compatEvent, err := FromV1Event(event)
-			if err != nil {
-				handleError(err)
-				return
-			}
-			data, jErr := marshalSnakeCase(compatEvent)
+			data, jErr := marshalRESTStreamEvent(event)
 			if jErr != nil {
 				handleError(jErr)
 				return
@@ -326,42 +282,81 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-	var config a2alegacy.PushConfig
-	if err := readSnakeCaseBody(req.Body, &config); err != nil {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
-	v1req := ToV1PushConfig(&a2alegacy.TaskPushConfig{
-		TaskID: a2alegacy.TaskID(taskID),
-		Config: config,
-	})
+	v1req, err := unmarshalRESTCreatePushConfigRequest(body, a2a.TaskID(taskID))
+	if err != nil {
+		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
+		return
+	}
 	result, err := h.handler.CreateTaskPushConfig(ctx, v1req)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfig := FromV1PushConfig(result)
-	writeSnakeCaseJSON(ctx, rw, compatConfig)
-}
-
-func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	taskID := req.PathValue("id")
-	configID := req.PathValue("configId")
-	if taskID == "" || configID == "" {
-		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
-		return
-	}
-	result, err := h.handler.GetTaskPushConfig(ctx, ToV1GetTaskPushConfigRequest(&a2alegacy.GetTaskPushConfigParams{
-		TaskID:   a2alegacy.TaskID(taskID),
-		ConfigID: configID,
-	}))
+	data, err := marshalRESTPushConfigResponse(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfig := FromV1PushConfig(result)
-	writeSnakeCaseJSON(ctx, rw, compatConfig)
+	writeJSON(ctx, rw, data)
+}
+
+func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	q := req.URL.Query()
+	listReq := &a2a.ListTasksRequest{
+		ContextID: q.Get("contextId"),
+		Status:    decodeTaskState(q.Get("status")),
+		PageToken: q.Get("pageToken"),
+	}
+	if v := q.Get("pageSize"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+			return
+		}
+		listReq.PageSize = n
+	}
+	if v := q.Get("historyLength"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+			return
+		}
+		listReq.HistoryLength = &n
+	}
+	if v := q.Get("lastUpdatedAfter"); v != "" {
+		ts, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+			return
+		}
+		listReq.StatusTimestampAfter = &ts
+	}
+	if v := q.Get("includeArtifacts"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+			return
+		}
+		listReq.IncludeArtifacts = b
+	}
+
+	result, err := h.handler.ListTasks(ctx, listReq)
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
+		return
+	}
+	data, err := marshalRESTListTasksResponse(result)
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
+		return
+	}
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *http.Request) {
@@ -371,18 +366,21 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-	result, err := h.handler.ListTaskPushConfigs(ctx, ToV1ListTaskPushConfigRequest(&a2alegacy.ListTaskPushConfigParams{
-		TaskID: a2alegacy.TaskID(taskID),
-	}))
+	result, err := h.handler.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: a2a.TaskID(taskID)})
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	compatConfigs := FromV1PushConfigs(result.Configs)
-	if compatConfigs == nil {
-		compatConfigs = []*a2alegacy.TaskPushConfig{}
+	var configs []*a2a.PushConfig
+	if result != nil {
+		configs = result.Configs
 	}
-	writeSnakeCaseJSON(ctx, rw, compatConfigs)
+	data, err := marshalRESTListPushConfigsResponse(configs)
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
+		return
+	}
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -393,12 +391,38 @@ func (h *restCompatHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
 		return
 	}
-	if err := h.handler.DeleteTaskPushConfig(ctx, ToV1DeleteTaskPushConfigRequest(&a2alegacy.DeleteTaskPushConfigParams{
-		TaskID:   a2alegacy.TaskID(taskID),
-		ConfigID: configID,
-	})); err != nil {
+	if err := h.handler.DeleteTaskPushConfig(ctx, &a2a.DeleteTaskPushConfigRequest{
+		TaskID: a2a.TaskID(taskID),
+		ID:     configID,
+	}); err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
+		return
 	}
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	taskID := req.PathValue("id")
+	configID := req.PathValue("configId")
+	if taskID == "" || configID == "" {
+		writeRESTCompatError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
+		return
+	}
+	result, err := h.handler.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigRequest{
+		TaskID: a2a.TaskID(taskID),
+		ID:     configID,
+	})
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
+		return
+	}
+	data, err := marshalRESTPushConfigResponse(result)
+	if err != nil {
+		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
+		return
+	}
+	writeJSON(ctx, rw, data)
 }
 
 func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *http.Request) {
@@ -408,7 +432,12 @@ func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	writeSnakeCaseJSON(ctx, rw, FromV1AgentCard(result))
+	data, err := json.Marshal(FromV1AgentCard(result))
+	if err != nil {
+		writeRESTCompatError(ctx, rw, fmt.Errorf("failed to marshal agent card: %w", err), a2a.TaskID(""))
+		return
+	}
+	writeJSON(ctx, rw, data)
 }
 
 func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
@@ -420,24 +449,9 @@ func writeRESTCompatError(ctx context.Context, rw http.ResponseWriter, err error
 	}
 }
 
-// writeSnakeCaseJSON marshals v with snake_case keys and writes it to the response.
-func writeSnakeCaseJSON(ctx context.Context, rw http.ResponseWriter, v any) {
-	data, err := marshalSnakeCase(v)
-	if err != nil {
-		writeRESTCompatError(ctx, rw, fmt.Errorf("failed to marshal: %w", err), a2a.TaskID(""))
-		return
-	}
+// writeJSON writes pre-marshaled JSON bytes as a 200 OK response.
+func writeJSON(ctx context.Context, rw http.ResponseWriter, data []byte) {
 	if _, err := rw.Write(data); err != nil {
 		log.Error(ctx, "failed to write response", err)
 	}
-}
-
-// readSnakeCaseBody reads a JSON body with snake_case keys and unmarshals it
-// into v (which has camelCase JSON tags).
-func readSnakeCaseBody(body io.Reader, v any) error {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-	return unmarshalSnakeCase(data, v)
 }
