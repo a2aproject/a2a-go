@@ -16,7 +16,6 @@
 // types (as generated for release/spec-v0 in the a2a-go v0.3 line), tailored
 // for the proto-JSON wire format that other sdks emits and
 // expects for its HTTP+JSON REST binding.
-
 package pbjson
 
 import "time"
@@ -24,6 +23,7 @@ import "time"
 // Role is the role of a Message sender.
 type Role string
 
+// Role enum values as they appear on the wire.
 const (
 	RoleUnspecified Role = "ROLE_UNSPECIFIED"
 	RoleUser        Role = "ROLE_USER"
@@ -37,6 +37,7 @@ const (
 // (American). The compat layer translates between the two.
 type TaskState string
 
+// TaskState enum values as they appear on the wire.
 const (
 	TaskStateUnspecified   TaskState = "TASK_STATE_UNSPECIFIED"
 	TaskStateSubmitted     TaskState = "TASK_STATE_SUBMITTED"
