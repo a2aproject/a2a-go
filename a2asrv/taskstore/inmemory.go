@@ -122,6 +122,11 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 		return TaskVersionMissing, err
 	}
 
+	userName, err := s.config.Authenticator(ctx)
+	if err != nil {
+		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
+	}
+
 	copy, err := utils.DeepCopy(req.Task)
 	if err != nil {
 		return TaskVersionMissing, err
@@ -132,6 +137,10 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 
 	stored := s.tasks[req.Task.ID]
 	if stored == nil {
+		return TaskVersionMissing, a2a.ErrTaskNotFound
+	}
+
+	if stored.user != userName {
 		return TaskVersionMissing, a2a.ErrTaskNotFound
 	}
 
@@ -159,14 +168,12 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 		return nil, a2a.ErrTaskNotFound
 	}
 
-	// Enforce cross-tenant isolation: verify the caller owns this task.
-	// Per A2A spec §13.1, the server MUST NOT reveal the existence of
-	// resources the caller is not authorized to access, so we return
-	// ErrTaskNotFound (not ErrUnauthenticated) on ownership mismatch.
-	// When no authenticator is configured (userName is empty), we skip
-	// the check for backward compatibility with single-tenant deployments.
-	userName, _ := s.config.Authenticator(ctx)
-	if userName != "" && storedTask.user != userName {
+	// Mask ownership mismatch as ErrTaskNotFound per A2A spec §3.3.2
+	userName, err := s.config.Authenticator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("taskstore auth failed: %w", err)
+	}
+	if storedTask.user != userName {
 		return nil, a2a.ErrTaskNotFound
 	}
 
