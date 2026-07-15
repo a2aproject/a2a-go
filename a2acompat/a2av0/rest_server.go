@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbjson"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
@@ -77,7 +78,7 @@ func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
-	v1req, err := unmarshalRESTSendMessageRequest(body)
+	v1req, err := pbjson.FromProtoSendMessageRequest(body)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
@@ -87,7 +88,7 @@ func (h *restCompatHandler) handleSendMessage(rw http.ResponseWriter, req *http.
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	data, err := marshalRESTSendMessageResult(result)
+	data, err := pbjson.ToProtoSendMessageResult(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
@@ -102,7 +103,7 @@ func (h *restCompatHandler) handleStreamMessage(rw http.ResponseWriter, req *htt
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
-	v1req, err := unmarshalRESTSendMessageRequest(body)
+	v1req, err := pbjson.FromProtoSendMessageRequest(body)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
@@ -130,7 +131,7 @@ func (h *restCompatHandler) handleGetTask(taskID string, rw http.ResponseWriter,
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	data, err := marshalRESTTask(result)
+	data, err := pbjson.ToProtoTask(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
@@ -173,7 +174,7 @@ func (h *restCompatHandler) handleCancelTask(taskID string, rw http.ResponseWrit
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	data, err := marshalRESTTask(result)
+	data, err := pbjson.ToProtoTask(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
@@ -220,7 +221,7 @@ func (h *restCompatHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.E
 				handleError(err)
 				return
 			}
-			data, jErr := marshalRESTStreamEvent(event)
+			data, jErr := pbjson.ToProtoStreamEvent(event)
 			if jErr != nil {
 				handleError(jErr)
 				return
@@ -287,7 +288,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
-	v1req, err := unmarshalRESTCreatePushConfigRequest(body, a2a.TaskID(taskID))
+	v1req, err := pbjson.FromProtoCreatePushConfigRequest(body, a2a.TaskID(taskID))
 	if err != nil {
 		writeRESTCompatError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
@@ -297,7 +298,7 @@ func (h *restCompatHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	data, err := marshalRESTPushConfigResponse(result)
+	data, err := pbjson.ToProtoPushConfigResponse(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
@@ -310,7 +311,7 @@ func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Re
 	q := req.URL.Query()
 	listReq := &a2a.ListTasksRequest{
 		ContextID: q.Get("contextId"),
-		Status:    decodeTaskState(q.Get("status")),
+		Status:    pbjson.DecodeTaskState(pbjson.TaskState(q.Get("status"))),
 		PageToken: q.Get("pageToken"),
 	}
 	if v := q.Get("pageSize"); v != "" {
@@ -351,7 +352,7 @@ func (h *restCompatHandler) handleListTasks(rw http.ResponseWriter, req *http.Re
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	data, err := marshalRESTListTasksResponse(result)
+	data, err := pbjson.ToProtoListTasksResponse(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
@@ -375,7 +376,7 @@ func (h *restCompatHandler) handleListTaskPushConfigs(rw http.ResponseWriter, re
 	if result != nil {
 		configs = result.Configs
 	}
-	data, err := marshalRESTListPushConfigsResponse(configs)
+	data, err := pbjson.ToProtoListPushConfigsResponse(configs)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
@@ -417,7 +418,7 @@ func (h *restCompatHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req 
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
-	data, err := marshalRESTPushConfigResponse(result)
+	data, err := pbjson.ToProtoPushConfigResponse(result)
 	if err != nil {
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(taskID))
 		return

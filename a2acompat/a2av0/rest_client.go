@@ -28,6 +28,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbjson"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/log"
@@ -181,7 +182,7 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				yield(nil, restErr)
 				return
 			}
-			event, err := unmarshalRESTStreamEvent(data)
+			event, err := pbjson.FromProtoStreamEvent(data)
 			if err != nil {
 				yield(nil, fmt.Errorf("failed to unmarshal SSE event: %w", err))
 				return
@@ -195,7 +196,7 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 
 // SendMessage implements [a2aclient.Transport].
 func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	body, err := marshalRESTSendMessageRequest(req)
+	body, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal SendMessageRequest: %w", err)
 	}
@@ -208,12 +209,12 @@ func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTSendMessageResponse(data)
+	return pbjson.FromProtoSendMessageResponse(data)
 }
 
 // SendStreamingMessage implements [a2aclient.Transport].
 func (t *restCompatTransport) SendStreamingMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
-	body, err := marshalRESTSendMessageRequest(req)
+	body, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
 		return errorStream(fmt.Errorf("failed to marshal SendMessageRequest: %w", err))
 	}
@@ -240,7 +241,7 @@ func (t *restCompatTransport) GetTask(ctx context.Context, params a2aclient.Serv
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTTask(data)
+	return pbjson.FromProtoTask(data)
 }
 
 // ListTasks implements [a2aclient.Transport].
@@ -250,7 +251,7 @@ func (t *restCompatTransport) ListTasks(ctx context.Context, params a2aclient.Se
 		q.Set("contextId", req.ContextID)
 	}
 	if req.Status != "" {
-		q.Set("status", encodeTaskState(req.Status))
+		q.Set("status", string(pbjson.EncodeTaskState(req.Status)))
 	}
 	if req.PageSize != 0 {
 		q.Set("pageSize", strconv.Itoa(req.PageSize))
@@ -276,7 +277,7 @@ func (t *restCompatTransport) ListTasks(ctx context.Context, params a2aclient.Se
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTListTasksResponse(data)
+	return pbjson.FromProtoListTasksResponse(data)
 }
 
 // CancelTask implements [a2aclient.Transport].
@@ -289,7 +290,7 @@ func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.S
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTTask(data)
+	return pbjson.FromProtoTask(data)
 }
 
 // SubscribeToTask implements [a2aclient.Transport].
@@ -311,7 +312,7 @@ func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2ac
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTPushConfigResponse(data)
+	return pbjson.FromProtoPushConfigResponse(data)
 }
 
 // ListTaskPushConfigs implements [a2aclient.Transport].
@@ -332,12 +333,12 @@ func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTListPushConfigsResponse(data, req.TaskID)
+	return pbjson.FromProtoListPushConfigsResponse(data, req.TaskID)
 }
 
 // CreateTaskPushConfig implements [a2aclient.Transport].
 func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	body, err := marshalRESTCreatePushConfigRequest(req)
+	body, err := pbjson.ToProtoCreatePushConfigRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal CreateTaskPushNotificationConfigRequest: %w", err)
 	}
@@ -350,7 +351,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRESTPushConfigResponse(data)
+	return pbjson.FromProtoPushConfigResponse(data)
 }
 
 // DeleteTaskPushConfig implements [a2aclient.Transport].

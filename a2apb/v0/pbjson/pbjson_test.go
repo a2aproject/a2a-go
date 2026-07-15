@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2av0
+package pbjson_test
 
 import (
 	"encoding/json"
@@ -21,12 +21,13 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbjson"
 	"github.com/google/go-cmp/cmp"
 )
 
 // The tests below pin the wire shape of the A2A v0.3 REST binding.
-// That binding is proto-JSON of google.golang.org/a2a/v1 with the
-// following important quirks:
+// That binding is proto-JSON of google.a2a.v1 with the following important
+// quirks:
 //
 //   - SendMessageRequest.request is JSON-named "message"
 //   - SendMessageResponse.msg and StreamResponse.msg are JSON-named "message"
@@ -39,16 +40,16 @@ import (
 //   - CreateTaskPushNotificationConfig body wraps under
 //     TaskPushNotificationConfig{ name, pushNotificationConfig }
 
-func TestRESTProtoJSON_MarshalSendMessageRequest_TextPart(t *testing.T) {
+func TestToProtoSendMessageRequest_TextPart(t *testing.T) {
 	t.Parallel()
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello"))
 	msg.ID = "m1"
 	msg.ContextID = "c1"
 	req := &a2a.SendMessageRequest{Message: msg}
 
-	got, err := marshalRESTSendMessageRequest(req)
+	got, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
-		t.Fatalf("marshalRESTSendMessageRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
 	}
 
 	want := map[string]any{
@@ -64,7 +65,7 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_TextPart(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalSendMessageRequest_FilePart(t *testing.T) {
+func TestToProtoSendMessageRequest_FilePart(t *testing.T) {
 	t.Parallel()
 
 	filePart := a2a.NewFileURLPart(a2a.URL("https://example.com/f.png"), "image/png")
@@ -74,9 +75,9 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_FilePart(t *testing.T) {
 	msg.ID = "m1"
 	req := &a2a.SendMessageRequest{Message: msg}
 
-	got, err := marshalRESTSendMessageRequest(req)
+	got, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
-		t.Fatalf("marshalRESTSendMessageRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
 	}
 
 	want := map[string]any{
@@ -97,7 +98,7 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_FilePart(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalSendMessageRequest_RawFilePart(t *testing.T) {
+func TestToProtoSendMessageRequest_RawFilePart(t *testing.T) {
 	t.Parallel()
 
 	rawPart := a2a.NewRawPart([]byte("abc"))
@@ -108,15 +109,15 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_RawFilePart(t *testing.T) {
 	msg.ID = "m1"
 	req := &a2a.SendMessageRequest{Message: msg}
 
-	got, err := marshalRESTSendMessageRequest(req)
+	got, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
-		t.Fatalf("marshalRESTSendMessageRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
 	}
 
 	// Raw bytes are double base64-encoded on the wire (outer for proto-JSON
 	// transport of bytes fields, inner for the application-level base64
-	// string that types.FileWithBytes.bytes carries in Python). "abc" ->
-	// inner base64 "YWJj" -> outer base64 "WVdKag==".
+	// string that types.FileWithBytes.bytes carries after v0.3 peers parse
+	// the proto). "abc" -> inner base64 "YWJj" -> outer base64 "WVdKag==".
 	want := map[string]any{
 		"message": map[string]any{
 			"messageId": "m1",
@@ -135,7 +136,7 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_RawFilePart(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalSendMessageRequest_DataPart(t *testing.T) {
+func TestToProtoSendMessageRequest_DataPart(t *testing.T) {
 	t.Parallel()
 
 	dataPart := a2a.NewDataPart(map[string]any{"key": "value", "n": 42.0})
@@ -143,9 +144,9 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_DataPart(t *testing.T) {
 	msg.ID = "m1"
 	req := &a2a.SendMessageRequest{Message: msg}
 
-	got, err := marshalRESTSendMessageRequest(req)
+	got, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
-		t.Fatalf("marshalRESTSendMessageRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
 	}
 
 	want := map[string]any{
@@ -164,7 +165,7 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_DataPart(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalSendMessageRequest_WithConfig(t *testing.T) {
+func TestToProtoSendMessageRequest_WithConfig(t *testing.T) {
 	t.Parallel()
 
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
@@ -185,9 +186,9 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_WithConfig(t *testing.T) {
 		},
 	}
 
-	got, err := marshalRESTSendMessageRequest(req)
+	got, err := pbjson.ToProtoSendMessageRequest(req)
 	if err != nil {
-		t.Fatalf("marshalRESTSendMessageRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
 	}
 
 	want := map[string]any{
@@ -209,17 +210,17 @@ func TestRESTProtoJSON_MarshalSendMessageRequest_WithConfig(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_UnmarshalSendMessageResponse_Message(t *testing.T) {
+func TestFromProtoSendMessageResponse_Message(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{"message": {"messageId": "r1", "role": "ROLE_AGENT", "content": [{"text":"hi"}]}}`)
-	got, err := unmarshalRESTSendMessageResponse(body)
+	got, err := pbjson.FromProtoSendMessageResponse(body)
 	if err != nil {
-		t.Fatalf("unmarshalRESTSendMessageResponse() error = %v, want nil", err)
+		t.Fatalf("FromProtoSendMessageResponse() error = %v, want nil", err)
 	}
 	msg, ok := got.(*a2a.Message)
 	if !ok {
-		t.Fatalf("unmarshalRESTSendMessageResponse() = %T, want *a2a.Message", got)
+		t.Fatalf("FromProtoSendMessageResponse() = %T, want *a2a.Message", got)
 	}
 	if msg.ID != "r1" {
 		t.Fatalf("Message.ID = %q, want %q", msg.ID, "r1")
@@ -232,17 +233,17 @@ func TestRESTProtoJSON_UnmarshalSendMessageResponse_Message(t *testing.T) {
 	}
 }
 
-func TestRESTProtoJSON_UnmarshalSendMessageResponse_Task(t *testing.T) {
+func TestFromProtoSendMessageResponse_Task(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{"task": {"id": "t1", "contextId": "c1", "status": {"state": "TASK_STATE_WORKING"}}}`)
-	got, err := unmarshalRESTSendMessageResponse(body)
+	got, err := pbjson.FromProtoSendMessageResponse(body)
 	if err != nil {
-		t.Fatalf("unmarshalRESTSendMessageResponse() error = %v, want nil", err)
+		t.Fatalf("FromProtoSendMessageResponse() error = %v, want nil", err)
 	}
 	task, ok := got.(*a2a.Task)
 	if !ok {
-		t.Fatalf("unmarshalRESTSendMessageResponse() = %T, want *a2a.Task", got)
+		t.Fatalf("FromProtoSendMessageResponse() = %T, want *a2a.Task", got)
 	}
 	if task.ID != "t1" {
 		t.Fatalf("Task.ID = %q, want %q", task.ID, a2a.TaskID("t1"))
@@ -252,17 +253,17 @@ func TestRESTProtoJSON_UnmarshalSendMessageResponse_Task(t *testing.T) {
 	}
 }
 
-func TestRESTProtoJSON_UnmarshalStreamEvent_StatusUpdate(t *testing.T) {
+func TestFromProtoStreamEvent_StatusUpdate(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{"statusUpdate": {"taskId": "t1", "contextId": "c1", "status": {"state":"TASK_STATE_COMPLETED"}, "final": true}}`)
-	got, err := unmarshalRESTStreamEvent(body)
+	got, err := pbjson.FromProtoStreamEvent(body)
 	if err != nil {
-		t.Fatalf("unmarshalRESTStreamEvent() error = %v, want nil", err)
+		t.Fatalf("FromProtoStreamEvent() error = %v, want nil", err)
 	}
 	evt, ok := got.(*a2a.TaskStatusUpdateEvent)
 	if !ok {
-		t.Fatalf("unmarshalRESTStreamEvent() = %T, want *a2a.TaskStatusUpdateEvent", got)
+		t.Fatalf("FromProtoStreamEvent() = %T, want *a2a.TaskStatusUpdateEvent", got)
 	}
 	if evt.TaskID != "t1" {
 		t.Fatalf("TaskStatusUpdateEvent.TaskID = %q, want %q", evt.TaskID, a2a.TaskID("t1"))
@@ -272,32 +273,32 @@ func TestRESTProtoJSON_UnmarshalStreamEvent_StatusUpdate(t *testing.T) {
 	}
 }
 
-func TestRESTProtoJSON_TaskStateCanceledSpelling(t *testing.T) {
+func TestTaskStateCanceledSpelling(t *testing.T) {
 	t.Parallel()
 
-	got, err := marshalRESTTask(&a2a.Task{
+	got, err := pbjson.ToProtoTask(&a2a.Task{
 		ID:     "t1",
 		Status: a2a.TaskStatus{State: a2a.TaskStateCanceled},
 	})
 	if err != nil {
-		t.Fatalf("marshalRESTTask() error = %v, want nil", err)
+		t.Fatalf("ToProtoTask() error = %v, want nil", err)
 	}
-	// The Python v0.3.24 proto spells cancellation "TASK_STATE_CANCELLED"
-	// (double L); mismatch is silently rejected by the server.
+	// The v0.3 proto spells cancellation "TASK_STATE_CANCELLED" (double L);
+	// mismatch is silently rejected by the server.
 	if !strings.Contains(string(got), `"state":"TASK_STATE_CANCELLED"`) {
 		t.Fatalf("Task JSON did not contain British 'CANCELLED': %s", string(got))
 	}
 
-	back, err := unmarshalRESTTask([]byte(`{"id":"t1","status":{"state":"TASK_STATE_CANCELLED"}}`))
+	back, err := pbjson.FromProtoTask([]byte(`{"id":"t1","status":{"state":"TASK_STATE_CANCELLED"}}`))
 	if err != nil {
-		t.Fatalf("unmarshalRESTTask() error = %v, want nil", err)
+		t.Fatalf("FromProtoTask() error = %v, want nil", err)
 	}
 	if back.Status.State != a2a.TaskStateCanceled {
 		t.Fatalf("Task.Status.State = %q, want %q", back.Status.State, a2a.TaskStateCanceled)
 	}
 }
 
-func TestRESTProtoJSON_MarshalTaskAsResponse_WithTimestamp(t *testing.T) {
+func TestToProtoTask_WithTimestamp(t *testing.T) {
 	t.Parallel()
 
 	ts := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
@@ -309,9 +310,9 @@ func TestRESTProtoJSON_MarshalTaskAsResponse_WithTimestamp(t *testing.T) {
 			Timestamp: &ts,
 		},
 	}
-	got, err := marshalRESTTask(task)
+	got, err := pbjson.ToProtoTask(task)
 	if err != nil {
-		t.Fatalf("marshalRESTTask() error = %v, want nil", err)
+		t.Fatalf("ToProtoTask() error = %v, want nil", err)
 	}
 	want := map[string]any{
 		"id":        "t1",
@@ -324,14 +325,14 @@ func TestRESTProtoJSON_MarshalTaskAsResponse_WithTimestamp(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalStreamEvent_Message(t *testing.T) {
+func TestToProtoStreamEvent_Message(t *testing.T) {
 	t.Parallel()
 
 	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hello"))
 	msg.ID = "m1"
-	got, err := marshalRESTStreamEvent(msg)
+	got, err := pbjson.ToProtoStreamEvent(msg)
 	if err != nil {
-		t.Fatalf("marshalRESTStreamEvent(Message) error = %v, want nil", err)
+		t.Fatalf("ToProtoStreamEvent(Message) error = %v, want nil", err)
 	}
 	want := map[string]any{
 		"message": map[string]any{
@@ -343,7 +344,7 @@ func TestRESTProtoJSON_MarshalStreamEvent_Message(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_MarshalPushConfigRequest(t *testing.T) {
+func TestToProtoCreatePushConfigRequest(t *testing.T) {
 	t.Parallel()
 
 	pc := &a2a.PushConfig{
@@ -352,9 +353,9 @@ func TestRESTProtoJSON_MarshalPushConfigRequest(t *testing.T) {
 		URL:    "http://cb/notify",
 		Token:  "tk",
 	}
-	got, err := marshalRESTCreatePushConfigRequest(pc)
+	got, err := pbjson.ToProtoCreatePushConfigRequest(pc)
 	if err != nil {
-		t.Fatalf("marshalRESTCreatePushConfigRequest() error = %v, want nil", err)
+		t.Fatalf("ToProtoCreatePushConfigRequest() error = %v, want nil", err)
 	}
 	want := map[string]any{
 		"parent":   "tasks/t1",
@@ -371,16 +372,16 @@ func TestRESTProtoJSON_MarshalPushConfigRequest(t *testing.T) {
 	assertJSONEqual(t, got, want)
 }
 
-func TestRESTProtoJSON_UnmarshalPushConfigResponse(t *testing.T) {
+func TestFromProtoPushConfigResponse(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{
 		"name": "tasks/t1/pushNotificationConfigs/pc1",
 		"pushNotificationConfig": {"id": "pc1", "url": "http://cb/notify", "token": "tk"}
 	}`)
-	got, err := unmarshalRESTPushConfigResponse(body)
+	got, err := pbjson.FromProtoPushConfigResponse(body)
 	if err != nil {
-		t.Fatalf("unmarshalRESTPushConfigResponse() error = %v, want nil", err)
+		t.Fatalf("FromProtoPushConfigResponse() error = %v, want nil", err)
 	}
 	if got.TaskID != "t1" {
 		t.Fatalf("PushConfig.TaskID = %q, want %q", got.TaskID, a2a.TaskID("t1"))
