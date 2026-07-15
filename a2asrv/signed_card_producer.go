@@ -1,22 +1,22 @@
-package a2acrypto
+package a2asrv
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 )
 
 // NewSignedCardProducer wraps an AgentCardProducer to automatically sign every
 // produced AgentCard before returning it.
-func NewSignedCardProducer(signer *Signer, wrapped a2asrv.AgentCardProducer) a2asrv.AgentCardProducer {
+func NewSignedCardProducer(signer *a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
 	return &signedCardProducer{signer: signer, wrapped: wrapped}
 }
 
 type signedCardProducer struct {
-	signer  *Signer
-	wrapped a2asrv.AgentCardProducer
+	signer  *a2acrypto.Signer
+	wrapped AgentCardProducer
 }
 
 func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
