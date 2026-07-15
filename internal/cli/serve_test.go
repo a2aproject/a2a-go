@@ -73,9 +73,21 @@ func TestLoadOrBuildCard_RequiredListFieldsNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(card) error = %v", err)
 	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal(card) error = %v", err)
+	}
 	for _, key := range []string{"defaultInputModes", "defaultOutputModes", "skills"} {
-		if strings.Contains(string(data), `"`+key+`":null`) {
-			t.Errorf("marshaled card contains %q: null; REQUIRED field must not be null\n%s", key, data)
+		val, ok := raw[key]
+		switch {
+		case !ok:
+			t.Errorf("marshaled card is missing REQUIRED key %q", key)
+		case val == nil:
+			t.Errorf("marshaled card key %q is null; REQUIRED field must not be null", key)
+		default:
+			if _, isArray := val.([]any); !isArray {
+				t.Errorf("marshaled card key %q is %T; REQUIRED field must be a JSON array", key, val)
+			}
 		}
 	}
 }
