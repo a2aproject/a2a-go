@@ -101,7 +101,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name+" success with token", func(t *testing.T) {
 			config := &a2a.PushConfig{URL: server.URL, Token: "test-token"}
-			sender := NewHTTPPushSender(nil)
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
 
 			err := sender.SendPush(ctx, config, tt.event)
 			if err != nil {
@@ -126,7 +126,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 					Credentials: "my-bearer-token",
 				},
 			}
-			sender := NewHTTPPushSender(nil)
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
 
 			err := sender.SendPush(ctx, config, tt.event)
 			if err != nil {
@@ -140,7 +140,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 
 		t.Run(tt.name+" success with basic auth", func(t *testing.T) {
 			config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Basic", Credentials: "dXNlcjpwYXNz"}}
-			sender := NewHTTPPushSender(nil)
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
 
 			err := sender.SendPush(ctx, config, tt.event)
 			if err != nil {
@@ -154,7 +154,7 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 
 		t.Run(tt.name+" success without token", func(t *testing.T) {
 			config := &a2a.PushConfig{URL: server.URL}
-			sender := NewHTTPPushSender(nil)
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
 
 			err := sender.SendPush(ctx, config, tt.event)
 			if err != nil {
@@ -229,7 +229,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 				name = tc.name + " (fail on error)"
 			}
 			t.Run(name, func(t *testing.T) {
-				sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: failOnError})
+				sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: failOnError, AllowPrivateNetworks: true})
 				for _, event := range tc.event {
 					err := sender.SendPush(ctx, tc.config, event)
 					if failOnError {
@@ -257,7 +257,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 		cancel()
 
 		config := &a2a.PushConfig{URL: slowServer.URL}
-		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
 
 		for _, event := range events {
 			err := sender.SendPush(canceledCtx, config, event)
@@ -266,11 +266,63 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			}
 		}
 
-		sender = NewHTTPPushSender(nil)
+		sender = NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
 		for _, event := range events {
 			if err := sender.SendPush(canceledCtx, config, event); err != nil {
 				t.Errorf("SendPush() error = %v, want nil when FailOnError false", err)
 			}
+		}
+	})
+}
+
+func TestHTTPPushSender_SSRFProtection(t *testing.T) {
+	ctx := context.Background()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+
+	t.Run("blocks private and loopback targets by default", func(t *testing.T) {
+		blocked := []string{
+			"http://127.0.0.1:8080/webhook",            // IPv4 loopback
+			"http://localhost:8080/webhook",            // loopback by name
+			"http://[::1]:8080/webhook",                // IPv6 loopback
+			"http://169.254.169.254/latest/meta-data/", // cloud metadata (link-local)
+			"http://10.0.0.5/webhook",                  // RFC 1918
+			"http://192.168.1.10/webhook",              // RFC 1918
+			"http://0.0.0.0:8080/webhook",              // unspecified
+		}
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
+		for _, url := range blocked {
+			err := sender.SendPush(ctx, &a2a.PushConfig{URL: url}, event)
+			if err == nil {
+				t.Errorf("SendPush(%q) = nil, want an SSRF block error", url)
+				continue
+			}
+			if !strings.Contains(err.Error(), "blocked address range") {
+				t.Errorf("SendPush(%q) error = %v, want a blocked-address-range error", url, err)
+			}
+		}
+	})
+
+	t.Run("does not cancel execution when FailOnError is false", func(t *testing.T) {
+		sender := NewHTTPPushSender(nil) // guard on, FailOnError off
+		if err := sender.SendPush(ctx, &a2a.PushConfig{URL: "http://127.0.0.1:8080/"}, event); err != nil {
+			t.Errorf("SendPush() = %v, want nil when FailOnError is false", err)
+		}
+	})
+
+	t.Run("AllowPrivateNetworks opts out of the guard", func(t *testing.T) {
+		delivered := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			delivered = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
+		if err := sender.SendPush(ctx, &a2a.PushConfig{URL: server.URL}, event); err != nil {
+			t.Fatalf("SendPush() with AllowPrivateNetworks failed: %v", err)
+		}
+		if !delivered {
+			t.Error("push was not delivered to the local server despite AllowPrivateNetworks")
 		}
 	})
 }
