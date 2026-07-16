@@ -23,7 +23,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
-	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -31,12 +30,14 @@ var _ eventqueue.Puller = (*dbPuller)(nil)
 
 type dbPuller struct {
 	db        *sql.DB
-	store     taskstore.Store
 	startFrom string
 }
 
 func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor eventqueue.PullCursor) (*eventqueue.PullResponse, error) {
-	cursor, _ := pullCursor.(string)
+	cursor, ok := pullCursor.(string)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert pullCursor to string")
+	}
 	var (
 		rows *sql.Rows
 		err  error
@@ -63,7 +64,7 @@ func (p *dbPuller) Pull(ctx context.Context, taskID a2a.TaskID, pullCursor event
 		var version int64
 		var eventJSON, id string
 		if err := rows.Scan(&eventJSON, &version, &id); err != nil {
-			continue
+			return nil, fmt.Errorf("failed to scan events row: %w", err)
 		}
 		var msg eventqueue.Message
 		if err := json.Unmarshal([]byte(eventJSON), &msg); err != nil {
@@ -86,19 +87,19 @@ func (p *dbPuller) Close(ctx context.Context) error {
 	return nil
 }
 
-func newDBPuller(db *sql.DB, store taskstore.Store, startFrom string) *dbPuller {
-	return &dbPuller{db: db, store: store, startFrom: startFrom}
+func newDBPuller(db *sql.DB, startFrom string) *dbPuller {
+	return &dbPuller{db: db, startFrom: startFrom}
 }
 
-func newPullQueueManager(db *sql.DB, store taskstore.Store) eventqueue.Manager {
-	pp := newPullerProvider(db, store)
+func newPullQueueManager(db *sql.DB) eventqueue.Manager {
+	pp := newPullerProvider(db)
 	cfg := eventqueue.PullConfig{
 		PollInterval: 500 * time.Millisecond,
 	}
 	return eventqueue.NewPullQueueManager(pp, cfg)
 }
 
-func newPullerProvider(db *sql.DB, store taskstore.Store) eventqueue.PullerProvider {
+func newPullerProvider(db *sql.DB) eventqueue.PullerProvider {
 	return func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Puller, error) {
 		var startFrom sql.NullString
 		if err := db.QueryRowContext(ctx, `
@@ -108,6 +109,6 @@ func newPullerProvider(db *sql.DB, store taskstore.Store) eventqueue.PullerProvi
 		`, taskID).Scan(&startFrom); err != nil {
 			return nil, fmt.Errorf("failed to query task: %w", err)
 		}
-		return newDBPuller(db, store, startFrom.String), nil
+		return newDBPuller(db, startFrom.String), nil
 	}
 }
