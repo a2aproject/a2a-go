@@ -2428,12 +2428,8 @@ func TestLoadExecutionContext_EmptyTaskIDWithRetry(t *testing.T) {
 // with a bare task so that push config authorization passes.
 func withTestTask(t *testing.T, taskID a2a.TaskID) RequestHandlerOption {
 	t.Helper()
-	ts := taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
-		Authenticator: func(ctx context.Context) (string, error) { return "test-user", nil },
-	})
-	task := &a2a.Task{ID: taskID, ContextID: "test-context"}
-	if _, err := ts.Create(t.Context(), task); err != nil {
-		t.Fatalf("failed to create test task: %v", err)
-	}
+	ts := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: testAuthenticator(),
+	}).WithTasks(t, &a2a.Task{ID: taskID, ContextID: "test-context"})
 	return WithTaskStore(ts)
 }
