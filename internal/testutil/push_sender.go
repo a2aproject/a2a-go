@@ -56,7 +56,9 @@ func (m *TestPushSender) SetSendPushError(err error) *TestPushSender {
 // NewTestPushSender creates a new TestPushSender.
 func NewTestPushSender(t *testing.T) *TestPushSender {
 	return &TestPushSender{
-		HTTPPushSender: push.NewHTTPPushSender(nil),
+		// Test push targets are loopback httptest servers, so opt out of the
+		// default SSRF guard that would otherwise reject them.
+		HTTPPushSender: push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true}),
 
 		PushedEvents:  make([]a2a.Event, 0),
 		PushedConfigs: make([]*a2a.PushConfig, 0),
