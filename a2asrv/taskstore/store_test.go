@@ -538,19 +538,35 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	// Bob attempts to read Alice's task — must return ErrTaskNotFound.
 	bobCtx := context.WithValue(ctx, userKey, "bob")
 	_, err = store.Get(bobCtx, task.ID)
-	if err == nil || err != a2a.ErrTaskNotFound {
+	if !errors.Is(err, a2a.ErrTaskNotFound) {
 		t.Fatalf("bob Get: want ErrTaskNotFound, got %v", err)
 	}
 
-	// Bob's ListTasks excludes Alice's task.
+	// Bob creates his own task, then verifies List returns his task
+	// while correctly excluding Alice's.
+	bobTask := &a2a.Task{
+		ID:     a2a.NewTaskID(),
+		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+	}
+	if _, err := store.Create(bobCtx, bobTask); err != nil {
+		t.Fatalf("bob Create failed: %v", err)
+	}
+
 	resp, err := store.List(bobCtx, &a2a.ListTasksRequest{})
 	if err != nil {
 		t.Fatalf("bob List failed: %v", err)
 	}
-	for _, tsk := range resp.Tasks {
-		if tsk.ID == task.ID {
+	foundBob := false
+	for _, t := range resp.Tasks {
+		if t.ID == task.ID {
 			t.Fatal("bob List should not include alice's task")
 		}
+		if t.ID == bobTask.ID {
+			foundBob = true
+		}
+	}
+	if !foundBob {
+		t.Fatal("bob List should include bob's own task")
 	}
 
 	// Alice can still Get her own task.
