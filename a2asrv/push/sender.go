@@ -77,9 +77,12 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 		allowPrivate = config.AllowPrivateNetworks
 	}
 	client := &http.Client{Timeout: t}
+	// Bound the redirect chain and strip the token on cross-host redirects
+	// regardless of the IP guard; AllowPrivateNetworks only relaxes the
+	// resolved-IP range check, not redirect safety.
+	client.CheckRedirect = limitPushRedirects
 	if !allowPrivate {
 		client.Transport = ssrfGuardedTransport()
-		client.CheckRedirect = limitPushRedirects
 	}
 	return &HTTPPushSender{
 		client:      client,
@@ -107,9 +110,21 @@ func ssrfGuardedTransport() *http.Transport {
 		}
 		return nil
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.DialContext = dialer.DialContext
-	return tr
+	// Build a fresh transport rather than cloning http.DefaultTransport: a
+	// clone could inherit a DialTLS/DialTLSContext that HTTPS uses instead of
+	// DialContext (bypassing the guard), and a replaced DefaultTransport would
+	// panic a type assertion. With only DialContext set, both HTTP and HTTPS
+	// dial through the guard and then perform TLS normally. The non-dial fields
+	// mirror http.DefaultTransport.
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 }
 
 // isBlockedIP reports whether ip is in a range a push notification must not
@@ -126,10 +141,15 @@ func isBlockedIP(ip net.IP) bool {
 }
 
 // limitPushRedirects bounds the redirect chain; the per-dial IP guard already
-// validates the resolved address of every hop.
-func limitPushRedirects(_ *http.Request, via []*http.Request) error {
+// validates the resolved address of every hop. It also drops the notification
+// token on cross-host redirects: Go strips Authorization on such redirects but
+// not custom headers, so the token could otherwise leak to a different host.
+func limitPushRedirects(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxPushRedirects {
 		return fmt.Errorf("stopped after %d redirects", maxPushRedirects)
+	}
+	if len(via) > 0 && req.URL.Host != via[len(via)-1].URL.Host {
+		req.Header.Del(tokenHeader)
 	}
 	return nil
 }

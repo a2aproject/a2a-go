@@ -282,6 +282,7 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 	t.Run("blocks private and loopback targets by default", func(t *testing.T) {
 		blocked := []string{
 			"http://127.0.0.1:8080/webhook",            // IPv4 loopback
+			"https://127.0.0.1:8443/webhook",           // HTTPS also dials through the guard
 			"http://localhost:8080/webhook",            // loopback by name
 			"http://[::1]:8080/webhook",                // IPv6 loopback
 			"http://169.254.169.254/latest/meta-data/", // cloud metadata (link-local)
@@ -323,6 +324,36 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 		}
 		if !delivered {
 			t.Error("push was not delivered to the local server despite AllowPrivateNetworks")
+		}
+	})
+
+	t.Run("strips notification token on cross-host redirect", func(t *testing.T) {
+		var finalToken string
+		var finalReached bool
+		finalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			finalReached = true
+			finalToken = r.Header.Get(tokenHeader)
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer finalServer.Close()
+
+		redirectServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, finalServer.URL, http.StatusTemporaryRedirect)
+		}))
+		defer redirectServer.Close()
+
+		// AllowPrivateNetworks lets the loopback hops through; redirect hygiene
+		// (token stripping across hosts) still applies.
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
+		config := &a2a.PushConfig{URL: redirectServer.URL, Token: "secret-token"}
+		if err := sender.SendPush(ctx, config, event); err != nil {
+			t.Fatalf("SendPush() across redirect failed: %v", err)
+		}
+		if !finalReached {
+			t.Fatal("redirect target was not reached")
+		}
+		if finalToken != "" {
+			t.Errorf("notification token leaked to a different host on redirect: %q, want empty", finalToken)
 		}
 	})
 }
