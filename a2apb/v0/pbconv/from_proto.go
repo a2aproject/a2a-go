@@ -15,6 +15,7 @@
 package pbconv
 
 import (
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -89,8 +90,14 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.Part, error) {
 	switch f := pPart.GetFile().(type) {
 	case *a2apb.FilePart_FileWithBytes:
+		buf := make([]byte, base64.StdEncoding.DecodedLen(len(f.FileWithBytes)))
+		n, err := base64.StdEncoding.Decode(buf, []byte(f.FileWithBytes))
+		if err != nil {
+			return a2a.Part{}, fmt.Errorf("failed to decode base64 string: %w", err)
+		}
+		b := buf[:n]
 		return a2a.Part{
-			Content:   a2a.Raw(f.FileWithBytes),
+			Content:   a2a.Raw(b),
 			MediaType: pPart.GetMimeType(),
 			Filename:  pPart.GetName(),
 			Metadata:  meta,

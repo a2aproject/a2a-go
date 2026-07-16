@@ -15,6 +15,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,6 +43,52 @@ func TestServe_ModeValidation(t *testing.T) {
 				t.Fatal("expected error")
 			}
 		})
+	}
+}
+
+// TestLoadOrBuildCard_RequiredListFieldsNotNull guards against regressing to a
+// synthesized Agent Card that emits JSON null for the proto-REQUIRED
+// defaultInputModes/defaultOutputModes/skills fields. A null there crashes
+// conformant peers that iterate the field (e.g. the Python a2a-sdk resolver),
+// so the synthesized card must carry non-nil (possibly empty) lists.
+func TestLoadOrBuildCard_RequiredListFieldsNotNull(t *testing.T) {
+	t.Parallel()
+
+	card, err := loadOrBuildCard("", "researcher", "Gathers facts", "127.0.0.1:9199", a2a.TransportProtocolHTTPJSON)
+	if err != nil {
+		t.Fatalf("loadOrBuildCard() error = %v", err)
+	}
+
+	if card.DefaultInputModes == nil {
+		t.Error("DefaultInputModes is nil; want non-nil slice (marshals to null otherwise)")
+	}
+	if card.DefaultOutputModes == nil {
+		t.Error("DefaultOutputModes is nil; want non-nil slice (marshals to null otherwise)")
+	}
+	if card.Skills == nil {
+		t.Error("Skills is nil; want non-nil slice (marshals to null otherwise)")
+	}
+
+	data, err := json.Marshal(card)
+	if err != nil {
+		t.Fatalf("json.Marshal(card) error = %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal(card) error = %v", err)
+	}
+	for _, key := range []string{"defaultInputModes", "defaultOutputModes", "skills"} {
+		val, ok := raw[key]
+		switch {
+		case !ok:
+			t.Errorf("marshaled card is missing REQUIRED key %q", key)
+		case val == nil:
+			t.Errorf("marshaled card key %q is null; REQUIRED field must not be null", key)
+		default:
+			if _, isArray := val.([]any); !isArray {
+				t.Errorf("marshaled card key %q is %T; REQUIRED field must be a JSON array", key, val)
+			}
+		}
 	}
 }
 
