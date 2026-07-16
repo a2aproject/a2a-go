@@ -162,6 +162,13 @@ func loadOrBuildCard(cardFile, name, desc, addr string, proto a2a.TransportProto
 		Version:             "1.0.0",
 		Capabilities:        a2a.AgentCapabilities{Streaming: true},
 		SupportedInterfaces: []*a2a.AgentInterface{a2a.NewAgentInterface(url, proto)},
+		// defaultInputModes, defaultOutputModes and skills are REQUIRED by the
+		// proto. Left as nil slices they marshal to JSON null, which is not a
+		// valid (possibly empty) list and crashes conformant peers that iterate
+		// the field. Emit non-nil slices so the synthesized card stays valid.
+		DefaultInputModes:  []string{"text"},
+		DefaultOutputModes: []string{"text"},
+		Skills:             []a2a.AgentSkill{},
 	}, nil
 }
 
