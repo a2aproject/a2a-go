@@ -112,10 +112,18 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 	}
 	client.card.Store(card)
 	if f.cardVerifier != nil && len(card.Signatures) > 0 {
+		var verified bool
+		var lastErr error
 		for _, sig := range card.Signatures {
-			if err := f.cardVerifier.Verify(card, &sig); err != nil {
-				return nil, fmt.Errorf("agent card signature verification failed: %w", err)
+			if err := f.cardVerifier.Verify(card, &sig); err == nil {
+				verified = true
+				break
+			} else {
+				lastErr = err
 			}
+		}
+		if !verified {
+			return nil, fmt.Errorf("agent card signature verification failed: %w", lastErr)
 		}
 	}
 	return client, nil

@@ -50,6 +50,13 @@ func (v *Verifier) Verify(card *a2a.AgentCard, sig *a2a.AgentCardSignature) erro
 	kid, _ := protected["kid"].(string)
 	jku, _ := protected["jku"].(string)
 
+	if alg == "" {
+		return fmt.Errorf("%w: missing or invalid 'alg' in protected header", ErrVerificationFailed)
+	}
+	if kid == "" {
+		return fmt.Errorf("%w: missing or invalid 'kid' in protected header", ErrVerificationFailed)
+	}
+
 	if v.kr == nil {
 		return fmt.Errorf("%w: no key resolver configured", ErrVerificationFailed)
 	}
@@ -111,7 +118,10 @@ func verifySignature(pubKey crypto.PublicKey, message, sig []byte, hash crypto.H
 		h := hash.New()
 		h.Write(message)
 		digest := h.Sum(nil)
-		return rsa.VerifyPKCS1v15(key, hash, digest, sig)
+		if err := rsa.VerifyPKCS1v15(key, hash, digest, sig); err != nil {
+			return fmt.Errorf("%w: %v", ErrVerificationFailed, err)
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("%w: unsupported key type %T", ErrVerificationFailed, pubKey)
