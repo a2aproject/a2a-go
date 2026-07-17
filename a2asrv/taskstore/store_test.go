@@ -557,11 +557,11 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 		t.Fatalf("bob List failed: %v", err)
 	}
 	foundBob := false
-	for _, t := range resp.Tasks {
-		if t.ID == task.ID {
+	for _, listed := range resp.Tasks {
+		if listed.ID == task.ID {
 			t.Fatal("bob List should not include alice's task")
 		}
-		if t.ID == bobTask.ID {
+		if listed.ID == bobTask.ID {
 			foundBob = true
 		}
 	}
