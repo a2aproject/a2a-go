@@ -26,9 +26,9 @@ import (
 	"strconv"
 	"time"
 
-	a2alegacy "github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbjson"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/log"
@@ -62,9 +62,10 @@ func NewRESTTransportFactory(cfg RESTTransportConfig) a2aclient.TransportFactory
 
 // NewRESTTransport creates a new [a2aclient.Transport] that speaks the v0.3 HTTP+JSON protocol.
 //
-// It translates v1.0 client calls to v0.3 HTTP requests and converts the v0.3
-// responses back to v1.0 types. Use this to connect a v1.0 Go client to a v0.3
-// server (e.g. Python ADK Agent Engine deployments).
+// It translates v1.0 client calls into A2A v0.3 REST requests (proto-JSON of the
+// google.a2a.v1 proto) and converts the
+// responses back into v1.0 SDK types. Use it to connect a v1.0 Go client to a
+// v0.3 server (e.g. Python ADK Agent Engine deployments).
 func NewRESTTransport(cfg RESTTransportConfig) (a2aclient.Transport, error) {
 	u, err := url.Parse(cfg.URL)
 	if err != nil {
@@ -74,12 +75,13 @@ func NewRESTTransport(cfg RESTTransportConfig) (a2aclient.Transport, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 3 * time.Minute}
 	}
-	return &restCompatTransport{base: u, httpClient: client}, nil
+	return &restCompatTransport{base: u, httpClient: client, paths: rest.NewPathBuilder(RESTPathPrefix)}, nil
 }
 
 type restCompatTransport struct {
 	base       *url.URL
 	httpClient *http.Client
+	paths      rest.PathBuilder
 }
 
 type compatRestReq struct {
@@ -87,18 +89,14 @@ type compatRestReq struct {
 	path      string
 	query     url.Values
 	params    a2aclient.ServiceParams
-	payload   any
+	body      []byte
 	streaming bool
 }
 
 func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestReq) (*http.Response, error) {
 	var bodyReader io.Reader
-	if req.payload != nil {
-		body, err := marshalSnakeCase(req.payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
-		bodyReader = bytes.NewBuffer(body)
+	if len(req.body) > 0 {
+		bodyReader = bytes.NewReader(req.body)
 	}
 
 	rel, err := url.Parse(req.path)
@@ -114,7 +112,7 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	if req.payload != nil {
+	if len(req.body) > 0 {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	if req.streaming {
@@ -132,7 +130,7 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
 				log.Error(ctx, "failed to close http response body", err)
@@ -143,26 +141,22 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 	return resp, nil
 }
 
-func (t *restCompatTransport) doRequest(ctx context.Context, req *compatRestReq, result any) error {
+// doRequest sends a request and returns the raw response body.
+func (t *restCompatTransport) doRequest(ctx context.Context, req *compatRestReq) ([]byte, error) {
 	resp, err := t.sendRequest(ctx, req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
 	}()
-	if result != nil {
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
-		}
-		if err := unmarshalSnakeCase(data, result); err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
-		}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	return nil
+	return data, nil
 }
 
 func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compatRestReq) iter.Seq2[a2a.Event, error] {
@@ -188,21 +182,9 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				yield(nil, restErr)
 				return
 			}
-			// v0.3 SSE events use snake_case keys; transform to camelCase
-			// before legacy unmarshal.
-			camelData, err := transformJSONKeys(data, snakeToCamel)
-			if err != nil {
-				yield(nil, fmt.Errorf("failed to transform SSE event keys: %w", err))
-				return
-			}
-			compatEvent, err := a2alegacy.UnmarshalEventJSON(camelData)
+			event, err := pbjson.FromProtoStreamEvent(data)
 			if err != nil {
 				yield(nil, fmt.Errorf("failed to unmarshal SSE event: %w", err))
-				return
-			}
-			event, err := ToV1Event(compatEvent)
-			if err != nil {
-				yield(nil, fmt.Errorf("failed to convert SSE event: %w", err))
 				return
 			}
 			if !yield(event, nil) {
@@ -214,56 +196,33 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 
 // SendMessage implements [a2aclient.Transport].
 func (t *restCompatTransport) SendMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	compatReq := FromV1SendMessageRequest(req)
-	resp, err := t.sendRequest(ctx, &compatRestReq{
-		method:  "POST",
-		path:    rest.MakeSendMessagePath(),
-		params:  params,
-		payload: compatReq,
+	body, err := pbjson.ToProtoSendMessageRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal SendMessageRequest: %w", err)
+	}
+	data, err := t.doRequest(ctx, &compatRestReq{
+		method: "POST",
+		path:   t.paths.SendMessage(),
+		params: params,
+		body:   body,
 	})
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Error(ctx, "failed to close http response body", err)
-		}
-	}()
-	rawData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	// Transform snake_case response to camelCase for legacy unmarshal.
-	camelData, err := transformJSONKeys(rawData, snakeToCamel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to transform send message result keys: %w", err)
-	}
-	compatEvent, err := a2alegacy.UnmarshalEventJSON(camelData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal send message result: %w", err)
-	}
-	event, err := ToV1Event(compatEvent)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert send message result: %w", err)
-	}
-	switch e := event.(type) {
-	case *a2a.Task:
-		return e, nil
-	case *a2a.Message:
-		return e, nil
-	default:
-		return nil, fmt.Errorf("result violates A2A spec - expected Task or Message, got %T", event)
-	}
+	return pbjson.FromProtoSendMessageResponse(data)
 }
 
 // SendStreamingMessage implements [a2aclient.Transport].
 func (t *restCompatTransport) SendStreamingMessage(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
-	compatReq := FromV1SendMessageRequest(req)
+	body, err := pbjson.ToProtoSendMessageRequest(req)
+	if err != nil {
+		return errorStream(fmt.Errorf("failed to marshal SendMessageRequest: %w", err))
+	}
 	return t.doStreamingRequest(ctx, &compatRestReq{
-		method:  "POST",
-		path:    rest.MakeStreamMessagePath(),
-		params:  params,
-		payload: compatReq,
+		method: "POST",
+		path:   t.paths.StreamMessage(),
+		params: params,
+		body:   body,
 	})
 }
 
@@ -273,159 +232,150 @@ func (t *restCompatTransport) GetTask(ctx context.Context, params a2aclient.Serv
 	if req.HistoryLength != nil {
 		q.Set("historyLength", strconv.Itoa(*req.HistoryLength))
 	}
-	var compatTask a2alegacy.Task
-	if err := t.doRequest(ctx, &compatRestReq{
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetTaskPath(string(req.ID)),
+		path:   t.paths.GetTask(string(req.ID)),
 		query:  q,
 		params: params,
-	}, &compatTask); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	task, err := ToV1Task(&compatTask)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert task: %w", err)
-	}
-	return task, nil
+	return pbjson.FromProtoTask(data)
 }
 
 // ListTasks implements [a2aclient.Transport].
 func (t *restCompatTransport) ListTasks(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
-	legacyReq := FromV1ListTasksRequest(req)
 	q := url.Values{}
-	if legacyReq.ContextID != "" {
-		q.Set("contextId", legacyReq.ContextID)
+	if req.ContextID != "" {
+		q.Set("contextId", req.ContextID)
 	}
-	if legacyReq.Status != "" {
-		q.Set("status", string(legacyReq.Status))
+	if req.Status != "" {
+		q.Set("status", string(pbjson.EncodeTaskState(req.Status)))
 	}
-	if legacyReq.PageSize != 0 {
-		q.Set("pageSize", strconv.Itoa(legacyReq.PageSize))
+	if req.PageSize != 0 {
+		q.Set("pageSize", strconv.Itoa(req.PageSize))
 	}
-	if legacyReq.PageToken != "" {
-		q.Set("pageToken", legacyReq.PageToken)
+	if req.PageToken != "" {
+		q.Set("pageToken", req.PageToken)
 	}
-	if legacyReq.HistoryLength != 0 {
-		q.Set("historyLength", strconv.Itoa(legacyReq.HistoryLength))
+	if req.HistoryLength != nil {
+		q.Set("historyLength", strconv.Itoa(*req.HistoryLength))
 	}
-	if legacyReq.LastUpdatedAfter != nil {
-		q.Set("lastUpdatedAfter", legacyReq.LastUpdatedAfter.Format(time.RFC3339))
+	if req.StatusTimestampAfter != nil {
+		q.Set("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))
 	}
-	if legacyReq.IncludeArtifacts {
+	if req.IncludeArtifacts {
 		q.Set("includeArtifacts", "true")
 	}
-
-	var compatResp a2alegacy.ListTasksResponse
-	if err := t.doRequest(ctx, &compatRestReq{
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeListTasksPath(),
+		path:   t.paths.ListTasks(),
 		query:  q,
 		params: params,
-	}, &compatResp); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	resp, err := ToV1ListTasksResponse(&compatResp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert list tasks response: %w", err)
-	}
-	return resp, nil
+	return pbjson.FromProtoListTasksResponse(data)
 }
 
 // CancelTask implements [a2aclient.Transport].
 func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	var compatTask a2alegacy.Task
-	if err := t.doRequest(ctx, &compatRestReq{
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "POST",
-		path:   rest.MakeCancelTaskPath(string(req.ID)),
+		path:   t.paths.CancelTask(string(req.ID)),
 		params: params,
-	}, &compatTask); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	task, err := ToV1Task(&compatTask)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert task: %w", err)
-	}
-	return task, nil
+	return pbjson.FromProtoTask(data)
 }
 
 // SubscribeToTask implements [a2aclient.Transport].
 func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return t.doStreamingRequest(ctx, &compatRestReq{
-		method: "POST",
-		path:   rest.MakeSubscribeTaskPath(string(req.ID)),
+		method: "GET",
+		path:   t.paths.SubscribeTask(string(req.ID)),
 		params: params,
 	})
 }
 
 // GetTaskPushConfig implements [a2aclient.Transport].
 func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	var compatConfig a2alegacy.TaskPushConfig
-	if err := t.doRequest(ctx, &compatRestReq{
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetPushConfigPath(string(req.TaskID), req.ID),
+		path:   t.paths.GetPushConfig(string(req.TaskID), req.ID),
 		params: params,
-	}, &compatConfig); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	config := ToV1PushConfig(&compatConfig)
-	return config, nil
+	return pbjson.FromProtoPushConfigResponse(data)
 }
 
 // ListTaskPushConfigs implements [a2aclient.Transport].
 func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2aclient.ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
-	var compatConfigs []*a2alegacy.TaskPushConfig
-	if err := t.doRequest(ctx, &compatRestReq{
+	q := url.Values{}
+	if req.PageSize != 0 {
+		q.Set("pageSize", strconv.Itoa(req.PageSize))
+	}
+	if req.PageToken != "" {
+		q.Set("pageToken", req.PageToken)
+	}
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeListPushConfigsPath(string(req.TaskID)),
+		path:   t.paths.ListPushConfigs(string(req.TaskID)),
+		query:  q,
 		params: params,
-	}, &compatConfigs); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
-	configs := make([]*a2a.PushConfig, 0, len(compatConfigs))
-	for _, c := range compatConfigs {
-		config := ToV1PushConfig(c)
-		configs = append(configs, config)
-	}
-	return configs, nil
+	return pbjson.FromProtoListPushConfigsResponse(data, req.TaskID)
 }
 
 // CreateTaskPushConfig implements [a2aclient.Transport].
 func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	compatPushConfig := FromV1PushConfig(req)
-	var compatConfig a2alegacy.TaskPushConfig
-	if err := t.doRequest(ctx, &compatRestReq{
-		method:  "POST",
-		path:    rest.MakeCreatePushConfigPath(string(req.TaskID)),
-		params:  params,
-		payload: compatPushConfig,
-	}, &compatConfig); err != nil {
+	body, err := pbjson.ToProtoCreatePushConfigRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal CreateTaskPushNotificationConfigRequest: %w", err)
+	}
+	data, err := t.doRequest(ctx, &compatRestReq{
+		method: "POST",
+		path:   t.paths.CreatePushConfig(string(req.TaskID)),
+		params: params,
+		body:   body,
+	})
+	if err != nil {
 		return nil, err
 	}
-	config := ToV1PushConfig(&compatConfig)
-	return config, nil
+	return pbjson.FromProtoPushConfigResponse(data)
 }
 
 // DeleteTaskPushConfig implements [a2aclient.Transport].
 func (t *restCompatTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
-	return t.doRequest(ctx, &compatRestReq{
+	_, err := t.doRequest(ctx, &compatRestReq{
 		method: "DELETE",
-		path:   rest.MakeDeletePushConfigPath(string(req.TaskID), req.ID),
+		path:   t.paths.DeletePushConfig(string(req.TaskID), req.ID),
 		params: params,
-	}, nil)
+	})
+	return err
 }
 
 // GetExtendedAgentCard implements [a2aclient.Transport].
 func (t *restCompatTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-	var rawCard json.RawMessage
-	if err := t.doRequest(ctx, &compatRestReq{
+	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   rest.MakeGetExtendedAgentCardPath(),
+		path:   RESTPathPrefix + "/card",
 		params: params,
-	}, &rawCard); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 	parser := NewAgentCardParser()
-	card, err := parser(rawCard)
+	card, err := parser(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse agent card: %w", err)
 	}
@@ -435,6 +385,12 @@ func (t *restCompatTransport) GetExtendedAgentCard(ctx context.Context, params a
 // Destroy implements [a2aclient.Transport].
 func (t *restCompatTransport) Destroy() error {
 	return nil
+}
+
+func errorStream(err error) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		yield(nil, err)
+	}
 }
 
 // parseErrorBytes attempts to parse raw JSON bytes as a google.rpc.Status error.

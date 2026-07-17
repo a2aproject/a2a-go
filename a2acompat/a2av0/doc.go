@@ -19,3 +19,9 @@ import "github.com/a2aproject/a2a-go/v2/a2a"
 
 // Version is the protocol version which SDK implements.
 const Version a2a.ProtocolVersion = "0.3"
+
+// RESTPathPrefix is the URL path segment prepended to all REST endpoints in
+// the A2A v0.3 HTTP+JSON binding. For example, the v0.3 "message:send"
+// endpoint is mounted at "/v1/message:send" (relative to the base URL from
+// the agent card).
+const RESTPathPrefix = "/v1"

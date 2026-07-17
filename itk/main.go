@@ -69,13 +69,13 @@ func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executor
 		response := strings.Join(results, "\n")
 		if shouldHold(instruction) {
 			log.Info(ctx, "Holding task as requested", "taskId", string(execCtx.TaskID))
-			
+
 			// Emitted event: response + task-finished
 			log.Info(ctx, "Emitting response and task-finished", "taskId", string(execCtx.TaskID))
 			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(response+"\ntask-finished"))), nil) {
 				return
 			}
-			
+
 			select {
 			case <-ctx.Done():
 				log.Info(ctx, "Task cancelled during sleep", "taskId", string(execCtx.TaskID))
@@ -301,7 +301,7 @@ outerLoop:
 				t := r
 				t = strings.ReplaceAll(t, "task-finished", "")
 				responses = append(responses, t)
-				
+
 				if strings.Contains(r, "task-finished") {
 					log.Info(ctx, "Received task-finished after re-subscribe, breaking loop.")
 					break outerLoop
@@ -417,8 +417,6 @@ func selectInterfaces(protocol a2a.TransportProtocol, card *a2a.AgentCard) []*a2
 	return matched
 }
 
-
-
 var httpPort = flag.Int("httpPort", 10102, "HTTP port")
 var grpcPort = flag.Int("grpcPort", 11002, "gRPC port")
 
@@ -449,7 +447,7 @@ func run() error {
 	default:
 		level = slog.LevelInfo
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
@@ -512,7 +510,7 @@ func run() error {
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/jsonrpc", a2asrv.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/rest/", http.StripPrefix("/rest", a2asrv.NewRESTHandler(requestHandler)))
-	mux.Handle("/restv0/v1/", http.StripPrefix("/restv0/v1", a2av0.NewRESTHandler(requestHandler)))
+	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
 	cardProducer := a2av0.NewStaticAgentCardProducer(agentCard)
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
