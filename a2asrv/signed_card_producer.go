@@ -28,6 +28,8 @@ func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign agent card: %w", err)
 	}
-	card.Signatures = append(card.Signatures, *sig)
-	return card, nil
+	cardCopy := *card
+	cardCopy.Signatures = append([]a2a.AgentCardSignature(nil), card.Signatures...)
+	cardCopy.Signatures = append(cardCopy.Signatures, *sig)
+	return &cardCopy, nil
 }

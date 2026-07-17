@@ -135,10 +135,18 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 	}
 
 	if r.Verifier != nil && len(card.Signatures) > 0 {
+		var verified bool
+		var lastErr error
 		for _, sig := range card.Signatures {
-			if err := r.Verifier.Verify(card, &sig); err != nil {
-				return nil, fmt.Errorf("agent card signature verification failed: %w", err)
+			if err := r.Verifier.Verify(card, &sig); err == nil {
+				verified = true
+				break
+			} else {
+				lastErr = err
 			}
+		}
+		if !verified {
+			return nil, fmt.Errorf("agent card signature verification failed: %w", lastErr)
 		}
 	}
 
