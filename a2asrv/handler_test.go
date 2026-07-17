@@ -2152,10 +2152,10 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 			withPushConfigs: true,
 		},
 		{
-			name: "delete from non-existent task",
-			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
+			name:            "delete from non-existent task",
+			req:             &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
 			withPushConfigs: true,
-			wantErr: a2a.ErrTaskNotFound,
+			wantErr:         a2a.ErrTaskNotFound,
 		},
 		{
 			name: "pushNotifications not supported",
