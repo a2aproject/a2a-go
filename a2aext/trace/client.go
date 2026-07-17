@@ -158,7 +158,7 @@ func ParseTraceHeader(val string) *TraceSpan {
 		return nil
 	}
 	parts := strings.Split(val, ";")
-	if len(parts) < 3 {
+	if len(parts) < 3 || parts[0] == "" || parts[1] == "" {
 		return nil
 	}
 	return &TraceSpan{

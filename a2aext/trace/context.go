@@ -97,9 +97,9 @@ func NewChildSpan(parent *TraceSpan, agentID, taskID, contextID string) *TraceSp
 	}
 }
 
-// Chain returns the causal chain as a human-readable string:
+// Chain returns the current span's identifier in the causal chain:
 //
-//	agent-a:span₀ → agent-b:span₁ → agent-c:span₂
+//	agent-a:span₀
 func (s *TraceSpan) Chain() string {
 	return fmt.Sprintf("%s:%s", s.AgentID, s.SpanID)
 }

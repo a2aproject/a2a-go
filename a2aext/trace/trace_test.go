@@ -308,6 +308,8 @@ func TestParseTraceHeaderInvalid(t *testing.T) {
 		{"empty", ""},
 		{"too few parts", "abc;def"},
 		{"single part", "abc"},
+		{"empty trace and span IDs", ";;parent"},
+		{"empty trace ID", ";span;parent"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
