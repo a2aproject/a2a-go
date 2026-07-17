@@ -51,7 +51,7 @@ func TestPathBuilder(t *testing.T) {
 		{"v1 ListPushConfigs", PathBuilder{}, PathBuilder{}.ListPushConfigs("t1"), "/tasks/t1/pushNotificationConfigs"},
 		{"v1 DeletePushConfig", PathBuilder{}, PathBuilder{}.DeletePushConfig("t1", "c1"), "/tasks/t1/pushNotificationConfigs/c1"},
 		{"v1 GetExtendedAgentCard", PathBuilder{}, PathBuilder{}.GetExtendedAgentCard(), "/extendedAgentCard"},
-		{"v1 PostTasksActionRoute", PathBuilder{}, PathBuilder{}.PostTasksActionRoute(), "/tasks/{idAndAction}"},
+		{"v1 TaskActionRoute", PathBuilder{}, PathBuilder{}.TaskActionRoute(), "/tasks/{idAndAction}"},
 
 		{"v03 ListTasks", NewPathBuilder("/v1"), NewPathBuilder("/v1").ListTasks(), "/v1/tasks"},
 		{"v03 SendMessage", NewPathBuilder("/v1"), NewPathBuilder("/v1").SendMessage(), "/v1/message:send"},
@@ -64,7 +64,7 @@ func TestPathBuilder(t *testing.T) {
 		{"v03 ListPushConfigs", NewPathBuilder("/v1"), NewPathBuilder("/v1").ListPushConfigs("t1"), "/v1/tasks/t1/pushNotificationConfigs"},
 		{"v03 DeletePushConfig", NewPathBuilder("/v1"), NewPathBuilder("/v1").DeletePushConfig("t1", "c1"), "/v1/tasks/t1/pushNotificationConfigs/c1"},
 		{"v03 GetExtendedAgentCard", NewPathBuilder("/v1"), NewPathBuilder("/v1").GetExtendedAgentCard(), "/v1/extendedAgentCard"},
-		{"v03 PostTasksActionRoute", NewPathBuilder("/v1"), NewPathBuilder("/v1").PostTasksActionRoute(), "/v1/tasks/{idAndAction}"},
+		{"v03 TaskActionRoute", NewPathBuilder("/v1"), NewPathBuilder("/v1").TaskActionRoute(), "/v1/tasks/{idAndAction}"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

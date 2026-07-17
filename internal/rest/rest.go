@@ -99,9 +99,9 @@ func (p PathBuilder) DeletePushConfig(taskID, configID string) string {
 	return p.prefix + "/tasks/" + taskID + "/pushNotificationConfigs/" + configID
 }
 
-// PostTasksActionRoute returns the mux route pattern for handling any
-// POST /tasks/{id}:action verb (e.g. :cancel, :subscribe).
-func (p PathBuilder) PostTasksActionRoute() string {
+// TaskActionRoute returns the mux route pattern for handling any
+// /tasks/{id}:action verb (e.g. :cancel, :subscribe).
+func (p PathBuilder) TaskActionRoute() string {
 	return p.prefix + "/tasks/{idAndAction}"
 }
 
