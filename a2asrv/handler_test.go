@@ -1957,6 +1957,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			want: &a2a.PushConfig{TaskID: taskID, ID: config1.ID, URL: config1.URL},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
@@ -1965,6 +1966,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			wantErr: push.ErrPushConfigNotFound,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
@@ -2000,7 +2002,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler(append(tc.options, withTestTask(t, taskID))...)
+			handler := newTestHandler(tc.options...)
 			got, err := handler.GetTaskPushConfig(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetTaskPushConfig() error = %v, want %v", err, tc.wantErr)
@@ -2048,6 +2050,7 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			}},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
@@ -2103,7 +2106,7 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler(append(tc.options, withTestTask(t, taskID))...)
+			handler := newTestHandler(tc.options...)
 			got, err := handler.ListTaskPushConfigs(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListTaskPushConfigs() error = %v, want %v", err, tc.wantErr)

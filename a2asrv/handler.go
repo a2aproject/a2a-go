@@ -424,7 +424,7 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 	}
 	// Authorize: only the task owner can list its push configs.
 	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
-		return nil, fmt.Errorf("failed to get push config: %w", err)
+		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
 	configs, err := h.pushConfigStore.List(ctx, req.TaskID)
 	if err != nil {
@@ -444,7 +444,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 	// Authorize: only the task owner can create push configs for it.
 	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
-		return nil, fmt.Errorf("failed to get push config: %w", err)
+		return nil, fmt.Errorf("failed to create push config: %w", err)
 	}
 
 	saved, err := h.pushConfigStore.Save(ctx, req.TaskID, req)
@@ -462,7 +462,7 @@ func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a
 	}
 	// Authorize: only the task owner can delete its push configs.
 	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
-		return fmt.Errorf("failed to get push config: %w", err)
+		return fmt.Errorf("failed to delete push config: %w", err)
 	}
 	return h.pushConfigStore.Delete(ctx, req.TaskID, req.ID)
 }

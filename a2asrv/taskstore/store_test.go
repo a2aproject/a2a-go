@@ -526,18 +526,18 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 
 	// Alice creates a task.
 	aliceCtx := context.WithValue(ctx, userKey, "alice")
-	task := &a2a.Task{
+	aliceTask := &a2a.Task{
 		ID:     a2a.NewTaskID(),
 		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
 	}
-	_, err := store.Create(aliceCtx, task)
+	_, err := store.Create(aliceCtx, aliceTask)
 	if err != nil {
 		t.Fatalf("alice Create failed: %v", err)
 	}
 
 	// Bob attempts to read Alice's task — must return ErrTaskNotFound.
 	bobCtx := context.WithValue(ctx, userKey, "bob")
-	_, err = store.Get(bobCtx, task.ID)
+	_, err = store.Get(bobCtx, aliceTask.ID)
 	if !errors.Is(err, a2a.ErrTaskNotFound) {
 		t.Fatalf("bob Get: want ErrTaskNotFound, got %v", err)
 	}
@@ -558,7 +558,7 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	}
 	foundBob := false
 	for _, listed := range resp.Tasks {
-		if listed.ID == task.ID {
+		if listed.ID == aliceTask.ID {
 			t.Fatal("bob List should not include alice's task")
 		}
 		if listed.ID == bobTask.ID {
@@ -570,11 +570,11 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	}
 
 	// Alice can still Get her own task.
-	stored, err := store.Get(aliceCtx, task.ID)
+	stored, err := store.Get(aliceCtx, aliceTask.ID)
 	if err != nil {
 		t.Fatalf("alice Get failed: %v", err)
 	}
-	if stored.Task.ID != task.ID {
+	if stored.Task.ID != aliceTask.ID {
 		t.Fatalf("alice task ID mismatch")
 	}
 }
