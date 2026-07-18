@@ -1860,7 +1860,7 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 				TaskID: taskID,
 				ID:     "config-invalid",
 			},
-			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
+			wantErr: fmt.Errorf("failed to create push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
