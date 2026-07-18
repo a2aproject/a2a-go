@@ -409,7 +409,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get push configs: %w", err)
+		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
 		return nil, push.ErrPushConfigNotFound
@@ -449,7 +449,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 	saved, err := h.pushConfigStore.Save(ctx, req.TaskID, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save push config: %w", err)
+		return nil, fmt.Errorf("failed to create push config: %w", err)
 	}
 
 	return saved, nil

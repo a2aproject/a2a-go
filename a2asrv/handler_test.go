@@ -2058,8 +2058,9 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, emptyTaskID),
 			},
-			wantErr: a2a.ErrTaskNotFound,
+			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}},
 		},
 		{
 			name: "list non-existent task",
