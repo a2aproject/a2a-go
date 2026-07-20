@@ -50,9 +50,9 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	// TODO: handle tenant
 	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage)
 	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage)
-	mux.HandleFunc("GET "+rest.MakeGetTaskPath("{id}"), h.handleGetTask)
 	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks)
-	mux.HandleFunc("POST /tasks/{idAndAction}", h.handlePOSTTasks)
+	mux.HandleFunc("GET /tasks/{idAndAction}", h.handleGetOrSubscribeTask)
+	mux.HandleFunc("POST /tasks/{idAndAction}", h.handleCancelOrSubscribeTask)
 	mux.HandleFunc("POST "+rest.MakeCreatePushConfigPath("{id}"), h.handleCreateTaskPushConfig)
 	mux.HandleFunc("GET "+rest.MakeGetPushConfigPath("{id}", "{configId}"), h.handleGetTaskPushConfig)
 	mux.HandleFunc("GET "+rest.MakeListPushConfigsPath("{id}"), h.handleListTaskPushConfigs)
@@ -129,9 +129,8 @@ func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Requ
 	h.handleStreamingRequest(h.handler.SendStreamingMessage(ctx, &message), rw, req)
 }
 
-func (h *restHandler) handleGetTask(rw http.ResponseWriter, req *http.Request) {
+func (h *restHandler) handleGetTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	taskID := req.PathValue("id")
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
@@ -209,26 +208,42 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 	}
 }
 
-func (h *restHandler) handlePOSTTasks(rw http.ResponseWriter, req *http.Request) {
+func (h *restHandler) handleCancelOrSubscribeTask(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	idAndAction := req.PathValue("idAndAction")
 	if idAndAction == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-
 	if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok {
-		taskID := before
-		h.handleCancelTask(taskID, rw, req)
-	} else if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
-		taskID := before
-		req2 := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}
-		fillTenant(ctx, &req2.Tenant)
-		h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, req2), rw, req)
-	} else {
+		h.handleCancelTask(before, rw, req)
+		return
+	}
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+		h.handleSubscribeToTask(before, rw, req)
+		return
+	}
+	writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+}
+
+func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http.Request) {
+	idAndAction := req.PathValue("idAndAction")
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+		h.handleSubscribeToTask(before, rw, req)
+		return
+	}
+	h.handleGetTask(idAndAction, rw, req)
+}
+
+func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
+	subReq := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}
+	fillTenant(ctx, &subReq.Tenant)
+	h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, subReq), rw, req)
 }
 
 func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
