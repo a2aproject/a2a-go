@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.4.0](https://github.com/a2aproject/a2a-go/compare/v2.3.1...v2.4.0) (2026-07-20)
+
+
+### Features
+
+* provide generic pull event queue ([#354](https://github.com/a2aproject/a2a-go/issues/354)) ([6a48d4b](https://github.com/a2aproject/a2a-go/commit/6a48d4b5bb731b647d13ff61b0fefb21f053916b))
+* **push:** push sender SSRF protection enabled by default (fixes [#373](https://github.com/a2aproject/a2a-go/issues/373)) ([#374](https://github.com/a2aproject/a2a-go/issues/374)) ([0a4f17a](https://github.com/a2aproject/a2a-go/commit/0a4f17a10e1c44ff9d578975259ed4286f53e01d))
+
+
+### Bug Fixes
+
+* **a2acompat/a2av0:** implement A2A v0.3 REST wire format ([#371](https://github.com/a2aproject/a2a-go/issues/371)) ([1ca80f9](https://github.com/a2aproject/a2a-go/commit/1ca80f9c98f24380ce6f81217d13620b5f8c8596)), closes [#370](https://github.com/a2aproject/a2a-go/issues/370)
+* **a2asrv:** skip TaskID mismatch check when message has no task reference (fixes [#350](https://github.com/a2aproject/a2a-go/issues/350)) ([#359](https://github.com/a2aproject/a2a-go/issues/359)) ([8c0dd99](https://github.com/a2aproject/a2a-go/commit/8c0dd999621972e04fe6574c68cfbd5d25d4b20e))
+* allow empty request bodies and enable GET method for task subscriptions ([#381](https://github.com/a2aproject/a2a-go/issues/381)) ([8363365](https://github.com/a2aproject/a2a-go/commit/83633656f6bb7fc7af9e924be291f3a43e3285be)), closes [#380](https://github.com/a2aproject/a2a-go/issues/380)
+* **cli:** emit non-null required Agent Card list fields in synthesized card (fixes [#369](https://github.com/a2aproject/a2a-go/issues/369)) ([#372](https://github.com/a2aproject/a2a-go/issues/372)) ([0640869](https://github.com/a2aproject/a2a-go/commit/0640869da817345db17ae5cafcab1717ecfbc170))
+* **eventqueue:** add JSON marshal/unmarshal to Message so events survive roundtrip (fixes [#349](https://github.com/a2aproject/a2a-go/issues/349)) ([#360](https://github.com/a2aproject/a2a-go/issues/360)) ([d52d5a1](https://github.com/a2aproject/a2a-go/commit/d52d5a1a78b7d1f2ae628e689a8aabdb87209eab))
+* itk grpc compatibility for v0.3 SDKs ([#367](https://github.com/a2aproject/a2a-go/issues/367)) ([11340a7](https://github.com/a2aproject/a2a-go/commit/11340a78b83246e70ce792e914a2321acbe9d09c))
+* ListTaskshistoryLength missing  ([8b91364](https://github.com/a2aproject/a2a-go/commit/8b91364b50987462f9e949b5cef206523dcc254e))
+* ListTaskshistoryLength missing (issue [#355](https://github.com/a2aproject/a2a-go/issues/355)) ([#361](https://github.com/a2aproject/a2a-go/issues/361)) ([8b91364](https://github.com/a2aproject/a2a-go/commit/8b91364b50987462f9e949b5cef206523dcc254e))
+* **taskstore,push:** enforce cross-tenant authorization on Get and push config stores ([#357](https://github.com/a2aproject/a2a-go/issues/357)) ([a9f9c64](https://github.com/a2aproject/a2a-go/commit/a9f9c64708c472e13e290d06a231d799fb8e9c0d))
+
 ## [2.3.1](https://github.com/a2aproject/a2a-go/compare/v2.3.0...v2.3.1) (2026-05-13)
 
 
