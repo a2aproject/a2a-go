@@ -508,3 +508,73 @@ func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 		t.Fatal("Save() succeeded, wanted concurrent modification error")
 	}
 }
+
+type ctxKey string
+
+const userKey ctxKey = "user"
+
+func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
+	ctx := t.Context()
+
+	// Create store with authenticator that identifies callers.
+	store := NewInMemory(&InMemoryStoreConfig{
+		Authenticator: func(ctx context.Context) (string, error) {
+			user, _ := ctx.Value(userKey).(string)
+			return user, nil
+		},
+	})
+
+	// Alice creates a task.
+	aliceCtx := context.WithValue(ctx, userKey, "alice")
+	aliceTask := &a2a.Task{
+		ID:     a2a.NewTaskID(),
+		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+	}
+	_, err := store.Create(aliceCtx, aliceTask)
+	if err != nil {
+		t.Fatalf("alice Create failed: %v", err)
+	}
+
+	// Bob attempts to read Alice's task — must return ErrTaskNotFound.
+	bobCtx := context.WithValue(ctx, userKey, "bob")
+	_, err = store.Get(bobCtx, aliceTask.ID)
+	if !errors.Is(err, a2a.ErrTaskNotFound) {
+		t.Fatalf("bob Get: want ErrTaskNotFound, got %v", err)
+	}
+
+	// Bob creates his own task, then verifies List returns his task
+	// while correctly excluding Alice's.
+	bobTask := &a2a.Task{
+		ID:     a2a.NewTaskID(),
+		Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+	}
+	if _, err := store.Create(bobCtx, bobTask); err != nil {
+		t.Fatalf("bob Create failed: %v", err)
+	}
+
+	resp, err := store.List(bobCtx, &a2a.ListTasksRequest{})
+	if err != nil {
+		t.Fatalf("bob List failed: %v", err)
+	}
+	foundBob := false
+	for _, listed := range resp.Tasks {
+		if listed.ID == aliceTask.ID {
+			t.Fatal("bob List should not include alice's task")
+		}
+		if listed.ID == bobTask.ID {
+			foundBob = true
+		}
+	}
+	if !foundBob {
+		t.Fatal("bob List should include bob's own task")
+	}
+
+	// Alice can still Get her own task.
+	stored, err := store.Get(aliceCtx, aliceTask.ID)
+	if err != nil {
+		t.Fatalf("alice Get failed: %v", err)
+	}
+	if stored.Task.ID != aliceTask.ID {
+		t.Fatalf("alice task ID mismatch")
+	}
+}

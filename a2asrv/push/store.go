@@ -30,6 +30,8 @@ import (
 var ErrPushConfigNotFound = errors.New("push config not found")
 
 // InMemoryPushConfigStore implements a2asrv.PushConfigStore.
+// Authorization (cross-tenant isolation) is enforced at the handler level
+// via taskStore.Get; this store is a plain in-memory CRUD store.
 type InMemoryPushConfigStore struct {
 	mu      sync.RWMutex
 	configs map[a2a.TaskID]map[string]*a2a.PushConfig
@@ -66,6 +68,9 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	toSave, err := utils.DeepCopy(config)
 	if err != nil {
 		return nil, err
@@ -75,9 +80,6 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 		toSave.ID = newID()
 	}
 	toSave.TaskID = taskID
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, ok := s.configs[taskID]; !ok {
 		s.configs[taskID] = make(map[string]*a2a.PushConfig)
@@ -92,7 +94,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	return savedCopy, nil
 }
 
-// Get returns a copy of stored config for a task and with given ID.
+// Get returns a copy of stored config.
 func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -118,16 +120,16 @@ func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) (
 
 	result := make([]*a2a.PushConfig, 0, len(configs))
 	for _, config := range configs {
-		copy, err := utils.DeepCopy(config)
+		cp, err := utils.DeepCopy(config)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, copy)
+		result = append(result, cp)
 	}
 	return result, nil
 }
 
-// Delete removes a single config from a store.
+// Delete removes a single config from a task.
 func (s *InMemoryPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID, configID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -142,6 +144,7 @@ func (s *InMemoryPushConfigStore) Delete(ctx context.Context, taskID a2a.TaskID,
 func (s *InMemoryPushConfigStore) DeleteAll(ctx context.Context, taskID a2a.TaskID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	delete(s.configs, taskID)
 	return nil
 }

@@ -1860,7 +1860,7 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 				TaskID: taskID,
 				ID:     "config-invalid",
 			},
-			wantErr: fmt.Errorf("failed to save push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
+			wantErr: fmt.Errorf("failed to create push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
@@ -1902,7 +1902,7 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler(tc.options...)
+			handler := newTestHandler(append(tc.options, withTestTask(t, taskID))...)
 			got, err := handler.CreateTaskPushConfig(ctx, tc.req)
 
 			if tc.wantErr != nil {
@@ -1957,6 +1957,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			want: &a2a.PushConfig{TaskID: taskID, ID: config1.ID, URL: config1.URL},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
@@ -1965,12 +1966,13 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			wantErr: push.ErrPushConfigNotFound,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
 			name:    "non-existent task",
 			req:     &a2a.GetTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
-			wantErr: push.ErrPushConfigNotFound,
+			wantErr: a2a.ErrTaskNotFound,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
@@ -2048,23 +2050,25 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			}},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
 			name: "list with empty task",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: emptyTaskID},
-			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+				withTestTask(t, emptyTaskID),
 			},
+			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}},
 		},
 		{
 			name: "list non-existent task",
 			req:  &a2a.ListTaskPushConfigRequest{TaskID: "non-existent-task"},
-			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 			},
+			wantErr: a2a.ErrTaskNotFound,
 		},
 		{
 			name: "pushNotifications not supported",
@@ -2149,13 +2153,10 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 			withPushConfigs: true,
 		},
 		{
-			name: "delete from non-existent task",
-			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
-			wantRemain: []*a2a.PushConfig{
-				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
-				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
-			},
+			name:            "delete from non-existent task",
+			req:             &a2a.DeleteTaskPushConfigRequest{TaskID: "non-existent-task", ID: config1.ID},
 			withPushConfigs: true,
+			wantErr:         a2a.ErrTaskNotFound,
 		},
 		{
 			name: "pushNotifications not supported",
@@ -2199,7 +2200,7 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 			if tc.withPushConfigs {
 				tc.options = append(tc.options, WithPushNotifications(ps, pn))
 			}
-			handler := newTestHandler(tc.options...)
+			handler := newTestHandler(append(tc.options, withTestTask(t, taskID))...)
 			err := handler.DeleteTaskPushConfig(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("DeleteTaskPushConfig() error = %v, want %v", err, tc.wantErr)
@@ -2425,4 +2426,14 @@ func TestLoadExecutionContext_EmptyTaskIDWithRetry(t *testing.T) {
 	if execCtx == nil {
 		t.Fatal("loadExecutionContext() returned nil")
 	}
+}
+
+// withTestTask returns a RequestHandlerOption that pre-populates the task store
+// with a bare task so that push config authorization passes.
+func withTestTask(t *testing.T, taskID a2a.TaskID) RequestHandlerOption {
+	t.Helper()
+	ts := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: testAuthenticator(),
+	}).WithTasks(t, &a2a.Task{ID: taskID, ContextID: "test-context"})
+	return WithTaskStore(ts)
 }
