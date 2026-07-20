@@ -237,6 +237,10 @@ func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http
 
 func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	if taskID == "" {
+		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+		return
+	}
 	subReq := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}
 	fillTenant(ctx, &subReq.Tenant)
 	h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, subReq), rw, req)
