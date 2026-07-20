@@ -59,6 +59,8 @@ type AuditEvent struct {
 // AuditWriter persists audit events. Implementations must be safe for
 // concurrent use.
 type AuditWriter interface {
+	// Write records an audit event to the persistence layer. It must be
+	// safe for concurrent use.
 	Write(ctx context.Context, event *AuditEvent) error
 }
 
