@@ -30,7 +30,7 @@ func TestCostLimiter_Before_ZeroCostPassthrough(t *testing.T) {
 
 	ctx := context.Background()
 	ctx, callCtx := a2asrv.NewCallContext(ctx, nil)
-	ctx, _, err := cl.Before(ctx, callCtx, &a2asrv.Request{})
+	_, _, err := cl.Before(ctx, callCtx, &a2asrv.Request{})
 	if err != nil {
 		t.Fatalf("zero-cost request should pass through, got: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestCostLimiter_Before_UnlimitedBudget(t *testing.T) {
 
 	ctx := context.Background()
 	ctx, callCtx := a2asrv.NewCallContext(ctx, nil)
-	ctx, _, err := cl.Before(ctx, callCtx, &a2asrv.Request{})
+	_, _, err := cl.Before(ctx, callCtx, &a2asrv.Request{})
 	if err != nil {
 		t.Fatalf("unlimited budget should allow any cost, got: %v", err)
 	}
