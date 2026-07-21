@@ -15,6 +15,7 @@
 package a2acrypto
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -240,5 +241,50 @@ func TestSign_protected_header_has_typ(t *testing.T) {
 	}
 	if typ, ok := protected["typ"].(string); !ok || typ != "JOSE+JSON" {
 		t.Errorf("protected header typ = %v, want JOSE+JSON", protected["typ"])
+	}
+}
+
+func TestCanonical_U2028_U2029_literal(t *testing.T) {
+	t.Parallel()
+
+	// RFC 8785 requires U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR)
+	// to be literal UTF-8 bytes in canonical JSON, NOT escaped as \u2028/\u2029.
+	// Go's encoding/json escapes them even with SetEscapeHTML(false), so the
+	// custom jcsMarshal must handle this.
+	card := makeTestCard()
+	card.Description = "line1\xe2\x80\xa8line2\xe2\x80\xa9line3" // U+2028 + U+2029 literal UTF-8
+
+	payload, err := canonicalPayload(card)
+	if err != nil {
+		t.Fatalf("canonicalPayload() error = %v", err)
+	}
+
+	if bytes.Contains(payload, []byte("\\u2028")) {
+		t.Error("canonical payload contains escaped \\u2028, want literal UTF-8 bytes")
+	}
+	if bytes.Contains(payload, []byte("\\u2029")) {
+		t.Error("canonical payload contains escaped \\u2029, want literal UTF-8 bytes")
+	}
+
+	// Verify the literal UTF-8 bytes are present.
+	if !bytes.Contains(payload, []byte{0xe2, 0x80, 0xa8}) {
+		t.Error("canonical payload missing literal U+2028 (e2 80 a8) bytes")
+	}
+	if !bytes.Contains(payload, []byte{0xe2, 0x80, 0xa9}) {
+		t.Error("canonical payload missing literal U+2029 (e2 80 a9) bytes")
+	}
+
+	// Smoke test: signature round-trips with these characters.
+	key := mustGenerateECDSAP256Key(t)
+	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+	sig, err := signer.Sign(card)
+	if err != nil {
+		t.Fatalf("Sign() with U+2028/U+2029 error = %v", err)
+	}
+
+	staticResolver := &staticKeyResolver{pub: key.Public()}
+	verifier := NewVerifier(VerifierConfig{KeyResolver: staticResolver})
+	if err := verifier.Verify(card, sig); err != nil {
+		t.Fatalf("Verify() with U+2028/U+2029 error = %v", err)
 	}
 }
