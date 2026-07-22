@@ -105,7 +105,7 @@ func (p *DefaultGRPCConnectionPool) Close() error {
 	defer p.mu.Unlock()
 
 	for url, pc := range p.conns {
-		pc.conn.Close()
+		_ = pc.conn.Close()
 		delete(p.conns, url)
 	}
 	return nil
@@ -125,7 +125,7 @@ func (p *DefaultGRPCConnectionPool) evictExpired() {
 	now := time.Now()
 	for url, pc := range p.conns {
 		if now.Sub(pc.lastUsed) > p.ttl {
-			pc.conn.Close()
+			_ = pc.conn.Close()
 			delete(p.conns, url)
 		}
 	}
