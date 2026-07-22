@@ -94,35 +94,49 @@ func writeJCS(w io.Writer, v any) error {
 }
 
 func writeJCSObject(w io.Writer, obj map[string]any) error {
-	w.Write([]byte("{"))
+	if _, err := w.Write([]byte("{")); err != nil {
+		return err
+	}
 	keys := sortedKeys(obj)
 	for i, k := range keys {
 		if i > 0 {
-			w.Write([]byte(","))
+			if _, err := w.Write([]byte(",")); err != nil {
+				return err
+			}
 		}
 		if err := writeJCSString(w, k); err != nil {
 			return err
 		}
-		w.Write([]byte(":"))
+		if _, err := w.Write([]byte(":")); err != nil {
+			return err
+		}
 		if err := writeJCS(w, obj[k]); err != nil {
 			return err
 		}
 	}
-	w.Write([]byte("}"))
+	if _, err := w.Write([]byte("}")); err != nil {
+		return err
+	}
 	return nil
 }
 
 func writeJCSArray(w io.Writer, arr []any) error {
-	w.Write([]byte("["))
+	if _, err := w.Write([]byte("[")); err != nil {
+		return err
+	}
 	for i, v := range arr {
 		if i > 0 {
-			w.Write([]byte(","))
+			if _, err := w.Write([]byte(",")); err != nil {
+				return err
+			}
 		}
 		if err := writeJCS(w, v); err != nil {
 			return err
 		}
 	}
-	w.Write([]byte("]"))
+	if _, err := w.Write([]byte("]")); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -130,35 +144,57 @@ func writeJCSArray(w io.Writer, arr []any) error {
 // Only escapes: ", \, and control characters (U+0000–U+001F).
 // U+2028, U+2029, &, <, > are written as literal UTF-8 bytes.
 func writeJCSString(w io.Writer, s string) error {
-	w.Write([]byte("\""))
+	if _, err := w.Write([]byte("\"")); err != nil {
+		return err
+	}
 	for _, r := range s {
 		switch r {
 		case '"':
-			w.Write([]byte("\\\""))
+			if _, err := w.Write([]byte("\\\"")); err != nil {
+				return err
+			}
 		case '\\':
-			w.Write([]byte("\\\\"))
+			if _, err := w.Write([]byte("\\\\")); err != nil {
+				return err
+			}
 		case '\b':
-			w.Write([]byte("\\b"))
+			if _, err := w.Write([]byte("\\b")); err != nil {
+				return err
+			}
 		case '\f':
-			w.Write([]byte("\\f"))
+			if _, err := w.Write([]byte("\\f")); err != nil {
+				return err
+			}
 		case '\n':
-			w.Write([]byte("\\n"))
+			if _, err := w.Write([]byte("\\n")); err != nil {
+				return err
+			}
 		case '\r':
-			w.Write([]byte("\\r"))
-		case '\t':
-			w.Write([]byte("\\t"))
+			if _, err := w.Write([]byte("\\r")); err != nil {
+				return err
+			}
+		case '	':
+			if _, err := w.Write([]byte("\\t")); err != nil {
+				return err
+			}
 		default:
 			if r < 0x0020 {
-				fmt.Fprintf(w, "\\u%04x", r)
+				if _, err := fmt.Fprintf(w, "\\u%04x", r); err != nil {
+					return err
+				}
 			} else {
 				// U+2028, U+2029, U+0080+, and printable ASCII — literal bytes.
 				// This is the key difference from Go's encoding/json, which
 				// escapes U+2028 and U+2029 as \u2028 / \u2029.
-				w.Write([]byte(string(r)))
+				if _, err := w.Write([]byte(string(r))); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	w.Write([]byte("\""))
+	if _, err := w.Write([]byte("\"")); err != nil {
+		return err
+	}
 	return nil
 }
 
