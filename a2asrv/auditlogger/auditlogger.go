@@ -23,6 +23,7 @@ package auditlogger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,7 +109,7 @@ func (a *AuditLogger) After(ctx context.Context, callCtx *a2asrv.CallContext, re
 
 	if resp != nil {
 		if resp.Err != nil {
-			if resp.Err == context.Canceled {
+			if errors.Is(resp.Err, context.Canceled) {
 				ev.Result = "cancelled"
 			} else {
 				ev.Result = "error"
@@ -185,13 +186,13 @@ func NewJSONLWriter(path string) (*JSONLWriter, error) {
 
 // Write implements AuditWriter. Each event is a single JSON line.
 func (w *JSONLWriter) Write(_ context.Context, ev *AuditEvent) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	_, err = w.file.Write(b)
 	return err
 }

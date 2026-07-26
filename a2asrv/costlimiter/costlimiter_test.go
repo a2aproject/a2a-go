@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 )
 
 func TestCostLimiter_Before_ZeroCostPassthrough(t *testing.T) {
@@ -169,6 +170,43 @@ func TestCostLimiter_ScopeFunc(t *testing.T) {
 	_, _, err = cl.Before(ctx4, callCtx4, &a2asrv.Request{})
 	if !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatalf("agent-a should be out of budget, got: %v", err)
+	}
+}
+
+func TestCostLimiter_FallbackToLimiterScope(t *testing.T) {
+	store := NewInMemoryCostStore(map[string]int64{"tenant-x": 50})
+	// No custom ScopeFunc — should fall back to limiter.AttachScope.
+	cl := NewCostLimiter(store, func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) int64 {
+		return 30
+	})
+
+	ctx := context.Background()
+	ctx = limiter.AttachScope(ctx, "tenant-x")
+	ctx, callCtx := a2asrv.NewCallContext(ctx, nil)
+	_, _, err := cl.Before(ctx, callCtx, &a2asrv.Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second call should fail (30+30=60 > 50)
+	_, _, err = cl.Before(ctx, callCtx, &a2asrv.Request{})
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Fatalf("expected ErrBudgetExceeded, got: %v", err)
+	}
+}
+
+func TestInMemoryCostStore_UnlimitedScopeNotStored(t *testing.T) {
+	store := NewInMemoryCostStore(map[string]int64{"limited": 100})
+	ok, err := store.Reserve(context.Background(), "unlimited-scope", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("unlimited scope should succeed")
+	}
+	avail, _ := store.Available(context.Background(), "unlimited-scope")
+	if avail != -1 {
+		t.Fatalf("unlimited scope should not be stored, got available=%d", avail)
 	}
 }
 

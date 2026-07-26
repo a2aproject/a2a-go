@@ -31,6 +31,7 @@ import (
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 )
 
 // ErrBudgetExceeded indicates that the requested cost exceeds the available budget.
@@ -80,13 +81,13 @@ func NewCostLimiter(store CostStore, costFn CostFunc, opts ...Option) *CostLimit
 	cl := &CostLimiter{
 		store:  store,
 		costFn: costFn,
-		scopeFn: func(_ *a2asrv.CallContext) string {
-			return "default"
-		},
 	}
 	for _, opt := range opts {
 		opt(cl)
 	}
+	// If no custom scope function was provided, the Before method will
+	// fall back to the scope attached via limiter.AttachScope, as
+	// documented in the ScopeFunc docstring.
 	return cl
 }
 
@@ -104,19 +105,10 @@ func WithScopeFunc(fn ScopeFunc) Option {
 // and attempts to reserve budget. If the budget is insufficient, it returns
 // a rate-limited error before the agent executor is invoked.
 func (cl *CostLimiter) Before(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error) {
-	scope := cl.scopeFn(callCtx)
+	scope := cl.resolveScope(ctx, callCtx)
 	cost := cl.costFn(ctx, callCtx, req)
 	if cost <= 0 {
 		return ctx, nil, nil
-	}
-
-	available, err := cl.store.Available(ctx, scope)
-	if err != nil {
-		return ctx, nil, fmt.Errorf("costlimiter: checking budget: %w", err)
-	}
-	if available >= 0 && available < cost {
-		return ctx, nil, fmt.Errorf("%w: scope %q: need %d, available %d",
-			ErrBudgetExceeded, scope, cost, available)
 	}
 
 	ok, err := cl.store.Reserve(ctx, scope, cost)
@@ -130,8 +122,23 @@ func (cl *CostLimiter) Before(ctx context.Context, callCtx *a2asrv.CallContext, 
 	return context.WithValue(ctx, reservationKeyType{}, reservation{scope: scope, cost: cost}), nil, nil
 }
 
+// resolveScope returns the scope for this call. If a custom ScopeFunc was
+// provided, it is used. Otherwise, falls back to the scope attached via
+// [limiter.AttachScope].
+func (cl *CostLimiter) resolveScope(ctx context.Context, callCtx *a2asrv.CallContext) string {
+	if cl.scopeFn != nil {
+		return cl.scopeFn(callCtx)
+	}
+	if s, ok := limiter.ScopeFrom(ctx); ok && s != "" {
+		return s
+	}
+	return "default"
+}
+
 // After implements [a2asrv.CallInterceptor]. If the execution was cancelled
-// before doing meaningful work, the reserved cost is released.
+// before doing meaningful work, the reserved cost is released. The release
+// uses context.WithoutCancel so that cancelled contexts do not prevent
+// budget restoration.
 func (cl *CostLimiter) After(ctx context.Context, _ *a2asrv.CallContext, resp *a2asrv.Response) error {
 	res, ok := reservationFrom(ctx)
 	if !ok {
@@ -139,7 +146,7 @@ func (cl *CostLimiter) After(ctx context.Context, _ *a2asrv.CallContext, resp *a
 	}
 
 	if resp != nil && resp.Err != nil && errors.Is(resp.Err, context.Canceled) {
-		_ = cl.store.Release(ctx, res.scope, res.cost)
+		_ = cl.store.Release(context.WithoutCancel(ctx), res.scope, res.cost)
 	}
 	return nil
 }
@@ -186,12 +193,14 @@ func (s *InMemoryCostStore) Available(_ context.Context, scope string) (int64, e
 }
 
 // Reserve implements CostStore.
+// Scopes not present in the initial budgets map are treated as unlimited
+// and are not tracked — they always succeed.
 func (s *InMemoryCostStore) Reserve(_ context.Context, scope string, cost int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.budget[scope]
 	if !ok {
-		s.budget[scope] = -cost
+		// Unknown scope — unlimited, no tracking.
 		return true, nil
 	}
 	if v < 0 {
