@@ -74,7 +74,7 @@ func (r *AgentIDKeyResolver) ResolveKey(kid, jku string) (crypto.PublicKey, erro
 	if err != nil {
 		return nil, fmt.Errorf("agentid: failed to fetch JWKS from %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("agentid: JWKS request returned status %d", resp.StatusCode)

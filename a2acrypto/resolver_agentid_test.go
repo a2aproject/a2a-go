@@ -52,7 +52,7 @@ func TestAgentIDKeyResolver_ResolveKey_Ed25519(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
@@ -103,7 +103,7 @@ func TestAgentIDKeyResolver_ResolveKey_ECDSA_P256(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
@@ -149,7 +149,7 @@ func TestAgentIDKeyResolver_ResolveKey_KeyNotFound(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
@@ -193,7 +193,7 @@ func TestAgentIDKeyResolver_ResolveKey_InvalidJSON(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, "this is not json")
+		_, _ = fmt.Fprint(w, "this is not json")
 	}))
 	defer srv.Close()
 
@@ -208,10 +208,8 @@ func TestAgentIDKeyResolver_DefaultJWKSURL(t *testing.T) {
 	t.Parallel()
 
 	resolver := &AgentIDKeyResolver{}
-	if resolver.JWKSURL != "" {
-		// JWKSURL is empty by default; ResolveKey falls back to the default.
-		// Verify that the default is used when the field is empty.
-	}
+	// JWKSURL is empty by default; ResolveKey falls back to the default.
+	_ = resolver
 
 	// Test with an explicit empty string to ensure fallback works.
 	// We use the real endpoint for a smoke test.
@@ -311,7 +309,7 @@ func TestAgentIDKeyResolver_MultipleKeys(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
@@ -347,7 +345,7 @@ func TestAgentIDKeyResolver_InvalidEd25519KeyLength(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
@@ -378,7 +376,7 @@ func TestAgentIDKeyResolver_ECPointNotOnCurve(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwksResp)
+		_ = json.NewEncoder(w).Encode(jwksResp)
 	}))
 	defer srv.Close()
 
