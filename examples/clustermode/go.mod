@@ -10,8 +10,8 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 )
 
 replace github.com/a2aproject/a2a-go/v2 => ../../
