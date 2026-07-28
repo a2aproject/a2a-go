@@ -87,29 +87,52 @@ func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 }
 
 // ParseDataStream returns an iterator over the data blocks in an SSE stream.
+//
+// Per the WHATWG SSE spec, an event ends at a blank line and consecutive
+// "data:" fields belonging to the same event are joined by a "\n"
+// separator. This parser therefore accumulates "data:" values until a blank
+// line (or EOF) and yields the joined payload as one event.
 func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		scanner := bufio.NewScanner(body)
 		buf := make([]byte, 0, bufio.MaxScanTokenSize)
 		scanner.Buffer(buf, MaxSSETokenSize)
-		// Check for "data:" prefix (without space) to support both "data: foo" and "data:foo"
 		prefixBytes := []byte(sseDataPrefix)
+
+		var event bytes.Buffer
+		flush := func() bool {
+			if event.Len() == 0 {
+				return true
+			}
+			data := append([]byte(nil), event.Bytes()...)
+			event.Reset()
+			return yield(data, nil)
+		}
 
 		for scanner.Scan() {
 			lineBytes := scanner.Bytes()
-			if bytes.HasPrefix(lineBytes, prefixBytes) {
-				data := lineBytes[len(prefixBytes):]
-				if len(data) > 0 && data[0] == ' ' {
-					data = data[1:]
-				}
-				if !yield(data, nil) {
+			if len(lineBytes) == 0 {
+				if !flush() {
 					return
 				}
+				continue
 			}
-			// Ignore empty lines, comments, and other SSE event types
+			if !bytes.HasPrefix(lineBytes, prefixBytes) {
+				continue
+			}
+			data := lineBytes[len(prefixBytes):]
+			if len(data) > 0 && data[0] == ' ' {
+				data = data[1:]
+			}
+			if event.Len() > 0 {
+				event.WriteByte('\n')
+			}
+			event.Write(data)
 		}
 		if err := scanner.Err(); err != nil {
 			yield(nil, fmt.Errorf("SSE stream error: %w", err))
+			return
 		}
+		flush()
 	}
 }

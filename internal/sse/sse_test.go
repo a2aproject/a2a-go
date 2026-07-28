@@ -125,6 +125,50 @@ func TestSSE_LargePayload(t *testing.T) {
 	}
 }
 
+func TestSSE_MultiLineDataFieldsJoined(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		flusher, ok := rw.(http.Flusher)
+		if !ok {
+			t.Fatalf("streaming not supported")
+		}
+		rw.Header().Set("Content-Type", "text/event-stream")
+		rw.WriteHeader(http.StatusOK)
+		body := "data: {\ndata:   \"a\": 1,\ndata:   \"b\": [1,2,3]\ndata: }\n\n"
+		if _, err := fmt.Fprint(rw, body); err != nil {
+			t.Fatalf("Fprint() error = %v", err)
+		}
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Accept", ContentEventStream)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	events := 0
+	for data, err := range ParseDataStream(resp.Body) {
+		if err != nil {
+			t.Fatalf("ParseDataStream() error = %v", err)
+		}
+		want := "{\n  \"a\": 1,\n  \"b\": [1,2,3]\n}"
+		if string(data) != want {
+			t.Fatalf("ParseDataStream() = %q, want %q", string(data), want)
+		}
+		events++
+	}
+	if events != 1 {
+		t.Fatalf("ParseDataStream() emitted %d events, want 1", events)
+	}
+}
+
 func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	// Some frameworks (e.g. Spring) emit "data:foo" instead of "data: foo".
 	// We need to support this for compatibility.

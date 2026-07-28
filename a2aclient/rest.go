@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"iter"
 	"net/http"
 	"net/url"
@@ -79,9 +80,15 @@ type restRequest struct {
 // It returns the HTTP response with the Body OPEN.
 // The caller is responsible for closing the response body.
 func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*http.Response, error) {
-	reqBody, err := json.Marshal(req.payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w: %w", err, a2a.ErrInvalidRequest)
+	var bodyReader io.Reader
+	var reqBody []byte
+	if req.payload != nil {
+		var err error
+		reqBody, err = json.Marshal(req.payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w: %w", err, a2a.ErrInvalidRequest)
+		}
+		bodyReader = bytes.NewReader(reqBody)
 	}
 
 	rel, err := url.Parse(req.path)
@@ -97,11 +104,13 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	}
 	u.RawQuery = rel.RawQuery
 	fullURL := u.String()
-	httpReq, err := http.NewRequestWithContext(ctx, req.method, fullURL, bytes.NewBuffer(reqBody))
+	httpReq, err := http.NewRequestWithContext(ctx, req.method, fullURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	if len(reqBody) > 0 {
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
 	if req.streaming {
 		httpReq.Header.Set("Accept", sse.ContentEventStream)
 	} else {

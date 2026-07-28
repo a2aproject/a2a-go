@@ -9,8 +9,8 @@
     },
     {
       "name": "Star Topology (No Backwards Compatibility) - GRPC & HTTP_JSON",
-      "sdks": ["current", "go_v10", "python_v10"],
-      "edges": ["0->1", "0->2", "1->0", "2->0"],
+      "sdks": ["current", "go_v10", "python_v10", "python_v03"],
+      "edges": ["0->1", "0->2", "0->3", "1->0", "2->0", "3->0"],
       "protocols": ["grpc", "http_json"],
       "behavior": "send_message"
     },
@@ -24,8 +24,8 @@
     },
     {
       "name": "Star Topology (No Backwards Compatibility) - GRPC & HTTP_JSON (Streaming)",
-      "sdks": ["current", "go_v10", "python_v10"],
-      "edges": ["0->1", "0->2", "1->0", "2->0"],
+      "sdks": ["current", "go_v10", "python_v10", "python_v03"],
+      "edges": ["0->1", "0->2", "0->3", "1->0", "2->0", "3->0"],
       "protocols": ["grpc", "http_json"],
       "streaming": true,
       "behavior": "send_message"
@@ -39,8 +39,8 @@
     },
     {
       "name": "Push Notification Test - Non-JSONRPC Topology (GRPC & HTTP_JSON)",
-      "sdks": ["current", "go_v10", "python_v10"],
-      "edges": ["0->1", "0->2", "1->0", "2->0"],
+      "sdks": ["current", "go_v10", "python_v10", "python_v03"],
+      "edges": ["0->1", "0->2", "0->3", "1->0", "2->0", "3->0"],
       "protocols": ["grpc", "http_json"],
       "behavior": "push_notification"
     },
@@ -54,8 +54,8 @@
     },
     {
       "name": "Resubscribe Test - Non-JSONRPC Topology (GRPC & HTTP_JSON)",
-      "sdks": ["current", "go_v10", "python_v10"],
-      "edges": ["0->1", "0->2", "1->0", "2->0"],
+      "sdks": ["current", "go_v10", "python_v10", "python_v03"],
+      "edges": ["0->1", "0->2", "0->3", "1->0", "2->0", "3->0"],
       "protocols": ["grpc", "http_json"],
       "streaming": true,
       "behavior": "resubscribe"

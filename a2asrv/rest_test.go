@@ -214,7 +214,7 @@ func TestREST_Validations(t *testing.T) {
 		},
 		{
 			name:    "ResubscribeToTask",
-			methods: []string{http.MethodPost},
+			methods: []string{http.MethodGet, http.MethodPost},
 			path:    "/tasks/" + string(taskID) + ":subscribe",
 		},
 		{

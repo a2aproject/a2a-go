@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/google/uuid"
 )
@@ -102,7 +103,7 @@ func (s *dbTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) 
 		return taskstore.TaskVersionMissing, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rows == 0 {
-		return taskstore.TaskVersionMissing, fmt.Errorf("optimistic concurrency failure: task updated by another transaction")
+		return taskstore.TaskVersionMissing, fmt.Errorf("optimistic concurrency failure: task updated by another transaction: %w", taskstore.ErrConcurrentModification)
 	}
 
 	if err := s.insertEvent(ctx, tx, task.ID, taskstore.TaskVersion(newVersion), req.Event); err != nil {
@@ -117,7 +118,11 @@ func (s *dbTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) 
 }
 
 func (s *dbTaskStore) insertEvent(ctx context.Context, tx *sql.Tx, taskID a2a.TaskID, version taskstore.TaskVersion, event a2a.Event) error {
-	eventJSON, err := json.Marshal(event)
+	eventJSON, err := json.Marshal(&eventqueue.Message{
+		Event:       event,
+		TaskVersion: version,
+		Protocol:    s.version,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}

@@ -403,9 +403,13 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	if err := checkPushNotificationSupport(h, ctx); err != nil {
 		return nil, err
 	}
+	// Authorize: only the task owner can read its push configs.
+	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
+		return nil, fmt.Errorf("failed to get push config: %w", err)
+	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get push configs: %w", err)
+		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
 		return nil, push.ErrPushConfigNotFound
@@ -417,6 +421,10 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
 	if err := checkPushNotificationSupport(h, ctx); err != nil {
 		return nil, err
+	}
+	// Authorize: only the task owner can list its push configs.
+	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
+		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
 	configs, err := h.pushConfigStore.List(ctx, req.TaskID)
 	if err != nil {
@@ -434,9 +442,14 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 		return nil, err
 	}
 
+	// Authorize: only the task owner can create push configs for it.
+	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
+		return nil, fmt.Errorf("failed to create push config: %w", err)
+	}
+
 	saved, err := h.pushConfigStore.Save(ctx, req.TaskID, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save push config: %w", err)
+		return nil, fmt.Errorf("failed to create push config: %w", err)
 	}
 
 	return saved, nil
@@ -446,6 +459,10 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	if err := checkPushNotificationSupport(h, ctx); err != nil {
 		return err
+	}
+	// Authorize: only the task owner can delete its push configs.
+	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
+		return fmt.Errorf("failed to delete push config: %w", err)
 	}
 	return h.pushConfigStore.Delete(ctx, req.TaskID, req.ID)
 }

@@ -16,6 +16,7 @@ package a2aclient
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -124,6 +125,16 @@ func TestRESTTransport_CancelTask(t *testing.T) {
 		}
 		if r.URL.Path != "/tasks/task-123:cancel" {
 			t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll(r.Body) error = %v, want nil", err)
+		}
+		if len(body) != 0 {
+			t.Errorf("request body = %q, want empty", string(body))
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			t.Errorf("Content-Type = %q, want unset for empty-body request", ct)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -35,16 +35,12 @@ import (
 func TestPullQueue_SubscribeToTask(t *testing.T) {
 	t.Parallel()
 
-	mockPullerErr := errors.New("puller error on snapshot fetch")
-
 	testCases := []struct {
 		name         string
 		snapshotFn   func(taskID a2a.TaskID) *a2a.Task
 		eventsFn     func(taskID a2a.TaskID) []*eventqueue.Message
 		wantEventsFn func(taskID a2a.TaskID) []a2a.Event
 		wantErr      error
-		snapshotErr  error
-		accessCheck  func(context.Context, *a2a.Task) error
 	}{
 		{
 			name: "snapshot then final completed event",
@@ -154,46 +150,6 @@ func TestPullQueue_SubscribeToTask(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "snapshot error",
-			snapshotFn: func(taskID a2a.TaskID) *a2a.Task {
-				return &a2a.Task{
-					ID:     taskID,
-					Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
-				}
-			},
-			snapshotErr: mockPullerErr,
-			wantErr:     mockPullerErr,
-		},
-		{
-			name: "access check fails",
-			// remoteSubscription yields the snapshot before the Read loop,
-			// then AccessCheck rejects on the first Read and prevents subsequent events
-			// from reaching the subscriber.
-			snapshotFn: func(taskID a2a.TaskID) *a2a.Task {
-				return &a2a.Task{
-					ID:     taskID,
-					Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted},
-				}
-			},
-			eventsFn: func(taskID a2a.TaskID) []*eventqueue.Message {
-				return []*eventqueue.Message{
-					{
-						Event:       a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi")),
-						TaskVersion: 2,
-					},
-				}
-			},
-			wantEventsFn: func(taskID a2a.TaskID) []a2a.Event {
-				return []a2a.Event{
-					&a2a.Task{ID: taskID, Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}},
-				}
-			},
-			accessCheck: func(ctx context.Context, task *a2a.Task) error {
-				return a2a.ErrUnauthorized
-			},
-			wantErr: a2a.ErrUnauthorized,
-		},
 	}
 	wantCloseCount := int32(1)
 	for _, tc := range testCases {
@@ -217,10 +173,8 @@ func TestPullQueue_SubscribeToTask(t *testing.T) {
 			}
 
 			env := setupTest(t, &testEnvOptions{
-				snapshot:    snapshot,
-				events:      events,
-				snapshotErr: tc.snapshotErr,
-				accessCheck: tc.accessCheck,
+				snapshot: snapshot,
+				events:   events,
 			})
 			reqHandler := *env.handler
 			var gotEvents []a2a.Event
@@ -316,20 +270,16 @@ type testEnv struct {
 var _ eventqueue.Puller = (*mockPuller)(nil)
 
 type mockPuller struct {
-	snapshot    *a2a.Task
-	events      []*eventqueue.Message
-	snapshotErr error
-	closeCount  atomic.Int32
+	snapshot   *a2a.Task
+	events     []*eventqueue.Message
+	closeCount atomic.Int32
 }
 
-func newMockPuller(snapshot *a2a.Task, events []*eventqueue.Message, snapshotErr error) *mockPuller {
-	return &mockPuller{snapshot: snapshot, events: events, snapshotErr: snapshotErr}
+func newMockPuller(snapshot *a2a.Task, events []*eventqueue.Message) *mockPuller {
+	return &mockPuller{snapshot: snapshot, events: events}
 }
 
 func (m *mockPuller) Pull(ctx context.Context, taskID a2a.TaskID, cursor eventqueue.PullCursor) (*eventqueue.PullResponse, error) {
-	if m.snapshotErr != nil {
-		return nil, m.snapshotErr
-	}
 	if cursor == nil {
 		return &eventqueue.PullResponse{
 			Messages: []*eventqueue.Message{{Event: m.snapshot, TaskVersion: 1}},
@@ -357,9 +307,7 @@ func (m *mockPuller) Close(ctx context.Context) error {
 type testEnvOptions struct {
 	snapshot          *a2a.Task
 	events            []*eventqueue.Message
-	snapshotErr       error
 	inactivityTimeout time.Duration
-	accessCheck       func(context.Context, *a2a.Task) error
 }
 
 func setupTest(t *testing.T, opts *testEnvOptions) *testEnv {
@@ -371,14 +319,13 @@ func setupTest(t *testing.T, opts *testEnvOptions) *testEnv {
 	if opts.snapshot != nil {
 		store.WithTasks(t, opts.snapshot)
 	}
-	puller := newMockPuller(opts.snapshot, opts.events, opts.snapshotErr)
-	pp := eventqueue.NewStaticPullerProvider(puller)
+	puller := newMockPuller(opts.snapshot, opts.events)
+	pp := newPullerProvider(puller)
 
 	pullQueueManager := eventqueue.NewPullQueueManager(pp, eventqueue.PullConfig{
 		InactivityTimeout: opts.inactivityTimeout,
 		PollInterval:      5 * time.Millisecond,
 		UseInMemory:       useInMemory,
-		AccessCheck:       opts.accessCheck,
 	})
 	wq := workqueue.NewInMemory(nil)
 	executor := &testexecutor.TestAgentExecutor{}
@@ -394,6 +341,12 @@ func setupTest(t *testing.T, opts *testEnvOptions) *testEnv {
 	return &testEnv{
 		handler: &reqHandler,
 		puller:  puller,
+	}
+}
+
+func newPullerProvider(p eventqueue.Puller) eventqueue.PullerProvider {
+	return func(ctx context.Context, taskID a2a.TaskID) (eventqueue.Puller, error) {
+		return p, nil
 	}
 }
 

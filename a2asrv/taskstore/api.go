@@ -58,6 +58,8 @@ type StoredTask struct {
 	Task *a2a.Task
 	// Version is the task store version used for tracking task modifications.
 	Version TaskVersion
+	// User is the identity of the task owner (set by the Authenticator on Create).
+	User string
 }
 
 // UpdateRequest represents a request to update a task.

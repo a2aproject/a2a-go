@@ -25,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	a2agrpcv0 "github.com/a2aproject/a2a-go/v2/a2agrpc/v0"
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -68,13 +69,13 @@ func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.Executor
 		response := strings.Join(results, "\n")
 		if shouldHold(instruction) {
 			log.Info(ctx, "Holding task as requested", "taskId", string(execCtx.TaskID))
-			
+
 			// Emitted event: response + task-finished
 			log.Info(ctx, "Emitting response and task-finished", "taskId", string(execCtx.TaskID))
 			if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(response+"\ntask-finished"))), nil) {
 				return
 			}
-			
+
 			select {
 			case <-ctx.Done():
 				log.Info(ctx, "Task cancelled during sleep", "taskId", string(execCtx.TaskID))
@@ -197,6 +198,7 @@ func (e *V10AgentExecutor) handleCallAgent(ctx context.Context, call *pb.CallAge
 	// 4. Create client using a factory
 	var factory *a2aclient.Factory
 	clientOpts := []a2aclient.FactoryOption{
+		a2agrpcv0.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		a2agrpc.WithGRPCTransport(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		a2av0.WithJSONRPCTransport(a2av0.JSONRPCTransportConfig{}),
 		a2av0.WithRESTTransport(a2av0.RESTTransportConfig{}),
@@ -299,7 +301,7 @@ outerLoop:
 				t := r
 				t = strings.ReplaceAll(t, "task-finished", "")
 				responses = append(responses, t)
-				
+
 				if strings.Contains(r, "task-finished") {
 					log.Info(ctx, "Received task-finished after re-subscribe, breaking loop.")
 					break outerLoop
@@ -415,8 +417,6 @@ func selectInterfaces(protocol a2a.TransportProtocol, card *a2a.AgentCard) []*a2
 	return matched
 }
 
-
-
 var httpPort = flag.Int("httpPort", 10102, "HTTP port")
 var grpcPort = flag.Int("grpcPort", 11002, "gRPC port")
 
@@ -447,7 +447,7 @@ func run() error {
 	default:
 		level = slog.LevelInfo
 	}
-	
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
@@ -486,11 +486,18 @@ func run() error {
 				ProtocolBinding: a2a.TransportProtocolGRPC,
 				ProtocolVersion: a2a.Version,
 			},
+			{
+				URL:             fmt.Sprintf("127.0.0.1:%d", *grpcPort),
+				ProtocolBinding: a2a.TransportProtocolGRPC,
+				ProtocolVersion: a2av0.Version,
+			},
 		},
 	}
 
 	pushStore := push.NewInMemoryStore()
-	pushSender := push.NewHTTPPushSender(nil)
+	// The ITK harness delivers to loopback notification servers, so it opts out
+	// of the default SSRF guard that rejects loopback and private targets.
+	pushSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
 
 	executor := &V10AgentExecutor{}
 	requestHandler := a2asrv.NewHandler(
@@ -503,7 +510,7 @@ func run() error {
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/jsonrpc", a2asrv.NewJSONRPCHandler(requestHandler))
 	mux.Handle("/rest/", http.StripPrefix("/rest", a2asrv.NewRESTHandler(requestHandler)))
-	mux.Handle("/restv0/v1/", http.StripPrefix("/restv0/v1", a2av0.NewRESTHandler(requestHandler)))
+	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
 	cardProducer := a2av0.NewStaticAgentCardProducer(agentCard)
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
@@ -534,6 +541,7 @@ func run() error {
 		grpc.UnaryInterceptor(unaryLoggingInterceptor(logger)),
 		grpc.StreamInterceptor(streamLoggingInterceptor(logger)),
 	)
+	a2agrpcv0.NewHandler(requestHandler).RegisterWith(grpcServer)
 	a2agrpc.NewHandler(requestHandler).RegisterWith(grpcServer)
 	g.Go(func() error {
 		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *grpcPort))
