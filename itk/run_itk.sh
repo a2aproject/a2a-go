@@ -55,9 +55,10 @@ protoc -I. \
     --go-grpc_out=pb --go-grpc_opt=Minstruction.proto=github.com/a2aproject/a2a-go/itk/pb --go-grpc_opt=paths=source_relative \
     instruction.proto
 
-# 4. Synchronize go.mod
-# We need to run go mod tidy because we might have added new dependencies or changed imports
-go mod tidy
+# 4. Verify go.mod/go.sum still match the sources (including the generated pb
+# package). go.sum is committed so the agent builds reproducibly; unlike
+# `go mod tidy`, `-diff` fails instead of silently rewriting the lock file.
+go mod tidy -diff
 
 # 5. Build jit itk_service docker image from root of a2a-itk
 docker build -t itk_service a2a-itk
