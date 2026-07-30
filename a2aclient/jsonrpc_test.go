@@ -609,6 +609,10 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 	wantMsg := "Access Denied"
 	wantDetails := map[string]any{"reason": "expired_token", "scope": "read"}
 	typedDetails := []*errordetails.Typed{errordetails.NewTyped("google.protobuf.Struct", wantDetails)}
+	rawData, err := json.Marshal(typedDetails)
+	if err != nil {
+		t.Fatalf("failed to marshal typed details: %v", err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := mustDecodeJSONRPC(t, r, "GetTask")
 
@@ -618,7 +622,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 			Error: &jsonrpc.Error{
 				Code:    -31403,
 				Message: wantMsg,
-				Data:    typedDetails,
+				Data:    rawData,
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -627,7 +631,7 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 
 	transport := NewJSONRPCTransport(server.URL, nil)
 
-	_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{
+	_, err = transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{
 		ID: "task-123",
 	})
 
@@ -643,6 +647,74 @@ func TestJSONRPCTransport_ErrorDetails(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantDetails, a2aErr.Details); diff != "" {
 		t.Errorf("got wrong details (-want +got) diff = %s", diff)
+	}
+}
+
+func TestJSONRPCTransport_ErrorWithNonTypedData(t *testing.T) {
+	// Regression test: a v0.3 server may return error.data as a plain JSON object
+	// (not an array of @type-tagged details). The client must still surface the
+	// error code and message instead of failing the whole decode.
+	wantMsg := "real error message"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = mustDecodeJSONRPC(t, r, "GetTask")
+
+		// Write raw JSON with error.data as a plain object.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"real error message","data":{"reason":"detail"}}}`))
+	}))
+	defer server.Close()
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+
+	_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{
+		ID: "task-1",
+	})
+
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+
+	var a2aErr *a2a.Error
+	if !errors.As(err, &a2aErr) {
+		t.Fatalf("got error type %T, want *a2a.Error", err)
+	}
+	if !errors.Is(a2aErr.Err, a2a.ErrInternalError) {
+		t.Errorf("got inner error %v, want ErrInternalError", a2aErr.Err)
+	}
+	if a2aErr.Message != wantMsg {
+		t.Errorf("got message %q, want %q", a2aErr.Message, wantMsg)
+	}
+	// The plain object should have been preserved as a struct detail.
+	if a2aErr.Details["reason"] != "detail" {
+		t.Errorf("got details %v, want reason=detail", a2aErr.Details)
+	}
+}
+
+func TestJSONRPCTransport_ErrorWithStringData(t *testing.T) {
+	// error.data may be any JSON value, including a plain string.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = mustDecodeJSONRPC(t, r, "GetTask")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32600,"message":"bad request","data":"extra info"}}`))
+	}))
+	defer server.Close()
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+
+	_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-1"})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+
+	var a2aErr *a2a.Error
+	if !errors.As(err, &a2aErr) {
+		t.Fatalf("got error type %T, want *a2a.Error", err)
+	}
+	if !errors.Is(a2aErr.Err, a2a.ErrInvalidRequest) {
+		t.Errorf("got inner error %v, want ErrInvalidRequest", a2aErr.Err)
+	}
+	if a2aErr.Message != "bad request" {
+		t.Errorf("got message %q, want %q", a2aErr.Message, "bad request")
 	}
 }
 
