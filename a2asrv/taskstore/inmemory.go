@@ -319,7 +319,7 @@ func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.T
 
 func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 	timeStrNano := updatedTime.Format(time.RFC3339Nano)
-	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
+	return base64.URLEncoding.EncodeToString(fmt.Appendf(nil, "%s_%s", timeStrNano, taskID))
 }
 
 func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {

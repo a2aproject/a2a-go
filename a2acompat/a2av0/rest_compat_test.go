@@ -234,8 +234,8 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 	var dataLine string
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "data:") {
-			dataLine = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if after, ok := strings.CutPrefix(line, "data:"); ok {
+			dataLine = strings.TrimSpace(after)
 			break
 		}
 	}

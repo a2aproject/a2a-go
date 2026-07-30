@@ -267,10 +267,7 @@ func toLegacyCallContext(ctx context.Context, v1 *a2asrv.CallContext) (context.C
 	if v1 == nil {
 		return ctx, nil
 	}
-	params := make(map[string][]string)
-	for k, v := range v1.ServiceParams().List() {
-		params[k] = v
-	}
+	params := maps.Collect(v1.ServiceParams().List())
 	legacyMeta := legacysrv.NewRequestMeta(params)
 	newCtx, legacyCallCtx := legacysrv.WithCallContext(ctx, legacyMeta)
 	if v1.User != nil {

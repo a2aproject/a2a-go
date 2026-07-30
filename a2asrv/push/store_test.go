@@ -384,7 +384,7 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 	numGoroutines := 100
 	created := make(chan *a2a.PushConfig, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

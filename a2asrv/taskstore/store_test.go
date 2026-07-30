@@ -249,7 +249,7 @@ func TestInMemoryTaskStore_List_StoredImmutability(t *testing.T) {
 
 func createPageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 	timeStrNano := updatedTime.Format(time.RFC3339Nano)
-	return base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%s", timeStrNano, taskID)))
+	return base64.URLEncoding.EncodeToString(fmt.Appendf(nil, "%s_%s", timeStrNano, taskID))
 }
 
 func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
