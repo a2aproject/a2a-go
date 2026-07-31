@@ -19,9 +19,22 @@ import (
 	"crypto"
 )
 
-// KeyResolver resolves a key ID and JWKS URL into a public key for verification.
+// KeyResolver resolves a key identifier to a public key for verification.
+//
+// The trust root MUST be selected by verifier-side policy. Implementations
+// MUST NOT use the signer-supplied jku to select or fetch the trust root:
+// jku is carried in the artifact's own protected header, so honoring it lets
+// a signer nominate its own key material. kid MAY be used to select among
+// keys enrolled out-of-band through a verifier-controlled path (AgentIDKeyResolver
+// does this: fixed endpoint, kid lookup, explicit error on miss).
+//
+// A resolver that fetches by URL MUST constrain the target to a verifier-side
+// allowlist. The same constraint applies to x5u (X.509 URL, RFC 7515) if the
+// interface is extended to carry it in the future.
 type KeyResolver interface {
-	// ResolveKey looks up the public key for the given key ID (kid) and JWKS endpoint (jku).
+	// ResolveKey looks up the public key for the given key ID (kid).
+	// The jku parameter is passed for informational purposes only; implementations
+	// MUST NOT use it to select or fetch the trust root. See KeyResolver doc.
 	ResolveKey(kid, jku string) (crypto.PublicKey, error)
 }
 
