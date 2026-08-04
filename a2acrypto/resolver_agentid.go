@@ -59,6 +59,11 @@ type AgentIDKeyResolver struct {
 // ResolveKey implements KeyResolver by fetching the JWKS and looking up the
 // public key matching the given kid. The jku parameter is ignored because
 // did:agentid always resolves to a fixed well-known JWKS endpoint.
+//
+// Trust-root selection is verifier-side policy only: a signer-supplied jku
+// MUST NOT be used to select or fetch the trust root (CWE-863; see A2A #2096).
+// kid MAY be used to select among keys enrolled through a verifier-controlled
+// path (here: the configured JWKSURL).
 func (r *AgentIDKeyResolver) ResolveKey(kid, jku string) (crypto.PublicKey, error) {
 	url := r.JWKSURL
 	if url == "" {

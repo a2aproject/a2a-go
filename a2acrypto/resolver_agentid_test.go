@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -384,5 +385,79 @@ func TestAgentIDKeyResolver_ECPointNotOnCurve(t *testing.T) {
 	_, err := resolver.ResolveKey("off-curve-key", "")
 	if err == nil {
 		t.Fatal("ResolveKey() returned nil error for point not on curve, want error")
+	}
+}
+
+// TestAgentIDKeyResolver_IgnoresSignerJKU asserts the default resolver never
+// consults the signer-supplied jku (trust-root selection MUST be verifier-side
+// policy, per A2A #2096 / CWE-863).
+func TestAgentIDKeyResolver_IgnoresSignerJKU(t *testing.T) {
+	t.Parallel()
+
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate Ed25519 key: %v", err)
+	}
+	kid := "trusted-key"
+
+	// Attacker-controlled JWKS endpoint: the resolver must never hit it.
+	var jkuHits int32
+	decoy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&jkuHits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer decoy.Close()
+
+	// Verifier-configured trusted JWKS endpoint.
+	trusted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwksResp := jwks{
+			Keys: []jwk{
+				{Kty: "OKP", Crv: "Ed25519", X: base64.RawURLEncoding.EncodeToString(pub), Kid: kid},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(jwksResp)
+	}))
+	defer trusted.Close()
+
+	resolver := &AgentIDKeyResolver{JWKSURL: trusted.URL}
+	resolved, err := resolver.ResolveKey(kid, decoy.URL)
+	if err != nil {
+		t.Fatalf("ResolveKey() error = %v", err)
+	}
+	if _, ok := resolved.(ed25519.PublicKey); !ok {
+		t.Fatalf("ResolveKey() returned %T, want ed25519.PublicKey", resolved)
+	}
+	if got := atomic.LoadInt32(&jkuHits); got != 0 {
+		t.Errorf("signer-supplied jku was consulted %d time(s), want 0 (CWE-863 trust-root violation)", got)
+	}
+}
+
+// TestAgentIDKeyResolver_UnreachableJKU_StillResolves proves resolution does
+// not depend on the signer-supplied jku in any way: an unreachable jku must
+// not cause failure when the verifier-configured JWKS is healthy.
+func TestAgentIDKeyResolver_UnreachableJKU_StillResolves(t *testing.T) {
+	t.Parallel()
+
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate Ed25519 key: %v", err)
+	}
+	kid := "trusted-key"
+
+	trusted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwksResp := jwks{
+			Keys: []jwk{
+				{Kty: "OKP", Crv: "Ed25519", X: base64.RawURLEncoding.EncodeToString(pub), Kid: kid},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(jwksResp)
+	}))
+	defer trusted.Close()
+
+	resolver := &AgentIDKeyResolver{JWKSURL: trusted.URL}
+	if _, err := resolver.ResolveKey(kid, "http://127.0.0.1:1/jku"); err != nil {
+		t.Fatalf("ResolveKey() error = %v; resolution must not depend on signer jku", err)
 	}
 }
