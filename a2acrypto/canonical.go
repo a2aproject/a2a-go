@@ -215,10 +215,7 @@ func sortedKeys(obj map[string]any) []string {
 func utf16Compare(a, b string) int {
 	ua := utf16.Encode([]rune(a))
 	ub := utf16.Encode([]rune(b))
-	n := len(ua)
-	if len(ub) < n {
-		n = len(ub)
-	}
+	n := min(len(ua), len(ub))
 	for i := 0; i < n; i++ {
 		if ua[i] < ub[i] {
 			return -1

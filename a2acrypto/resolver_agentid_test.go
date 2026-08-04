@@ -401,9 +401,9 @@ func TestAgentIDKeyResolver_IgnoresSignerJKU(t *testing.T) {
 	kid := "trusted-key"
 
 	// Attacker-controlled JWKS endpoint: the resolver must never hit it.
-	var jkuHits int32
+	var jkuHits atomic.Int32
 	decoy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&jkuHits, 1)
+		jkuHits.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer decoy.Close()
@@ -428,7 +428,7 @@ func TestAgentIDKeyResolver_IgnoresSignerJKU(t *testing.T) {
 	if _, ok := resolved.(ed25519.PublicKey); !ok {
 		t.Fatalf("ResolveKey() returned %T, want ed25519.PublicKey", resolved)
 	}
-	if got := atomic.LoadInt32(&jkuHits); got != 0 {
+	if got := jkuHits.Load(); got != 0 {
 		t.Errorf("signer-supplied jku was consulted %d time(s), want 0 (CWE-863 trust-root violation)", got)
 	}
 }
