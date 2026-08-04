@@ -216,7 +216,7 @@ func utf16Compare(a, b string) int {
 	ua := utf16.Encode([]rune(a))
 	ub := utf16.Encode([]rune(b))
 	n := min(len(ua), len(ub))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if ua[i] < ub[i] {
 			return -1
 		}
