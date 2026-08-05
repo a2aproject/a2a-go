@@ -78,27 +78,7 @@ func main() {
 		preferredTransport = a2a.TransportProtocolJSONRPC
 	}
 
-	agentCard := &a2a.AgentCard{
-		Name:        "TCK Core Agent",
-		Description: "A complete A2A agent implementation designed specifically for testing with the A2A Technology Compatibility Kit (TCK)",
-		SupportedInterfaces: []*a2a.AgentInterface{
-			a2a.NewAgentInterface(cardUrl, preferredTransport),
-		},
-		Version:            "1.0.0",
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
-		// security
-		Skills: []a2a.AgentSkill{
-			{
-				ID:          "tck_core_agent",
-				Name:        "TCK Core Agent",
-				Description: "A complete A2A agent implementation designed for TCK testing",
-				Tags:        []string{"hello world", "how are you", "goodbye", "hi"},
-				Examples:    []string{"tck", "testing", "core", "complete"},
-			},
-		},
-	}
+	agentCard := newAgentCard(cardUrl, preferredTransport)
 
 	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithExtendedAgentCard(agentCard), a2asrv.WithCallInterceptors(&intercepter{}))
 
@@ -113,6 +93,33 @@ func main() {
 		log.Fatalf("Server shutdown: %v", err)
 	}
 
+}
+
+func newAgentCard(cardURL string, preferredTransport a2a.TransportProtocol) *a2a.AgentCard {
+	return &a2a.AgentCard{
+		Name:        "TCK Core Agent",
+		Description: "A complete A2A agent implementation designed specifically for testing with the A2A Technology Compatibility Kit (TCK)",
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface(cardURL, preferredTransport),
+		},
+		Version:            "1.0.0",
+		DefaultInputModes:  []string{"text"},
+		DefaultOutputModes: []string{"text"},
+		Capabilities: a2a.AgentCapabilities{
+			Streaming:         true,
+			ExtendedAgentCard: true,
+		},
+		// security
+		Skills: []a2a.AgentSkill{
+			{
+				ID:          "tck_core_agent",
+				Name:        "TCK Core Agent",
+				Description: "A complete A2A agent implementation designed for TCK testing",
+				Tags:        []string{"hello world", "how are you", "goodbye", "hi"},
+				Examples:    []string{"tck", "testing", "core", "complete"},
+			},
+		},
+	}
 }
 
 func startGRPCServer(port int, handler a2asrv.RequestHandler) error {
