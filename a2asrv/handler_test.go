@@ -1370,7 +1370,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 		{
 			name:  "get task with negative HistoryLength",
 			query: &a2a.GetTaskRequest{ID: existingTaskID, HistoryLength: ptr(-1)},
-			want:  &a2a.Task{ID: existingTaskID, History: history},
+			want:  &a2a.Task{ID: existingTaskID, History: make([]*a2a.Message, 0)},
 		},
 	}
 
