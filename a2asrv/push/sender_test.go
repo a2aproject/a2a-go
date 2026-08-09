@@ -288,6 +288,8 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 			"http://169.254.169.254/latest/meta-data/", // cloud metadata (link-local)
 			"http://10.0.0.5/webhook",                  // RFC 1918
 			"http://192.168.1.10/webhook",              // RFC 1918
+			"http://100.64.0.1/webhook",                // RFC 6598 CGNAT / shared
+			"http://198.18.0.1/webhook",                // RFC 2544 benchmarking
 			"http://0.0.0.0:8080/webhook",              // unspecified
 		}
 		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
