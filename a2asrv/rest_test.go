@@ -765,7 +765,7 @@ func TestREST_SSE_KeepAliveHeartbeats(t *testing.T) {
 
 	br := bufio.NewReader(resp.Body)
 	// Consume the first event (id:/data:/blank line).
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := br.ReadString('\n'); err != nil {
 			t.Fatalf("reading first SSE event: %v", err)
 		}
