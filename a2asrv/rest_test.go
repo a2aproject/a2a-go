@@ -15,6 +15,7 @@
 package a2asrv
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -571,8 +573,9 @@ func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req 
 
 type mockRequestHandler struct {
 	RequestHandler
-	listTasksFunc func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
-	getTaskFunc   func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	listTasksFunc       func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
 func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
@@ -587,6 +590,15 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 		return m.getTaskFunc(ctx, req)
 	}
 	return &a2a.Task{ID: req.ID}, nil
+}
+
+func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	if m.subscribeToTaskFunc != nil {
+		return m.subscribeToTaskFunc(ctx, req)
+	}
+	return func(yield func(a2a.Event, error) bool) {
+		yield(&a2a.Task{ID: req.ID}, nil)
+	}
 }
 
 func TestREST_ListTasks_Success(t *testing.T) {
@@ -709,4 +721,74 @@ func TestREST_GetTask_Success(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestREST_SSE_PanicAfterClientDisconnectDoesNotLeak is a regression test for BUG-18:
+// the REST SSE handler's panicChan was unbuffered, so when the streaming goroutine
+// panicked after the client had already disconnected (and the main loop had exited
+// via ctx.Done), the goroutine blocked forever writing the panic to panicChan,
+// leaking the goroutine. The channel is now buffered and the write is guarded by a
+// select on the request context, so the goroutine always exits.
+func TestREST_SSE_PanicAfterClientDisconnectDoesNotLeak(t *testing.T) {
+	firstEvent := make(chan struct{})
+	release := make(chan struct{})
+
+	mock := &mockRequestHandler{
+		subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				if !yield(&a2a.TaskStatusUpdateEvent{TaskID: req.ID}, nil) {
+					return
+				}
+				close(firstEvent)
+				// Block until the test tells us the client has disconnected,
+				// then panic to exercise the panicChan write path.
+				<-release
+				panic("boom")
+			}
+		},
+	}
+	handler := NewRESTHandler(mock, WithTransportPanicHandler(func(r any) error {
+		return a2a.ErrInternalError
+	}))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	baseline := runtime.NumGoroutine()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/tasks/task-1:subscribe", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+
+	// Read the first SSE event (id:/data:/blank line) so the server's write completes.
+	br := bufio.NewReader(resp.Body)
+	for i := 0; i < 3; i++ {
+		if _, err := br.ReadString('\n'); err != nil {
+			t.Fatalf("reading SSE event: %v", err)
+		}
+	}
+
+	<-firstEvent
+
+	// Disconnect the client, give the server a moment to observe the disconnect,
+	// then let the streaming goroutine panic.
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("resp.Body.Close() error = %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+
+	// The streaming goroutine must exit instead of blocking forever on panicChan.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= baseline {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("streaming goroutine leaked after panic with disconnected client: %d goroutines, baseline %d", runtime.NumGoroutine(), baseline)
 }
