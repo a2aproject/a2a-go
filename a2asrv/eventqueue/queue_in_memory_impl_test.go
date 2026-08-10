@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -278,4 +279,47 @@ func TestInMemoryQueue_BlockedWriteOnFullQueueThenDestroy(t *testing.T) {
 		}
 	}
 	<-completed
+}
+
+// TestInMemoryQueue_ConcurrentWriteAndDestroy is a regression test for BUG-20:
+// the `closed` flag was a plain bool written by the broker goroutine during
+// destroy and read by Write without synchronization, which is a data race
+// (caught by `go test -race`). It exercises concurrent Write and Destroy to
+// shake out races; run with -race to verify.
+func TestInMemoryQueue_ConcurrentWriteAndDestroy(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(16))
+
+	tid := a2a.NewTaskID()
+	_, writeQueue := mustCreateReadWriter(t, qm, tid)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					// Errors are expected once the queue is destroyed
+					// (ErrQueueClosed); anything else must not happen.
+					if err := writeQueue.Write(t.Context(), &Message{Event: &a2a.Message{ID: "test"}}); err != nil && !errors.Is(err, ErrQueueClosed) {
+						t.Errorf("Write() error = %v, want ErrQueueClosed or nil", err)
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// Let the writers overlap with the destroy, then destroy the queue.
+	time.Sleep(5 * time.Millisecond)
+	if err := qm.Destroy(t.Context(), tid); err != nil {
+		t.Fatalf("qm.Destroy() error = %v", err)
+	}
+	close(stop)
+	wg.Wait()
 }

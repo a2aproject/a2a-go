@@ -17,6 +17,7 @@ package eventqueue
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 )
 
 type broadcast struct {
@@ -116,14 +117,14 @@ type inMemoryQueue struct {
 	broker     *inMemoryEventBroker
 	closedChan chan struct{}
 	eventsChan chan *Message
-	closed     bool
+	closed     atomic.Bool
 }
 
 var _ Reader = (*inMemoryQueue)(nil)
 var _ Writer = (*inMemoryQueue)(nil)
 
 func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
-	if q.closed {
+	if q.closed.Load() {
 		return ErrQueueClosed
 	}
 
@@ -175,7 +176,10 @@ func (q *inMemoryQueue) Close() error {
 }
 
 func (q *inMemoryQueue) destroy() {
-	q.closed = true
-	close(q.eventsChan)
-	close(q.closedChan)
+	// CompareAndSwap makes destroy idempotent and synchronizes with
+	// concurrent Write calls that read the closed flag (data-race free).
+	if q.closed.CompareAndSwap(false, true) {
+		close(q.eventsChan)
+		close(q.closedChan)
+	}
 }
