@@ -766,7 +766,7 @@ func TestREST_SSE_PanicAfterClientDisconnectDoesNotLeak(t *testing.T) {
 
 	// Read the first SSE event (id:/data:/blank line) so the server's write completes.
 	br := bufio.NewReader(resp.Body)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := br.ReadString('\n'); err != nil {
 			t.Fatalf("reading SSE event: %v", err)
 		}
