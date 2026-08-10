@@ -23,8 +23,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
-
-	"github.com/google/uuid"
+	"strconv"
 )
 
 const (
@@ -43,6 +42,10 @@ const (
 type SSEWriter struct {
 	writer  http.ResponseWriter
 	flusher http.Flusher
+	// eventID is a monotonically increasing per-connection counter used as the
+	// SSE event ID. Random IDs (previously UUIDs) break Last-Event-ID
+	// resumption: a client cannot tell where a reconnection should continue.
+	eventID uint64
 }
 
 // NewWriter creates a new [SSEWriter].
@@ -75,8 +78,9 @@ func (w *SSEWriter) WriteKeepAlive(ctx context.Context) error {
 
 // WriteData writes a data block to the SSE stream.
 func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
-	eventID := uuid.NewString()
-	if _, err := fmt.Fprintf(w.writer, "%s %s\n", sseIDPrefix, []byte(eventID)); err != nil {
+	w.eventID++
+	eventID := strconv.FormatUint(w.eventID, 10)
+	if _, err := fmt.Fprintf(w.writer, "%s %s\n", sseIDPrefix, eventID); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w.writer, "%s %s\n\n", sseDataPrefix, data); err != nil {

@@ -15,7 +15,10 @@
 package sse
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -220,5 +223,62 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	}
 	if eventCount != 1 {
 		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
+}
+
+// TestSSE_EventIDsAreSequential is a regression test for BUG-22: event IDs
+// were random UUIDs, which made Last-Event-ID resumption impossible. IDs must
+// now be a monotonic per-connection counter (1, 2, 3, ...).
+func TestSSE_EventIDsAreSequential(t *testing.T) {
+	const wantEvents = 5
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		sse, err := NewWriter(rw)
+		if err != nil {
+			t.Fatalf("NewWriter() error = %v", err)
+		}
+		sse.WriteHeaders()
+		for i := range wantEvents {
+			if err := sse.WriteData(ctx, []byte("event-"+strconv.Itoa(i))); err != nil {
+				t.Fatalf("WriteData() error = %v", err)
+			}
+		}
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+
+	var ids []string
+	scanner := bufio.NewScanner(bytes.NewReader(body))
+	for scanner.Scan() {
+		if rest, ok := strings.CutPrefix(scanner.Text(), sseIDPrefix+" "); ok {
+			ids = append(ids, rest)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner.Err() = %v", err)
+	}
+	if len(ids) != wantEvents {
+		t.Fatalf("got %d event ids %v, want %d", len(ids), ids, wantEvents)
+	}
+	for i, id := range ids {
+		want := strconv.Itoa(i + 1)
+		if id != want {
+			t.Fatalf("event id %d = %q, want %q (monotonic counter)", i, id, want)
+		}
 	}
 }
