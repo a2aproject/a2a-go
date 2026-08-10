@@ -630,21 +630,23 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	<-executor.executeCalled
 
 	canceler.block = make(chan struct{})
-	cancelErr := make(chan error)
+	cancelResult := make(chan *a2a.Task)
 	go func() {
 		task, err := manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: subscription.TaskID()})
-		if task != nil || err == nil {
-			t.Errorf("manager.Cancel() = %v, expected to fail", task)
+		if err != nil {
+			t.Errorf("manager.Cancel() error = %v, want nil (idempotent cancel)", err)
 		}
-		cancelErr <- err
+		cancelResult <- task
 	}()
 	<-canceler.cancelCalled
 
 	executor.mustWrite(t, &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 	close(canceler.block)
 
-	if got := <-cancelErr; !errors.Is(got, a2a.ErrTaskNotCancelable) {
-		t.Fatalf("manager.Cancel() = %v, want %v", got, a2a.ErrTaskNotCancelable)
+	// Idempotent cancel (BUG-02): canceling a task that completed concurrently
+	// resolves to the completed task instead of ErrTaskNotCancelable.
+	if got := <-cancelResult; got == nil || got.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("manager.Cancel() = %v, want a completed task", got)
 	}
 }
 

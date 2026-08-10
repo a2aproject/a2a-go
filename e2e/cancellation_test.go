@@ -115,7 +115,7 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	}
 }
 
-func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
+func TestConcurrentCancellationResolvesToCompletedTask(t *testing.T) {
 	ctx := t.Context()
 
 	sharedStore := testutil.NewTestTaskStore()
@@ -126,12 +126,15 @@ func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 	execChannels.ExecEvent <- a2a.NewSubmittedTask(reqCtx, reqCtx.Message)
 	<-receivedEventsChan
 
-	cancelErrChan := make(chan error)
+	cancelResultChan := make(chan *a2a.Task)
 	canceler, cancelChannels := testexecutor.NewWithControlChannels()
 	go func() {
 		cancelClient := startTestServer(t, canceler, sharedStore)
-		_, err := cancelClient.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
-		cancelErrChan <- err
+		task, err := cancelClient.CancelTask(ctx, &a2a.CancelTaskRequest{ID: reqCtx.TaskID})
+		if err != nil {
+			t.Errorf("cancelClient.CancelTask() error = %v, want nil (idempotent cancel)", err)
+		}
+		cancelResultChan <- task
 	}()
 	<-cancelChannels.CancelCalled
 
@@ -140,9 +143,11 @@ func TestConcurrentCancellationFailure_GetsCorrectError(t *testing.T) {
 
 	cancelChannels.ContinueCancel <- struct{}{}
 
-	gotErr := <-cancelErrChan
-	if !errors.Is(gotErr, a2a.ErrTaskNotCancelable) {
-		t.Fatalf("cancelClient.CancelTask() error = %v, want %v", gotErr, a2a.ErrTaskNotCancelable)
+	// The task completed before the cancelation took effect; cancelation is
+	// idempotent (BUG-02), so the cancel resolves to the completed task.
+	gotTask := <-cancelResultChan
+	if gotTask == nil || gotTask.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("cancelClient.CancelTask() = %v, want a completed task", gotTask)
 	}
 }
 

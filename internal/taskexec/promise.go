@@ -66,7 +66,10 @@ func convertToCancelationResult(ctx context.Context, result a2a.SendMessageResul
 		return nil, fmt.Errorf("bug: execution result was a message: %w", a2a.ErrTaskNotCancelable)
 	}
 
-	if task.Status.State != a2a.TaskStateCanceled {
+	// Cancelation is idempotent: resolving to any terminal state (including a
+	// task that completed or failed before the cancelation took effect) is a
+	// valid result, not an error (BUG-02).
+	if !task.Status.State.Terminal() {
 		return nil, fmt.Errorf("task was in non-cancelable state: %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 

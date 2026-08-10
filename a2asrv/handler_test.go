@@ -1531,9 +1531,9 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
 		},
 		{
-			name:    "task already completed",
-			params:  &a2a.CancelTaskRequest{ID: completedTask.ID},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
+			name:   "task already completed",
+			params: &a2a.CancelTaskRequest{ID: completedTask.ID},
+			want:   completedTask,
 		},
 		{
 			name:   "task already canceled",

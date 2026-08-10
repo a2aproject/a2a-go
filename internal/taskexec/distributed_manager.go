@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -54,6 +55,10 @@ type distributedManager struct {
 	queueManager eventqueue.Manager
 	taskStore    taskstore.Store
 	ctxCodec     ContextCodec
+	// mu serializes the cancel check-then-act (terminal-state check followed
+	// by the cancelation submission) so concurrent Cancel calls for the same
+	// task cannot both pass the check (BUG-44).
+	mu sync.Mutex
 }
 
 var _ Manager = (*distributedManager)(nil)
@@ -160,13 +165,10 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("failed to load a task: %w", err)
 	}
 
-	task := storedTask.Task
-	if task.Status.State == a2a.TaskStateCanceled {
-		return task, nil
-	}
-
-	if task.Status.State.Terminal() {
-		return nil, fmt.Errorf("task in non-cancelable state %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+	if storedTask.Task.Status.State.Terminal() {
+		// Idempotent cancel: a terminal task cannot be canceled further;
+		// return its current state instead of an error (BUG-02).
+		return storedTask.Task, nil
 	}
 
 	queue, err := m.queueManager.CreateReader(ctx, req.ID)
@@ -179,12 +181,28 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, err
 	}
 
+	// The terminal-state check followed by the cancelation submission is a
+	// check-then-act: hold the mutex and re-check the state so concurrent
+	// Cancel calls cannot both observe a non-terminal state and submit
+	// overlapping cancelations (BUG-44). The task may have become terminal
+	// while the queue and context were prepared above.
+	m.mu.Lock()
+	storedTask, err = m.taskStore.Get(ctx, req.ID)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("failed to re-load a task: %w", err)
+	}
+	if storedTask.Task.Status.State.Terminal() {
+		m.mu.Unlock()
+		return storedTask.Task, nil
+	}
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeCancel,
 		TaskID:        req.ID,
 		CancelRequest: req,
 		CallContext:   encodedCtx,
 	})
+	m.mu.Unlock()
 	if err != nil {
 		// if cancelation lease is already taken we can tap into the running cancellation events
 		if !errors.Is(err, workqueue.ErrLeaseAlreadyTaken) {

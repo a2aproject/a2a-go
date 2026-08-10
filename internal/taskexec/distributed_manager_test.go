@@ -309,6 +309,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			name: "cancel running task",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 			},
 			wantQueueWrite: &workqueue.Payload{
@@ -319,17 +320,14 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
 		{
-			name: "failed to cancel task",
+			name: "task completes before cancelation takes effect",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			wantQueueWrite: &workqueue.Payload{
-				Type:          workqueue.PayloadTypeCancel,
-				TaskID:        tid,
-				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
-			},
-			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
+			// Idempotent cancel (BUG-02): the completed task is returned and no
+			// cancelation is submitted.
+			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 		},
 		{
 			name:           "already canceled",
@@ -337,9 +335,9 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wantResult:     &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
 		{
-			name:           "non-cancelable state",
+			name:           "already in terminal state",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
-			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
+			wantResult:     &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 		},
 		{
 			name:           "task not found",
@@ -353,7 +351,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		},
 		{
 			name:           "work queue write error",
-			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}, {ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			writeQueueErr:  fmt.Errorf("write failed"),
 			wantErrContain: "write failed",
 		},

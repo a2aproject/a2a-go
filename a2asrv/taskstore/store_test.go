@@ -578,3 +578,58 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 		t.Fatalf("alice task ID mismatch")
 	}
 }
+
+// TestInMemoryTaskStore_Update_StateTransitionValidation is a regression test
+// for BUG-43: non-terminal task state transitions must follow the A2A state
+// machine; backwards transitions (e.g. WORKING -> SUBMITTED) are rejected.
+// Transitions out of terminal states are governed by the taskupdate manager
+// and are not restricted by the store.
+func TestInMemoryTaskStore_Update_StateTransitionValidation(t *testing.T) {
+	store := NewInMemory(nil)
+
+	t.Run("valid transitions", func(t *testing.T) {
+		task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+		v1 := mustCreateVersioned(t, store, task)
+
+		transitions := []struct {
+			from a2a.TaskState
+			to   a2a.TaskState
+		}{
+			{a2a.TaskStateSubmitted, a2a.TaskStateWorking},
+			{a2a.TaskStateWorking, a2a.TaskStateInputRequired},
+			{a2a.TaskStateInputRequired, a2a.TaskStateSubmitted},
+			{a2a.TaskStateSubmitted, a2a.TaskStateAuthRequired},
+			{a2a.TaskStateAuthRequired, a2a.TaskStateCompleted},
+			// The push-failure path moves a completed task to failed.
+			{a2a.TaskStateCompleted, a2a.TaskStateFailed},
+		}
+		version := v1
+		for _, tr := range transitions {
+			updated := &a2a.Task{ID: task.ID, ContextID: "id", Status: a2a.TaskStatus{State: tr.to}}
+			if _, err := store.Update(t.Context(), &UpdateRequest{Task: updated, PrevVersion: version}); err != nil {
+				t.Fatalf("Update() %s->%s error = %v", tr.from, tr.to, err)
+			}
+			version++
+		}
+	})
+
+	t.Run("WORKING to SUBMITTED is rejected", func(t *testing.T) {
+		task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+		v1 := mustCreateVersioned(t, store, task)
+
+		backwards := &a2a.Task{ID: task.ID, ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+		if _, err := store.Update(t.Context(), &UpdateRequest{Task: backwards, PrevVersion: v1}); !errors.Is(err, a2a.ErrInvalidAgentResponse) {
+			t.Fatalf("Update() WORKING->SUBMITTED error = %v, want ErrInvalidAgentResponse", err)
+		}
+	})
+
+	t.Run("same-state update is allowed", func(t *testing.T) {
+		task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+		v1 := mustCreateVersioned(t, store, task)
+
+		updated := &a2a.Task{ID: task.ID, ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}, Metadata: map[string]any{"k": "v"}}
+		if _, err := store.Update(t.Context(), &UpdateRequest{Task: updated, PrevVersion: v1}); err != nil {
+			t.Fatalf("Update() WORKING->WORKING error = %v", err)
+		}
+	})
+}

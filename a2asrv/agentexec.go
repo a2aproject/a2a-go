@@ -265,9 +265,9 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	}
 
 	task, version := storedTask.Task, storedTask.Version
-	if task.Status.State.Terminal() && task.Status.State != a2a.TaskStateCanceled {
-		return nil, nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
-	}
+	// Note: a terminal task is not rejected here; cancelation is idempotent
+	// (BUG-02) and [canceler.Cancel] emits the current terminal task, so the
+	// cancelation resolves to it instead of failing.
 
 	execCtx := &ExecutorContext{
 		TaskID:     task.ID,
@@ -354,7 +354,9 @@ var _ taskexec.Canceler = (*canceler)(nil)
 
 // Cancel invokes the agent cancellation logic and writes events to the provided writer.
 func (c *canceler) Cancel(ctx context.Context, q eventpipe.Writer) error {
-	if c.task.Status.State == a2a.TaskStateCanceled {
+	if c.task.Status.State.Terminal() {
+		// Idempotent cancel: a terminal task cannot be canceled further, so
+		// emit its current state and let the cancelation resolve to it (BUG-02).
 		return q.Write(ctx, c.task)
 	}
 
