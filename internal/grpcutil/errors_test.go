@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -331,7 +332,7 @@ func TestToGRPCErrorEdgeCases(t *testing.T) {
 		{
 			name: "unknown error",
 			err:  unknownError,
-			want: status.Error(codes.Internal, unknownError.Error()),
+			want: status.Error(codes.Internal, "internal error"),
 		},
 		{
 			name: "structpb conversion failure",
@@ -435,5 +436,24 @@ func TestFromGRPCErrorEdgeCases(t *testing.T) {
 				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
 			}
 		})
+	}
+}
+
+// TestToGRPCError_SanitizesUnknownErrors is a regression test for BUG-12:
+// unknown/internal errors must not leak their raw message to clients.
+func TestToGRPCError_SanitizesUnknownErrors(t *testing.T) {
+	t.Parallel()
+
+	internal := errors.New("internal secret: /var/lib/a2a/credentials/secret_key")
+	got := ToGRPCError(internal)
+	st, ok := status.FromError(got)
+	if !ok {
+		t.Fatalf("ToGRPCError() is not a gRPC status error: %v", got)
+	}
+	if st.Message() != "internal error" {
+		t.Errorf("ToGRPCError() message = %q, want %q", st.Message(), "internal error")
+	}
+	if strings.Contains(st.Message(), "secret") {
+		t.Errorf("ToGRPCError() leaked internal details: %q", st.Message())
 	}
 }

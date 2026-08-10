@@ -16,6 +16,7 @@
 package jsonrpc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // JSON-RPC 2.0 protocol constants
@@ -136,6 +138,7 @@ func ToJSONRPCError(err error) *Error {
 
 	code := -32603
 	reason := "INTERNAL_ERROR"
+	mapped := false
 	var data []*errordetails.Typed
 
 	var a2aErr *a2a.Error
@@ -147,6 +150,7 @@ func ToJSONRPCError(err error) *Error {
 		if errors.Is(err, target) {
 			code = c
 			reason = a2a.ErrorReason(target)
+			mapped = true
 			break
 		}
 	}
@@ -172,9 +176,24 @@ func ToJSONRPCError(err error) *Error {
 	errorInfo := errordetails.NewErrorInfo(reason, a2a.ProtocolDomain, metadata)
 	data = append(data, errorInfo)
 
+	// Do not leak internal error details to clients (BUG-12/BUG-46): when the
+	// error cannot be attributed to a known a2a error, expose a generic
+	// message and log the full error server-side. Errors carrying an explicit
+	// client message (*a2a.Error.Message) keep it.
+	message := err.Error()
+	if !mapped {
+		var a2aErr *a2a.Error
+		if errors.As(err, &a2aErr) && a2aErr.Message != "" {
+			message = a2aErr.Message
+		} else {
+			log.Error(context.Background(), "internal error response", err)
+			message = "internal error"
+		}
+	}
+
 	return &Error{
 		Code:    code,
-		Message: err.Error(),
+		Message: message,
 		Data:    data,
 	}
 }

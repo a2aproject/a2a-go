@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"net/http"
@@ -571,8 +572,9 @@ func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req 
 
 type mockRequestHandler struct {
 	RequestHandler
-	listTasksFunc func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
-	getTaskFunc   func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	listTasksFunc       func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
 func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
@@ -587,6 +589,15 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 		return m.getTaskFunc(ctx, req)
 	}
 	return &a2a.Task{ID: req.ID}, nil
+}
+
+func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	if m.subscribeToTaskFunc != nil {
+		return m.subscribeToTaskFunc(ctx, req)
+	}
+	return func(yield func(a2a.Event, error) bool) {
+		yield(&a2a.Task{ID: req.ID}, nil)
+	}
 }
 
 func TestREST_ListTasks_Success(t *testing.T) {
@@ -708,5 +719,50 @@ func TestREST_GetTask_Success(t *testing.T) {
 				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestREST_SSE_PanicDoesNotLeakStackTrace is a regression test for BUG-46:
+// when a streaming handler panics, the client must not receive the panic
+// value or stack trace, even if the configured panic handler embeds the panic
+// error in its response.
+func TestREST_SSE_PanicDoesNotLeakStackTrace(t *testing.T) {
+	mock := &mockRequestHandler{
+		subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				panic("secret-internal-panic-value")
+			}
+		},
+	}
+	// The panic handler naively embeds the panic error (which contains the
+	// stack trace); the transport must still sanitize what reaches the client.
+	handler := NewRESTHandler(mock, WithTransportPanicHandler(func(r any) error {
+		return fmt.Errorf("panic occurred: %v", r)
+	}))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/tasks/task-1:subscribe", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+	if bytes.Contains(body, []byte("secret-internal-panic-value")) {
+		t.Fatalf("panic value leaked to the client: %s", body)
+	}
+	if bytes.Contains(body, []byte("goroutine")) {
+		t.Fatalf("stack trace leaked to the client: %s", body)
+	}
+	if !bytes.Contains(body, []byte("internal error")) {
+		t.Fatalf("expected a sanitized 'internal error' message, got: %s", body)
 	}
 }

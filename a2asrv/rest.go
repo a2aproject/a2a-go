@@ -340,6 +340,10 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			if h.cfg.PanicHandler == nil {
 				panic(err)
 			}
+			// Log the full panic (including the stack trace) server-side; the
+			// client only ever sees the sanitized error produced by the panic
+			// handler (BUG-46).
+			log.Error(ctx, "panic in streaming request handler", err)
 			errResp := rest.ToRESTError(h.cfg.PanicHandler(err), a2a.TaskID(""))
 			data, jErr := json.Marshal(errResp)
 			if jErr != nil {

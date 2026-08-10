@@ -490,7 +490,7 @@ func TestToRESTErrorEdgeCases(t *testing.T) {
 		{
 			name: "unknown error",
 			err:  errors.New("some unknown error"),
-			want: &Error{httpStatus: http.StatusInternalServerError, Err: StatusError{Code: http.StatusInternalServerError, Status: "INTERNAL", Message: "some unknown error"}},
+			want: &Error{httpStatus: http.StatusInternalServerError, Err: StatusError{Code: http.StatusInternalServerError, Status: "INTERNAL", Message: "internal error"}},
 		},
 	}
 
@@ -669,5 +669,23 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
+	}
+}
+
+// TestToRESTError_SanitizesUnknownErrors is a regression test for BUG-12:
+// unknown/internal errors must not leak their raw message to clients.
+func TestToRESTError_SanitizesUnknownErrors(t *testing.T) {
+	t.Parallel()
+
+	internal := errors.New("internal secret: /var/lib/a2a/credentials/secret_key")
+	got := ToRESTError(internal, "")
+	if got == nil {
+		t.Fatal("ToRESTError() = nil, want an error")
+	}
+	if got.Err.Message != "internal error" {
+		t.Errorf("ToRESTError() message = %q, want %q", got.Err.Message, "internal error")
+	}
+	if strings.Contains(got.Err.Message, "secret") {
+		t.Errorf("ToRESTError() leaked internal details: %q", got.Err.Message)
 	}
 }

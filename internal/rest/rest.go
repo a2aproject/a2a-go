@@ -28,6 +28,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // PathBuilder constructs REST paths for A2A endpoints, optionally rooted
@@ -336,12 +337,14 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 	httpStatus := http.StatusInternalServerError
 	grpcStatus := "INTERNAL"
 	reason := "INTERNAL_ERROR"
+	mapped := false
 
 	for _, mapping := range errorMappings {
 		if errors.Is(err, mapping.err) {
 			httpStatus = mapping.httpStatus
 			grpcStatus = mapping.grpcStatus
 			reason = a2a.ErrorReason(mapping.err)
+			mapped = true
 			break
 		}
 	}
@@ -376,12 +379,28 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 	errorInfo := errordetails.NewErrorInfo(reason, a2a.ProtocolDomain, metadata)
 	details = append(details, errorInfo)
 
+	// Do not leak internal error details (wrapped context, stack traces,
+	// implementation internals) to clients (BUG-12/BUG-46): when the error
+	// cannot be attributed to a known a2a error, expose a generic message and
+	// log the full error server-side. Errors carrying an explicit client
+	// message (*a2a.Error.Message) keep it.
+	message := err.Error()
+	if !mapped {
+		var a2aErr *a2a.Error
+		if errors.As(err, &a2aErr) && a2aErr.Message != "" {
+			message = a2aErr.Message
+		} else {
+			log.Error(context.Background(), "internal error response", err)
+			message = "internal error"
+		}
+	}
+
 	return &Error{
 		httpStatus: httpStatus,
 		Err: StatusError{
 			Code:    httpStatus,
 			Status:  grpcStatus,
-			Message: err.Error(),
+			Message: message,
 			Details: details,
 		},
 	}

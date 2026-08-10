@@ -74,15 +74,32 @@ func ToGRPCError(err error) error {
 
 	code := codes.Internal
 	reason := "INTERNAL_ERROR"
+	mapped := false
 	for _, mapping := range errorMappings {
 		if errors.Is(err, mapping.err) {
 			code = mapping.code
 			reason = a2a.ErrorReason(mapping.err)
+			mapped = true
 			break
 		}
 	}
 
-	st := status.New(code, err.Error())
+	// Do not leak internal error details to clients (BUG-12/BUG-46): when the
+	// error cannot be attributed to a known a2a error, expose a generic
+	// message and log the full error server-side. Errors carrying an explicit
+	// client message (*a2a.Error.Message) keep it.
+	message := err.Error()
+	if !mapped {
+		var a2aErr *a2a.Error
+		if errors.As(err, &a2aErr) && a2aErr.Message != "" {
+			message = a2aErr.Message
+		} else {
+			log.Warn(context.Background(), "internal error response", err)
+			message = "internal error"
+		}
+	}
+
+	st := status.New(code, message)
 	var errInfoMeta map[string]string
 	var a2aErr *a2a.Error
 	var messages []protoadapt.MessageV1
