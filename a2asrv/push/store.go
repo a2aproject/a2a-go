@@ -56,8 +56,15 @@ func validateConfig(config *a2a.PushConfig) error {
 	if config.URL == "" {
 		return errors.New("push config endpoint cannot be empty")
 	}
-	if _, err := url.ParseRequestURI(config.URL); err != nil {
+	parsedURL, err := url.ParseRequestURI(config.URL)
+	if err != nil {
 		return fmt.Errorf("invalid push config endpoint URL: %w", err)
+	}
+	// Only http/https are acceptable push endpoints; allowing arbitrary
+	// schemes (file://, ftp://, ...) would let a client direct the server's
+	// outbound HTTP client at non-HTTP sinks.
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("push config endpoint URL must use http or https scheme, got %q", parsedURL.Scheme)
 	}
 	return nil
 }

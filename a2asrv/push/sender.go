@@ -172,11 +172,22 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 		req.Header.Set(tokenHeader, config.Token)
 	}
 	if config.Auth != nil && config.Auth.Credentials != "" {
+		// Reject credentials containing CR/LF up front: net/http would refuse to
+		// write such a header value, but failing here produces a clear error
+		// instead of a transport-level failure (and guards against header
+		// injection through the Authorization value).
+		if strings.ContainsAny(config.Auth.Credentials, "\r\n") {
+			return s.handleError(ctx, fmt.Errorf("push notification auth credentials must not contain CR or LF characters"))
+		}
 		switch strings.ToLower(config.Auth.Scheme) {
 		case "bearer":
 			req.Header.Set("Authorization", "Bearer "+config.Auth.Credentials)
 		case "basic":
 			req.Header.Set("Authorization", "Basic "+config.Auth.Credentials)
+		default:
+			// Unknown scheme: fail loudly instead of silently dropping the
+			// configured authentication on the floor.
+			return s.handleError(ctx, fmt.Errorf("unsupported push notification auth scheme: %q", config.Auth.Scheme))
 		}
 	}
 

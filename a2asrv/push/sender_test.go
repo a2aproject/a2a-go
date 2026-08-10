@@ -168,6 +168,56 @@ func TestHTTPPushSender_SendPushSuccess(t *testing.T) {
 	}
 }
 
+func TestHTTPPushSender_AuthSchemeAndCredentialsValidation(t *testing.T) {
+	ctx := context.Background()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	t.Run("unknown auth scheme returns error when FailOnError is set", func(t *testing.T) {
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
+		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Digest", Credentials: "secret"}}
+		err := sender.SendPush(ctx, config, event)
+		if err == nil || !strings.Contains(err.Error(), "unsupported push notification auth scheme") {
+			t.Errorf("SendPush() error = %v, want an unsupported auth scheme error", err)
+		}
+	})
+
+	t.Run("unknown auth scheme is only logged when FailOnError is false", func(t *testing.T) {
+		sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
+		config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Digest", Credentials: "secret"}}
+		if err := sender.SendPush(ctx, config, event); err != nil {
+			t.Errorf("SendPush() error = %v, want nil when FailOnError is false", err)
+		}
+	})
+
+	t.Run("credentials with CR or LF are rejected", func(t *testing.T) {
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
+		for _, creds := range []string{"abc\r\nX-Injected: 1", "abc\nX-Injected: 1"} {
+			config := &a2a.PushConfig{URL: server.URL, Auth: &a2a.PushAuthInfo{Scheme: "Bearer", Credentials: creds}}
+			err := sender.SendPush(ctx, config, event)
+			if err == nil || !strings.Contains(err.Error(), "must not contain CR or LF") {
+				t.Errorf("SendPush() with CRLF credentials error = %v, want a CR/LF rejection error", err)
+			}
+		}
+	})
+
+	t.Run("bearer and basic credentials without CRLF still succeed", func(t *testing.T) {
+		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
+		for _, auth := range []*a2a.PushAuthInfo{
+			{Scheme: "Bearer", Credentials: "token-123"},
+			{Scheme: "Basic", Credentials: "dXNlcjpwYXNz"},
+		} {
+			config := &a2a.PushConfig{URL: server.URL, Auth: auth}
+			if err := sender.SendPush(ctx, config, event); err != nil {
+				t.Errorf("SendPush() with %s auth failed: %v", auth.Scheme, err)
+			}
+		}
+	})
+}
+
 func TestHTTPPushSender_SendPushError(t *testing.T) {
 	ctx := context.Background()
 	task := &a2a.Task{ID: "test-task", ContextID: "test-context"}

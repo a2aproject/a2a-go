@@ -74,6 +74,16 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 			config:  &a2a.PushConfig{URL: "not a url"},
 			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: parse \"not a url\": invalid URI for request", a2a.ErrInvalidParams),
 		},
+		{
+			name:    "non-http scheme",
+			config:  &a2a.PushConfig{URL: "file:///etc/passwd"},
+			wantErr: fmt.Errorf("%w: push config endpoint URL must use http or https scheme, got \"file\"", a2a.ErrInvalidParams),
+		},
+		{
+			name:    "ftp scheme",
+			config:  &a2a.PushConfig{URL: "ftp://example.com/file"},
+			wantErr: fmt.Errorf("%w: push config endpoint URL must use http or https scheme, got \"ftp\"", a2a.ErrInvalidParams),
+		},
 	}
 
 	for _, tc := range testCases {
