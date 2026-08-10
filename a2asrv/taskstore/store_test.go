@@ -578,3 +578,85 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 		t.Fatalf("alice task ID mismatch")
 	}
 }
+
+// TestInMemoryTaskStore_List_PageTokenWithUnderscoreIDs is a regression test
+// for BUG-25: page tokens are encoded as "<time>_<taskID>", so a task ID
+// containing "_" made the token undecodable (Split("_") produced more than
+// two parts) and pagination broke for such tasks.
+func TestInMemoryTaskStore_List_PageTokenWithUnderscoreIDs(t *testing.T) {
+	store := NewInMemory(&InMemoryStoreConfig{Authenticator: getAuthInfo, TimeProvider: newIncreasingTimeProvider(startTime)})
+	// IDs containing underscores, exactly the case the old "_" separator broke.
+	tasks := []*a2a.Task{
+		{ID: "task_a", ContextID: "ctx"},
+		{ID: "task_b_1", ContextID: "ctx"},
+		{ID: "task_c__double", ContextID: "ctx"},
+	}
+	mustCreate(t, store, tasks...)
+
+	// Walk every page (pageSize 1) and collect all task IDs.
+	var collected []string
+	pageToken := ""
+	for {
+		resp, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: 1, PageToken: pageToken, ContextID: "ctx"})
+		if err != nil {
+			t.Fatalf("store.List() error = %v", err)
+		}
+		for _, task := range resp.Tasks {
+			collected = append(collected, string(task.ID))
+		}
+		if resp.NextPageToken == "" {
+			break
+		}
+		pageToken = resp.NextPageToken
+		if len(collected) > len(tasks) {
+			t.Fatal("pagination did not terminate")
+		}
+	}
+
+	want := []string{"task_c__double", "task_b_1", "task_a"} // newest first, as List orders by lastUpdated desc
+	if !reflect.DeepEqual(collected, want) {
+		t.Fatalf("collected task IDs = %v, want %v", collected, want)
+	}
+}
+
+func TestPageTokenRoundTrip(t *testing.T) {
+	updatedTime := time.Date(2026, 6, 20, 12, 0, 0, 123456789, time.UTC)
+
+	t.Run("task ID with underscores round-trips", func(t *testing.T) {
+		taskID := a2a.TaskID("task_a_b_c")
+		token := encodePageToken(updatedTime, taskID)
+		gotTime, gotID, err := decodePageToken(token)
+		if err != nil {
+			t.Fatalf("decodePageToken() error = %v", err)
+		}
+		if !gotTime.Equal(updatedTime) {
+			t.Errorf("decodePageToken() time = %v, want %v", gotTime, updatedTime)
+		}
+		if gotID != taskID {
+			t.Errorf("decodePageToken() taskID = %q, want %q", gotID, taskID)
+		}
+	})
+
+	t.Run("legacy token without length prefix still decodes", func(t *testing.T) {
+		taskID := a2a.TaskID("plain-id")
+		timeStrNano := updatedTime.Format(time.RFC3339Nano)
+		legacyToken := base64.URLEncoding.EncodeToString(fmt.Appendf(nil, "%s_%s", timeStrNano, taskID))
+		gotTime, gotID, err := decodePageToken(legacyToken)
+		if err != nil {
+			t.Fatalf("decodePageToken() legacy token error = %v", err)
+		}
+		if !gotTime.Equal(updatedTime) {
+			t.Errorf("decodePageToken() time = %v, want %v", gotTime, updatedTime)
+		}
+		if gotID != taskID {
+			t.Errorf("decodePageToken() taskID = %q, want %q", gotID, taskID)
+		}
+	})
+
+	t.Run("corrupted length prefix is rejected", func(t *testing.T) {
+		badToken := base64.URLEncoding.EncodeToString([]byte("2026-06-20T12:00:00.123456789Z_99_short"))
+		if _, _, err := decodePageToken(badToken); !errors.Is(err, a2a.ErrParseError) {
+			t.Fatalf("decodePageToken() error = %v, want ErrParseError", err)
+		}
+	})
+}
