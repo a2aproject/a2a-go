@@ -367,3 +367,41 @@ func TestMessageRole_Codec(t *testing.T) {
 		}
 	}
 }
+
+// TestTaskStateUnmarshalJSON is a regression test for BUG-37: unknown task
+// state values must be rejected during JSON unmarshaling instead of being
+// silently accepted as an opaque enum value.
+func TestTaskStateUnmarshalJSON(t *testing.T) {
+	valid := []struct {
+		json string
+		want TaskState
+	}{
+		{`"TASK_STATE_UNSPECIFIED"`, TaskStateUnspecified},
+		{`"TASK_STATE_AUTH_REQUIRED"`, TaskStateAuthRequired},
+		{`"TASK_STATE_CANCELED"`, TaskStateCanceled},
+		{`"TASK_STATE_COMPLETED"`, TaskStateCompleted},
+		{`"TASK_STATE_FAILED"`, TaskStateFailed},
+		{`"TASK_STATE_INPUT_REQUIRED"`, TaskStateInputRequired},
+		{`"TASK_STATE_REJECTED"`, TaskStateRejected},
+		{`"TASK_STATE_SUBMITTED"`, TaskStateSubmitted},
+		{`"TASK_STATE_WORKING"`, TaskStateWorking},
+	}
+	for _, tc := range valid {
+		var state TaskState
+		if err := json.Unmarshal([]byte(tc.json), &state); err != nil {
+			t.Errorf("UnmarshalJSON(%s) error = %v", tc.json, err)
+			continue
+		}
+		if state != tc.want {
+			t.Errorf("UnmarshalJSON(%s) = %q, want %q", tc.json, state, tc.want)
+		}
+	}
+
+	invalid := []string{`""`, `"BOGUS_STATE"`, `"task_state_completed"`, `"TASK_STATE_"`}
+	for _, tc := range invalid {
+		var state TaskState
+		if err := json.Unmarshal([]byte(tc), &state); err == nil {
+			t.Errorf("UnmarshalJSON(%s) = %q, want an error", tc, state)
+		}
+	}
+}
