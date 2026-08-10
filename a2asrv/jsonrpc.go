@@ -37,7 +37,7 @@ type jsonrpcHandler struct {
 
 // NewJSONRPCHandler creates an [http.Handler] which implements JSONRPC A2A protocol binding.
 func NewJSONRPCHandler(handler RequestHandler, options ...TransportOption) http.Handler {
-	h := &jsonrpcHandler{handler: handler, cfg: &TransportConfig{}}
+	h := &jsonrpcHandler{handler: handler, cfg: &TransportConfig{KeepAliveInterval: defaultKeepAliveInterval}}
 	for _, option := range options {
 		option(h.cfg)
 	}
@@ -53,6 +53,8 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return
 	}
+
+	limitRequestBody(rw, req)
 
 	defer func() {
 		if err := req.Body.Close(); err != nil {

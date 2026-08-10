@@ -14,11 +14,32 @@
 
 package a2asrv
 
-import "time"
+import (
+	"net/http"
+	"time"
+)
+
+// defaultKeepAliveInterval is the SSE keep-alive interval used when the caller
+// does not configure one. Heartbeats prevent proxies and load balancers from
+// dropping idle SSE connections (BUG-09). Use WithTransportKeepAlive(0) to
+// disable them.
+const defaultKeepAliveInterval = 15 * time.Second
+
+// maxRequestBodySize caps the size of request bodies accepted by the
+// transports, preventing memory exhaustion from oversized payloads (BUG-10).
+const maxRequestBodySize = 10 * 1024 * 1024 // 10 MB
+
+// limitRequestBody wraps the request body with an [http.MaxBytesReader] so
+// that oversized payloads are rejected instead of being buffered in memory.
+func limitRequestBody(rw http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(rw, req.Body, maxRequestBodySize)
+}
 
 // WithTransportKeepAlive enables SSE keep-alive messages at the specified interval.
 // Keep-alive messages prevent API gateways from dropping idle connections.
-// If interval is 0 or negative, keep-alive is disabled (default behavior).
+// If interval is 0 or negative, keep-alive is disabled.
+// Keep-alive is enabled by default at [defaultKeepAliveInterval]; pass
+// WithTransportKeepAlive(0) to turn it off.
 func WithTransportKeepAlive(interval time.Duration) TransportOption {
 	return func(c *TransportConfig) {
 		c.KeepAliveInterval = interval

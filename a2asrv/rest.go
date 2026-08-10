@@ -40,7 +40,7 @@ type restHandler struct {
 
 // NewRESTHandler creates an [http.Handler] which implements the HTTP+JSON A2A protocol binding.
 func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handler {
-	h := &restHandler{handler: handler, cfg: &TransportConfig{}}
+	h := &restHandler{handler: handler, cfg: &TransportConfig{KeepAliveInterval: defaultKeepAliveInterval}}
 	for _, option := range opts {
 		option(h.cfg)
 	}
@@ -99,6 +99,7 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	limitRequestBody(rw, req)
 	var message a2a.SendMessageRequest
 	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
@@ -120,6 +121,7 @@ func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Reques
 
 func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	limitRequestBody(rw, req)
 	var message a2a.SendMessageRequest
 	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
@@ -375,6 +377,8 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
 		return
 	}
+
+	limitRequestBody(rw, req)
 
 	request := &a2a.PushConfig{}
 	if err := json.NewDecoder(req.Body).Decode(request); err != nil {
