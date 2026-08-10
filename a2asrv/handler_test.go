@@ -716,7 +716,7 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	if diff := cmp.Diff(wantResult, result); diff != "" {
 		t.Fatalf("SendMessage() mismatch (-want +got):\n%s", diff)
 	}
-	saved, err := ps.List(ctx, taskSeed.ID)
+	saved, _, err := ps.List(ctx, taskSeed.ID, 0, "")
 	if err != nil || len(saved) != 1 {
 		t.Fatalf("expected push config to be saved, but got %v, %v", saved, err)
 	}

@@ -28,7 +28,7 @@ type TestPushConfigStore struct {
 
 	SaveFunc      func(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error)
 	GetFunc       func(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error)
-	ListFunc      func(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
+	ListFunc      func(ctx context.Context, taskID a2a.TaskID, pageSize int, pageToken string) ([]*a2a.PushConfig, string, error)
 	DeleteFunc    func(ctx context.Context, taskID a2a.TaskID, configID string) error
 	DeleteAllFunc func(ctx context.Context, taskID a2a.TaskID) error
 }
@@ -50,11 +50,11 @@ func (m *TestPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, config
 }
 
 // List implements [push.ConfigStore] interface.
-func (m *TestPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
+func (m *TestPushConfigStore) List(ctx context.Context, taskID a2a.TaskID, pageSize int, pageToken string) ([]*a2a.PushConfig, string, error) {
 	if m.ListFunc != nil {
-		return m.ListFunc(ctx, taskID)
+		return m.ListFunc(ctx, taskID, pageSize, pageToken)
 	}
-	return m.InMemoryPushConfigStore.List(ctx, taskID)
+	return m.InMemoryPushConfigStore.List(ctx, taskID, pageSize, pageToken)
 }
 
 // Delete implements [push.ConfigStore] interface.
@@ -91,8 +91,8 @@ func (m *TestPushConfigStore) SetGetOverride(config *a2a.PushConfig, err error) 
 
 // SetListOverride overrides List execution
 func (m *TestPushConfigStore) SetListOverride(configs []*a2a.PushConfig, err error) *TestPushConfigStore {
-	m.ListFunc = func(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
-		return configs, err
+	m.ListFunc = func(ctx context.Context, taskID a2a.TaskID, pageSize int, pageToken string) ([]*a2a.PushConfig, string, error) {
+		return configs, "", err
 	}
 	return m
 }

@@ -426,14 +426,14 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
-	configs, err := h.pushConfigStore.List(ctx, req.TaskID)
+	configs, nextPageToken, err := h.pushConfigStore.List(ctx, req.TaskID, req.PageSize, req.PageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list push configs: %w", err)
 	}
 	if configs == nil {
-		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil
+		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}, NextPageToken: nextPageToken}, nil
 	}
-	return &a2a.ListTaskPushConfigResponse{Configs: configs}, nil
+	return &a2a.ListTaskPushConfigResponse{Configs: configs, NextPageToken: nextPageToken}, nil
 }
 
 // CreateTaskPushConfig implements RequestHandler.

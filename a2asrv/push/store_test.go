@@ -15,6 +15,7 @@
 package push
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -248,7 +249,7 @@ func TestInMemoryPushConfigStore_List(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			configs, err := store.List(ctx, tc.taskID)
+			configs, _, err := store.List(ctx, tc.taskID, 0, "")
 			if err != nil {
 				t.Fatalf("Get() failed: %v", err)
 			}
@@ -305,7 +306,7 @@ func TestInMemoryPushConfigStore_Delete(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Delete() failed: %v", err)
 			}
-			got, err := store.List(ctx, tc.taskID)
+			got, _, err := store.List(ctx, tc.taskID, 0, "")
 			if err != nil {
 				t.Fatalf("Get() failed: %v", err)
 			}
@@ -400,7 +401,7 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 	wg.Wait()
 	close(created)
 
-	configs, err := store.List(ctx, taskID)
+	configs, _, err := store.List(ctx, taskID, 0, "")
 	if err != nil {
 		t.Fatalf("Get() failed: %v", err)
 	}
@@ -437,4 +438,71 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 		result[taskID] = sortConfigList(configs)
 	}
 	return result
+}
+
+func TestInMemoryPushConfigStore_ListPagination(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("task")
+
+	store := NewInMemoryStore()
+	const total = 7
+	for i := range total {
+		if _, err := store.Save(ctx, taskID, &a2a.PushConfig{ID: fmt.Sprintf("config-%02d", i), URL: fmt.Sprintf("https://example.com/%d", i)}); err != nil {
+			t.Fatalf("Save() failed: %v", err)
+		}
+	}
+
+	// pageSize <= 0 returns everything and no next page token.
+	configs, next, err := store.List(ctx, taskID, 0, "")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(configs) != total || next != "" {
+		t.Fatalf("List(0) = %d configs, next %q; want %d configs and no token", len(configs), next, total)
+	}
+
+	// Paginate with pageSize 3: pages of 3, 3, 1, in deterministic ID order.
+	var seen []string
+	token := ""
+	pages := 0
+	for {
+		page, nextToken, err := store.List(ctx, taskID, 3, token)
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		for _, c := range page {
+			seen = append(seen, c.ID)
+		}
+		pages++
+		if nextToken == "" {
+			break
+		}
+		token = nextToken
+	}
+	if pages != 3 {
+		t.Fatalf("got %d pages, want 3", pages)
+	}
+	if len(seen) != total {
+		t.Fatalf("collected %d configs, want %d", len(seen), total)
+	}
+	for i, id := range seen {
+		if want := fmt.Sprintf("config-%02d", i); id != want {
+			t.Fatalf("config at position %d = %q, want %q (deterministic ID order)", i, id, want)
+		}
+	}
+
+	// Invalid token format yields an error.
+	if _, _, err := store.List(ctx, taskID, 3, "not-a-token"); !errors.Is(err, a2a.ErrParseError) {
+		t.Fatalf("List() with invalid token error = %v, want ErrParseError", err)
+	}
+
+	// A valid token past the end yields an empty page without a next token.
+	pastEnd := encodePushConfigPageToken(100)
+	page, nextToken, err := store.List(ctx, taskID, 3, pastEnd)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(page) != 0 || nextToken != "" {
+		t.Fatalf("List(past-end token) = %d configs, next %q; want empty page", len(page), nextToken)
+	}
 }

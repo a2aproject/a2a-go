@@ -485,7 +485,7 @@ func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) 
 	}
 	taskID := p.execCtx.TaskID
 
-	configs, err := p.pushConfigStore.List(ctx, taskID)
+	configs, _, err := p.pushConfigStore.List(ctx, taskID, 0, "")
 	if err != nil {
 		return err
 	}

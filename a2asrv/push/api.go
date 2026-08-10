@@ -37,8 +37,12 @@ type ConfigStore interface {
 	// Get retrieves a push configuration registered for a Task with the given configID.
 	Get(ctx context.Context, taskID a2a.TaskID, configID string) (*a2a.PushConfig, error)
 
-	// List retrieves all registered push configurations for a Task. Returning an error stops the execution.
-	List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error)
+	// List retrieves registered push configurations for a Task. pageSize > 0
+	// applies offset-based pagination: the returned next page token (empty when
+	// no further pages exist) can be passed back as pageToken to fetch the next
+	// page. pageSize <= 0 returns all configurations without a next page token.
+	// Returning an error stops the execution.
+	List(ctx context.Context, taskID a2a.TaskID, pageSize int, pageToken string) ([]*a2a.PushConfig, string, error)
 
 	// Delete removes a push configuration registered for a Task with the given configID.
 	Delete(ctx context.Context, taskID a2a.TaskID, configID string) error

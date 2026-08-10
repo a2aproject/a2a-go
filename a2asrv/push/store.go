@@ -16,9 +16,12 @@ package push
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -108,25 +111,78 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, co
 	return nil, ErrPushConfigNotFound
 }
 
-// List returns a copy of stored configs for a task.
-func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) ([]*a2a.PushConfig, error) {
+// List returns a copy of stored configs for a task, applying offset-based
+// pagination when pageSize > 0. Configs are ordered by ID so pages are
+// deterministic. The next page token is empty when no further pages exist.
+func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID, pageSize int, pageToken string) ([]*a2a.PushConfig, string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	configs, ok := s.configs[taskID]
 	if !ok {
-		return []*a2a.PushConfig{}, nil
+		return []*a2a.PushConfig{}, "", nil
 	}
 
-	result := make([]*a2a.PushConfig, 0, len(configs))
-	for _, config := range configs {
-		cp, err := utils.DeepCopy(config)
+	// Sort IDs for a deterministic ordering across pages.
+	ids := make([]string, 0, len(configs))
+	for id := range configs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	offset := 0
+	if pageToken != "" {
+		decodedOffset, err := decodePushConfigPageToken(pageToken)
 		if err != nil {
-			return nil, err
+			return nil, "", err
+		}
+		offset = decodedOffset
+	}
+	if offset < 0 || offset >= len(ids) {
+		// Token is past the end: an empty page with no further pages.
+		return []*a2a.PushConfig{}, "", nil
+	}
+
+	end := len(ids)
+	if pageSize > 0 && offset+pageSize < end {
+		end = offset + pageSize
+	}
+
+	result := make([]*a2a.PushConfig, 0, end-offset)
+	for _, id := range ids[offset:end] {
+		cp, err := utils.DeepCopy(configs[id])
+		if err != nil {
+			return nil, "", err
 		}
 		result = append(result, cp)
 	}
-	return result, nil
+
+	nextPageToken := ""
+	if pageSize > 0 && end < len(ids) {
+		nextPageToken = encodePushConfigPageToken(end)
+	}
+	return result, nextPageToken, nil
+}
+
+// encodePushConfigPageToken encodes a page offset as an opaque, URL-safe token
+// (base64 of the decimal offset), matching the opaque-token style used by task
+// pagination.
+func encodePushConfigPageToken(offset int) string {
+	return base64.URLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+}
+
+// decodePushConfigPageToken decodes an offset-based page token. Invalid tokens
+// yield [a2a.ErrParseError].
+func decodePushConfigPageToken(token string) (int, error) {
+	decoded, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return 0, a2a.ErrParseError
+	}
+	offset, err := strconv.Atoi(string(decoded))
+	if err != nil {
+		return 0, a2a.ErrParseError
+	}
+	return offset, nil
 }
 
 // Delete removes a single config from a task.
