@@ -29,6 +29,8 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1/pbconv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -1277,5 +1279,50 @@ func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// minimalExecutor is a no-op AgentExecutor used to build a real
+// a2asrv.defaultRequestHandler for transport-level tests.
+type minimalExecutor struct{}
+
+func (minimalExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {}
+}
+
+func (minimalExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {}
+}
+
+// TestGrpcHandler_GetTaskPushNotificationConfig_NotFound is a regression test
+// for BUG-36: a missing push config must surface as gRPC NotFound, not a
+// generic internal error.
+func TestGrpcHandler_GetTaskPushNotificationConfig_NotFound(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("test-task")
+	ts := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{
+		Authenticator: func(ctx context.Context) (string, error) { return "test", nil },
+	}).WithTasks(t, &a2a.Task{ID: taskID, ContextID: "test-context"})
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t)
+	reqHandler := a2asrv.NewHandler(minimalExecutor{},
+		a2asrv.WithTaskStore(ts),
+		a2asrv.WithPushNotifications(ps, pn),
+	)
+	client := startTestServer(t, reqHandler)
+
+	_, err := client.GetTaskPushNotificationConfig(ctx, &a2apb.GetTaskPushNotificationConfigRequest{
+		TaskId: string(taskID),
+		Id:     "non-existent",
+	})
+	if err == nil {
+		t.Fatal("GetTaskPushNotificationConfig() expected error, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("GetTaskPushNotificationConfig() error is not a gRPC status error: %v", err)
+	}
+	if st.Code() != codes.NotFound {
+		t.Errorf("GetTaskPushNotificationConfig() got error code %v, want NotFound", st.Code())
 	}
 }

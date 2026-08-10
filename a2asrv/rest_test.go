@@ -710,3 +710,35 @@ func TestREST_GetTask_Success(t *testing.T) {
 		})
 	}
 }
+
+// TestREST_GetTaskPushConfig_NotFound is a regression test for BUG-36: a
+// missing push config must be reported as HTTP 404 (task-not-found class)
+// instead of a generic 500.
+func TestREST_GetTaskPushConfig_NotFound(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.NewTaskID()
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t)
+	reqHandler := newTestHandler(
+		WithPushNotifications(ps, pn),
+		withTestTask(t, taskID),
+	)
+	server := httptest.NewServer(NewRESTHandler(reqHandler))
+	t.Cleanup(server.Close)
+
+	path := rest.MakeGetPushConfigPath(string(taskID), "non-existent")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected HTTP 404, got %d: %s", resp.StatusCode, body)
+	}
+}

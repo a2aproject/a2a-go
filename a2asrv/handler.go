@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -409,10 +410,16 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
 	if err != nil {
+		if errors.Is(err, push.ErrPushConfigNotFound) {
+			// Map a missing push config to the task-not-found class so every
+			// transport reports it as not found (REST 404, JSON-RPC -32001,
+			// gRPC NotFound) instead of an unmapped internal error.
+			return nil, fmt.Errorf("push config %q not found: %w", req.ID, a2a.ErrTaskNotFound)
+		}
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
-		return nil, push.ErrPushConfigNotFound
+		return nil, fmt.Errorf("push config %q not found: %w", req.ID, a2a.ErrTaskNotFound)
 	}
 	return config, nil
 }

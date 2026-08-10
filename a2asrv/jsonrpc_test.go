@@ -449,3 +449,43 @@ func mustUnmarshal(t *testing.T, data []byte) map[string]any {
 	}
 	return result
 }
+
+// TestJSONRPC_GetTaskPushConfig_NotFound is a regression test for BUG-36: a
+// missing push config must be reported as JSON-RPC -32001 (task-not-found
+// class) instead of a generic internal error.
+func TestJSONRPC_GetTaskPushConfig_NotFound(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.NewTaskID()
+	ps := testutil.NewTestPushConfigStore()
+	pn := testutil.NewTestPushSender(t)
+	reqHandler := newTestHandler(
+		WithPushNotifications(ps, pn),
+		withTestTask(t, taskID),
+	)
+	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
+	t.Cleanup(server.Close)
+
+	params := json.RawMessage(fmt.Sprintf(`{"taskId": %q, "id": "non-existent"}`, taskID))
+	request := mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodPushConfigGet, Params: params, ID: "123"})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, bytes.NewBuffer(request))
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var payload jsonrpc.ServerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decoder.Decode() error = %v", err)
+	}
+	if payload.Error == nil {
+		t.Fatal("expected an error response, got nil")
+	}
+	if !errors.Is(jsonrpc.FromJSONRPCError(payload.Error), a2a.ErrTaskNotFound) {
+		t.Errorf("payload.Error = %v, want TaskNotFound (-32001)", payload.Error)
+	}
+}
