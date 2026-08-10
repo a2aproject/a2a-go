@@ -296,9 +296,7 @@ func TestInMemoryQueue_ConcurrentWriteAndDestroy(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -312,7 +310,7 @@ func TestInMemoryQueue_ConcurrentWriteAndDestroy(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 
 	// Let the writers overlap with the destroy, then destroy the queue.
