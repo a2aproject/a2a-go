@@ -62,6 +62,11 @@ func validateConfig(config *a2a.PushConfig) error {
 	return nil
 }
 
+// maxPushConfigsPerTask caps the number of push notification configs a single
+// task may register. Without a limit a client could grow the store without
+// bound (BUG-42).
+const maxPushConfigsPerTask = 50
+
 // Save adds a copy of push config to the store.
 func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
 	if err := validateConfig(config); err != nil {
@@ -81,10 +86,17 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	}
 	toSave.TaskID = taskID
 
-	if _, ok := s.configs[taskID]; !ok {
-		s.configs[taskID] = make(map[string]*a2a.PushConfig)
+	configs, ok := s.configs[taskID]
+	if !ok {
+		configs = make(map[string]*a2a.PushConfig)
+		s.configs[taskID] = configs
 	}
-	s.configs[taskID][toSave.ID] = toSave
+	// Updating an existing config is always allowed; only new insertions are
+	// subject to the per-task limit.
+	if _, exists := configs[toSave.ID]; !exists && len(configs) >= maxPushConfigsPerTask {
+		return nil, fmt.Errorf("%w: task %s already has the maximum number of push notification configs (%d)", a2a.ErrInvalidParams, taskID, maxPushConfigsPerTask)
+	}
+	configs[toSave.ID] = toSave
 
 	savedCopy, err := utils.DeepCopy(toSave)
 	if err != nil {
