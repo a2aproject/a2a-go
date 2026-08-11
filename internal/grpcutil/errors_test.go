@@ -439,7 +439,7 @@ func TestFromGRPCErrorEdgeCases(t *testing.T) {
 	}
 }
 
-// TestFromGRPCErrorCodeOnlyFallback is a regression test for BUG-24: when a
+// TestFromGRPCErrorCodeOnlyFallback is a regression test for gRPC code-only fallback: when a
 // gRPC status carries no ErrorInfo reason, matching by code alone is
 // ambiguous for codes shared by several a2a errors. A single mapping for the
 // code is used; ambiguous codes fall back to the conservative ErrInternalError.
