@@ -368,7 +368,7 @@ func TestMessageRole_Codec(t *testing.T) {
 	}
 }
 
-// TestTaskStateUnmarshalJSON is a regression test for BUG-37: unknown task
+// TestTaskStateUnmarshalJSON is a regression test for task state validation: unknown task
 // state values must be rejected during JSON unmarshaling instead of being
 // silently accepted as an opaque enum value.
 func TestTaskStateUnmarshalJSON(t *testing.T) {

@@ -711,7 +711,7 @@ func TestREST_GetTask_Success(t *testing.T) {
 	}
 }
 
-// TestREST_ListTasks_InvalidStatus is a regression test for BUG-37: an
+// TestREST_ListTasks_InvalidStatus is a regression test for task state validation: an
 // invalid status query parameter must be rejected with HTTP 400 instead of
 // being silently passed through as an opaque TaskState.
 func TestREST_ListTasks_InvalidStatus(t *testing.T) {
