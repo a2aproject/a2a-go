@@ -144,7 +144,7 @@ func TestConcurrentCancellationResolvesToCompletedTask(t *testing.T) {
 	cancelChannels.ContinueCancel <- struct{}{}
 
 	// The task completed before the cancelation took effect; cancelation is
-	// idempotent (BUG-02), so the cancel resolves to the completed task.
+	// idempotent, so the cancel resolves to the completed task.
 	gotTask := <-cancelResultChan
 	if gotTask == nil || gotTask.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("cancelClient.CancelTask() = %v, want a completed task", gotTask)

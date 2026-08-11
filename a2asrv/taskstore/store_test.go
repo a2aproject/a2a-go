@@ -580,7 +580,7 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 }
 
 // TestInMemoryTaskStore_Update_StateTransitionValidation is a regression test
-// for BUG-43: non-terminal task state transitions must follow the A2A state
+// for task state transition validation: non-terminal task state transitions must follow the A2A state
 // machine; backwards transitions (e.g. WORKING -> SUBMITTED) are rejected.
 // Transitions out of terminal states are governed by the taskupdate manager
 // and are not restricted by the store.

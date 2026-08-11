@@ -349,7 +349,7 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 }
 
 // validTaskStateTransition reports whether moving from `from` to `to` is a
-// legal A2A task state transition (BUG-43). The check targets non-terminal
+// legal A2A task state transition. The check targets non-terminal
 // moves: a task cannot go backwards from a later state to an earlier one
 // (e.g. a working task cannot return to submitted). Transitions out of a
 // terminal state are governed by the taskupdate manager and are not restricted

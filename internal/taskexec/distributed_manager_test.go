@@ -325,7 +325,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			// Idempotent cancel (BUG-02): the completed task is returned and no
+			// Idempotent cancel: the completed task is returned and no
 			// cancelation is submitted.
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 		},

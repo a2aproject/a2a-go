@@ -266,7 +266,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 
 	task, version := storedTask.Task, storedTask.Version
 	// Note: a terminal task is not rejected here; cancelation is idempotent
-	// (BUG-02) and [canceler.Cancel] emits the current terminal task, so the
+	// and [canceler.Cancel] emits the current terminal task, so the
 	// cancelation resolves to it instead of failing.
 
 	execCtx := &ExecutorContext{
@@ -356,7 +356,7 @@ var _ taskexec.Canceler = (*canceler)(nil)
 func (c *canceler) Cancel(ctx context.Context, q eventpipe.Writer) error {
 	if c.task.Status.State.Terminal() {
 		// Idempotent cancel: a terminal task cannot be canceled further, so
-		// emit its current state and let the cancelation resolve to it (BUG-02).
+		// emit its current state and let the cancelation resolve to it.
 		return q.Write(ctx, c.task)
 	}
 

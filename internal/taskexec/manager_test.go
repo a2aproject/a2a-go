@@ -643,7 +643,7 @@ func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
 	executor.mustWrite(t, &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 	close(canceler.block)
 
-	// Idempotent cancel (BUG-02): canceling a task that completed concurrently
+	// Idempotent cancel: canceling a task that completed concurrently
 	// resolves to the completed task instead of ErrTaskNotCancelable.
 	if got := <-cancelResult; got == nil || got.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("manager.Cancel() = %v, want a completed task", got)

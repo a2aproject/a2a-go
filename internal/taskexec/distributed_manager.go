@@ -57,7 +57,7 @@ type distributedManager struct {
 	ctxCodec     ContextCodec
 	// mu serializes the cancel check-then-act (terminal-state check followed
 	// by the cancelation submission) so concurrent Cancel calls for the same
-	// task cannot both pass the check (BUG-44).
+	// task cannot both pass the check.
 	mu sync.Mutex
 }
 
@@ -167,7 +167,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 
 	if storedTask.Task.Status.State.Terminal() {
 		// Idempotent cancel: a terminal task cannot be canceled further;
-		// return its current state instead of an error (BUG-02).
+		// return its current state instead of an error.
 		return storedTask.Task, nil
 	}
 
@@ -184,7 +184,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	// The terminal-state check followed by the cancelation submission is a
 	// check-then-act: hold the mutex and re-check the state so concurrent
 	// Cancel calls cannot both observe a non-terminal state and submit
-	// overlapping cancelations (BUG-44). The task may have become terminal
+	// overlapping cancelations. The task may have become terminal
 	// while the queue and context were prepared above.
 	m.mu.Lock()
 	storedTask, err = m.taskStore.Get(ctx, req.ID)
