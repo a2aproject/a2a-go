@@ -21,12 +21,12 @@ import (
 
 // defaultKeepAliveInterval is the SSE keep-alive interval used when the caller
 // does not configure one. Heartbeats prevent proxies and load balancers from
-// dropping idle SSE connections (BUG-09). Use WithTransportKeepAlive(0) to
+// dropping idle SSE connections. Use WithTransportKeepAlive(0) to
 // disable them.
 const defaultKeepAliveInterval = 15 * time.Second
 
 // maxRequestBodySize caps the size of request bodies accepted by the
-// transports, preventing memory exhaustion from oversized payloads (BUG-10).
+// transports, preventing memory exhaustion from oversized payloads.
 const maxRequestBodySize = 10 * 1024 * 1024 // 10 MB
 
 // limitRequestBody wraps the request body with an [http.MaxBytesReader] so

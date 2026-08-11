@@ -723,7 +723,7 @@ func TestREST_GetTask_Success(t *testing.T) {
 	}
 }
 
-// TestJSONRPCHandler_DefaultKeepAliveEnabled is a regression test for BUG-09:
+// TestJSONRPCHandler_DefaultKeepAliveEnabled is a regression test for SSE keep-alive:
 // SSE keep-alive must be enabled by default (non-zero interval) and
 // WithTransportKeepAlive(0) must still disable it.
 func TestJSONRPCHandler_DefaultKeepAliveEnabled(t *testing.T) {
@@ -739,7 +739,7 @@ func TestJSONRPCHandler_DefaultKeepAliveEnabled(t *testing.T) {
 }
 
 // TestREST_SSE_KeepAliveHeartbeats verifies that keep-alive comments are
-// emitted on an idle SSE stream (BUG-09).
+// emitted on an idle SSE stream.
 func TestREST_SSE_KeepAliveHeartbeats(t *testing.T) {
 	firstEvent := make(chan struct{})
 	mock := &mockRequestHandler{
@@ -786,7 +786,7 @@ func TestREST_SSE_KeepAliveHeartbeats(t *testing.T) {
 	t.Fatal("no keep-alive comment received on an idle SSE stream")
 }
 
-// TestREST_RequestBodyTooLarge is a regression test for BUG-10: request bodies
+// TestREST_RequestBodyTooLarge is a regression test for request body limits: request bodies
 // larger than maxRequestBodySize must be rejected instead of buffered.
 func TestREST_RequestBodyTooLarge(t *testing.T) {
 	mock := &mockRequestHandler{}
@@ -812,7 +812,7 @@ func TestREST_RequestBodyTooLarge(t *testing.T) {
 	}
 }
 
-// TestJSONRPC_RequestBodyTooLarge is a regression test for BUG-10 on the
+// TestJSONRPC_RequestBodyTooLarge is a regression test for request body limits on the
 // JSON-RPC transport. JSON-RPC responses are always HTTP 200, so the error
 // must be detected in the response body.
 func TestJSONRPC_RequestBodyTooLarge(t *testing.T) {
