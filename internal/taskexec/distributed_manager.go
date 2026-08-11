@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -54,6 +55,11 @@ type distributedManager struct {
 	queueManager eventqueue.Manager
 	taskStore    taskstore.Store
 	ctxCodec     ContextCodec
+
+	// mu serializes the cancel check-then-act: the terminal-state check followed
+	// by the cancelation submission, so concurrent Cancel calls for the same task
+	// cannot both observe a non-terminal state and submit overlapping cancelations.
+	mu sync.Mutex
 }
 
 var _ Manager = (*distributedManager)(nil)
@@ -179,12 +185,31 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, err
 	}
 
+	// Close the check-then-act window: re-check the task state under the lock
+	// immediately before submitting, so a task that completed/failed while the
+	// queue and context were being prepared is not submitted for cancelation.
+	m.mu.Lock()
+	storedTask, err = m.taskStore.Get(ctx, req.ID)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("failed to re-load a task: %w", err)
+	}
+	if storedTask.Task.Status.State == a2a.TaskStateCanceled {
+		m.mu.Unlock()
+		return storedTask.Task, nil
+	}
+	if storedTask.Task.Status.State.Terminal() {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("task in non-cancelable state %q: %w",
+			storedTask.Task.Status.State, a2a.ErrTaskNotCancelable)
+	}
 	taskID, err := m.workQueue.Write(ctx, &workqueue.Payload{
 		Type:          workqueue.PayloadTypeCancel,
 		TaskID:        req.ID,
 		CancelRequest: req,
 		CallContext:   encodedCtx,
 	})
+	m.mu.Unlock()
 	if err != nil {
 		// if cancelation lease is already taken we can tap into the running cancellation events
 		if !errors.Is(err, workqueue.ErrLeaseAlreadyTaken) {

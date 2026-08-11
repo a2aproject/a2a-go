@@ -309,6 +309,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			name: "cancel running task",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 			},
 			wantQueueWrite: &workqueue.Payload{
@@ -319,16 +320,13 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
 		{
-			name: "failed to cancel task",
+			name: "task completes before cancelation submission",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			wantQueueWrite: &workqueue.Payload{
-				Type:          workqueue.PayloadTypeCancel,
-				TaskID:        tid,
-				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
-			},
+			// The re-check under the lock observes the terminal state, so no
+			// cancelation is submitted (TOCTOU window closed).
 			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
 		{
@@ -353,7 +351,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		},
 		{
 			name:           "work queue write error",
-			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}, {ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			writeQueueErr:  fmt.Errorf("write failed"),
 			wantErrContain: "write failed",
 		},
