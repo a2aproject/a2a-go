@@ -64,7 +64,7 @@ func validateConfig(config *a2a.PushConfig) error {
 
 // maxPushConfigsPerTask caps the number of push notification configs a single
 // task may register. Without a limit a client could grow the store without
-// bound (BUG-42).
+// bound.
 const maxPushConfigsPerTask = 50
 
 // Save adds a copy of push config to the store.

@@ -441,7 +441,7 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 }
 
 // TestInMemoryPushConfigStore_MaxConfigsPerTask is a regression test for
-// BUG-42: a task must not be able to register more than maxPushConfigsPerTask
+// the per-task push config limit: a task must not be able to register more than maxPushConfigsPerTask
 // push configs; exceeding the limit returns an error, while updating an
 // existing config at the limit is still allowed.
 func TestInMemoryPushConfigStore_MaxConfigsPerTask(t *testing.T) {
