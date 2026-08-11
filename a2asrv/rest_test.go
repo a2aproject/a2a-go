@@ -723,7 +723,7 @@ func TestREST_GetTask_Success(t *testing.T) {
 	}
 }
 
-// TestREST_SSE_PanicAfterClientDisconnectDoesNotLeak is a regression test for BUG-18:
+// TestREST_SSE_PanicAfterClientDisconnectDoesNotLeak is a regression test for the panicChan goroutine leak:
 // the REST SSE handler's panicChan was unbuffered, so when the streaming goroutine
 // panicked after the client had already disconnected (and the main loop had exited
 // via ctx.Done), the goroutine blocked forever writing the panic to panicChan,
