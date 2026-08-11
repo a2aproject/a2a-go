@@ -84,7 +84,7 @@ func ToGRPCError(err error) error {
 		}
 	}
 
-	// Do not leak internal error details to clients (BUG-12/BUG-46): when the
+	// Do not leak internal error details to clients: when the
 	// error cannot be attributed to a known a2a error, expose a generic
 	// message and log the full error server-side. Errors carrying an explicit
 	// client message (*a2a.Error.Message) keep it.

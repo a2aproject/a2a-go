@@ -672,7 +672,7 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 	}
 }
 
-// TestToRESTError_SanitizesUnknownErrors is a regression test for BUG-12:
+// TestToRESTError_SanitizesUnknownErrors is a regression test for error sanitization:
 // unknown/internal errors must not leak their raw message to clients.
 func TestToRESTError_SanitizesUnknownErrors(t *testing.T) {
 	t.Parallel()

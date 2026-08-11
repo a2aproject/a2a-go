@@ -439,7 +439,7 @@ func TestFromGRPCErrorEdgeCases(t *testing.T) {
 	}
 }
 
-// TestToGRPCError_SanitizesUnknownErrors is a regression test for BUG-12:
+// TestToGRPCError_SanitizesUnknownErrors is a regression test for error sanitization:
 // unknown/internal errors must not leak their raw message to clients.
 func TestToGRPCError_SanitizesUnknownErrors(t *testing.T) {
 	t.Parallel()

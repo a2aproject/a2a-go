@@ -193,7 +193,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			}
 			// Log the full panic (including the stack trace) server-side; the
 			// client only ever sees the sanitized error produced by the panic
-			// handler (BUG-46).
+			// handler.
 			log.Error(ctx, "panic in streaming request handler", err)
 			data, ok := marshalJSONRPCError(req, h.cfg.PanicHandler(err))
 			if !ok {

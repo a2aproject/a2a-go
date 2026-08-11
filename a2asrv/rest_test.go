@@ -722,7 +722,7 @@ func TestREST_GetTask_Success(t *testing.T) {
 	}
 }
 
-// TestREST_SSE_PanicDoesNotLeakStackTrace is a regression test for BUG-46:
+// TestREST_SSE_PanicDoesNotLeakStackTrace is a regression test for stack trace sanitization:
 // when a streaming handler panics, the client must not receive the panic
 // value or stack trace, even if the configured panic handler embeds the panic
 // error in its response.

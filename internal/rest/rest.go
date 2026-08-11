@@ -380,7 +380,7 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 	details = append(details, errorInfo)
 
 	// Do not leak internal error details (wrapped context, stack traces,
-	// implementation internals) to clients (BUG-12/BUG-46): when the error
+	// implementation internals) to clients: when the error
 	// cannot be attributed to a known a2a error, expose a generic message and
 	// log the full error server-side. Errors carrying an explicit client
 	// message (*a2a.Error.Message) keep it.
