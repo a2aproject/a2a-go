@@ -226,7 +226,7 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	}
 }
 
-// TestSSE_EventIDsAreSequential is a regression test for BUG-22: event IDs
+// TestSSE_EventIDsAreSequential is a regression test for sequential event IDs: event IDs
 // were random UUIDs, which made Last-Event-ID resumption impossible. IDs must
 // now be a monotonic per-connection counter (1, 2, 3, ...).
 func TestSSE_EventIDsAreSequential(t *testing.T) {
