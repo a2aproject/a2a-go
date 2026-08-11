@@ -283,13 +283,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				// Use a buffered channel and select guard so the writer never
-				// blocks forever when the client has already disconnected
-				// (e.g. requestCtx is done and no one reads panicChan anymore).
-				select {
-				case <-requestCtx.Done():
-				case panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack()):
-				}
+				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
 				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
