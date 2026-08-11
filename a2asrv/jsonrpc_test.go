@@ -450,7 +450,7 @@ func mustUnmarshal(t *testing.T, data []byte) map[string]any {
 	return result
 }
 
-// TestJSONRPC_GetTaskPushConfig_NotFound is a regression test for BUG-36: a
+// TestJSONRPC_GetTaskPushConfig_NotFound is a regression test for missing push config handling: a
 // missing push config must be reported as JSON-RPC -32001 (task-not-found
 // class) instead of a generic internal error.
 func TestJSONRPC_GetTaskPushConfig_NotFound(t *testing.T) {

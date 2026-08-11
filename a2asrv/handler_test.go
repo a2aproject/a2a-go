@@ -1963,7 +1963,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 		{
 			name:    "non-existent config",
 			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
-			wantErr: a2a.ErrTaskNotFound, // mapped from ErrPushConfigNotFound (BUG-36)
+			wantErr: a2a.ErrTaskNotFound, // mapped from ErrPushConfigNotFound
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 				withTestTask(t, taskID),

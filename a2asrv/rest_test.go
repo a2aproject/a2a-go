@@ -711,7 +711,7 @@ func TestREST_GetTask_Success(t *testing.T) {
 	}
 }
 
-// TestREST_GetTaskPushConfig_NotFound is a regression test for BUG-36: a
+// TestREST_GetTaskPushConfig_NotFound is a regression test for missing push config handling: a
 // missing push config must be reported as HTTP 404 (task-not-found class)
 // instead of a generic 500.
 func TestREST_GetTaskPushConfig_NotFound(t *testing.T) {

@@ -1295,7 +1295,7 @@ func (minimalExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorConte
 }
 
 // TestGrpcHandler_GetTaskPushNotificationConfig_NotFound is a regression test
-// for BUG-36: a missing push config must surface as gRPC NotFound, not a
+// for missing push config handling: a missing push config must surface as gRPC NotFound, not a
 // generic internal error.
 func TestGrpcHandler_GetTaskPushNotificationConfig_NotFound(t *testing.T) {
 	ctx := t.Context()
