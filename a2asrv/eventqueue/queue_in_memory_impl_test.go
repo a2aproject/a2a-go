@@ -281,7 +281,7 @@ func TestInMemoryQueue_BlockedWriteOnFullQueueThenDestroy(t *testing.T) {
 	<-completed
 }
 
-// TestInMemoryQueue_ConcurrentWriteAndDestroy is a regression test for BUG-20:
+// TestInMemoryQueue_ConcurrentWriteAndDestroy is a regression test for the closed-flag race:
 // the `closed` flag was a plain bool written by the broker goroutine during
 // destroy and read by Write without synchronization, which is a data race
 // (caught by `go test -race`). It exercises concurrent Write and Destroy to
