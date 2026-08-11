@@ -580,7 +580,7 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 }
 
 // TestInMemoryTaskStore_List_PageTokenWithUnderscoreIDs is a regression test
-// for BUG-25: page tokens are encoded as "<time>_<taskID>", so a task ID
+// for page token separator handling: page tokens are encoded as "<time>_<taskID>", so a task ID
 // containing "_" made the token undecodable (Split("_") produced more than
 // two parts) and pagination broke for such tasks.
 func TestInMemoryTaskStore_List_PageTokenWithUnderscoreIDs(t *testing.T) {
