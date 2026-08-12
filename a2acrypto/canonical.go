@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,16 +251,37 @@ func canonicalNumber(n json.Number) string {
 	return strconv.FormatInt(i, 10)
 }
 
-// canonicalFloat formats a float64 without unnecessary trailing zeros.
+// canonicalFloat formats a float64 per RFC 8785 §3.2.2.2 (ECMAScript
+// Number::toString): decimal notation for 1e-6 <= |x| < 1e21, exponential
+// otherwise with no leading zeros in the exponent, and -0 serialized as 0.
+// Go's strconv 'g' format diverges in all three regions, so it cannot be used.
 func canonicalFloat(f float64) string {
-	s := strconv.FormatFloat(f, 'g', -1, 64)
-	if !strings.ContainsAny(s, ".eE") {
+	if f == 0 {
+		return "0"
+	}
+	if abs := math.Abs(f); abs >= 1e-6 && abs < 1e21 {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	return normalizeExponent(strconv.FormatFloat(f, 'e', -1, 64))
+}
+
+// normalizeExponent strips leading zeros from the exponent ("1e-07" -> "1e-7"),
+// matching the ECMAScript Number::toString exponent form.
+func normalizeExponent(s string) string {
+	i := strings.IndexByte(s, 'e')
+	if i < 0 {
 		return s
 	}
-	if strings.Contains(s, "e") {
-		return strings.ToLower(s)
+	exp := s[i+1:]
+	sign := ""
+	if exp != "" && (exp[0] == '+' || exp[0] == '-') {
+		sign, exp = exp[:1], exp[1:]
 	}
-	return s
+	exp = strings.TrimLeft(exp, "0")
+	if exp == "" {
+		exp = "0"
+	}
+	return s[:i+1] + sign + exp
 }
 
 // sortObjectKeys recursively sorts object keys in lexicographic order and,

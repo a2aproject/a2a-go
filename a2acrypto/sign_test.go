@@ -23,6 +23,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -286,5 +287,36 @@ func TestCanonical_U2028_U2029_literal(t *testing.T) {
 	verifier := NewVerifier(VerifierConfig{KeyResolver: staticResolver})
 	if err := verifier.Verify(card, sig); err != nil {
 		t.Fatalf("Verify() with U+2028/U+2029 error = %v", err)
+	}
+}
+
+func TestCanonical_float_matches_rfc8785(t *testing.T) {
+	t.Parallel()
+
+	// RFC 8785 §3.2.2.2: numbers serialize per ECMAScript Number::toString —
+	// decimal for 1e-6 <= |x| < 1e21, exponential otherwise with no leading
+	// zeros in the exponent, and -0 as 0. Go's strconv 'g' format diverges in
+	// all three regions (exponent padding, decimal/exponential boundary, -0).
+	cases := []struct {
+		name string
+		in   float64
+		want string
+	}{
+		{"integer within float64 range", 123456789012345680000, "123456789012345680000"},
+		{"one-e21 boundary", 1e21, "1e+21"},
+		{"one-e-5 decimal", 1e-5, "0.00001"},
+		{"one-e-6 decimal boundary", 1e-6, "0.000001"},
+		{"one-e-7 exponential", 1e-7, "1e-7"},
+		{"fractional decimal", 0.1, "0.1"},
+		{"negative exponential", -1.5e-7, "-1.5e-7"},
+		{"negative zero", math.Copysign(0, -1), "0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := canonicalFloat(tc.in); got != tc.want {
+				t.Errorf("canonicalFloat(%v) = %s, want %s", tc.in, got, tc.want)
+			}
+		})
 	}
 }
