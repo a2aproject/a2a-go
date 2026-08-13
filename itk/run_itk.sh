@@ -106,8 +106,8 @@ docker exec itk-service git config --system --add safe.directory /app/agents/rep
 docker exec itk-service git config --system --add safe.directory /app/agents/repo/itk
 docker exec itk-service git config --system core.multiPackIndex false
 # Launcher's peer checkouts under /root/.cache/a2a-itk are host-owned; trust
-# every path so container-side git accepts them.
-docker exec itk-service git config --system --add safe.directory '*'
+# only repos under the launcher cache dir so container-side git accepts them.
+docker exec itk-service bash -lc 'while IFS= read -r -d "" d; do git config --system --add safe.directory "${d%/.git}"; done < <(find /root/.cache/a2a-itk -type d -name .git -print0)'
 
 # 7. Verify service is up and send post request
 MAX_RETRIES=30
