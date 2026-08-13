@@ -60,8 +60,11 @@ protoc -I. \
 # `go mod tidy`, `-diff` fails instead of silently rewriting the lock file.
 go mod tidy -diff
 
-# 5. Build jit itk_service docker image from root of a2a-itk
-docker build -t itk_service a2a-itk
+# 5. Build jit itk_service docker image from root of a2a-itk (skipped in CI
+# where the workflow builds via docker/build-push-action for GHA caching).
+if [ "${ITK_SKIP_BUILD:-0}" != "1" ]; then
+  docker build -t itk_service a2a-itk
+fi
 
 # 6. Start docker service
 A2A_GO_ROOT=$(cd .. && pwd)
@@ -80,14 +83,20 @@ if [ "${ITK_LOG_LEVEL^^}" = "DEBUG" ]; then
   DOCKER_MOUNT_LOGS="-v $ITK_DIR/logs:/app/logs"
 fi
 
+mkdir -p "$HOME/.cache/a2a-itk-launcher"
+
 # Run container with protobuf registration conflict set to 'warn'
 # This is necessary because the SDK v2 depends on its predecessor v0.x,
 # causing global proto registration conflicts.
 docker run -d --name itk-service \
   -e GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn \
   -e ITK_LOG_LEVEL="$ITK_LOG_LEVEL" \
+  -e ITK_ENTRYPOINT="${ITK_ENTRYPOINT:-itk_service_v2.py}" \
+  -e ITK_READINESS_TIMEOUT="${ITK_READINESS_TIMEOUT:-180}" \
+  -e ITK_MAX_WORKERS="${ITK_MAX_WORKERS:-2}" \
   -v "$A2A_GO_ROOT:/app/agents/repo" \
   -v "$ITK_DIR:/app/agents/repo/itk" \
+  -v "$HOME/.cache/a2a-itk-launcher:/root/.cache/a2a-itk" \
   $DOCKER_MOUNT_LOGS \
   -p 8000:8000 \
   itk_service
@@ -96,6 +105,9 @@ docker run -d --name itk-service \
 docker exec itk-service git config --system --add safe.directory /app/agents/repo
 docker exec itk-service git config --system --add safe.directory /app/agents/repo/itk
 docker exec itk-service git config --system core.multiPackIndex false
+# Launcher's peer checkouts under /root/.cache/a2a-itk are host-owned; trust
+# only repos under the launcher cache dir so container-side git accepts them.
+docker exec itk-service bash -lc 'while IFS= read -r -d "" d; do git config --system --add safe.directory "${d%/.git}"; done < <(find /root/.cache/a2a-itk -type d -name .git -print0)'
 
 # 7. Verify service is up and send post request
 MAX_RETRIES=30
