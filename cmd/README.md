@@ -34,7 +34,7 @@ These apply to every client-mode command.
 
 ### `discover` - Agent Card Discovery
 
-Fetch and display an agent card from its well-known URL.
+Fetch and display an agent card from its base URL or complete agent card URL.
 
 ```bash
 a2a discover <url>

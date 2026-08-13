@@ -49,6 +49,18 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 
+	t.Run("returns agent card with complete card url", func(t *testing.T) {
+		t.Parallel()
+		out := mustRunCMD(t, "discover", url+"/.well-known/agent-card.json", "-o", "json")
+		var card a2a.AgentCard
+		if err := json.Unmarshal([]byte(out), &card); err != nil {
+			t.Fatalf("json.Unmarshal(discover output) error = %v", err)
+		}
+		if card.Name != "Test Echo" {
+			t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
+		}
+	})
+
 	t.Run("missing url fails", func(t *testing.T) {
 		t.Parallel()
 		if _, err := runCMD(t, "discover"); err == nil {
