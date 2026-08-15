@@ -15,10 +15,12 @@
 package eventqueue
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/google/go-cmp/cmp"
@@ -120,5 +122,51 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	imqm := m.(*inMemoryManager)
 	if len(imqm.brokers) != numTaskIDs {
 		t.Fatalf("Expected %d queues to be created, but got %d", numTaskIDs, len(imqm.brokers))
+	}
+}
+
+func TestInMemoryManager_DestroyHonorsContext(t *testing.T) {
+	t.Parallel()
+	m := NewInMemoryManager(WithQueueBufferSize(0))
+	tid := a2a.NewTaskID()
+	_, writer := mustCreateReadWriter(t, m, tid)
+	manager := m.(*inMemoryManager)
+	manager.mu.Lock()
+	broker := manager.brokers[tid]
+	manager.mu.Unlock()
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- writer.Write(t.Context(), &Message{Event: &a2a.Message{ID: "blocked"}})
+	}()
+	select {
+	case err := <-writeDone:
+		t.Fatalf("Write() returned %v, want it to remain blocked", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := m.Destroy(ctx, tid); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Destroy() error = %v, want %v", err, context.Canceled)
+	}
+	select {
+	case <-writeDone:
+	case <-time.After(time.Second):
+		t.Fatal("Write() did not unblock after canceled Destroy() requested broker shutdown")
+	}
+	select {
+	case <-broker.destroyed:
+	case <-time.After(time.Second):
+		t.Fatal("broker did not finish shutting down after canceled Destroy()")
+	}
+	reader, err := m.CreateReader(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("CreateReader() after canceled Destroy() error = %v, want nil", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("replacement reader Close() error = %v, want nil", err)
+	}
+	if err := m.Destroy(t.Context(), tid); err != nil {
+		t.Fatalf("second Destroy() error = %v, want nil", err)
 	}
 }

@@ -52,9 +52,10 @@ Because the buffer is large, writes almost never block. This means a canceled co
 A fan-out broadcast system for delivering processed events to subscribers. In local mode, the in-memory implementation uses a broker goroutine per TaskID with buffered channels. In cluster mode, an externally-provided implementation (e.g., database-backed) distributes events across processes.
 
 Key behaviors of the in-memory implementation:
-1. The broker goroutine fans out each event to all registered reader queues.
-2. **Write is synchronous** -- it blocks until all registered queues receive the message (via a `dispatched` channel). A slow subscriber blocks the pipeline.
-3. Each reader queue has a buffered channel (default 32 capacity).
+1. The broker goroutine owns registration, unregistration, and broadcast membership. One ordered delivery worker per reader keeps those control-plane operations responsive while a reader is full.
+2. **Write is synchronous** -- it blocks until all still-registered queues receive the message (via a `dispatched` channel). This preserves producer-side backpressure for a normally slow reader.
+3. Each reader queue has a buffered channel (default 32 capacity). A reader that cannot accept a message for the configured subscriber grace period (five minutes by default) is removed; its `Read` returns `eventqueue.ErrQueueClosed` after any buffered messages are drained. A dropped local subscription falls back to the execution promise for the final result. A later `tasks/resubscribe` request starts from the task-store snapshot and uses `TaskVersion` filtering, so recovery does not treat the dropped queue as a task-store gap.
+4. `Close` and `Destroy` signal delivery workers before reader channels close, avoiding send-on-closed-channel races; writes on a closed queue or destroyed broker return `ErrQueueClosed`. The in-memory manager does not hold its global mutex while connecting to or destroying a broker.
 
 ### promise (`internal/taskexec/promise.go`)
 
@@ -349,7 +350,7 @@ In cluster mode, the frontend does not spawn execution goroutines. The backend's
 
 3. **Pipe write succeeding despite canceled context**: because the pipe buffered, a write to a non-full buffer succeeds immediately even if the context is canceled.
 
-4. **Broadcast queue write is synchronous**: `eventqueue.Writer.Write` blocks until all registered readers receive the message. A subscriber that doesn't drain its queue blocks the entire pipeline.
+4. **Broadcast queue write is synchronous**: `eventqueue.Writer.Write` applies backpressure until every registered reader accepts the message or a full reader exceeds the subscriber grace period and is removed. Disabling the subscriber timeout restores unbounded data-plane backpressure, but registration, unregistration, and unrelated task brokers remain responsive.
 
 5. **Cancelation coalescing is per-instance**: two `localManager` instances sharing a store do NOT coalesce cancelations. Each creates independent cancelation goroutines, and OCC is the only coordination mechanism.
 

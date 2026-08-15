@@ -17,11 +17,16 @@ package eventqueue
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 const defaultQueueBufferSize = 32
+
+// Match the pull-based reader's inactivity window so both built-in queue
+// implementations use the same default bound for an inactive subscriber.
+const defaultSubscriberTimeout = defaultInactivityTimeout
 
 // MemManagerOption is a functional option for configuring an in-memory event manager.
 type MemManagerOption func(*inMemoryManager)
@@ -33,12 +38,23 @@ func WithQueueBufferSize(size int) MemManagerOption {
 	}
 }
 
+// WithSubscriberTimeout configures how long an in-memory subscriber may remain
+// unable to accept a broadcast before it is closed and removed from the broker.
+// The default is five minutes. A non-positive duration disables automatic
+// subscriber removal.
+func WithSubscriberTimeout(timeout time.Duration) MemManagerOption {
+	return func(manager *inMemoryManager) {
+		manager.subscriberTimeout = timeout
+	}
+}
+
 // inMemoryManager implements Manager interface.
 type inMemoryManager struct {
 	mu      sync.Mutex
 	brokers map[a2a.TaskID]*inMemoryEventBroker
 
-	bufferSize int
+	bufferSize        int
+	subscriberTimeout time.Duration
 }
 
 var _ Manager = (*inMemoryManager)(nil)
@@ -49,14 +65,16 @@ var _ Manager = (*inMemoryManager)(nil)
 // Destroy() stops the goroutine and closes all the queues. If queues were buffered consumers are allowed to drain them.
 //
 // Queue.Write() returns when a message is put to all the open queues associated with the task.
-// Queue.Read() blocks until a message is received through another queue or until close.
+// A subscriber that remains unable to accept a message for the configured subscriber timeout is
+// removed and its Reader returns ErrQueueClosed after draining buffered messages. Queue.Read()
+// blocks until a message is received through another queue or until close.
 // Queue.Read() will not receive a message sent using Write() call on the same queue.
-// Queue.Close() unregisters a queue from further broadcasts.
-// Queue.Close() may partially drain the queue, so Read() behavior after is Close() is undefined.
+// Queue.Close() unregisters a queue from further broadcasts and allows buffered messages to drain.
 func NewInMemoryManager(options ...MemManagerOption) Manager {
 	manager := &inMemoryManager{
-		brokers:    make(map[a2a.TaskID]*inMemoryEventBroker),
-		bufferSize: defaultQueueBufferSize,
+		brokers:           make(map[a2a.TaskID]*inMemoryEventBroker),
+		bufferSize:        defaultQueueBufferSize,
+		subscriberTimeout: defaultSubscriberTimeout,
 	}
 	for _, opt := range options {
 		opt(manager)
@@ -74,23 +92,28 @@ func (m *inMemoryManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (
 
 func (m *inMemoryManager) createReadWriter(ctx context.Context, taskID a2a.TaskID) (*inMemoryQueue, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	broker, ok := m.brokers[taskID]
 	if !ok {
-		broker = newInMemoryEventBroker(m.bufferSize)
+		broker = newInMemoryEventBroker(m.bufferSize, m.subscriberTimeout)
 		m.brokers[taskID] = broker
 	}
-	return broker.connect()
+	m.mu.Unlock()
+	return broker.connect(ctx)
 }
 
 func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	broker, ok := m.brokers[taskID]
 	if !ok {
+		m.mu.Unlock()
 		return nil
 	}
-	broker.destroy() // responsiveness expected, as we're holding the mutex
-	delete(m.brokers, taskID)
-	return nil
+	m.mu.Unlock()
+	err := broker.destroy(ctx)
+	m.mu.Lock()
+	if current, ok := m.brokers[taskID]; ok && current == broker {
+		delete(m.brokers, taskID)
+	}
+	m.mu.Unlock()
+	return err
 }
