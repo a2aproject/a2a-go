@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -168,5 +169,82 @@ func TestInMemoryManager_DestroyHonorsContext(t *testing.T) {
 	}
 	if err := m.Destroy(t.Context(), tid); err != nil {
 		t.Fatalf("second Destroy() error = %v, want nil", err)
+	}
+}
+
+func TestInMemoryManager_CanceledCreationDoesNotRetainBroker(t *testing.T) {
+	tests := []struct {
+		name   string
+		create func(Manager, context.Context, a2a.TaskID) (any, error)
+	}{
+		{
+			name: "CreateReader",
+			create: func(manager Manager, ctx context.Context, taskID a2a.TaskID) (any, error) {
+				return manager.CreateReader(ctx, taskID)
+			},
+		},
+		{
+			name: "CreateWriter",
+			create: func(manager Manager, ctx context.Context, taskID a2a.TaskID) (any, error) {
+				return manager.CreateWriter(ctx, taskID)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			manager := NewInMemoryManager()
+			taskID := a2a.NewTaskID()
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			queue, err := test.create(manager, ctx, taskID)
+			if queue != nil || !errors.Is(err, context.Canceled) {
+				t.Fatalf("manager.%s() = (%v, %v), want (nil, %v)", test.name, queue, err, context.Canceled)
+			}
+
+			inMemory := manager.(*inMemoryManager)
+			inMemory.mu.Lock()
+			_, exists := inMemory.brokers[taskID]
+			inMemory.mu.Unlock()
+			if exists {
+				t.Fatalf("manager.%s() retained a broker after the canceled call", test.name)
+			}
+		})
+	}
+}
+
+type cancelOnSecondErrContext struct {
+	context.Context
+	cancel context.CancelFunc
+	calls  atomic.Int32
+}
+
+func (c *cancelOnSecondErrContext) Err() error {
+	if c.calls.Add(1) == 2 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestInMemoryManager_CancellationDuringCreationDoesNotRetainBroker(t *testing.T) {
+	t.Parallel()
+	manager := NewInMemoryManager()
+	taskID := a2a.NewTaskID()
+	base, cancel := context.WithCancel(t.Context())
+	ctx := &cancelOnSecondErrContext{Context: base, cancel: cancel}
+
+	reader, err := manager.CreateReader(ctx, taskID)
+	if reader != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("manager.CreateReader() = (%v, %v), want (nil, %v)", reader, err, context.Canceled)
+	}
+
+	inMemory := manager.(*inMemoryManager)
+	inMemory.mu.Lock()
+	_, exists := inMemory.brokers[taskID]
+	inMemory.mu.Unlock()
+	if exists {
+		t.Fatal("manager.CreateReader() retained a broker after cancellation during creation")
 	}
 }

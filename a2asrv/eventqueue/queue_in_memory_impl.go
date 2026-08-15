@@ -57,6 +57,9 @@ type inMemoryEventBroker struct {
 
 	queueBufferSize   int
 	subscriberTimeout time.Duration
+	// connectionRefs includes connect attempts in progress and queues that have
+	// not been dropped, allowing failed initial connects to clean up safely.
+	connectionRefs atomic.Int64
 }
 
 func newInMemoryEventBroker(queueBufferSize int, subscriberTimeout time.Duration) *inMemoryEventBroker {
@@ -323,7 +326,19 @@ func (q *inMemoryQueue) deliver(broadcast *broadcast) bool {
 	case <-broadcast.ctx.Done():
 		return false
 	case <-timeout:
-		return true
+		select {
+		case <-q.closedChan:
+			return false
+		case <-broadcast.ctx.Done():
+			return false
+		default:
+		}
+		select {
+		case q.eventsChan <- broadcast.payload:
+			return false
+		default:
+			return true
+		}
 	}
 }
 
@@ -339,6 +354,7 @@ func (q *inMemoryQueue) drop() {
 	q.dispatchMu.Unlock()
 
 	q.unregisterOnce.Do(func() {
+		q.broker.connectionRefs.Add(-1)
 		go q.broker.requestUnregister(q)
 	})
 }

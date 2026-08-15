@@ -524,6 +524,30 @@ func TestInMemoryQueue_StalledSubscriberIsDroppedAfterGracePeriod(t *testing.T) 
 	}
 }
 
+func TestInMemoryQueue_SubscriberTimeoutDoesNotDropReadySubscriber(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(1), WithSubscriberTimeout(time.Nanosecond))
+
+	for i := range 1_000 {
+		tid := a2a.TaskID(fmt.Sprintf("ready-subscriber-%d", i))
+		reader, writer := mustCreateReadWriter(t, qm, tid)
+		want := &Message{Event: &a2a.Message{ID: "ready"}}
+		if err := writer.Write(t.Context(), want); err != nil {
+			t.Fatalf("writer.Write() at iteration %d error = %v, want nil", i, err)
+		}
+		got, err := reader.Read(t.Context())
+		if err != nil {
+			t.Fatalf("reader.Read() at iteration %d error = %v, want nil", i, err)
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Fatalf("reader.Read() at iteration %d wrong result (-want +got) diff = %s", i, diff)
+		}
+		if err := qm.Destroy(t.Context(), tid); err != nil {
+			t.Fatalf("qm.Destroy() at iteration %d error = %v, want nil", i, err)
+		}
+	}
+}
+
 func TestInMemoryQueue_PreservesMessageOrderAcrossSubscribers(t *testing.T) {
 	t.Parallel()
 	qm := newTestManager(t, WithQueueBufferSize(3), WithSubscriberTimeout(0))

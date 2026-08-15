@@ -16,6 +16,7 @@ package eventqueue
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,8 +25,8 @@ import (
 
 const defaultQueueBufferSize = 32
 
-// Match the pull-based reader's inactivity window so both built-in queue
-// implementations use the same default bound for an inactive subscriber.
+// Reuse the pull-based reader's five-minute inactivity window as the default
+// grace period for an in-memory subscriber.
 const defaultSubscriberTimeout = defaultInactivityTimeout
 
 // MemManagerOption is a functional option for configuring an in-memory event manager.
@@ -83,22 +84,56 @@ func NewInMemoryManager(options ...MemManagerOption) Manager {
 }
 
 func (m *inMemoryManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (Reader, error) {
-	return m.createReadWriter(ctx, taskID)
+	queue, err := m.createReadWriter(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return queue, nil
 }
 
 func (m *inMemoryManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (Writer, error) {
-	return m.createReadWriter(ctx, taskID)
+	queue, err := m.createReadWriter(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return queue, nil
 }
 
 func (m *inMemoryManager) createReadWriter(ctx context.Context, taskID a2a.TaskID) (*inMemoryQueue, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	broker, ok := m.brokers[taskID]
 	if !ok {
 		broker = newInMemoryEventBroker(m.bufferSize, m.subscriberTimeout)
 		m.brokers[taskID] = broker
 	}
+	// Hold a reference before releasing the manager lock so a failed concurrent
+	// connection cannot remove a broker that another caller is still joining.
+	broker.connectionRefs.Add(1)
 	m.mu.Unlock()
-	return broker.connect(ctx)
+
+	queue, err := broker.connect(ctx)
+	m.mu.Lock()
+	if err != nil {
+		broker.connectionRefs.Add(-1)
+	}
+	cleanup := err != nil && broker.connectionRefs.Load() == 0
+	if cleanup {
+		if current, ok := m.brokers[taskID]; !ok || current != broker {
+			cleanup = false
+		} else {
+			delete(m.brokers, taskID)
+		}
+	}
+	m.mu.Unlock()
+	if cleanup {
+		if destroyErr := broker.destroy(context.Background()); destroyErr != nil {
+			return nil, fmt.Errorf("failed to clean up broker after connect failure: %w: %w", err, destroyErr)
+		}
+	}
+	return queue, err
 }
 
 func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
