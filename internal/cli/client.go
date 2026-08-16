@@ -33,7 +33,7 @@ import (
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 )
 
-var cardResolver = func() *agentcard.Resolver {
+var compatCardResolver = func() *agentcard.Resolver {
 	resolver := agentcard.NewResolver(&http.Client{Timeout: 30 * time.Second})
 	resolver.CardParser = a2av0.NewAgentCardParser()
 	return resolver
@@ -62,7 +62,7 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string, extraOpt
 	if cfg.auth != "" {
 		resolveOpts = append(resolveOpts, agentcard.WithRequestHeader("Authorization", cfg.auth))
 	}
-	card, err := cardResolver.Resolve(ctx, agentURL, resolveOpts...)
+	card, err := compatCardResolver.Resolve(ctx, agentURL, resolveOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving agent card: %w", err)
 	}

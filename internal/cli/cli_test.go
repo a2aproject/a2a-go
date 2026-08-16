@@ -39,33 +39,44 @@ import (
 func TestDiscover(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)
+	legacyURL := startLegacyTestServer(t)
 
-	t.Run("returns agent card", func(t *testing.T) {
-		t.Parallel()
-		out := mustRunCMD(t, "discover", url, "-o", "json")
-		var card a2a.AgentCard
-		if err := json.Unmarshal([]byte(out), &card); err != nil {
-			t.Fatalf("json.Unmarshal(discover output) error = %v", err)
-		}
-		if card.Name != "Test Echo" {
-			t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
-		}
-		if !card.Capabilities.Streaming {
-			t.Fatal("a2a discover card.Capabilities.Streaming = false, want true")
-		}
-	})
+	modes := []struct {
+		suffix string
+		url    string
+	}{{suffix: " v1", url: url}, {suffix: " v0", url: legacyURL}}
 
-	t.Run("returns agent card with complete card url", func(t *testing.T) {
-		t.Parallel()
-		out := mustRunCMD(t, "discover", url+"/.well-known/agent-card.json", "-o", "json")
-		var card a2a.AgentCard
-		if err := json.Unmarshal([]byte(out), &card); err != nil {
-			t.Fatalf("json.Unmarshal(discover output) error = %v", err)
-		}
-		if card.Name != "Test Echo" {
-			t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
-		}
-	})
+	for _, mode := range modes {
+		t.Run("returns agent card"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			out := mustRunCMD(t, "discover", mode.url, "-o", "json")
+			var card a2a.AgentCard
+			if err := json.Unmarshal([]byte(out), &card); err != nil {
+				t.Fatalf("json.Unmarshal(discover output) error = %v", err)
+			}
+			if card.Name != "Test Echo" {
+				t.Errorf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
+			}
+			if !card.Capabilities.Streaming {
+				t.Errorf("a2a discover card.Capabilities.Streaming = false, want true")
+			}
+			if len(card.SupportedInterfaces) == 0 {
+				t.Errorf("a2a discover supported interfaces is empty")
+			}
+		})
+
+		t.Run("returns agent card with complete card url"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			out := mustRunCMD(t, "discover", mode.url+"/.well-known/agent-card.json", "-o", "json")
+			var card a2a.AgentCard
+			if err := json.Unmarshal([]byte(out), &card); err != nil {
+				t.Fatalf("json.Unmarshal(discover output) error = %v", err)
+			}
+			if card.Name != "Test Echo" {
+				t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
+			}
+		})
+	}
 
 	t.Run("missing url fails", func(t *testing.T) {
 		t.Parallel()
@@ -92,7 +103,7 @@ func TestGetCard(t *testing.T) {
 func TestSend(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)
-	legacyUrl := startLegacyTestServer(t)
+	legacyURL := startLegacyTestServer(t)
 
 	msgText := "hello hello!"
 	msgJSON := fmt.Sprintf(`{"role":"ROLE_USER","parts":[{"text":"%s"}]}`, msgText)
@@ -161,7 +172,7 @@ func TestSend(t *testing.T) {
 	modes := []struct {
 		suffix string
 		url    string
-	}{{suffix: "_v1", url: url}, {suffix: "_v0", url: legacyUrl}}
+	}{{suffix: "_v1", url: url}, {suffix: "_v0", url: legacyURL}}
 
 	for _, mode := range modes {
 		for _, tt := range sendTests {
