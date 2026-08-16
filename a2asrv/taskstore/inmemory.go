@@ -148,7 +148,7 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 		return TaskVersionMissing, ErrConcurrentModification
 	}
 
-	if !validTaskStateTransition(stored.task.Status.State, copy.Status.State) {
+	if !ValidTaskStateTransition(stored.task.Status.State, copy.Status.State) {
 		return TaskVersionMissing, fmt.Errorf("invalid task state transition from %q to %q: %w",
 			stored.task.Status.State, copy.Status.State, a2a.ErrInvalidAgentResponse)
 	}
@@ -355,7 +355,28 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 // terminal state are governed by the taskupdate manager and are not restricted
 // here (the push-failure path may, for example, move a completed task to
 // failed). Updates that keep the state unchanged are always allowed.
-func validTaskStateTransition(from, to a2a.TaskState) bool {
+// isKnownTaskState reports whether s is one of the task states defined by the A2A
+// protocol. TaskState is a plain string type whose UnmarshalJSON accepts arbitrary
+// values, so unrecognized states must be rejected explicitly.
+func isKnownTaskState(s a2a.TaskState) bool {
+	switch s {
+	case a2a.TaskStateUnspecified, a2a.TaskStateAuthRequired, a2a.TaskStateCanceled,
+		a2a.TaskStateCompleted, a2a.TaskStateFailed, a2a.TaskStateInputRequired,
+		a2a.TaskStateRejected, a2a.TaskStateSubmitted, a2a.TaskStateWorking:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidTaskStateTransition reports whether the from -> to task-state transition is
+// allowed by the A2A state machine. It also rejects states that are not recognized
+// A2A task states, so unknown values (e.g. decoded from arbitrary input) cannot pass
+// through the permissive entry/pause cases.
+func ValidTaskStateTransition(from, to a2a.TaskState) bool {
+	if !isKnownTaskState(from) || !isKnownTaskState(to) {
+		return false
+	}
 	if from == to {
 		return true
 	}

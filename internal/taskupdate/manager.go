@@ -130,6 +130,10 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		if err != nil {
 			return nil, err
 		}
+		if !taskstore.ValidTaskStateTransition(lastStored.Task.Status.State, event.Status.State) {
+			return nil, fmt.Errorf("invalid task state transition from %q to %q: %w",
+				lastStored.Task.Status.State, event.Status.State, a2a.ErrInvalidAgentResponse)
+		}
 
 		vt, err := mgr.saveVersionedTask(ctx, task, event, lastStored.Version)
 		if err == nil {

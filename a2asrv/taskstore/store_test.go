@@ -632,4 +632,17 @@ func TestInMemoryTaskStore_Update_StateTransitionValidation(t *testing.T) {
 			t.Fatalf("Update() WORKING->WORKING error = %v", err)
 		}
 	})
+
+	t.Run("unknown target state is rejected", func(t *testing.T) {
+		task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+		v1 := mustCreateVersioned(t, store, task)
+
+		// Entry/pause states allow any forward transition, but the target must be a
+		// recognized A2A state — arbitrary strings must not slip through.
+		invalid := &a2a.Task{ID: task.ID, ContextID: "id", Status: a2a.TaskStatus{State: a2a.TaskState("TASK_STATE_FUTURE")}}
+		if _, err := store.Update(t.Context(), &UpdateRequest{Task: invalid, PrevVersion: v1}); !errors.Is(err, a2a.ErrInvalidAgentResponse) {
+			t.Fatalf("Update() SUBMITTED->TASK_STATE_FUTURE error = %v, want ErrInvalidAgentResponse", err)
+		}
+	})
+
 }
