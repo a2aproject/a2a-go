@@ -280,6 +280,40 @@ func TestClusterFrontend_EncodeContextError(t *testing.T) {
 	})
 }
 
+func TestClusterFrontend_Cancel_EncodeContextErrorClosesQueue(t *testing.T) {
+	t.Parallel()
+
+	tid := a2a.NewTaskID()
+	store := testutil.NewTestTaskStore()
+	store.GetFunc = func(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+		return &taskstore.StoredTask{Task: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}}, nil
+	}
+
+	queue := testutil.NewTestEventQueue()
+	queueClosed := false
+	queue.CloseFunc = func() error {
+		queueClosed = true
+		return nil
+	}
+	qm := testutil.NewTestQueueManager()
+	qm.SetQueue(queue)
+
+	frontend := NewDistributedManager(DistributedManagerConfig{
+		TaskStore:    store,
+		QueueManager: qm,
+		WorkQueue:    testutil.NewTestWorkQueue(),
+		ContextCodec: &testContextCodec{encodeErr: fmt.Errorf("encode failed")},
+	})
+
+	_, err := frontend.Cancel(t.Context(), &a2a.CancelTaskRequest{ID: tid})
+	if err == nil || !strings.Contains(err.Error(), "encode failed") {
+		t.Fatalf("Cancel() error = %v, want to contain %q", err, "encode failed")
+	}
+	if !queueClosed {
+		t.Fatal("Cancel() must close the event-queue reader when context encoding fails")
+	}
+}
+
 type testContextCodec struct {
 	encodeErr error
 	decodeErr error
@@ -309,7 +343,6 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			name: "cancel running task",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
-				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 			},
 			wantQueueWrite: &workqueue.Payload{
@@ -320,13 +353,16 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 		},
 		{
-			name: "task completes before cancelation submission",
+			name: "failed to cancel task",
 			getTaskResults: []*a2a.Task{
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
 				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			// The re-check under the lock observes the terminal state, so no
-			// cancelation is submitted (TOCTOU window closed).
+			wantQueueWrite: &workqueue.Payload{
+				Type:          workqueue.PayloadTypeCancel,
+				TaskID:        tid,
+				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
+			},
 			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
 		{
@@ -351,7 +387,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		},
 		{
 			name:           "work queue write error",
-			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}, {ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
+			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			writeQueueErr:  fmt.Errorf("write failed"),
 			wantErrContain: "write failed",
 		},
