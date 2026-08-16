@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,6 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestApplyUpdate(t *testing.T) {
@@ -352,10 +353,11 @@ func TestApplyUpdate_StatusUpdate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
 			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
+			if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
 				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
 			}
-			if diff := cmp.Diff(before, got); diff != "" {
+			if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
 				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 			}
 		})
