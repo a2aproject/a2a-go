@@ -75,14 +75,20 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: parse \"not a url\": invalid URI for request", a2a.ErrInvalidParams),
 		},
 		{
-			name:    "file scheme",
-			config:  &a2a.PushConfig{URL: "file:///etc/passwd"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: scheme must be http or https, got %q", a2a.ErrInvalidParams, "file"),
+			name:   "topic scheme stored for non-http senders",
+			config: &a2a.PushConfig{URL: "topic://name"},
+			want: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "topic://name",
+			},
 		},
 		{
-			name:    "javascript scheme",
-			config:  &a2a.PushConfig{URL: "javascript:alert(1)"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: scheme must be http or https, got %q", a2a.ErrInvalidParams, "javascript"),
+			name:   "file scheme stored",
+			config: &a2a.PushConfig{URL: "file:///etc/passwd"},
+			want: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "file:///etc/passwd",
+			},
 		},
 		{
 			name:    "loopback literal",

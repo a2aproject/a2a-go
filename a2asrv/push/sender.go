@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"syscall"
 	"time"
@@ -175,12 +176,27 @@ func limitPushRedirects(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+func isHTTPPushScheme(scheme string) bool {
+	s := strings.ToLower(scheme)
+	return s == "http" || s == "https"
+}
+
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
-// to the URL specified in the push configuration.
+// to the URL specified in the push configuration. Non-http(s) URLs are ignored.
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
 	jsonData, err := json.Marshal(a2a.StreamResponse{Event: event})
 	if err != nil {
 		return s.handleError(ctx, fmt.Errorf("failed to serialize event to JSON: %w", err))
+	}
+	if config == nil {
+		return s.handleError(ctx, errors.New("push config cannot be nil"))
+	}
+	u, err := url.ParseRequestURI(config.URL)
+	if err != nil {
+		return s.handleError(ctx, fmt.Errorf("failed to parse push notification URL: %w", err))
+	}
+	if !isHTTPPushScheme(u.Scheme) {
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.URL, bytes.NewBuffer(jsonData))
