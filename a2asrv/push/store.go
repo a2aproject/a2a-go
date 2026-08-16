@@ -83,18 +83,17 @@ func validateConfig(config *a2a.PushConfig, allowPrivateNetworks bool) error {
 	return nil
 }
 
-// validatePushEndpointURL enforces http(s) and rejects obvious private/loopback
-// targets at write time (create + SendMessage embed). Dial-time checks in the
-// sender still cover DNS rebinding; this is fail-fast parity with a2a-python /
-// a2a-js create-time guards.
+// validatePushEndpointURL parses the endpoint. Non-http(s) schemes are stored
+// so other senders (for example topic:// MQ) can use the same config.
+// For http(s), reject private/loopback literal hosts at write time.
+// Dial-time checks in HTTPPushSender still cover DNS rebinding.
 func validatePushEndpointURL(raw string, allowPrivateNetworks bool) error {
 	u, err := url.ParseRequestURI(raw)
 	if err != nil {
 		return err
 	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("scheme must be http or https, got %q", u.Scheme)
+	if !isHTTPPushScheme(u.Scheme) {
+		return nil
 	}
 	host := u.Hostname()
 	if host == "" {

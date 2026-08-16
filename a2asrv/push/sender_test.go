@@ -206,7 +206,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			name:    "invalid request URL",
 			event:   events,
 			config:  &a2a.PushConfig{URL: "::"},
-			wantErr: "failed to create HTTP request",
+			wantErr: "failed to parse push notification URL",
 		},
 		{
 			name:    "http client fails",
@@ -273,6 +273,23 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestHTTPPushSender_SendPushIgnoresNonHTTP(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+	sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
+
+	for _, raw := range []string{"topic://name", "file:///etc/passwd"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+			err := sender.SendPush(ctx, &a2a.PushConfig{URL: raw}, event)
+			if err != nil {
+				t.Fatalf("SendPush() error = %v, want %v", err, nil)
+			}
+		})
+	}
 }
 
 func TestHTTPPushSender_SSRFProtection(t *testing.T) {
