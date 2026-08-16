@@ -83,6 +83,33 @@ func TestGetCard(t *testing.T) {
 	}
 }
 
+func TestVersion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("text output", func(t *testing.T) {
+		t.Parallel()
+		out := mustRunCMD(t, "version")
+		if !strings.HasPrefix(out, "a2a ") {
+			t.Fatalf("a2a version output = %q, want it to start with %q", out, "a2a ")
+		}
+	})
+
+	t.Run("json output", func(t *testing.T) {
+		t.Parallel()
+		out := mustRunCMD(t, "version", "-o", "json")
+		var info versionInfo
+		if err := json.Unmarshal([]byte(out), &info); err != nil {
+			t.Fatalf("json.Unmarshal(version output) error = %v", err)
+		}
+		if info.Version == "" {
+			t.Fatalf("a2a version info.Version = %q, want non-empty", info.Version)
+		}
+		if info.GoVersion == "" {
+			t.Fatalf("a2a version info.GoVersion = %q, want non-empty", info.GoVersion)
+		}
+	})
+}
+
 func TestSend(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)

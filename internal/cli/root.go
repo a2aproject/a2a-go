@@ -59,6 +59,7 @@ func newRootCmd(cfg *globalConfig, out io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "a2a",
 		Short:         "CLI for the Agent-to-Agent protocol",
+		Version:       buildVersionInfo().Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -81,6 +82,7 @@ func newRootCmd(cfg *globalConfig, out io.Writer) *cobra.Command {
 		newCancelCmd(cfg),
 		newSubscribeCmd(cfg),
 		newServeCmd(cfg),
+		newVersionCmd(cfg),
 	)
 
 	return cmd
