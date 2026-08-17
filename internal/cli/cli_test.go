@@ -16,6 +16,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,41 +26,57 @@ import (
 	"strings"
 	"testing"
 
+	a2acorev0 "github.com/a2aproject/a2a-go/a2a"
+	a2asrvv0 "github.com/a2aproject/a2a-go/a2asrv"
+	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 func TestDiscover(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)
+	legacyURL := startLegacyTestServer(t)
 
-	t.Run("returns agent card", func(t *testing.T) {
-		t.Parallel()
-		out := mustRunCMD(t, "discover", url, "-o", "json")
-		var card a2a.AgentCard
-		if err := json.Unmarshal([]byte(out), &card); err != nil {
-			t.Fatalf("json.Unmarshal(discover output) error = %v", err)
-		}
-		if card.Name != "Test Echo" {
-			t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
-		}
-		if !card.Capabilities.Streaming {
-			t.Fatal("a2a discover card.Capabilities.Streaming = false, want true")
-		}
-	})
+	modes := []struct {
+		suffix string
+		url    string
+	}{{suffix: " v1", url: url}, {suffix: " v0", url: legacyURL}}
 
-	t.Run("returns agent card with complete card url", func(t *testing.T) {
-		t.Parallel()
-		out := mustRunCMD(t, "discover", url+"/.well-known/agent-card.json", "-o", "json")
-		var card a2a.AgentCard
-		if err := json.Unmarshal([]byte(out), &card); err != nil {
-			t.Fatalf("json.Unmarshal(discover output) error = %v", err)
-		}
-		if card.Name != "Test Echo" {
-			t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
-		}
-	})
+	for _, mode := range modes {
+		t.Run("returns agent card"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			out := mustRunCMD(t, "discover", mode.url, "-o", "json")
+			var card a2a.AgentCard
+			if err := json.Unmarshal([]byte(out), &card); err != nil {
+				t.Fatalf("json.Unmarshal(discover output) error = %v", err)
+			}
+			if card.Name != "Test Echo" {
+				t.Errorf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
+			}
+			if !card.Capabilities.Streaming {
+				t.Errorf("a2a discover card.Capabilities.Streaming = false, want true")
+			}
+			if len(card.SupportedInterfaces) == 0 {
+				t.Errorf("a2a discover supported interfaces is empty")
+			}
+		})
+
+		t.Run("returns agent card with complete card url"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			out := mustRunCMD(t, "discover", mode.url+"/.well-known/agent-card.json", "-o", "json")
+			var card a2a.AgentCard
+			if err := json.Unmarshal([]byte(out), &card); err != nil {
+				t.Fatalf("json.Unmarshal(discover output) error = %v", err)
+			}
+			if card.Name != "Test Echo" {
+				t.Fatalf("a2a discover card.Name = %q, want %q", card.Name, "Test Echo")
+			}
+		})
+	}
 
 	t.Run("missing url fails", func(t *testing.T) {
 		t.Parallel()
@@ -86,6 +103,7 @@ func TestGetCard(t *testing.T) {
 func TestSend(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)
+	legacyURL := startLegacyTestServer(t)
 
 	msgText := "hello hello!"
 	msgJSON := fmt.Sprintf(`{"role":"ROLE_USER","parts":[{"text":"%s"}]}`, msgText)
@@ -96,64 +114,86 @@ func TestSend(t *testing.T) {
 
 	sendTests := []struct {
 		name     string
-		args     []string
+		args     func(url string) []string
 		wantText string
 		wantErr  bool
 	}{
 		{
-			name:     "text",
-			args:     []string{"send", url, "-o", "json", msgText},
+			name: "text",
+			args: func(url string) []string {
+				return []string{"send", url, "-o", "json", msgText}
+			},
 			wantText: msgText,
 		},
 		{
-			name:     "parts",
-			args:     []string{"send", url, "-o", "json", "--parts", `[{"text":"part one"},{"text":"part two"}]`},
+			name: "parts",
+			args: func(url string) []string {
+				return []string{"send", url, "-o", "json", "--parts", `[{"text":"part one"},{"text":"part two"}]`}
+			},
 			wantText: "part one part two",
 		},
 		{
-			name:     "message json",
-			args:     []string{"send", url, "-o", "json", "--json", msgJSON},
+			name: "message json",
+			args: func(url string) []string {
+				return []string{"send", url, "-o", "json", "--json", msgJSON}
+			},
 			wantText: msgText,
 		},
 		{
-			name:     "message from file",
-			args:     []string{"send", url, "-o", "json", "-f", path},
+			name: "message from file",
+			args: func(url string) []string {
+				return []string{"send", url, "-o", "json", "-f", path}
+			},
 			wantText: msgText,
 		},
 		{
-			name:    "fails when no message",
-			args:    []string{"send", url},
+			name: "fails when no message",
+			args: func(url string) []string {
+				return []string{"send", url}
+			},
 			wantErr: true,
 		},
 		{
-			name:    "fails when no url",
-			args:    []string{"send"},
+			name: "fails when no url",
+			args: func(url string) []string {
+				return []string{"send"}
+			},
 			wantErr: true,
 		},
 		{
-			name:    "fails on bad --json",
-			args:    []string{"send", url, "--json", "{bad"},
+			name: "fails on bad --json",
+			args: func(url string) []string {
+				return []string{"send", url, "--json", "{bad"}
+			},
 			wantErr: true,
 		},
 	}
-	for _, tt := range sendTests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			out, err := runCMD(t, tt.args...)
-			if err != nil && tt.wantErr {
-				return
-			}
-			if err != nil {
-				t.Fatalf("runCMD(%q) error = %v", strings.Join(tt.args, " "), err)
-			}
-			var task a2a.Task
-			if err := json.Unmarshal([]byte(out), &task); err != nil {
-				t.Fatalf("json.Unmarshal() error = %v", err)
-			}
-			if text := allArtifactText(&task); text != tt.wantText {
-				t.Fatalf("allArtifactText() = %q, want %q", text, tt.wantText)
-			}
-		})
+
+	modes := []struct {
+		suffix string
+		url    string
+	}{{suffix: "_v1", url: url}, {suffix: "_v0", url: legacyURL}}
+
+	for _, mode := range modes {
+		for _, tt := range sendTests {
+			t.Run(tt.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
+				out, err := runCMD(t, tt.args(mode.url)...)
+				if err != nil && tt.wantErr {
+					return
+				}
+				if err != nil {
+					t.Fatalf("runCMD(%q) error = %v", strings.Join(tt.args(mode.url), " "), err)
+				}
+				var task a2a.Task
+				if err := json.Unmarshal([]byte(out), &task); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v", err)
+				}
+				if text := allArtifactText(&task); text != tt.wantText {
+					t.Fatalf("allArtifactText() = %q, want %q", text, tt.wantText)
+				}
+			})
+		}
 	}
 }
 
@@ -245,6 +285,28 @@ func startTestServer(t *testing.T) string {
 	return server.URL
 }
 
+func startLegacyTestServer(t *testing.T) string {
+	t.Helper()
+
+	handler := a2asrvv0.NewHandler(&legacyExecutor{})
+
+	mux := http.NewServeMux()
+	mux.Handle("/", a2asrvv0.NewJSONRPCHandler(handler))
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrvv0.NewStaticAgentCardHandler(&a2acorev0.AgentCard{
+		Name:               "Test Echo",
+		Version:            "1.0.0",
+		URL:                server.URL,
+		PreferredTransport: a2acorev0.TransportProtocol(a2a.TransportProtocolJSONRPC),
+		Capabilities:       a2acorev0.AgentCapabilities{Streaming: true},
+	}))
+
+	return server.URL
+}
+
 func sendTestMessage(t *testing.T, url, text string) a2a.TaskID {
 	t.Helper()
 	ctx := t.Context()
@@ -286,4 +348,27 @@ func runCMD(t *testing.T, args ...string) (string, error) {
 	root.SetArgs(args)
 	err := root.Execute()
 	return buf.String(), err
+}
+
+type legacyExecutor struct{}
+
+func (e *legacyExecutor) Execute(ctx context.Context, reqCtx *a2asrvv0.RequestContext, queue eventqueue.Queue) error {
+	if err := queue.Write(ctx, a2acorev0.NewStatusUpdateEvent(reqCtx, a2acorev0.TaskState(a2a.TaskStateSubmitted), nil)); err != nil {
+		return err
+	}
+	msg, err := a2av0.ToV1Message(reqCtx.Message)
+	if err != nil {
+		return err
+	}
+	echo := a2acorev0.TextPart{Text: messageText(msg)}
+	if err := queue.Write(ctx, a2acorev0.NewArtifactEvent(reqCtx, echo)); err != nil {
+		return err
+	}
+	finalEvent := a2acorev0.NewStatusUpdateEvent(reqCtx, a2acorev0.TaskState(a2a.TaskStateCompleted), nil)
+	finalEvent.Final = true
+	return queue.Write(ctx, finalEvent)
+}
+
+func (e *legacyExecutor) Cancel(ctx context.Context, reqCtx *a2asrvv0.RequestContext, queue eventqueue.Queue) error {
+	return fmt.Errorf("not implemented")
 }
