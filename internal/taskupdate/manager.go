@@ -82,6 +82,10 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		if err := mgr.validate(v); err != nil {
 			return nil, err
 		}
+		if mgr.lastStored != nil && !taskstore.ValidTaskStateTransition(mgr.lastStored.Task.Status.State, v.Status.State) {
+			return nil, fmt.Errorf("invalid task state transition from %q to %q: %w",
+				mgr.lastStored.Task.Status.State, v.Status.State, a2a.ErrInvalidAgentResponse)
+		}
 		copy, err := utils.DeepCopy(v)
 		if err != nil {
 			return nil, err
