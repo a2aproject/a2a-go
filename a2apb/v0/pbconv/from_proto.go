@@ -87,6 +87,30 @@ func FromProtoMessage(pMsg *a2apb.Message) (*a2a.Message, error) {
 	return msg, nil
 }
 
+// FromProtoCancelTaskRequest converts an [a2apb.CancelTaskRequest] to an [a2a.CancelTaskRequest].
+func FromProtoCancelTaskRequest(req *a2apb.CancelTaskRequest) (*a2a.CancelTaskRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+	taskID, err := ExtractTaskID(req.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract task id: %v", err)
+	}
+	return &a2a.CancelTaskRequest{ID: taskID}, nil
+}
+
+// FromProtoTaskSubscriptionRequest converts an [a2apb.TaskSubscriptionRequest] to an [a2a.SubscribeToTaskRequest].
+func FromProtoTaskSubscriptionRequest(req *a2apb.TaskSubscriptionRequest) (*a2a.SubscribeToTaskRequest, error) {
+	if req == nil {
+		return nil, nil
+	}
+	taskID, err := ExtractTaskID(req.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract task id: %v", err)
+	}
+	return &a2a.SubscribeToTaskRequest{ID: taskID}, nil
+}
+
 func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.Part, error) {
 	switch f := pPart.GetFile().(type) {
 	case *a2apb.FilePart_FileWithBytes:
@@ -568,6 +592,11 @@ func FromProtoListTaskPushConfigRequest(req *a2apb.ListTaskPushNotificationConfi
 		PageToken: req.GetPageToken(),
 		PageSize:  int(req.GetPageSize()),
 	}, nil
+}
+
+// FromProtoGetAgentCardRequest converts a [a2apb.GetAgentCardRequest] to a [a2a.GetExtendedAgentCardRequest].
+func FromProtoGetAgentCardRequest(req *a2apb.GetAgentCardRequest) *a2a.GetExtendedAgentCardRequest {
+	return &a2a.GetExtendedAgentCardRequest{}
 }
 
 // FromProtoListTaskPushConfigResponse converts a [a2apb.ListTaskPushNotificationConfigResponse] to a [a2a.ListTaskPushConfigResponse].

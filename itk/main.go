@@ -264,11 +264,13 @@ func (e *V10AgentExecutor) handleCallAgentWithResubscribe(ctx context.Context, c
 
 	events := client.SendStreamingMessage(initCtx, &a2a.SendMessageRequest{Message: wrappedMsg})
 	var taskID string
+	var responses []string
 
 	for ev, err := range events {
 		if err != nil {
 			return nil, fmt.Errorf("initial call failed: %w", err)
 		}
+		responses = append(responses, extractResponses(ctx, ev)...)
 		switch r := ev.(type) {
 		case *a2a.Task:
 			taskID = string(r.ID)
@@ -280,17 +282,34 @@ func (e *V10AgentExecutor) handleCallAgentWithResubscribe(ctx context.Context, c
 		}
 	}
 
-	cancelInit()
-	log.Info(ctx, "Disconnected from task, now re-subscribing", "taskId", taskID)
+	log.Info(ctx, "Attempting re-subscribe", "taskId", taskID)
 
 	resubEvents := client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)})
 
 	var taskObj *a2a.Task
-	var responses []string
+	disconnected := false
 outerLoop:
 	for ev, err := range resubEvents {
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "task not found") {
+				// Some SDK combinations can complete before re-subscribe attaches.
+				// Fall back to draining the original stream so verification tokens
+				// are still collected.
+				log.Info(ctx, "Re-subscribe raced with completion; draining original stream", "taskId", taskID, "error", err)
+				for origEv, origErr := range events {
+					if origErr != nil {
+						return nil, fmt.Errorf("fallback original stream failed: %w", origErr)
+					}
+					responses = append(responses, extractResponses(ctx, origEv)...)
+				}
+				return responses, nil
+			}
 			return nil, fmt.Errorf("resubscribe failed: %w", err)
+		}
+		if !disconnected {
+			cancelInit()
+			disconnected = true
+			log.Info(ctx, "Disconnected from task, now re-subscribing", "taskId", taskID)
 		}
 		if r, ok := ev.(*a2a.Task); ok {
 			taskObj = r

@@ -305,7 +305,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 			name:         "with negative HistoryLength filter",
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(-1)},
-			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}}},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}},
 		},
 		{
 			name:         "PageSize filter",

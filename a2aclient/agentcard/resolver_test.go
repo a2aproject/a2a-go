@@ -61,13 +61,71 @@ func TestResolver_DefaultPath(t *testing.T) {
 	url := mustServe(t, defaultAgentCardPath, mustMarshal(t, want), nil)
 	resolver := Resolver{}
 
-	got, err := resolver.Resolve(t.Context(), url)
-	if err != nil {
-		t.Fatalf("Resolve() failed with: %v", err)
+	for _, u := range []string{url, url + "/"} {
+		got, err := resolver.Resolve(t.Context(), u)
+		if err != nil {
+			t.Fatalf("Resolve(%s) failed with: %v", u, err)
+		}
+
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("AgentCards are different for %s:\ngot %v\nwant %v\ndiff(-want +got):\n%v", u, got, want, diff)
+		}
+	}
+}
+
+func TestBuildURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "https://example.com/",
+			baseURL: "https://example.com/",
+			want:    "https://example.com/.well-known/agent-card.json",
+		},
+		{
+			name:    "https://example.com",
+			baseURL: "https://example.com",
+			want:    "https://example.com/.well-known/agent-card.json",
+		},
+		{
+			name:    "https://example.com/ with custom path",
+			baseURL: "https://example.com/",
+			path:    "custom/agent.json",
+			want:    "https://example.com/custom/agent.json",
+		},
+		{
+			name:    "https://example.com with custom path",
+			baseURL: "https://example.com",
+			path:    "custom/agent.json",
+			want:    "https://example.com/custom/agent.json",
+		},
+		{
+			name:    "https://example.com with leading slash custom path",
+			baseURL: "https://example.com",
+			path:    "/custom/agent.json",
+			want:    "https://example.com/custom/agent.json",
+		},
+		{
+			name:    "complete card URL",
+			baseURL: "https://example.com/custom/agent.json",
+			want:    "https://example.com/custom/agent.json",
+		},
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildURL(tt.baseURL, tt.path)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("buildURL() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("buildURL() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -125,5 +183,21 @@ func TestResolver_MalformedJSON(t *testing.T) {
 	got, err := resolver.Resolve(t.Context(), url)
 	if err == nil {
 		t.Fatalf("expected Resolve() to fail on malformed response, got: %v", got)
+	}
+}
+
+func TestResolver_CompleteCardURL(t *testing.T) {
+	want := &a2a.AgentCard{Name: "TestResolver_CompleteCardURL"}
+	path := "/custom/agent-card.json"
+	baseURL := mustServe(t, path, mustMarshal(t, want), nil)
+	resolver := Resolver{}
+
+	got, err := resolver.Resolve(t.Context(), baseURL+path)
+	if err != nil {
+		t.Fatalf("Resolve() failed with: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
