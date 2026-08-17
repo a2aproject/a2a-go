@@ -31,23 +31,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
-// It is responsible for invoking an agent, translating its outputs to a2a.Event object and writing them to the provided [eventqueue.Queue].
-type agentExecutor struct{}
-
-var _ a2asrv.AgentExecutor = (*agentExecutor)(nil)
-
-func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello, world!"))
-		yield(response, nil)
-	}
-}
-
-func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {}
-}
-
 func startGRPCServer(port int, card *a2a.AgentCard) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -58,7 +41,14 @@ func startGRPCServer(port int, card *a2a.AgentCard) error {
 	// A transport-agnostic implementation of A2A protocol methods.
 	// The behavior is configurable using option-arguments of form a2asrv.With*(), for example:
 	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
-	requestHandler := a2asrv.NewHandler(&agentExecutor{}, a2asrv.WithExtendedAgentCard(card))
+	requestHandler := a2asrv.NewHandler(
+		a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello, world!")), nil)
+			}
+		}),
+		a2asrv.WithExtendedAgentCard(card),
+	)
 
 	// A gRPC-transport implementation for A2A.
 	grpcHandler := a2agrpc.NewHandler(requestHandler)

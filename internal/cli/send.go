@@ -17,25 +17,32 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
 )
 
-func newSendCmd(cfg *globalConfig) *cobra.Command {
+type pollerFunc func(ctx context.Context, client *a2aclient.Client, req *a2a.SendMessageRequest, interval time.Duration) iter.Seq2[a2a.Event, error]
+
+func newSendCmd(cfg *globalConfig, poller pollerFunc) *cobra.Command {
 	var (
-		stream    bool
-		immediate bool
-		jsonBody  string
-		partsJSON string
-		file      string
-		taskID    string
-		contextID string
-		history   int
+		stream          bool
+		immediate       bool
+		jsonBody        string
+		partsJSON       string
+		file            string
+		taskID          string
+		contextID       string
+		history         int
+		pollingInterval time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +50,10 @@ func newSendCmd(cfg *globalConfig) *cobra.Command {
 		Short: "Send a message to an agent",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if stream && immediate {
+				return fmt.Errorf("--stream is incomaptible with --immediate")
+			}
+
 			msg, err := buildMessage(args[1:], jsonBody, partsJSON, file)
 			if err != nil {
 				return err
@@ -80,12 +91,15 @@ func newSendCmd(cfg *globalConfig) *cobra.Command {
 			}
 
 			if stream {
-				for event, err := range client.SendStreamingMessage(ctx, req) {
-					if err != nil {
-						return fmt.Errorf("streaming error: %w", err)
+				if err := handleStreaming(ctx, cfg, client, req); err != nil {
+					if !errors.Is(err, a2a.ErrUnsupportedOperation) {
+						return err
 					}
-					if err := cfg.printEvent(event); err != nil {
-						return fmt.Errorf("failed to print event: %w", err)
+					cfg.logf("falling back to polling (%v): %v", pollingInterval, err)
+					for event, err := range poller(ctx, client, req, pollingInterval) {
+						if err := handleStreamEntry(cfg, event, err); err != nil {
+							return err
+						}
 					}
 				}
 				return nil
@@ -103,7 +117,7 @@ func newSendCmd(cfg *globalConfig) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.BoolVar(&stream, "stream", false, "Use streaming response")
+	f.BoolVar(&stream, "stream", false, "Use streaming response. Falls back to polling and synthetic events if a server does not support streaming.")
 	f.BoolVar(&immediate, "immediate", false, "Return immediately (fire-and-forget)")
 	f.StringVar(&jsonBody, "json", "", "Raw JSON Message object")
 	f.StringVar(&partsJSON, "parts", "", "Raw JSON parts array")
@@ -111,8 +125,31 @@ func newSendCmd(cfg *globalConfig) *cobra.Command {
 	f.StringVar(&taskID, "task", "", "Task ID to continue an existing task")
 	f.StringVar(&contextID, "context", "", "Context ID")
 	f.IntVar(&history, "history", 0, "Request n history messages in the response")
+	f.DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "Duration between GetTask requests in polling fallback mode.")
 
 	return cmd
+}
+
+func handleStreaming(ctx context.Context, cfg *globalConfig, client *a2aclient.Client, req *a2a.SendMessageRequest) error {
+	if card := client.Card(); card != nil && !card.Capabilities.Streaming {
+		return fmt.Errorf("streaming not listed in agent capabilities: %w", a2a.ErrUnsupportedOperation)
+	}
+	for event, err := range client.SendStreamingMessage(ctx, req) {
+		if err := handleStreamEntry(cfg, event, err); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleStreamEntry(cfg *globalConfig, event a2a.Event, err error) error {
+	if err != nil {
+		return fmt.Errorf("streaming error: %w", err)
+	}
+	if err := cfg.printEvent(event); err != nil {
+		return fmt.Errorf("failed to print event: %w", err)
+	}
+	return nil
 }
 
 func buildMessage(positional []string, jsonBody, partsJSON, file string) (*a2a.Message, error) {
