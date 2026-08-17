@@ -19,12 +19,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	a2acorev0 "github.com/a2aproject/a2a-go/a2a"
 	a2asrvv0 "github.com/a2aproject/a2a-go/a2asrv"
@@ -200,21 +202,63 @@ func TestSend(t *testing.T) {
 func TestSendStreaming(t *testing.T) {
 	t.Parallel()
 	url := startTestServer(t)
-	out := mustRunCMD(t, "send", url, "-o", "json", "--stream", "stream me")
-	dec := json.NewDecoder(strings.NewReader(out))
-	var events []a2a.StreamResponse
-	for dec.More() {
-		var sr a2a.StreamResponse
-		if err := dec.Decode(&sr); err != nil {
-			t.Fatalf("json.Decode(event %d) error = %v", len(events), err)
-		}
-		if sr.Event == nil {
-			t.Fatalf("json.Decode(event %d) produced nil Event", len(events))
-		}
-		events = append(events, sr)
+	nonStreamingServerURL := startTestServerWith(t, a2a.AgentCapabilities{Streaming: false})
+
+	testCases := []struct {
+		name               string
+		command            []string
+		wantPollerFallback bool
+	}{
+		{
+			name:               "streaming supported",
+			command:            []string{"send", url, "-o", "json", "--stream", "stream me"},
+			wantPollerFallback: false,
+		},
+		{
+			name:               "poller fallback with create from card",
+			command:            []string{"send", nonStreamingServerURL, "-o", "json", "--stream", "stream me"},
+			wantPollerFallback: true,
+		},
+		{
+			name:               "poller fallback with create from interface",
+			command:            []string{"send", nonStreamingServerURL, "-o", "json", "--transport", "rest", "--stream", "stream me"},
+			wantPollerFallback: true,
+		},
 	}
-	if len(events) <= 1 {
-		t.Fatalf("a2a send --stream produced %d events, want > 1", len(events))
+	for _, tc := range testCases {
+		fallbackToPoller := false
+		poller := pollerFunc(func(ctx context.Context, client *a2aclient.Client, req *a2a.SendMessageRequest, interval time.Duration) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				fallbackToPoller = true
+				task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+				if !yield(task, nil) {
+					return
+				}
+				yield(a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), nil)
+			}
+		})
+		out, err := runCMDWithPoller(t, poller, tc.command...)
+		if err != nil {
+			t.Fatalf("runCMDWithPoller() error = %v", err)
+		}
+		dec := json.NewDecoder(strings.NewReader(out))
+		var events []a2a.StreamResponse
+		for dec.More() {
+			var sr a2a.StreamResponse
+			if err := dec.Decode(&sr); err != nil {
+				t.Fatalf("json.Decode(event %d) error = %v", len(events), err)
+			}
+			if sr.Event == nil {
+				t.Fatalf("json.Decode(event %d) produced nil Event", len(events))
+			}
+			events = append(events, sr)
+		}
+		if len(events) <= 1 {
+			t.Fatalf("a2a send --stream produced %d events, want > 1", len(events))
+		}
+		if fallbackToPoller != tc.wantPollerFallback {
+			t.Fatalf("fallback to poller = %v, want the opposite", fallbackToPoller)
+		}
 	}
 }
 
@@ -264,10 +308,13 @@ func TestGetTask(t *testing.T) {
 
 func startTestServer(t *testing.T) string {
 	t.Helper()
+	return startTestServerWith(t, a2a.AgentCapabilities{Streaming: true})
+}
 
-	handler := a2asrv.NewHandler(&echoExecutor{},
-		a2asrv.WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
-	)
+func startTestServerWith(t *testing.T, capabilities a2a.AgentCapabilities) string {
+	t.Helper()
+
+	handler := a2asrv.NewHandler(&echoExecutor{}, a2asrv.WithCapabilityChecks(&capabilities))
 
 	mux := http.NewServeMux()
 	mux.Handle("/", a2asrv.NewRESTHandler(handler))
@@ -278,7 +325,7 @@ func startTestServer(t *testing.T) string {
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(&a2a.AgentCard{
 		Name:                "Test Echo",
 		Version:             "1.0.0",
-		Capabilities:        a2a.AgentCapabilities{Streaming: true},
+		Capabilities:        capabilities,
 		SupportedInterfaces: []*a2a.AgentInterface{a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)},
 	}))
 
@@ -342,9 +389,14 @@ func mustRunCMD(t *testing.T, args ...string) string {
 
 func runCMD(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	return runCMDWithPoller(t, handlePolling, args...)
+}
+
+func runCMDWithPoller(t *testing.T, poller pollerFunc, args ...string) (string, error) {
+	t.Helper()
 	var buf bytes.Buffer
 	cfg := &globalConfig{}
-	root := newRootCmd(cfg, &buf)
+	root := newRootCmd(cfg, &buf, poller)
 	root.SetArgs(args)
 	err := root.Execute()
 	return buf.String(), err

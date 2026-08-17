@@ -45,7 +45,7 @@ func (g *globalConfig) logf(format string, args ...any) {
 // Execute runs the CLI and returns the exit code.
 func Execute() int {
 	cfg := &globalConfig{}
-	root := newRootCmd(cfg, os.Stdout)
+	root := newRootCmd(cfg, os.Stdout, handlePolling)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -53,7 +53,7 @@ func Execute() int {
 	return 0
 }
 
-func newRootCmd(cfg *globalConfig, out io.Writer) *cobra.Command {
+func newRootCmd(cfg *globalConfig, out io.Writer, poller pollerFunc) *cobra.Command {
 	cfg.out = out
 
 	cmd := &cobra.Command{
@@ -75,7 +75,7 @@ func newRootCmd(cfg *globalConfig, out io.Writer) *cobra.Command {
 
 	cmd.AddCommand(
 		newDiscoverCmd(cfg),
-		newSendCmd(cfg),
+		newSendCmd(cfg, poller),
 		newGetCmd(cfg),
 		newListCmd(cfg),
 		newCancelCmd(cfg),
