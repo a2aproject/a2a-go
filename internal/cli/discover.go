@@ -72,7 +72,7 @@ func runDiscover(ctx context.Context, cfg *globalConfig, agentURL string, extend
 		cfg.logf("fetching agent card from %s", agentURL)
 
 		var err error
-		card, err = agentcard.DefaultResolver.Resolve(ctx, agentURL, resolveOpts...)
+		card, err = compatCardResolver.Resolve(ctx, agentURL, resolveOpts...)
 		if err != nil {
 			return fmt.Errorf("failed to resolve agent card: %w", err)
 		}

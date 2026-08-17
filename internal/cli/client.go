@@ -17,8 +17,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -30,6 +32,12 @@ import (
 	a2agrpcv0 "github.com/a2aproject/a2a-go/v2/a2agrpc/v0"
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 )
+
+var compatCardResolver = func() *agentcard.Resolver {
+	resolver := agentcard.NewResolver(&http.Client{Timeout: 30 * time.Second})
+	resolver.CardParser = a2av0.NewAgentCardParser()
+	return resolver
+}()
 
 func newClient(ctx context.Context, cfg *globalConfig, agentURL string, extraOpts ...a2aclient.FactoryOption) (*a2aclient.Client, error) {
 	factoryOpts := append(clientFactoryOpts(cfg), extraOpts...)
@@ -54,7 +62,7 @@ func newClient(ctx context.Context, cfg *globalConfig, agentURL string, extraOpt
 	if cfg.auth != "" {
 		resolveOpts = append(resolveOpts, agentcard.WithRequestHeader("Authorization", cfg.auth))
 	}
-	card, err := agentcard.DefaultResolver.Resolve(ctx, agentURL, resolveOpts...)
+	card, err := compatCardResolver.Resolve(ctx, agentURL, resolveOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("resolving agent card: %w", err)
 	}
