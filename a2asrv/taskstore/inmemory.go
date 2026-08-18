@@ -303,9 +303,9 @@ func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.T
 		if req.HistoryLength != nil {
 			historyLength = *req.HistoryLength
 		}
-		if historyLength == 0 {
+		if historyLength <= 0 {
 			taskCopy.History = []*a2a.Message{}
-		} else if historyLength > 0 && len(taskCopy.History) > historyLength {
+		} else if len(taskCopy.History) > historyLength {
 			taskCopy.History = taskCopy.History[len(taskCopy.History)-historyLength:]
 		}
 		if !req.IncludeArtifacts {

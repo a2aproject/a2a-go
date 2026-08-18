@@ -571,8 +571,9 @@ func (i *testInterceptor) Before(ctx context.Context, callCtx *CallContext, req 
 
 type mockRequestHandler struct {
 	RequestHandler
-	listTasksFunc func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
-	getTaskFunc   func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	listTasksFunc       func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
+	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
 func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
@@ -587,6 +588,15 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 		return m.getTaskFunc(ctx, req)
 	}
 	return &a2a.Task{ID: req.ID}, nil
+}
+
+func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	if m.subscribeToTaskFunc != nil {
+		return m.subscribeToTaskFunc(ctx, req)
+	}
+	return func(yield func(a2a.Event, error) bool) {
+		yield(&a2a.Task{ID: req.ID}, nil)
+	}
 }
 
 func TestREST_ListTasks_Success(t *testing.T) {

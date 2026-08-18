@@ -28,23 +28,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
-// agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
-// It is responsible for invoking an agent, translating its outputs to a2a.Event object and writing them to the provided [eventqueue.Queue].
-type agentExecutor struct{}
-
-var _ a2asrv.AgentExecutor = (*agentExecutor)(nil)
-
-func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		response := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello, world!"))
-		yield(response, nil)
-	}
-}
-
-func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {}
-}
-
 var port = flag.Int("port", 9001, "Port for a JSONRPC A2A server to listen on.")
 
 func main() {
@@ -77,10 +60,18 @@ func main() {
 	}
 	log.Printf("Starting a JSONRPC server on 127.0.0.1:%d", *port)
 
+	// agentExecutor implements [a2asrv.AgentExecutor], which is a required [a2asrv.RequestHandler] dependency.
+	// It is responsible for invoking an agent, translating its outputs to a2a.Event object and writing them to the provided [eventqueue.Queue].
+	agentExecutor := a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello, world!")), nil)
+		}
+	})
+
 	// A transport-agnostic implementation of A2A protocol methods.
 	// The behavior is configurable using option-arguments of form a2asrv.With*(), for example:
 	// a2asrv.NewHandler(executor, a2asrv.WithTaskStore(customStore))
-	requestHandler := a2asrv.NewHandler(&agentExecutor{})
+	requestHandler := a2asrv.NewHandler(agentExecutor)
 
 	mux := http.NewServeMux()
 	mux.Handle("/invoke", a2asrv.NewJSONRPCHandler(requestHandler))

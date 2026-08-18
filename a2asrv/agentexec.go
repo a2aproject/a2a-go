@@ -31,6 +31,8 @@ import (
 )
 
 // AgentExecutor implementations translate agent outputs to A2A events.
+// AgentExecutor can optionally implement [AgentExecutionCleaner] if some logic needs to run
+// after both successful and failed executions.
 // The provided [ExecutorContext] should be used as a [a2a.TaskInfoProvider] argument
 // for [a2a.Event]-s constructor functions, for example:
 //
@@ -119,6 +121,24 @@ type AgentExecutor interface {
 	Cancel(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 }
 
+// AgentExecutorFunc is a helper for creating an [AgentExecutor] implementation with the default
+// cancelation logic which only attempts to apply TaskStateCanceled status update to a task.
+type AgentExecutorFunc func(context.Context, *ExecutorContext) iter.Seq2[a2a.Event, error]
+
+var _ AgentExecutor = (AgentExecutorFunc)(nil)
+
+// Execute implements [AgentExecutor.Execute].
+func (fn AgentExecutorFunc) Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return fn(ctx, execCtx)
+}
+
+// Cancel implements [AgentExecutor.Cancel].
+func (AgentExecutorFunc) Cancel(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+	}
+}
+
 // AgentExecutionCleaner is an optional interface [AgentExecutor] can implement to perform cleanup after execution finishes.
 type AgentExecutionCleaner interface {
 	// Cleanup is called after an agent execution completes with either result or an error.
@@ -154,7 +174,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 			return nil, nil, nil, fmt.Errorf("bug: message with push config received bug push is not configured: %w", a2a.ErrPushNotificationNotSupported)
 		}
 		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to save push config %v: %w", params.Config.PushConfig, err)
+			return nil, nil, nil, fmt.Errorf("failed to save push config for task %s: %w", tid, err)
 		}
 	}
 

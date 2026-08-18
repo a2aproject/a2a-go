@@ -229,6 +229,12 @@ func (c *Client) UpdateCard(card *a2a.AgentCard) error {
 	return nil
 }
 
+// Card returns the last AgentCard set on this client or nil if it was created from an [a2a.AgentInterface] handle
+// and was not updated using [Client.UpdateCard].
+func (c *Client) Card() *a2a.AgentCard {
+	return c.card.Load()
+}
+
 // Destroy cleans up resources associated with the client.
 func (c *Client) Destroy() error {
 	return c.transport.Destroy()

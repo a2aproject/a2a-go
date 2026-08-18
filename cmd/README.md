@@ -2,6 +2,16 @@
 
 A command-line interface for the Agent-to-Agent protocol. Link netcat for agents.
 
+## Install
+
+### Prebuilt binaries
+
+Download an archive for your platform from the [latest release](https://github.com/a2aproject/a2a-go/releases/latest), extract
+it, and put the `a2a` binary on your `PATH`. Verify the download against the
+`checksums.txt` published with the release.
+
+### From source
+
 ```bash
 go install github.com/a2aproject/a2a-go/v2/cmd/a2a@latest
 ```
@@ -34,7 +44,7 @@ These apply to every client-mode command.
 
 ### `discover` - Agent Card Discovery
 
-Fetch and display an agent card from its well-known URL.
+Fetch and display an agent card from its base URL or complete agent card URL.
 
 ```bash
 a2a discover <url>
