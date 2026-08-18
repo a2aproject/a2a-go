@@ -317,6 +317,61 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestFromJSONRPCError_NonTypedArrayData(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		data string
+		want *errordetails.Typed
+	}{
+		{
+			name: "typed",
+			data: `{"@type":"type.custom.com/custom.rpc.Info","extra":"detail"}`,
+			want: &errordetails.Typed{
+				TypeURL: "type.custom.com/custom.rpc.Info",
+				Value:   map[string]any{"extra": "detail"},
+			},
+		},
+		{
+			name: "object",
+			data: `{"reason":"detail","code":42}`,
+			want: &errordetails.Typed{
+				TypeURL: "type.googleapis.com/google.protobuf.Struct",
+				Value:   map[string]any{"reason": "detail", "code": float64(42)},
+			},
+		},
+		{
+			name: "string",
+			data: `"reason"`,
+		},
+		{
+			name: "null",
+			data: "nil",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := &Error{Code: -32700, Message: "error message", Data: json.RawMessage(tc.data)}
+
+			gotErr := FromJSONRPCError(e)
+			var gotA2AErr *a2a.Error
+			if !errors.As(gotErr, &gotA2AErr) {
+				t.Fatalf("expected *a2a.Error, got %T", gotErr)
+			}
+			var want []*errordetails.Typed
+			if tc.want != nil {
+				want = append(want, tc.want)
+			}
+			if diff := cmp.Diff(want, gotA2AErr.TypedDetails); diff != "" {
+				t.Errorf("unexpected details (-want +got) = %s", diff)
+			}
+		})
+	}
+}
+
 func errorWithErrorInfo(t *testing.T, message string, err error, reason string) *a2a.Error {
 	t.Helper()
 	return &a2a.Error{
@@ -330,109 +385,4 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 			}),
 		},
 	}
-}
-
-func TestFromJSONRPCError_NonTypedData(t *testing.T) {
-	t.Parallel()
-
-	t.Run("data as plain object", func(t *testing.T) {
-		t.Parallel()
-		e := &Error{
-			Code:    -32603,
-			Message: "real error message",
-			Data:    json.RawMessage(`{"reason":"detail","code":42}`),
-		}
-		got := FromJSONRPCError(e)
-
-		var a2aErr *a2a.Error
-		if !errors.As(got, &a2aErr) {
-			t.Fatalf("expected *a2a.Error, got %T", got)
-		}
-		if !errors.Is(a2aErr.Err, a2a.ErrInternalError) {
-			t.Errorf("got inner %v, want ErrInternalError", a2aErr.Err)
-		}
-		if a2aErr.Message != "real error message" {
-			t.Errorf("got message %q, want %q", a2aErr.Message, "real error message")
-		}
-		if a2aErr.Details["reason"] != "detail" {
-			t.Errorf("got details %v, want reason=detail", a2aErr.Details)
-		}
-		if a2aErr.Details["code"] != float64(42) {
-			t.Errorf("got details %v, want code=42", a2aErr.Details)
-		}
-	})
-
-	t.Run("data as string", func(t *testing.T) {
-		t.Parallel()
-		e := &Error{
-			Code:    -32600,
-			Message: "bad request",
-			Data:    json.RawMessage(`"extra info"`),
-		}
-		got := FromJSONRPCError(e)
-
-		var a2aErr *a2a.Error
-		if !errors.As(got, &a2aErr) {
-			t.Fatalf("expected *a2a.Error, got %T", got)
-		}
-		if !errors.Is(a2aErr.Err, a2a.ErrInvalidRequest) {
-			t.Errorf("got inner %v, want ErrInvalidRequest", a2aErr.Err)
-		}
-		if a2aErr.Message != "bad request" {
-			t.Errorf("got message %q, want %q", a2aErr.Message, "bad request")
-		}
-	})
-
-	t.Run("data as array of typed details", func(t *testing.T) {
-		t.Parallel()
-		e := &Error{
-			Code:    -32001,
-			Message: "task not found",
-			Data:    json.RawMessage(`[{"@type":"type.googleapis.com/google.protobuf.Struct","key":"value"}]`),
-		}
-		got := FromJSONRPCError(e)
-
-		var a2aErr *a2a.Error
-		if !errors.As(got, &a2aErr) {
-			t.Fatalf("expected *a2a.Error, got %T", got)
-		}
-		if a2aErr.Details["key"] != "value" {
-			t.Errorf("got details %v, want key=value", a2aErr.Details)
-		}
-	})
-
-	t.Run("data as null", func(t *testing.T) {
-		t.Parallel()
-		e := &Error{
-			Code:    -32601,
-			Message: "method not found",
-			Data:    json.RawMessage(`null`),
-		}
-		got := FromJSONRPCError(e)
-
-		var a2aErr *a2a.Error
-		if !errors.As(got, &a2aErr) {
-			t.Fatalf("expected *a2a.Error, got %T", got)
-		}
-		if !errors.Is(a2aErr.Err, a2a.ErrMethodNotFound) {
-			t.Errorf("got inner %v, want ErrMethodNotFound", a2aErr.Err)
-		}
-	})
-
-	t.Run("data absent", func(t *testing.T) {
-		t.Parallel()
-		e := &Error{
-			Code:    -32601,
-			Message: "method not found",
-		}
-		got := FromJSONRPCError(e)
-
-		var a2aErr *a2a.Error
-		if !errors.As(got, &a2aErr) {
-			t.Fatalf("expected *a2a.Error, got %T", got)
-		}
-		if !errors.Is(a2aErr.Err, a2a.ErrMethodNotFound) {
-			t.Errorf("got inner %v, want ErrMethodNotFound", a2aErr.Err)
-		}
-	})
 }

@@ -16,7 +16,6 @@
 package jsonrpc
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,24 +102,20 @@ func FromJSONRPCError(e *Error) error {
 
 	result := a2a.NewError(err, msg)
 
-	// Parse Data leniently: JSON-RPC 2.0 / A2A v0.3 define error.data as any JSON
-	// value. Some servers return an object (or other non-array values) instead of the
-	// expected []*errordetails.Typed array. We must always preserve code+message and
-	// only convert to typed details when the data actually parses as such.
 	var typedDetails []*errordetails.Typed
 	if len(e.Data) > 0 {
 		var parsedDetails []*errordetails.Typed
 		if json.Unmarshal(e.Data, &parsedDetails) == nil {
 			typedDetails = parsedDetails
-		} else if bytes.HasPrefix(e.Data, []byte("{")) {
-			// Treat a plain JSON object as a single struct-typed detail so that its
-			// contents are not silently dropped.
+		} else { // parse error data leniently for A2A v0.3 compatibility
 			var singleDetail map[string]any
-			if json.Unmarshal(e.Data, &singleDetail) == nil {
+			var d errordetails.Typed
+			if json.Unmarshal(e.Data, &d) == nil {
+				typedDetails = []*errordetails.Typed{&d}
+			} else if json.Unmarshal(e.Data, &singleDetail) == nil {
 				typedDetails = []*errordetails.Typed{errordetails.NewFromStruct(singleDetail)}
 			}
 		}
-		// If neither parse path succeeds, we still return the error with code+message.
 	}
 
 	var nonErrorInfoDetails []*errordetails.Typed
