@@ -19,6 +19,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -183,6 +186,71 @@ func TestResolver_MalformedJSON(t *testing.T) {
 	got, err := resolver.Resolve(t.Context(), url)
 	if err == nil {
 		t.Fatalf("expected Resolve() to fail on malformed response, got: %v", got)
+	}
+}
+
+func TestResolver_FileURL(t *testing.T) {
+	t.Parallel()
+	want := &a2a.AgentCard{Name: "TestResolver_FileURL"}
+	dir := t.TempDir()
+	cardPath := filepath.Join(dir, "agent-card.json")
+	if err := os.WriteFile(cardPath, mustMarshal(t, want), 0o600); err != nil {
+		t.Fatalf("failed to write card file: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		url       *url.URL
+		opts      []ResolveOption
+		wantErr   bool
+		wantErrIs error
+	}{
+		{
+			name:      "missing file",
+			url:       &url.URL{Scheme: "file", Path: filepath.Join(dir, "missing.json")},
+			wantErr:   true,
+			wantErrIs: os.ErrNotExist,
+		},
+		{
+			name:    "unsupported host",
+			url:     &url.URL{Scheme: "file", Host: "remotehost", Path: "/agent-card.json"},
+			wantErr: true,
+		},
+		{
+			name: "empty host",
+			url:  &url.URL{Scheme: "file", Path: cardPath},
+		},
+		{
+			name: "localhost",
+			url:  &url.URL{Scheme: "file", Host: "localhost", Path: cardPath},
+		},
+		{
+			name: "path as option",
+			url:  &url.URL{Scheme: "file", Host: "localhost", Path: dir},
+			opts: []ResolveOption{WithPath("agent-card.json")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := DefaultResolver.Resolve(t.Context(), tt.url.String(), tt.opts...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Resolve(%s) = %v, want error", tt.url, got)
+				}
+				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+					t.Errorf("Resolve(%s) error = %v, want error matching %v", tt.url, err, tt.wantErrIs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Resolve(%s) error = %v, want nil", tt.url, err)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Resolve(%s) wrong result (-want +got) diff = %s", tt.url, diff)
+			}
+		})
 	}
 }
 

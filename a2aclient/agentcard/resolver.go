@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -80,6 +81,8 @@ type resolveRequest struct {
 // Resolve fetches an [a2a.AgentCard] from the provided URL (base URL or complete agent card URL).
 // By default, if the provided URL has no path or a root path, the request is sent for the /.well-known/agent-card.json path.
 // If the provided URL contains a non-root path, it is fetched directly as the complete agent card URL.
+// A file:// URL is supported to load the card from the local file system, in which case
+// the card is read directly from the referenced path and request headers are ignored.
 func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveOption) (*a2a.AgentCard, error) {
 	reqSpec := &resolveRequest{headers: make(map[string]string)}
 	for _, o := range opts {
@@ -89,6 +92,19 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 	reqURL, err := buildURL(baseURL, reqSpec.path)
 	if err != nil {
 		return nil, err
+	}
+
+	u, err := url.Parse(reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("url parsing failed: %w", err)
+	}
+
+	if u.Scheme == "file" {
+		body, err := readCardFile(u)
+		if err != nil {
+			return nil, err
+		}
+		return r.parseCard(body)
 	}
 
 	client := r.Client
@@ -153,6 +169,26 @@ func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read card response: %w", err)
+	}
+	return body, nil
+}
+
+func readCardFile(u *url.URL) ([]byte, error) {
+	if u.Host != "" && u.Host != "localhost" {
+		return nil, fmt.Errorf("unsupported file URL host %q, only an empty host or localhost is allowed", u.Host)
+	}
+
+	path := u.Path
+	if path == "" {
+		path = u.Opaque
+	}
+	if path == "" {
+		return nil, fmt.Errorf("file URL %q has no path", u)
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read card file: %w", err)
 	}
 	return body, nil
 }
