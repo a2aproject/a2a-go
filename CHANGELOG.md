@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.5.0](https://github.com/a2aproject/a2a-go/compare/v2.4.0...v2.5.0) (2026-08-18)
+
+
+### Features
+
+* agent executor constructor helper ([#418](https://github.com/a2aproject/a2a-go/issues/418)) ([0f45c92](https://github.com/a2aproject/a2a-go/commit/0f45c92388ebdf88de6e5536234e97eb47a6d784))
+* cli supports full agent card urls ([#413](https://github.com/a2aproject/a2a-go/issues/413)) ([d5d1cec](https://github.com/a2aproject/a2a-go/commit/d5d1cec20091eb8ed235128bb50712ee8aa3d42c)), closes [#412](https://github.com/a2aproject/a2a-go/issues/412)
+* **cli:** polling fallback for servers which don't support streaming ([#419](https://github.com/a2aproject/a2a-go/issues/419)) ([b5b9f85](https://github.com/a2aproject/a2a-go/commit/b5b9f8548682141f5ae618cd5961bde77985335a))
+* make agentcard resolver handler file:// ([#424](https://github.com/a2aproject/a2a-go/issues/424)) ([e1c3cc0](https://github.com/a2aproject/a2a-go/commit/e1c3cc0b5ffce301ce31efff7f9e3a553f898603))
+* utilities for working with a2a events  ([#416](https://github.com/a2aproject/a2a-go/issues/416)) ([1b8cac7](https://github.com/a2aproject/a2a-go/commit/1b8cac7c391681c8049788f6bb683194e8d2c914))
+
+
+### Bug Fixes
+
+* added missing converters and made sure a2agrpc uses pbconv ([#421](https://github.com/a2aproject/a2a-go/issues/421)) ([579cff8](https://github.com/a2aproject/a2a-go/commit/579cff89f7bab361010249d0df3dea6c6e51f8e7))
+* cli not parsing compat agent cards ([#415](https://github.com/a2aproject/a2a-go/issues/415)) ([bebdcee](https://github.com/a2aproject/a2a-go/commit/bebdceec0c744c462ae32182f3028518002a642c))
+* handle negative historyLength as empty history request ([#393](https://github.com/a2aproject/a2a-go/issues/393)) ([f4d5882](https://github.com/a2aproject/a2a-go/commit/f4d588216b0c9520e94d571bab725c38ce23064c))
+* **jsonrpc:** lenient decode of error.data to preserve server errors ([#386](https://github.com/a2aproject/a2a-go/issues/386)) ([497cbac](https://github.com/a2aproject/a2a-go/commit/497cbac9ce5e82d73614449687e6852e48696095))
+* remove empty contextId check in proto converter ([#392](https://github.com/a2aproject/a2a-go/issues/392)) ([758c7a1](https://github.com/a2aproject/a2a-go/commit/758c7a13a657441c003d1b05a665c2c84b5ca7ac))
+* **sse:** buffer REST SSE panicChan to avoid goroutine leak on client disconnect ([#396](https://github.com/a2aproject/a2a-go/issues/396)) ([ff6035b](https://github.com/a2aproject/a2a-go/commit/ff6035bd21e44bb3ee1bfa547885b8c08327fa01))
+* **taskexec:** close event-queue reader on cancel early exits ([#409](https://github.com/a2aproject/a2a-go/issues/409)) ([14e41a9](https://github.com/a2aproject/a2a-go/commit/14e41a978b31e134ffa1170d8657f9dd98529aa3))
+
 ## [2.4.0](https://github.com/a2aproject/a2a-go/compare/v2.3.1...v2.4.0) (2026-07-28)
 
 
