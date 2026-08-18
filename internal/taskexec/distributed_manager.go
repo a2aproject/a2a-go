@@ -176,6 +176,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 
 	encodedCtx, err := m.encodeContext(ctx)
 	if err != nil {
+		safeCloseReader(ctx, queue)
 		return nil, err
 	}
 

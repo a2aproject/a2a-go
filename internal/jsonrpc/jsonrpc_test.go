@@ -317,6 +317,61 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestFromJSONRPCError_NonTypedArrayData(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		data string
+		want *errordetails.Typed
+	}{
+		{
+			name: "typed",
+			data: `{"@type":"type.custom.com/custom.rpc.Info","extra":"detail"}`,
+			want: &errordetails.Typed{
+				TypeURL: "type.custom.com/custom.rpc.Info",
+				Value:   map[string]any{"extra": "detail"},
+			},
+		},
+		{
+			name: "object",
+			data: `{"reason":"detail","code":42}`,
+			want: &errordetails.Typed{
+				TypeURL: "type.googleapis.com/google.protobuf.Struct",
+				Value:   map[string]any{"reason": "detail", "code": float64(42)},
+			},
+		},
+		{
+			name: "string",
+			data: `"reason"`,
+		},
+		{
+			name: "null",
+			data: "nil",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := &Error{Code: -32700, Message: "error message", Data: json.RawMessage(tc.data)}
+
+			gotErr := FromJSONRPCError(e)
+			var gotA2AErr *a2a.Error
+			if !errors.As(gotErr, &gotA2AErr) {
+				t.Fatalf("expected *a2a.Error, got %T", gotErr)
+			}
+			var want []*errordetails.Typed
+			if tc.want != nil {
+				want = append(want, tc.want)
+			}
+			if diff := cmp.Diff(want, gotA2AErr.TypedDetails); diff != "" {
+				t.Errorf("unexpected details (-want +got) = %s", diff)
+			}
+		})
+	}
+}
+
 func errorWithErrorInfo(t *testing.T, message string, err error, reason string) *a2a.Error {
 	t.Helper()
 	return &a2a.Error{
