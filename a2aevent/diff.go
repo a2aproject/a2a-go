@@ -17,6 +17,7 @@ package a2aevent
 import (
 	"reflect"
 	"slices"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
@@ -97,7 +98,14 @@ func hasStatusChanged(prevState *a2a.Task, state *a2a.Task) bool {
 	return s1.State != s2.State ||
 		((s1.Message != nil) != (s2.Message != nil)) ||
 		(s1.Message != nil && s1.Message.ID != s2.Message.ID) ||
-		s1.Timestamp != s2.Timestamp
+		!timestampsEqual(s1.Timestamp, s2.Timestamp)
+}
+
+func timestampsEqual(t1, t2 *time.Time) bool {
+	if t1 == nil || t2 == nil {
+		return t1 == t2
+	}
+	return t1.Equal(*t2)
 }
 
 type partsDiff struct {

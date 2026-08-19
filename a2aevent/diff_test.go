@@ -29,7 +29,17 @@ func TestRecover(t *testing.T) {
 
 	tip, ti := newTestTaskInfo()
 	ts := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	tsCopy := ts
 	m1 := &a2a.Message{ID: "m1", Role: a2a.MessageRoleAgent, Parts: makeTextParts("first")}
+
+	timestamped := &a2a.Task{
+		ContextID: ti.ContextID, ID: ti.TaskID,
+		Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &ts},
+	}
+	timestampedCopy, err := utils.DeepCopy(timestamped)
+	if err != nil {
+		t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+	}
 
 	testCases := []struct {
 		name string
@@ -159,6 +169,38 @@ func TestRecover(t *testing.T) {
 			},
 		},
 		{
+			name: "equal timestamp values, different pointers",
+			prev: &a2a.Task{
+				ContextID: ti.ContextID, ID: ti.TaskID,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &ts},
+			},
+			curr: &a2a.Task{
+				ContextID: ti.ContextID, ID: ti.TaskID,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &tsCopy},
+			},
+			want: nil,
+		},
+		{
+			name: "nil vs set timestamp",
+			prev: newTask(tip, a2a.TaskStateWorking),
+			curr: &a2a.Task{
+				ContextID: ti.ContextID, ID: ti.TaskID,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &ts},
+			},
+			want: []a2a.Event{
+				&a2a.TaskStatusUpdateEvent{
+					ContextID: ti.ContextID, TaskID: ti.TaskID,
+					Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &ts},
+				},
+			},
+		},
+		{
+			name: "deep copy of timestamped task",
+			prev: timestamped,
+			curr: timestampedCopy,
+			want: nil,
+		},
+		{
 			name: "task metadata change",
 			prev: &a2a.Task{
 				ContextID: ti.ContextID, ID: ti.TaskID,
@@ -241,6 +283,8 @@ func TestRecover_ReappliedEventsReproduceState(t *testing.T) {
 	t.Parallel()
 
 	tip, ti := newTestTaskInfo()
+	ts := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	tsCopy := ts
 	m1 := &a2a.Message{ID: "m1", Role: a2a.MessageRoleAgent, Parts: makeTextParts("first")}
 	m2 := &a2a.Message{ID: "m2", Role: a2a.MessageRoleAgent, Parts: makeTextParts("second")}
 
@@ -253,6 +297,17 @@ func TestRecover_ReappliedEventsReproduceState(t *testing.T) {
 			name: "no changes",
 			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello")}),
 			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello")}),
+		},
+		{
+			name: "no changes with timestamps",
+			prev: &a2a.Task{
+				ID: ti.TaskID, ContextID: ti.ContextID,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Message: m1, Timestamp: &ts},
+			},
+			curr: &a2a.Task{
+				ID: ti.TaskID, ContextID: ti.ContextID,
+				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Message: m1, Timestamp: &tsCopy},
+			},
 		},
 		{
 			name: "all possible changes",
