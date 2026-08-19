@@ -30,6 +30,17 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
+// Query parameter names for the v1 HTTP+JSON binding.
+const (
+	QueryContextID            = "contextId"
+	QueryStatus               = "status"
+	QueryPageSize             = "pageSize"
+	QueryPageToken            = "pageToken"
+	QueryHistoryLength        = "historyLength"
+	QueryStatusTimestampAfter = "statusTimestampAfter"
+	QueryIncludeArtifacts     = "includeArtifacts"
+)
+
 // PathBuilder constructs REST paths for A2A endpoints, optionally rooted
 // under a version prefix. The zero value builds v1.0 paths (no prefix); the
 // v0.3 compat binding uses NewPathBuilder("/v1") to prepend "/v1" to every
