@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -205,6 +206,27 @@ func TestInMemoryQueue_WriteWithNoSubscribersDoesNotBlock(t *testing.T) {
 	mustWrite(t, writer, newUnversioned(&a2a.Message{ID: "test"}))
 }
 
+func TestInMemoryQueue_WritersAreNotSubscribers(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(0), WithSubscriberTimeout(10*time.Millisecond))
+	tid := a2a.NewTaskID()
+
+	first, err := qm.CreateWriter(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateWriter() error = %v, want nil", err)
+	}
+	second, err := qm.CreateWriter(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateWriter() error = %v, want nil", err)
+	}
+
+	for i, writer := range []Writer{first, second} {
+		if err := writer.Write(t.Context(), &Message{Event: &a2a.Message{ID: fmt.Sprintf("event-%d", i)}}); err != nil {
+			t.Fatalf("writer[%d].Write() error = %v, want nil", i, err)
+		}
+	}
+}
+
 func TestInMemoryQueue_CloseUnsubscribesFromEvents(t *testing.T) {
 	t.Parallel()
 	qm := newTestManager(t, WithQueueBufferSize(0))
@@ -245,6 +267,186 @@ func TestInMemoryQueue_WriteWithCanceledContext(t *testing.T) {
 	}
 	if err != context.Canceled {
 		t.Errorf("Write() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+type simultaneousCompletionContext struct {
+	context.Context
+	doneCalls  atomic.Int32
+	secondDone chan struct{}
+	release    chan struct{}
+}
+
+func (c *simultaneousCompletionContext) Done() <-chan struct{} {
+	if c.doneCalls.Add(1) == 2 {
+		close(c.secondDone)
+		<-c.release
+	}
+	return c.Context.Done()
+}
+
+func TestInMemoryQueue_CanceledBroadcastNeverReportsSuccess(t *testing.T) {
+	t.Parallel()
+
+	for i := range 100 {
+		broker := &inMemoryEventBroker{
+			destroySignal: make(chan struct{}),
+			destroyed:     make(chan struct{}),
+			broadcastChan: make(chan *broadcast),
+		}
+		writer := &inMemoryQueue{broker: broker, closedChan: make(chan struct{})}
+		base, cancel := context.WithCancel(t.Context())
+		ctx := &simultaneousCompletionContext{
+			Context:    base,
+			secondDone: make(chan struct{}),
+			release:    make(chan struct{}),
+		}
+		writeDone := make(chan error, 1)
+		go func() {
+			writeDone <- writer.Write(ctx, &Message{Event: &a2a.Message{ID: "event"}})
+		}()
+
+		pending := <-broker.broadcastChan
+		<-ctx.secondDone
+		cancel()
+		pending.complete()
+		close(ctx.release)
+
+		if err := <-writeDone; !errors.Is(err, context.Canceled) {
+			t.Fatalf("writer.Write() at iteration %d error = %v, want %v", i, err, context.Canceled)
+		}
+	}
+}
+
+func TestInMemoryQueue_CanceledWritePreservesSubscriberStream(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(1), WithSubscriberTimeout(time.Second))
+	tid := a2a.NewTaskID()
+	healthy, err := qm.CreateReader(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateReader() error = %v, want nil", err)
+	}
+	blocked, err := qm.CreateReader(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateReader() error = %v, want nil", err)
+	}
+	writer, err := qm.CreateWriter(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("qm.CreateWriter() error = %v, want nil", err)
+	}
+
+	readID := func(reader Reader) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		message, err := reader.Read(ctx)
+		if err != nil {
+			t.Fatalf("reader.Read() error = %v, want nil", err)
+		}
+		event, ok := message.Event.(*a2a.Message)
+		if !ok {
+			t.Fatalf("reader.Read() event type = %T, want *a2a.Message", message.Event)
+		}
+		return event.ID
+	}
+
+	mustWrite(t, writer, newUnversioned(&a2a.Message{ID: "m1"}))
+	if got := readID(healthy); got != "m1" {
+		t.Fatalf("healthy.Read() message ID = %q, want %q", got, "m1")
+	}
+
+	writeCtx, cancelWrite := context.WithCancel(t.Context())
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- writer.Write(writeCtx, &Message{Event: &a2a.Message{ID: "m2"}})
+	}()
+	if got := readID(healthy); got != "m2" {
+		cancelWrite()
+		t.Fatalf("healthy.Read() message ID = %q, want %q", got, "m2")
+	}
+	cancelWrite()
+	if err := <-writeDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("writer.Write() error = %v, want %v", err, context.Canceled)
+	}
+	if got := readID(blocked); got != "m1" {
+		t.Fatalf("blocked.Read() message ID = %q, want %q", got, "m1")
+	}
+
+	thirdCtx, cancelThird := context.WithTimeout(t.Context(), time.Second)
+	defer cancelThird()
+	thirdDone := make(chan error, 1)
+	go func() {
+		thirdDone <- writer.Write(thirdCtx, &Message{Event: &a2a.Message{ID: "m3"}})
+	}()
+	if got := readID(blocked); got != "m2" {
+		t.Fatalf("blocked.Read() message ID = %q, want %q", got, "m2")
+	}
+	if got := readID(healthy); got != "m3" {
+		t.Fatalf("healthy.Read() message ID = %q, want %q", got, "m3")
+	}
+	if got := readID(blocked); got != "m3" {
+		t.Fatalf("blocked.Read() message ID = %q, want %q", got, "m3")
+	}
+	if err := <-thirdDone; err != nil {
+		t.Fatalf("writer.Write() error = %v, want nil", err)
+	}
+}
+
+func TestInMemoryQueue_CanceledWritesDoNotAccumulateBehindStalledSubscriber(t *testing.T) {
+	t.Parallel()
+	qm := newTestManager(t, WithQueueBufferSize(0), WithSubscriberTimeout(0))
+	tid := a2a.NewTaskID()
+	reader, writer := mustCreateReadWriter(t, qm, tid)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- writer.Write(firstCtx, &Message{Event: &a2a.Message{ID: "stalled"}})
+	}()
+	select {
+	case err := <-firstDone:
+		cancelFirst()
+		t.Fatalf("writer.Write() returned early with %v, want it blocked", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	for i := range 16 {
+		base, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		ctx := &simultaneousCompletionContext{
+			Context:    base,
+			secondDone: make(chan struct{}),
+			release:    make(chan struct{}),
+		}
+		writeDone := make(chan error, 1)
+		go func() {
+			writeDone <- writer.Write(ctx, &Message{Event: &a2a.Message{ID: fmt.Sprintf("canceled-%d", i)}})
+		}()
+
+		select {
+		case <-ctx.secondDone:
+			cancel()
+		case <-base.Done():
+		}
+		close(ctx.release)
+		if err := <-writeDone; !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			cancel()
+			t.Fatalf("writer.Write() at iteration %d error = %v, want a context error", i, err)
+		}
+		cancel()
+	}
+
+	queue := reader.(*inMemoryQueue)
+	queue.dispatchMu.Lock()
+	pending := len(queue.dispatchQueue)
+	queue.dispatchMu.Unlock()
+	if pending != 0 {
+		cancelFirst()
+		t.Fatalf("reader pending delivery count = %d, want 0 after canceled writes", pending)
+	}
+
+	cancelFirst()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first writer.Write() error = %v, want %v", err, context.Canceled)
 	}
 }
 

@@ -16,6 +16,7 @@ package eventqueue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -39,10 +40,10 @@ func WithQueueBufferSize(size int) MemManagerOption {
 	}
 }
 
-// WithSubscriberTimeout configures how long an in-memory subscriber may remain
-// unable to accept a broadcast before it is closed and removed from the broker.
-// The default is five minutes. A non-positive duration disables automatic
-// subscriber removal.
+// WithSubscriberTimeout configures how long Writer.Write waits for each reader
+// to accept an individual broadcast before that reader is closed and removed.
+// The timer restarts for every broadcast. The default is five minutes. A
+// non-positive duration disables automatic subscriber removal.
 func WithSubscriberTimeout(timeout time.Duration) MemManagerOption {
 	return func(manager *inMemoryManager) {
 		manager.subscriberTimeout = timeout
@@ -61,16 +62,17 @@ type inMemoryManager struct {
 var _ Manager = (*inMemoryManager)(nil)
 
 // NewInMemoryManager creates a new in-memory eventqueue manager.
-// A message dispatcher goroutine is started when the first queue for a task ID is created.
-// All the queues returned for the task ID before Destroy() is called are attached to the same goroutine. Each goroutine must use its own Queue.
-// Destroy() stops the goroutine and closes all the queues. If queues were buffered consumers are allowed to drain them.
+// A broker goroutine is started when the first connection for a task ID is created.
+// All connections returned for the task ID before Destroy() is called are attached to the same broker. Each connection must use its own Reader or Writer.
+// Destroy() stops the broker and closes all connections. Buffered readers are allowed to drain their messages.
 //
-// Queue.Write() returns when a message is put to all the open queues associated with the task.
+// Writer.Write() returns when a message is put to all the open readers associated with the task. Writer connections are publishers and are not broadcast subscribers.
+// If a broadcast is accepted before its context is canceled, delivery continues; a later Write on the same writer waits for that broadcast to finish.
 // A subscriber that remains unable to accept a message for the configured subscriber timeout is
-// removed and its Reader returns ErrQueueClosed after draining buffered messages. Queue.Read()
-// blocks until a message is received through another queue or until close.
-// Queue.Read() will not receive a message sent using Write() call on the same queue.
-// Queue.Close() unregisters a queue from further broadcasts and allows buffered messages to drain.
+// removed and its Reader returns ErrQueueClosed after draining buffered messages. Reader.Read()
+// blocks until a message is received through another connection or until close.
+// Reader.Read() will not receive a message sent using Write() call on the same connection.
+// Reader.Close() unregisters a connection from further broadcasts and allows buffered messages to drain.
 func NewInMemoryManager(options ...MemManagerOption) Manager {
 	manager := &inMemoryManager{
 		brokers:           make(map[a2a.TaskID]*inMemoryEventBroker),
@@ -84,7 +86,7 @@ func NewInMemoryManager(options ...MemManagerOption) Manager {
 }
 
 func (m *inMemoryManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (Reader, error) {
-	queue, err := m.createReadWriter(ctx, taskID)
+	queue, err := m.createQueue(ctx, taskID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -92,48 +94,70 @@ func (m *inMemoryManager) CreateReader(ctx context.Context, taskID a2a.TaskID) (
 }
 
 func (m *inMemoryManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (Writer, error) {
-	queue, err := m.createReadWriter(ctx, taskID)
+	queue, err := m.createQueue(ctx, taskID, false)
 	if err != nil {
 		return nil, err
 	}
 	return queue, nil
 }
 
-func (m *inMemoryManager) createReadWriter(ctx context.Context, taskID a2a.TaskID) (*inMemoryQueue, error) {
-	if err := ctx.Err(); err != nil {
+func (m *inMemoryManager) createQueue(ctx context.Context, taskID a2a.TaskID, subscriber bool) (*inMemoryQueue, error) {
+	for attempt := range 2 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		m.mu.Lock()
+		broker, ok := m.brokers[taskID]
+		if !ok {
+			broker = newInMemoryEventBroker(m.bufferSize, m.subscriberTimeout)
+			m.brokers[taskID] = broker
+		}
+		// Hold a reference before releasing the manager lock so a failed concurrent
+		// connection cannot remove a broker that another caller is still joining.
+		broker.connectionRefs.Add(1)
+		m.mu.Unlock()
+
+		queue, err := broker.connect(ctx, subscriber)
+		m.mu.Lock()
+		if err != nil {
+			if queue == nil {
+				broker.connectionRefs.Add(-1)
+			} else {
+				queue.drop()
+				queue = nil
+			}
+		}
+		current, exists := m.brokers[taskID]
+		replaced := !exists || current != broker
+		cleanup := err != nil && !replaced && broker.connectionRefs.Load() == 0
+		if cleanup {
+			delete(m.brokers, taskID)
+			replaced = true
+		}
+		m.mu.Unlock()
+
+		if queue != nil && replaced {
+			queue.drop()
+			queue = nil
+			err = ErrQueueClosed
+		}
+		if cleanup {
+			if destroyErr := broker.destroy(context.Background()); destroyErr != nil {
+				return nil, fmt.Errorf("failed to clean up broker after connect failure: %w: %w", err, destroyErr)
+			}
+		}
+		if err == nil {
+			return queue, nil
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if attempt == 0 && replaced && errors.Is(err, ErrQueueClosed) {
+			continue
+		}
 		return nil, err
 	}
-	m.mu.Lock()
-	broker, ok := m.brokers[taskID]
-	if !ok {
-		broker = newInMemoryEventBroker(m.bufferSize, m.subscriberTimeout)
-		m.brokers[taskID] = broker
-	}
-	// Hold a reference before releasing the manager lock so a failed concurrent
-	// connection cannot remove a broker that another caller is still joining.
-	broker.connectionRefs.Add(1)
-	m.mu.Unlock()
-
-	queue, err := broker.connect(ctx)
-	m.mu.Lock()
-	if err != nil {
-		broker.connectionRefs.Add(-1)
-	}
-	cleanup := err != nil && broker.connectionRefs.Load() == 0
-	if cleanup {
-		if current, ok := m.brokers[taskID]; !ok || current != broker {
-			cleanup = false
-		} else {
-			delete(m.brokers, taskID)
-		}
-	}
-	m.mu.Unlock()
-	if cleanup {
-		if destroyErr := broker.destroy(context.Background()); destroyErr != nil {
-			return nil, fmt.Errorf("failed to clean up broker after connect failure: %w: %w", err, destroyErr)
-		}
-	}
-	return queue, err
+	return nil, ErrQueueClosed
 }
 
 func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
@@ -143,12 +167,7 @@ func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error 
 		m.mu.Unlock()
 		return nil
 	}
+	delete(m.brokers, taskID)
 	m.mu.Unlock()
-	err := broker.destroy(ctx)
-	m.mu.Lock()
-	if current, ok := m.brokers[taskID]; ok && current == broker {
-		delete(m.brokers, taskID)
-	}
-	m.mu.Unlock()
-	return err
+	return broker.destroy(ctx)
 }

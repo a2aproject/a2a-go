@@ -22,16 +22,16 @@ import (
 )
 
 type broadcast struct {
-	ctx        context.Context
-	sender     *inMemoryQueue // sender does not receive its own broadcasts
-	payload    *Message
-	dispatched chan struct{} // closed after all registered queues received the broadcast.
-	pending    atomic.Int64
+	sender       *inMemoryQueue // sender does not receive its own broadcasts
+	payload      *Message
+	dispatched   chan struct{} // closed after all registered readers received the broadcast.
+	onDispatched func()
+	pending      atomic.Int64
 }
 
 func (b *broadcast) setPending(count int) {
 	if count == 0 {
-		close(b.dispatched)
+		b.complete()
 		return
 	}
 	b.pending.Store(int64(count))
@@ -39,12 +39,19 @@ func (b *broadcast) setPending(count int) {
 
 func (b *broadcast) done() {
 	if b.pending.Add(-1) == 0 {
-		close(b.dispatched)
+		b.complete()
+	}
+}
+
+func (b *broadcast) complete() {
+	close(b.dispatched)
+	if b.onDispatched != nil {
+		b.onDispatched()
 	}
 }
 
 // inMemoryEventBroker manages the control plane for the queues associated with
-// one task. Data delivery is performed by per-queue workers so a full queue
+// one task. Data delivery is performed by per-reader workers so a full queue
 // cannot prevent the broker from accepting registration or unregistration.
 type inMemoryEventBroker struct {
 	registered     map[*inMemoryQueue]any
@@ -92,7 +99,9 @@ func (b *inMemoryEventBroker) run() {
 
 		case queue := <-b.registerChan:
 			b.registered[queue] = struct{}{}
-			queue.startDispatch()
+			if queue.subscriber {
+				queue.startDispatch()
+			}
 
 		case queue := <-b.unregisterChan:
 			if _, ok := b.registered[queue]; ok {
@@ -109,23 +118,23 @@ func (b *inMemoryEventBroker) run() {
 func (b *inMemoryEventBroker) dispatch(broadcast *broadcast) {
 	recipients := 0
 	for queue := range b.registered {
-		if queue != broadcast.sender {
+		if queue.subscriber && queue != broadcast.sender {
 			recipients++
 		}
 	}
 	broadcast.setPending(recipients)
 	for queue := range b.registered {
-		if queue != broadcast.sender {
+		if queue.subscriber && queue != broadcast.sender {
 			queue.dispatch(broadcast)
 		}
 	}
 }
 
-func (b *inMemoryEventBroker) connect(ctx context.Context) (*inMemoryQueue, error) {
+func (b *inMemoryEventBroker) connect(ctx context.Context, subscriber bool) (*inMemoryQueue, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	queue := newInMemoryQueue(b)
+	queue := newInMemoryQueue(b, subscriber)
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -134,6 +143,9 @@ func (b *inMemoryEventBroker) connect(ctx context.Context) (*inMemoryQueue, erro
 	case <-b.destroyed:
 		return nil, ErrQueueClosed
 	case b.registerChan <- queue:
+		if err := ctx.Err(); err != nil {
+			return queue, err
+		}
 		return queue, nil
 	}
 }
@@ -166,6 +178,10 @@ type inMemoryQueue struct {
 	broker     *inMemoryEventBroker
 	closedChan chan struct{}
 	eventsChan chan *Message
+	subscriber bool
+
+	writeMu       sync.Mutex
+	writeInFlight chan struct{}
 
 	dispatchMu     sync.Mutex
 	dispatchCond   *sync.Cond
@@ -175,14 +191,19 @@ type inMemoryQueue struct {
 	closed         bool
 }
 
-func newInMemoryQueue(broker *inMemoryEventBroker) *inMemoryQueue {
+func newInMemoryQueue(broker *inMemoryEventBroker, subscriber bool) *inMemoryQueue {
 	queue := &inMemoryQueue{
 		broker:       broker,
 		closedChan:   make(chan struct{}),
 		eventsChan:   make(chan *Message, broker.queueBufferSize),
+		subscriber:   subscriber,
 		dispatchDone: make(chan struct{}),
 	}
 	queue.dispatchCond = sync.NewCond(&queue.dispatchMu)
+	if !subscriber {
+		close(queue.eventsChan)
+		close(queue.dispatchDone)
+	}
 	return queue
 }
 
@@ -190,18 +211,34 @@ var _ Reader = (*inMemoryQueue)(nil)
 var _ Writer = (*inMemoryQueue)(nil)
 
 func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
-	if err := ctx.Err(); err != nil {
+	if err := q.writeStateError(ctx); err != nil {
 		return err
 	}
-	broadcast := &broadcast{ctx: ctx, sender: q, payload: message, dispatched: make(chan struct{})}
+	writeSlot, err := q.reserveWrite(ctx)
+	if err != nil {
+		return err
+	}
+
+	broadcast := &broadcast{
+		sender:     q,
+		payload:    message,
+		dispatched: make(chan struct{}),
+	}
+	broadcast.onDispatched = func() {
+		q.releaseWrite(writeSlot)
+	}
 	select {
 	case <-ctx.Done():
+		q.releaseWrite(writeSlot)
 		return ctx.Err()
 	case <-q.closedChan:
+		q.releaseWrite(writeSlot)
 		return ErrQueueClosed
 	case <-q.broker.destroySignal:
+		q.releaseWrite(writeSlot)
 		return ErrQueueClosed
 	case <-q.broker.destroyed:
+		q.releaseWrite(writeSlot)
 		return ErrQueueClosed
 	case q.broker.broadcastChan <- broadcast:
 	}
@@ -216,13 +253,60 @@ func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
 	case <-q.broker.destroyed:
 		return ErrQueueClosed
 	case <-broadcast.dispatched:
-		select {
-		case <-q.closedChan:
-			return ErrQueueClosed
-		case <-q.broker.destroySignal:
-			return ErrQueueClosed
-		default:
+		return q.writeStateError(ctx)
+	}
+}
+
+func (q *inMemoryQueue) reserveWrite(ctx context.Context) (chan struct{}, error) {
+	for {
+		q.writeMu.Lock()
+		if q.writeInFlight == nil {
+			writeSlot := make(chan struct{})
+			q.writeInFlight = writeSlot
+			q.writeMu.Unlock()
+			return writeSlot, nil
 		}
+		writeInFlight := q.writeInFlight
+		q.writeMu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-q.closedChan:
+			return nil, ErrQueueClosed
+		case <-q.broker.destroySignal:
+			return nil, ErrQueueClosed
+		case <-q.broker.destroyed:
+			return nil, ErrQueueClosed
+		case <-writeInFlight:
+		}
+		if err := q.writeStateError(ctx); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (q *inMemoryQueue) releaseWrite(writeSlot chan struct{}) {
+	q.writeMu.Lock()
+	if q.writeInFlight == writeSlot {
+		q.writeInFlight = nil
+		close(writeSlot)
+	}
+	q.writeMu.Unlock()
+}
+
+func (q *inMemoryQueue) writeStateError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-q.closedChan:
+		return ErrQueueClosed
+	case <-q.broker.destroySignal:
+		return ErrQueueClosed
+	case <-q.broker.destroyed:
+		return ErrQueueClosed
+	default:
 		return nil
 	}
 }
@@ -306,10 +390,6 @@ func (q *inMemoryQueue) runDispatch() {
 }
 
 func (q *inMemoryQueue) deliver(broadcast *broadcast) bool {
-	if err := broadcast.ctx.Err(); err != nil {
-		return false
-	}
-
 	var timeout <-chan time.Time
 	var timer *time.Timer
 	if q.broker.subscriberTimeout > 0 {
@@ -323,13 +403,9 @@ func (q *inMemoryQueue) deliver(broadcast *broadcast) bool {
 		return false
 	case <-q.closedChan:
 		return false
-	case <-broadcast.ctx.Done():
-		return false
 	case <-timeout:
 		select {
 		case <-q.closedChan:
-			return false
-		case <-broadcast.ctx.Done():
 			return false
 		default:
 		}

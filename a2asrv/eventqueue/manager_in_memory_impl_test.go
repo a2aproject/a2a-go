@@ -172,6 +172,106 @@ func TestInMemoryManager_DestroyHonorsContext(t *testing.T) {
 	}
 }
 
+func TestInMemoryManager_CreateDuringDestroyUsesReplacementBroker(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	tid := a2a.NewTaskID()
+	reader, err := manager.CreateReader(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("manager.CreateReader() error = %v, want nil", err)
+	}
+	queue := reader.(*inMemoryQueue)
+	queue.dispatchMu.Lock()
+
+	destroyDone := make(chan error, 1)
+	go func() {
+		destroyDone <- manager.Destroy(t.Context(), tid)
+	}()
+	select {
+	case <-queue.broker.destroySignal:
+	case <-time.After(time.Second):
+		queue.dispatchMu.Unlock()
+		t.Fatal("manager.Destroy() did not start broker shutdown")
+	}
+
+	writer, createErr := manager.CreateWriter(t.Context(), tid)
+	queue.dispatchMu.Unlock()
+	if err := <-destroyDone; err != nil {
+		t.Fatalf("manager.Destroy() error = %v, want nil", err)
+	}
+	if createErr != nil {
+		t.Fatalf("manager.CreateWriter() during Destroy error = %v, want nil", createErr)
+	}
+	if err := writer.Write(t.Context(), &Message{Event: &a2a.Message{ID: "replacement"}}); err != nil {
+		t.Fatalf("writer.Write() error = %v, want nil", err)
+	}
+}
+
+func TestInMemoryManager_CreateRetriesBrokerRemovedDuringConnect(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t)
+	tid := a2a.NewTaskID()
+	reader, err := manager.CreateReader(t.Context(), tid)
+	if err != nil {
+		t.Fatalf("manager.CreateReader() error = %v, want nil", err)
+	}
+	queue := reader.(*inMemoryQueue)
+	broker := queue.broker
+	queue.dispatchMu.Lock()
+
+	unregisterAccepted := make(chan struct{})
+	go func() {
+		broker.unregisterChan <- queue
+		close(unregisterAccepted)
+	}()
+	select {
+	case <-unregisterAccepted:
+	case <-time.After(time.Second):
+		queue.dispatchMu.Unlock()
+		t.Fatal("broker did not start unregistering the existing reader")
+	}
+
+	type createResult struct {
+		writer Writer
+		err    error
+	}
+	createDone := make(chan createResult, 1)
+	go func() {
+		writer, err := manager.CreateWriter(t.Context(), tid)
+		createDone <- createResult{writer: writer, err: err}
+	}()
+	deadline := time.Now().Add(time.Second)
+	for broker.connectionRefs.Load() != 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := broker.connectionRefs.Load(); got != 2 {
+		queue.dispatchMu.Unlock()
+		t.Fatalf("broker connection references = %d, want 2", got)
+	}
+
+	destroyDone := make(chan error, 1)
+	go func() {
+		destroyDone <- manager.Destroy(t.Context(), tid)
+	}()
+	select {
+	case <-broker.destroySignal:
+	case <-time.After(time.Second):
+		queue.dispatchMu.Unlock()
+		t.Fatal("manager.Destroy() did not start broker shutdown")
+	}
+	result := <-createDone
+	queue.dispatchMu.Unlock()
+	if err := <-destroyDone; err != nil {
+		t.Fatalf("manager.Destroy() error = %v, want nil", err)
+	}
+	if result.err != nil {
+		t.Fatalf("manager.CreateWriter() error = %v, want nil", result.err)
+	}
+	if err := result.writer.Write(t.Context(), &Message{Event: &a2a.Message{ID: "replacement"}}); err != nil {
+		t.Fatalf("writer.Write() error = %v, want nil", err)
+	}
+}
+
 func TestInMemoryManager_CanceledCreationDoesNotRetainBroker(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -246,5 +346,39 @@ func TestInMemoryManager_CancellationDuringCreationDoesNotRetainBroker(t *testin
 	inMemory.mu.Unlock()
 	if exists {
 		t.Fatal("manager.CreateReader() retained a broker after cancellation during creation")
+	}
+}
+
+type cancelOnDoneContext struct {
+	context.Context
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (c *cancelOnDoneContext) Done() <-chan struct{} {
+	c.once.Do(c.cancel)
+	return c.Context.Done()
+}
+
+func TestInMemoryManager_CancellationAfterRegistrationDoesNotReturnQueue(t *testing.T) {
+	t.Parallel()
+	for i := range 100 {
+		manager := NewInMemoryManager()
+		taskID := a2a.TaskID(fmt.Sprintf("cancel-after-register-%d", i))
+		base, cancel := context.WithCancel(t.Context())
+		ctx := &cancelOnDoneContext{Context: base, cancel: cancel}
+
+		reader, err := manager.CreateReader(ctx, taskID)
+		if reader != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("manager.CreateReader() at iteration %d = (%v, %v), want (nil, %v)", i, reader, err, context.Canceled)
+		}
+
+		inMemory := manager.(*inMemoryManager)
+		inMemory.mu.Lock()
+		_, exists := inMemory.brokers[taskID]
+		inMemory.mu.Unlock()
+		if exists {
+			t.Fatalf("manager.CreateReader() at iteration %d retained a broker after cancellation", i)
+		}
 	}
 }
