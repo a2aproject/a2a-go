@@ -272,6 +272,49 @@ func TestInMemoryManager_CreateRetriesBrokerRemovedDuringConnect(t *testing.T) {
 	}
 }
 
+type destroyAndReplaceContext struct {
+	context.Context
+	manager *inMemoryManager
+	taskID  a2a.TaskID
+	calls   atomic.Int32
+	err     error
+}
+
+func (c *destroyAndReplaceContext) Err() error {
+	switch c.calls.Add(1) {
+	case 2:
+		c.err = c.manager.Destroy(context.Background(), c.taskID)
+	case 3:
+		stale := newInMemoryEventBroker(c.manager.bufferSize, c.manager.subscriberTimeout)
+		if err := stale.destroy(context.Background()); err != nil {
+			c.err = err
+			break
+		}
+		c.manager.mu.Lock()
+		c.manager.brokers[c.taskID] = stale
+		c.manager.mu.Unlock()
+	}
+	return c.Context.Err()
+}
+
+func TestInMemoryManager_CreateRetriesUntilStableBroker(t *testing.T) {
+	t.Parallel()
+	manager := newTestManager(t).(*inMemoryManager)
+	taskID := a2a.NewTaskID()
+	ctx := &destroyAndReplaceContext{Context: t.Context(), manager: manager, taskID: taskID}
+
+	writer, err := manager.CreateWriter(ctx, taskID)
+	if err != nil {
+		t.Fatalf("manager.CreateWriter() error = %v, want nil", err)
+	}
+	if ctx.err != nil {
+		t.Fatalf("broker replacement setup error = %v", ctx.err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() error = %v, want nil", err)
+	}
+}
+
 func TestInMemoryManager_CanceledCreationDoesNotRetainBroker(t *testing.T) {
 	tests := []struct {
 		name   string

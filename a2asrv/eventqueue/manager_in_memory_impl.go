@@ -102,7 +102,7 @@ func (m *inMemoryManager) CreateWriter(ctx context.Context, taskID a2a.TaskID) (
 }
 
 func (m *inMemoryManager) createQueue(ctx context.Context, taskID a2a.TaskID, subscriber bool) (*inMemoryQueue, error) {
-	for attempt := range 2 {
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -152,12 +152,14 @@ func (m *inMemoryManager) createQueue(ctx context.Context, taskID a2a.TaskID, su
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		if attempt == 0 && replaced && errors.Is(err, ErrQueueClosed) {
+		if replaced && errors.Is(err, ErrQueueClosed) {
+			// A concurrent destroy can replace more than one broker while this
+			// connection is in flight. Do not wait for broker destruction here:
+			// draining a reader must not block the control plane.
 			continue
 		}
 		return nil, err
 	}
-	return nil, ErrQueueClosed
 }
 
 func (m *inMemoryManager) Destroy(ctx context.Context, taskID a2a.TaskID) error {
