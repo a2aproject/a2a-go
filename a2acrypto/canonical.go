@@ -234,21 +234,18 @@ func utf16Compare(a, b string) int {
 	return 0
 }
 
-// canonicalNumber formats a json.Number without unnecessary trailing zeros.
+// canonicalNumber formats a json.Number per RFC 8785 §3.2.2.3. Numbers
+// serialize from their binary64 value (ECMAScript Number), not their exact
+// decimal token: for integers >= 2^53 the token and the double's shortest
+// round-trip diverge (2^60 = 1152921504606846976 -> "1152921504606847000"),
+// and values above int64 must not fall back to the verbatim token. Routing
+// every token through float64 keeps a single code path for both branches.
 func canonicalNumber(n json.Number) string {
-	s := string(n)
-	if strings.ContainsAny(s, ".eE") {
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return s
-		}
-		return canonicalFloat(f)
-	}
-	i, err := strconv.ParseInt(s, 10, 64)
+	f, err := strconv.ParseFloat(string(n), 64)
 	if err != nil {
-		return s
+		return string(n)
 	}
-	return strconv.FormatInt(i, 10)
+	return canonicalFloat(f)
 }
 
 // canonicalFloat formats a float64 per RFC 8785 §3.2.2.2 (ECMAScript

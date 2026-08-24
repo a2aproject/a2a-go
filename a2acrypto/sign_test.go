@@ -290,6 +290,37 @@ func TestCanonical_U2028_U2029_literal(t *testing.T) {
 	}
 }
 
+func TestCanonicalNumber_integers_serialize_from_binary64(t *testing.T) {
+	t.Parallel()
+
+	// RFC 8785 §3.2.2.3: numbers serialize from their binary64 value
+	// (ECMAScript Number), NOT from the exact decimal token. For integers
+	// >= 2^53 the two diverge; the double's shortest round-trip wins.
+	// Regression for the Agent-Authority-Conformance corpus (a2a-go #368):
+	// 2 of 10 RFC 8785 vectors failed on the integer branch.
+	cases := []struct {
+		name string
+		in   json.Number
+		want string
+	}{
+		{"small integer exact", json.Number("12345"), "12345"},
+		{"negative integer exact", json.Number("-42"), "-42"},
+		{"2^53 representable", json.Number("9007199254740992"), "9007199254740992"},
+		{"2^53+2 representable", json.Number("9007199254740994"), "9007199254740994"},
+		{"2^53+1 rounds down", json.Number("9007199254740993"), "9007199254740992"},
+		{"2^60 rounds to binary64", json.Number("1152921504606846976"), "1152921504606847000"},
+		{"2^68 above int64", json.Number("295147905179352825856"), "295147905179352830000"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := canonicalNumber(tc.in); got != tc.want {
+				t.Errorf("canonicalNumber(%s) = %s, want %s", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCanonical_float_matches_rfc8785(t *testing.T) {
 	t.Parallel()
 
