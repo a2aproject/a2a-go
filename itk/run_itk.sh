@@ -1,181 +1,53 @@
 #!/bin/bash
-set -ex
+# ITK harness for a2a-go — a thin shim over a2a-itk's shared driver.
+#
+# Everything that used to live here (clone, image build, container start,
+# readiness poll, POST /run, result reporting, nightly metrics) is now in
+# a2a-itk/scripts/run_itk_shared.sh, which all five SDK repos share. Only the
+# genuinely go-specific parts stay: generating the proto stubs, and the
+# registration-conflict env the container needs.
+#
+# Scenarios come from the shared role-based set in a2a-itk rather than a
+# scenarios.json in this repo — see a2a-itk/scenarios/traversal/.
+set -e
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# Set default log level
-export ITK_LOG_LEVEL="${ITK_LOG_LEVEL:-INFO}"
+ITK_SDK_NAME=go
+ITK_SCENARIO_SET=shared
 
-# Initialize default exit code
-RESULT=1
+# The SDK's v2 module depends on its v0.x predecessor, so both register the
+# same proto names in the global registry; downgrade the clash from fatal.
+ITK_EXTRA_DOCKER_ARGS=(-e GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn)
 
-# 1. Pull a2a-itk and checkout revision
-: "${A2A_ITK_REVISION:?A2A_ITK_REVISION environment variable must be set}"
+itk_generate_protos() {
+  export GOBIN="$HOME/go/bin"
+  export PATH="$PATH:$GOBIN"
+  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# Cleanup function to be called on exit
-cleanup() {
-  set +x
-  echo "Cleaning up artifacts..."
-  docker stop itk-service > /dev/null 2>&1 || true
-  docker rm itk-service > /dev/null 2>&1 || true
-  docker rmi itk_service > /dev/null 2>&1 || true
-  rm -rf a2a-itk > /dev/null 2>&1 || true
-  rm -rf pb > /dev/null 2>&1 || true
-  rm -f instruction.proto > /dev/null 2>&1 || true
-  echo "Done. Final exit code: $RESULT"
+  mkdir -p pb
+  protoc -I. \
+      --go_out=pb --go_opt=Minstruction.proto=github.com/a2aproject/a2a-go/itk/pb --go_opt=paths=source_relative \
+      --go-grpc_out=pb --go-grpc_opt=Minstruction.proto=github.com/a2aproject/a2a-go/itk/pb --go-grpc_opt=paths=source_relative \
+      instruction.proto
+
+  # go.sum is committed so the agent builds reproducibly; -diff fails instead
+  # of silently rewriting it the way `go mod tidy` would.
+  go mod tidy -diff
 }
 
-# Register cleanup function to run on script exit
-trap cleanup EXIT
+itk_extra_cleanup() {
+  rm -rf pb
+}
 
-if [ ! -d "a2a-itk" ]; then
+# --- bootstrap -------------------------------------------------------------
+# The shared driver lives in a2a-itk, so the checkout has to exist before it
+# can be sourced. CI has already placed it here via actions/checkout; locally
+# we clone it from a2aproject/a2a-itk.
+: "${A2A_ITK_REVISION:?A2A_ITK_REVISION environment variable must be set}"
+if [ ! -d a2a-itk ]; then
   git clone https://github.com/a2aproject/a2a-itk.git a2a-itk
-fi
-cd a2a-itk
-git fetch origin
-git checkout "$A2A_ITK_REVISION"
-
-# Only pull if it's a branch (not a detached HEAD)
-if git symbolic-ref -q HEAD > /dev/null; then
-  git pull origin "$A2A_ITK_REVISION"
-fi
-cd ..
-
-# 2. Copy instruction.proto from a2a-itk
-cp a2a-itk/protos/instruction.proto ./instruction.proto
-
-# 3. Build go pb library
-# Ensure protoc-gen-go and protoc-gen-go-grpc are installed
-export GOBIN=$HOME/go/bin
-export PATH=$PATH:$GOBIN
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-
-mkdir -p pb
-protoc -I. \
-    --go_out=pb --go_opt=Minstruction.proto=github.com/a2aproject/a2a-go/itk/pb --go_opt=paths=source_relative \
-    --go-grpc_out=pb --go-grpc_opt=Minstruction.proto=github.com/a2aproject/a2a-go/itk/pb --go-grpc_opt=paths=source_relative \
-    instruction.proto
-
-# 4. Verify go.mod/go.sum still match the sources (including the generated pb
-# package). go.sum is committed so the agent builds reproducibly; unlike
-# `go mod tidy`, `-diff` fails instead of silently rewriting the lock file.
-go mod tidy -diff
-
-# 5. Build jit itk_service docker image from root of a2a-itk (skipped in CI
-# where the workflow builds via docker/build-push-action for GHA caching).
-if [ "${ITK_SKIP_BUILD:-0}" != "1" ]; then
-  docker build -t itk_service a2a-itk
+  git -C a2a-itk checkout "$A2A_ITK_REVISION"
 fi
 
-# 6. Start docker service
-A2A_GO_ROOT=$(cd .. && pwd)
-ITK_DIR=$(pwd)
-
-# Stop existing container if any
-docker rm -f itk-service || true
-
-# Create logs directory if debug
-if [ "${ITK_LOG_LEVEL^^}" = "DEBUG" ]; then
-  mkdir -p "$ITK_DIR/logs"
-fi
-
-DOCKER_MOUNT_LOGS=""
-if [ "${ITK_LOG_LEVEL^^}" = "DEBUG" ]; then
-  DOCKER_MOUNT_LOGS="-v $ITK_DIR/logs:/app/logs"
-fi
-
-mkdir -p "$HOME/.cache/a2a-itk-launcher"
-
-# Run container with protobuf registration conflict set to 'warn'
-# This is necessary because the SDK v2 depends on its predecessor v0.x,
-# causing global proto registration conflicts.
-docker run -d --name itk-service \
-  -e GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn \
-  -e ITK_LOG_LEVEL="$ITK_LOG_LEVEL" \
-  -e ITK_ENTRYPOINT="${ITK_ENTRYPOINT:-itk_service_v2.py}" \
-  -e ITK_READINESS_TIMEOUT="${ITK_READINESS_TIMEOUT:-180}" \
-  -e ITK_MAX_WORKERS="${ITK_MAX_WORKERS:-2}" \
-  -v "$A2A_GO_ROOT:/app/agents/repo" \
-  -v "$ITK_DIR:/app/agents/repo/itk" \
-  -v "$HOME/.cache/a2a-itk-launcher:/root/.cache/a2a-itk" \
-  $DOCKER_MOUNT_LOGS \
-  -p 8000:8000 \
-  itk_service
-
-# 6.1. Fix dubious ownership for git
-docker exec itk-service git config --system --add safe.directory /app/agents/repo
-docker exec itk-service git config --system --add safe.directory /app/agents/repo/itk
-docker exec itk-service git config --system core.multiPackIndex false
-# Launcher's peer checkouts under /root/.cache/a2a-itk are host-owned; trust
-# only repos under the launcher cache dir so container-side git accepts them.
-docker exec itk-service bash -lc 'while IFS= read -r -d "" d; do git config --system --add safe.directory "${d%/.git}"; done < <(find /root/.cache/a2a-itk -type d -name .git -print0)'
-
-# 7. Verify service is up and send post request
-MAX_RETRIES=30
-echo "Waiting for ITK service to start on 127.0.0.1:8000..."
-set +e
-for i in $(seq 1 $MAX_RETRIES); do
-  if curl -s http://127.0.0.1:8000/ > /dev/null; then
-    echo "Service is up!"
-    break
-  fi
-  echo "Still waiting... ($i/$MAX_RETRIES)"
-  sleep 2
-done
-
-if ! curl -s http://127.0.0.1:8000/ > /dev/null; then
-  echo "Error: ITK service failed to start on port 8000"
-  docker logs itk-service
-  docker rm -f itk-service
-  exit 1
-fi
-
-SCENARIO_FILE="scenarios.json"
-if [ "${ITK_NIGHTLY_RUN^^}" = "TRUE" ]; then
-  SCENARIO_FILE="scenarios_full.json"
-fi
-
-echo "ITK Service is up! Sending compatibility test request using $SCENARIO_FILE..."
-RESPONSE=$(curl -s -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d "@$SCENARIO_FILE")
-
-if [ "${ITK_NIGHTLY_RUN^^}" = "TRUE" ]; then
-  echo "Nightly run detected. Saving raw results and running process_results.py..."
-  echo "$RESPONSE" > raw_results.json
-  python3 a2a-itk/scripts/process_results.py \
-    --history_output_file itk_go.json \
-    --history_url https://github.com/a2aproject/a2a-go/releases/download/nightly-metrics/itk_go.json
-  RESULT=$?
-else
-  echo "--------------------------------------------------------"
-  echo "ITK TEST RESULTS:"
-  echo "--------------------------------------------------------"
-  echo "$RESPONSE" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    all_passed = data.get('all_passed', False)
-    results = data.get('results', {})
-    for test, passed in results.items():
-        status = 'PASSED' if passed else 'FAILED'
-        print(f'{test}: {status}')
-    print('--------------------------------------------------------')
-    print(f'OVERALL STATUS: {\"PASSED\" if all_passed else \"FAILED\"}')
-    if not all_passed:
-        sys.exit(1)
-except Exception as e:
-    print(f'Error parsing results: {e}')
-    print(f'Raw response: {data if \"data\" in locals() else \"no data\"}')
-    sys.exit(1)
-"
-  RESULT=$?
-fi
-set -e
-
-if [ $RESULT -ne 0 ]; then
-  echo "Tests failed. Container logs:"
-  docker logs itk-service
-fi
-echo "--------------------------------------------------------"
-
-exit $RESULT
+source a2a-itk/scripts/run_itk_shared.sh
