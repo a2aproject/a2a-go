@@ -16,16 +16,43 @@ package eventqueue
 
 import (
 	"context"
-	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 type broadcast struct {
-	sender     *inMemoryQueue // sender does not receive its own broadcasts
-	payload    *Message
-	dispatched chan struct{} // closed after all registered Queues-s received the broadcast.
+	sender       *inMemoryQueue // sender does not receive its own broadcasts
+	payload      *Message
+	dispatched   chan struct{} // closed after all registered readers received the broadcast.
+	onDispatched func()
+	pending      atomic.Int64
 }
 
-// inMemoryEventBroker manages a goroutine which acts as an event bus for registeted Queue-s.
+func (b *broadcast) setPending(count int) {
+	if count == 0 {
+		b.complete()
+		return
+	}
+	b.pending.Store(int64(count))
+}
+
+func (b *broadcast) done() {
+	if b.pending.Add(-1) == 0 {
+		b.complete()
+	}
+}
+
+func (b *broadcast) complete() {
+	close(b.dispatched)
+	if b.onDispatched != nil {
+		b.onDispatched()
+	}
+}
+
+// inMemoryEventBroker manages the control plane for the queues associated with
+// one task. Data delivery is performed by per-reader workers so a full queue
+// cannot prevent the broker from accepting registration or unregistration.
 type inMemoryEventBroker struct {
 	registered     map[*inMemoryQueue]any
 	destroySignal  chan struct{} // used to request broker destruction
@@ -33,82 +60,117 @@ type inMemoryEventBroker struct {
 	registerChan   chan *inMemoryQueue
 	unregisterChan chan *inMemoryQueue
 	broadcastChan  chan *broadcast
+	destroyOnce    sync.Once
 
-	queueBufferSize int
+	queueBufferSize   int
+	subscriberTimeout time.Duration
+	// connectionRefs includes connect attempts in progress and queues that have
+	// not been dropped, allowing failed initial connects to clean up safely.
+	connectionRefs atomic.Int64
 }
 
-func newInMemoryEventBroker(queueBufferSize int) *inMemoryEventBroker {
+func newInMemoryEventBroker(queueBufferSize int, subscriberTimeout time.Duration) *inMemoryEventBroker {
 	broker := &inMemoryEventBroker{
-		registered:      make(map[*inMemoryQueue]any),
-		registerChan:    make(chan *inMemoryQueue),
-		unregisterChan:  make(chan *inMemoryQueue),
-		broadcastChan:   make(chan *broadcast),
-		destroySignal:   make(chan struct{}),
-		destroyed:       make(chan struct{}),
-		queueBufferSize: queueBufferSize,
+		registered:        make(map[*inMemoryQueue]any),
+		destroySignal:     make(chan struct{}),
+		destroyed:         make(chan struct{}),
+		registerChan:      make(chan *inMemoryQueue),
+		unregisterChan:    make(chan *inMemoryQueue),
+		broadcastChan:     make(chan *broadcast),
+		queueBufferSize:   queueBufferSize,
+		subscriberTimeout: subscriberTimeout,
 	}
-	go func() {
-		defer func() {
-			for queue := range broker.registered {
-				queue.destroy()
-			}
-			close(broker.destroyed)
-		}()
-
-		for {
-			select {
-			case b := <-broker.broadcastChan:
-				for queue := range broker.registered {
-					if queue == b.sender {
-						continue
-					}
-
-					select {
-					case queue.eventsChan <- b.payload:
-					case <-broker.destroySignal:
-						return
-					}
-				}
-				close(b.dispatched)
-
-			case sub := <-broker.registerChan:
-				broker.registered[sub] = struct{}{}
-
-			case sub := <-broker.unregisterChan:
-				if _, ok := broker.registered[sub]; ok {
-					delete(broker.registered, sub)
-					sub.destroy()
-				}
-
-			case <-broker.destroySignal:
-				return
-			}
-		}
-	}()
+	go broker.run()
 	return broker
 }
 
-func (b *inMemoryEventBroker) connect() (*inMemoryQueue, error) {
-	conn := &inMemoryQueue{
-		broker:     b,
-		closedChan: make(chan struct{}),
-		eventsChan: make(chan *Message, b.queueBufferSize),
-	}
-	select {
-	case <-b.destroyed:
-		return nil, fmt.Errorf("broker destroyed")
-	case b.registerChan <- conn:
-		return conn, nil
+func (b *inMemoryEventBroker) run() {
+	defer func() {
+		for queue := range b.registered {
+			queue.destroy()
+		}
+		close(b.destroyed)
+	}()
+
+	for {
+		select {
+		case broadcast := <-b.broadcastChan:
+			b.dispatch(broadcast)
+
+		case queue := <-b.registerChan:
+			b.registered[queue] = struct{}{}
+			if queue.subscriber {
+				queue.startDispatch()
+			}
+
+		case queue := <-b.unregisterChan:
+			if _, ok := b.registered[queue]; ok {
+				delete(b.registered, queue)
+				queue.destroy()
+			}
+
+		case <-b.destroySignal:
+			return
+		}
 	}
 }
 
-func (b *inMemoryEventBroker) destroy() {
-	select {
-	case <-b.destroyed: // already destroyed
-		return
-	case b.destroySignal <- struct{}{}: // send destroy signal
+func (b *inMemoryEventBroker) dispatch(broadcast *broadcast) {
+	recipients := 0
+	for queue := range b.registered {
+		if queue.subscriber && queue != broadcast.sender {
+			recipients++
+		}
 	}
-	<-b.destroyed
+	broadcast.setPending(recipients)
+	for queue := range b.registered {
+		if queue.subscriber && queue != broadcast.sender {
+			queue.dispatch(broadcast)
+		}
+	}
+}
+
+func (b *inMemoryEventBroker) connect(ctx context.Context, subscriber bool) (*inMemoryQueue, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	queue := newInMemoryQueue(b, subscriber)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-b.destroySignal:
+		return nil, ErrQueueClosed
+	case <-b.destroyed:
+		return nil, ErrQueueClosed
+	case b.registerChan <- queue:
+		if err := ctx.Err(); err != nil {
+			return queue, err
+		}
+		return queue, nil
+	}
+}
+
+func (b *inMemoryEventBroker) requestUnregister(queue *inMemoryQueue) {
+	select {
+	case b.unregisterChan <- queue:
+	case <-b.destroySignal:
+	case <-b.destroyed:
+	}
+}
+
+func (b *inMemoryEventBroker) destroy(ctx context.Context) error {
+	b.destroyOnce.Do(func() {
+		close(b.destroySignal)
+	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-b.destroyed:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // inMemoryQueue implements Queue interface.
@@ -116,23 +178,67 @@ type inMemoryQueue struct {
 	broker     *inMemoryEventBroker
 	closedChan chan struct{}
 	eventsChan chan *Message
-	closed     bool
+	subscriber bool
+
+	writeMu       sync.Mutex
+	writeInFlight chan struct{}
+
+	dispatchMu     sync.Mutex
+	dispatchCond   *sync.Cond
+	dispatchQueue  []*broadcast
+	dispatchDone   chan struct{}
+	unregisterOnce sync.Once
+	closed         bool
+}
+
+func newInMemoryQueue(broker *inMemoryEventBroker, subscriber bool) *inMemoryQueue {
+	queue := &inMemoryQueue{
+		broker:       broker,
+		closedChan:   make(chan struct{}),
+		eventsChan:   make(chan *Message, broker.queueBufferSize),
+		subscriber:   subscriber,
+		dispatchDone: make(chan struct{}),
+	}
+	queue.dispatchCond = sync.NewCond(&queue.dispatchMu)
+	if !subscriber {
+		close(queue.eventsChan)
+		close(queue.dispatchDone)
+	}
+	return queue
 }
 
 var _ Reader = (*inMemoryQueue)(nil)
 var _ Writer = (*inMemoryQueue)(nil)
 
 func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
-	if q.closed {
-		return ErrQueueClosed
+	if err := q.writeStateError(ctx); err != nil {
+		return err
+	}
+	writeSlot, err := q.reserveWrite(ctx)
+	if err != nil {
+		return err
 	}
 
-	broadcast := &broadcast{sender: q, payload: message, dispatched: make(chan struct{})}
-
+	broadcast := &broadcast{
+		sender:     q,
+		payload:    message,
+		dispatched: make(chan struct{}),
+	}
+	broadcast.onDispatched = func() {
+		q.releaseWrite(writeSlot)
+	}
 	select {
 	case <-ctx.Done():
+		q.releaseWrite(writeSlot)
 		return ctx.Err()
 	case <-q.closedChan:
+		q.releaseWrite(writeSlot)
+		return ErrQueueClosed
+	case <-q.broker.destroySignal:
+		q.releaseWrite(writeSlot)
+		return ErrQueueClosed
+	case <-q.broker.destroyed:
+		q.releaseWrite(writeSlot)
 		return ErrQueueClosed
 	case q.broker.broadcastChan <- broadcast:
 	}
@@ -142,40 +248,194 @@ func (q *inMemoryQueue) Write(ctx context.Context, message *Message) error {
 		return ctx.Err()
 	case <-q.closedChan:
 		return ErrQueueClosed
+	case <-q.broker.destroySignal:
+		return ErrQueueClosed
+	case <-q.broker.destroyed:
+		return ErrQueueClosed
 	case <-broadcast.dispatched:
-		// all subscribers received the broadcast
+		return q.writeStateError(ctx)
 	}
-	return nil
+}
+
+func (q *inMemoryQueue) reserveWrite(ctx context.Context) (chan struct{}, error) {
+	for {
+		q.writeMu.Lock()
+		if q.writeInFlight == nil {
+			writeSlot := make(chan struct{})
+			q.writeInFlight = writeSlot
+			q.writeMu.Unlock()
+			return writeSlot, nil
+		}
+		writeInFlight := q.writeInFlight
+		q.writeMu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-q.closedChan:
+			return nil, ErrQueueClosed
+		case <-q.broker.destroySignal:
+			return nil, ErrQueueClosed
+		case <-q.broker.destroyed:
+			return nil, ErrQueueClosed
+		case <-writeInFlight:
+		}
+		if err := q.writeStateError(ctx); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (q *inMemoryQueue) releaseWrite(writeSlot chan struct{}) {
+	q.writeMu.Lock()
+	if q.writeInFlight == writeSlot {
+		q.writeInFlight = nil
+		close(writeSlot)
+	}
+	q.writeMu.Unlock()
+}
+
+func (q *inMemoryQueue) writeStateError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-q.closedChan:
+		return ErrQueueClosed
+	case <-q.broker.destroySignal:
+		return ErrQueueClosed
+	case <-q.broker.destroyed:
+		return ErrQueueClosed
+	default:
+		return nil
+	}
 }
 
 func (q *inMemoryQueue) Read(ctx context.Context) (*Message, error) {
 	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case message, ok := <-q.eventsChan: // allow to drain
+	case message, ok := <-q.eventsChan:
 		if !ok {
 			return nil, ErrQueueClosed
 		}
 		return message, nil
+	default:
+	}
+
+	select {
+	case message, ok := <-q.eventsChan:
+		if !ok {
+			return nil, ErrQueueClosed
+		}
+		return message, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
 func (q *inMemoryQueue) Close() error {
-	// loop to ensure we drain q.eventsChan, so that the broker is not blocked trying to send us a broadcast
+	q.drop()
+	return nil
+}
+
+func (q *inMemoryQueue) startDispatch() {
+	go q.runDispatch()
+}
+
+func (q *inMemoryQueue) dispatch(broadcast *broadcast) {
+	q.dispatchMu.Lock()
+	if q.closed {
+		q.dispatchMu.Unlock()
+		broadcast.done()
+		return
+	}
+	q.dispatchQueue = append(q.dispatchQueue, broadcast)
+	q.dispatchCond.Signal()
+	q.dispatchMu.Unlock()
+}
+
+func (q *inMemoryQueue) runDispatch() {
+	defer func() {
+		close(q.eventsChan)
+		close(q.dispatchDone)
+	}()
 	for {
-		select {
-		case _, ok := <-q.eventsChan:
-			if !ok {
-				return nil
+		q.dispatchMu.Lock()
+		for len(q.dispatchQueue) == 0 && !q.closed {
+			q.dispatchCond.Wait()
+		}
+		if q.closed {
+			pending := q.dispatchQueue
+			q.dispatchQueue = nil
+			q.dispatchMu.Unlock()
+			for _, broadcast := range pending {
+				broadcast.done()
 			}
-		case q.broker.unregisterChan <- q:
-			return nil
+			return
+		}
+		broadcast := q.dispatchQueue[0]
+		if len(q.dispatchQueue) == 1 {
+			q.dispatchQueue = nil
+		} else {
+			q.dispatchQueue[0] = nil
+			q.dispatchQueue = q.dispatchQueue[1:]
+		}
+		q.dispatchMu.Unlock()
+
+		timedOut := q.deliver(broadcast)
+		if timedOut {
+			q.drop()
+		}
+		broadcast.done()
+	}
+}
+
+func (q *inMemoryQueue) deliver(broadcast *broadcast) bool {
+	var timeout <-chan time.Time
+	var timer *time.Timer
+	if q.broker.subscriberTimeout > 0 {
+		timer = time.NewTimer(q.broker.subscriberTimeout)
+		timeout = timer.C
+		defer timer.Stop()
+	}
+
+	select {
+	case q.eventsChan <- broadcast.payload:
+		return false
+	case <-q.closedChan:
+		return false
+	case <-timeout:
+		select {
+		case <-q.closedChan:
+			return false
+		default:
+		}
+		select {
+		case q.eventsChan <- broadcast.payload:
+			return false
+		default:
+			return true
 		}
 	}
 }
 
-func (q *inMemoryQueue) destroy() {
+func (q *inMemoryQueue) drop() {
+	q.dispatchMu.Lock()
+	if q.closed {
+		q.dispatchMu.Unlock()
+		return
+	}
 	q.closed = true
-	close(q.eventsChan)
 	close(q.closedChan)
+	q.dispatchCond.Broadcast()
+	q.dispatchMu.Unlock()
+
+	q.unregisterOnce.Do(func() {
+		q.broker.connectionRefs.Add(-1)
+		go q.broker.requestUnregister(q)
+	})
+}
+
+func (q *inMemoryQueue) destroy() {
+	q.drop()
+	<-q.dispatchDone
 }
