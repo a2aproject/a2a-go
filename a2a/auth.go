@@ -79,6 +79,24 @@ type SecuritySchemeName string
 // SecuritySchemeScopes is a list of scopes a security credential must be covering.
 type SecuritySchemeScopes []string
 
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *SecuritySchemeScopes) UnmarshalJSON(b []byte) error {
+	var scopes []string
+	if err := json.Unmarshal(b, &scopes); err == nil {
+		*s = scopes
+		return nil
+	}
+
+	var wrapped struct {
+		List []string `json:"list"`
+	}
+	if err := json.Unmarshal(b, &wrapped); err != nil {
+		return err
+	}
+	*s = wrapped.List
+	return nil
+}
+
 // NamedSecuritySchemes is a declaration of the security schemes available to authorize requests.
 // The key is the scheme name. Follows the OpenAPI 3.0 Security Scheme Object.
 type NamedSecuritySchemes map[SecuritySchemeName]SecurityScheme
