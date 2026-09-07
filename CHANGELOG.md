@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.0](https://github.com/a2aproject/a2a-go/compare/v2.5.0...v2.6.0) (2026-09-07)
+
+
+### Features
+
+* **itk:** use shared scenarios ([#429](https://github.com/a2aproject/a2a-go/issues/429)) ([e54a070](https://github.com/a2aproject/a2a-go/commit/e54a070b4435c76b4b99795eb7ab319037a3bab4))
+
+
+### Bug Fixes
+
+* **ci:** skip scheduled nightly workflows on forks ([#427](https://github.com/a2aproject/a2a-go/issues/427)) ([03b1f84](https://github.com/a2aproject/a2a-go/commit/03b1f8483cc9cbdd3e95567100d95c5509687eb5)), closes [#426](https://github.com/a2aproject/a2a-go/issues/426)
+
 ## [2.5.0](https://github.com/a2aproject/a2a-go/compare/v2.4.0...v2.5.0) (2026-08-18)
 
 
