@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -63,6 +64,8 @@ type Resolver struct {
 	Client *http.Client
 	// CardParser can be used to configure AgentCard parsing.
 	CardParser Parser
+	// Verifier optionally verifies AgentCard signatures after resolution.
+	Verifier *a2acrypto.Verifier
 }
 
 // NewResolver is a [Resolver] constructor function.
@@ -202,6 +205,23 @@ func (r *Resolver) parseCard(body []byte) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("card parsing failed: %w", err)
 	}
+
+	if r.Verifier != nil && len(card.Signatures) > 0 {
+		var verified bool
+		var lastErr error
+		for _, sig := range card.Signatures {
+			if err := r.Verifier.Verify(card, &sig); err == nil {
+				verified = true
+				break
+			} else {
+				lastErr = err
+			}
+		}
+		if !verified {
+			return nil, fmt.Errorf("agent card signature verification failed: %w", lastErr)
+		}
+	}
+
 	return card, nil
 }
 
