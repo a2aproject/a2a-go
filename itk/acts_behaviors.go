@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -46,6 +47,26 @@ var actsTerminalStates = map[string]a2a.TaskState{
 	"tck-reject-task":    a2a.TaskStateRejected,
 	"tck-input-required": a2a.TaskStateInputRequired,
 	"tck-auth-required":  a2a.TaskStateAuthRequired,
+}
+
+// actsCapabilities is what the card advertises — everything, unless the ACTS
+// runner asked for less.
+//
+// Four ACTS tests assert that an agent *without* a capability answers
+// UnsupportedOperationError, so their preconditions require the card not to
+// advertise it and they can never run against a fully capable agent. The
+// runner starts a second SUT with this variable set to reach them. The card
+// alone is not enough here: a2a-go treats capabilities as advisory unless the
+// handler is also given WithCapabilityChecks, which run() does.
+func actsCapabilities() a2a.AgentCapabilities {
+	if os.Getenv("ITK_ACTS_REDUCED_CAPABILITIES") != "" {
+		return a2a.AgentCapabilities{}
+	}
+	return a2a.AgentCapabilities{
+		Streaming:         true,
+		PushNotifications: true,
+		ExtendedAgentCard: true,
+	}
 }
 
 func actsFirstText(msg *a2a.Message) string {

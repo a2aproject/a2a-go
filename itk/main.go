@@ -478,14 +478,10 @@ func run() error {
 	jsonRPCV0Addr := fmt.Sprintf("http://127.0.0.1:%d", *httpPort)
 
 	agentCard := &a2a.AgentCard{
-		Name:        "ITK v10 Agent",
-		Description: "Multi-transport Go agent with A2A v0.3 compatibility.",
-		Version:     "1.0.0-alpha",
-		Capabilities: a2a.AgentCapabilities{
-			Streaming:         true,
-			PushNotifications: true,
-			ExtendedAgentCard: true,
-		},
+		Name:         "ITK v10 Agent",
+		Description:  "Multi-transport Go agent with A2A v0.3 compatibility.",
+		Version:      "1.0.0-alpha",
+		Capabilities: actsCapabilities(),
 		Skills: []a2a.AgentSkill{{
 			ID:          "itk",
 			Name:        "ITK harness",
@@ -547,6 +543,9 @@ func run() error {
 		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
 		a2asrv.WithPushNotifications(pushStore, pushSender),
 		a2asrv.WithTaskStore(taskStore),
+		// Makes the advertised capabilities enforcing rather than advisory, so
+		// the reduced pass actually refuses what its card no longer offers.
+		a2asrv.WithCapabilityChecks(&agentCard.Capabilities),
 		// The card advertises extendedAgentCard, and a capability is a promise:
 		// without a producer every binding answers the ACTS extended-card tests
 		// with ExtendedCardNotConfigured.
