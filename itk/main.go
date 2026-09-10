@@ -29,6 +29,7 @@ import (
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -39,6 +40,10 @@ import (
 type V10AgentExecutor struct{}
 
 func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	if behavior := actsBehaviorFor(execCtx); behavior != "" {
+		return actsRun(ctx, execCtx, behavior)
+	}
+
 	return func(yield func(a2a.Event, error) bool) {
 		log.Info(ctx, "Executing task", "taskId", string(execCtx.TaskID))
 
@@ -473,10 +478,16 @@ func run() error {
 	jsonRPCV0Addr := fmt.Sprintf("http://127.0.0.1:%d", *httpPort)
 
 	agentCard := &a2a.AgentCard{
-		Name:               "ITK v10 Agent",
-		Description:        "Multi-transport Go agent with A2A v0.3 compatibility.",
-		Version:            "1.0.0-alpha",
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+		Name:         "ITK v10 Agent",
+		Description:  "Multi-transport Go agent with A2A v0.3 compatibility.",
+		Version:      "1.0.0-alpha",
+		Capabilities: actsCapabilities(),
+		Skills: []a2a.AgentSkill{{
+			ID:          "itk",
+			Name:        "ITK harness",
+			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
+			Tags:        []string{"itk", "acts"},
+		}},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		SupportedInterfaces: []*a2a.AgentInterface{
@@ -513,6 +524,14 @@ func run() error {
 		},
 	}
 
+	// The harness authenticates nobody, and the in-memory store scopes tasks
+	// by user — so without a name of its own every ListTasks would come back
+	// unauthenticated. One fixed identity gives the store something to scope
+	// by without pretending to implement an auth scheme.
+	taskStore := taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
+		Authenticator: func(context.Context) (string, error) { return "itk", nil },
+	})
+
 	pushStore := push.NewInMemoryStore()
 	// The ITK harness delivers to loopback notification servers, so it opts out
 	// of the default SSRF guard that rejects loopback and private targets.
@@ -523,11 +542,26 @@ func run() error {
 		executor,
 		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
 		a2asrv.WithPushNotifications(pushStore, pushSender),
+		a2asrv.WithTaskStore(taskStore),
+		// Makes the advertised capabilities enforcing rather than advisory, so
+		// the reduced pass actually refuses what its card no longer offers.
+		a2asrv.WithCapabilityChecks(&agentCard.Capabilities),
+		// The card advertises extendedAgentCard, and a capability is a promise:
+		// without a producer every binding answers the ACTS extended-card tests
+		// with ExtendedCardNotConfigured.
+		a2asrv.WithExtendedAgentCard(agentCard),
 	)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
-	mux.Handle("/jsonrpc", a2asrv.NewJSONRPCHandler(requestHandler))
+
+	// Both spellings, because "/jsonrpc" is an exact-match pattern: a client
+	// that appends a trailing slash to the advertised URL would otherwise fall
+	// through to the v0.3 catch-all at "/", where every v1.0 method reads as
+	// method-not-found and tasks come back in the v0.3 shape.
+	jsonRPCHandler := a2asrv.NewJSONRPCHandler(requestHandler)
+	mux.Handle("/jsonrpc", jsonRPCHandler)
+	mux.Handle("/jsonrpc/", jsonRPCHandler)
 	mux.Handle("/rest/", http.StripPrefix("/rest", a2asrv.NewRESTHandler(requestHandler)))
 	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
