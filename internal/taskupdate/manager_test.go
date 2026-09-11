@@ -170,6 +170,53 @@ func TestManager_TaskImmutableAfterSave(t *testing.T) {
 	}
 }
 
+func TestManager_TaskReplacement_BackwardTransitionRejected(t *testing.T) {
+	m, saver := newUpdaterWithStoredTask()
+	m.lastStored.Task.Status = a2a.TaskStatus{State: a2a.TaskStateWorking}
+
+	replacement := &a2a.Task{
+		ID:        m.lastStored.Task.ID,
+		ContextID: m.lastStored.Task.ContextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateSubmitted},
+	}
+	if _, err := m.Process(t.Context(), replacement); !errors.Is(err, a2a.ErrInvalidAgentResponse) {
+		t.Fatalf("m.Process() error = %v, want %v", err, a2a.ErrInvalidAgentResponse)
+	}
+	if saver.saved != nil {
+		t.Fatalf("backward transition was saved: got %+v", saver.saved)
+	}
+}
+
+func TestManager_TaskReplacement_ValidTransitionStillSaved(t *testing.T) {
+	m, saver := newUpdaterWithStoredTask()
+	m.lastStored.Task.Status = a2a.TaskStatus{State: a2a.TaskStateSubmitted}
+
+	replacement := &a2a.Task{
+		ID:        m.lastStored.Task.ID,
+		ContextID: m.lastStored.Task.ContextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+	}
+	if _, err := m.Process(t.Context(), replacement); err != nil {
+		t.Fatalf("m.Process() failed to save task: %v", err)
+	}
+	if saver.saved == nil || saver.saved.Status.State != a2a.TaskStateWorking {
+		t.Fatalf("valid transition not saved: got %+v, want state %q", saver.saved, a2a.TaskStateWorking)
+	}
+}
+
+func TestManager_FirstTaskSnapshot_TransitionCheckSkipped(t *testing.T) {
+	saver := newTestSaver()
+	task := &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: a2a.NewContextID(),
+		Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
+	}
+	m := NewManager(saver, task.TaskInfo(), nil)
+	if _, err := m.Process(t.Context(), task); err != nil {
+		t.Fatalf("m.Process() failed to save the first task snapshot: %v", err)
+	}
+}
+
 func TestManager_SaverError(t *testing.T) {
 	m, saver := newUpdaterWithStoredTask()
 

@@ -148,6 +148,11 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 		return TaskVersionMissing, ErrConcurrentModification
 	}
 
+	if !ValidTaskStateTransition(stored.task.Status.State, copy.Status.State) {
+		return TaskVersionMissing, fmt.Errorf("invalid task state transition from %q to %q: %w",
+			stored.task.Status.State, copy.Status.State, a2a.ErrInvalidAgentResponse)
+	}
+
 	version := stored.version + 1
 	s.tasks[req.Task.ID] = &storedTask{
 		task:        copy,
@@ -341,4 +346,64 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 	}
 
 	return updatedTime, taskID, nil
+}
+
+// validTaskStateTransition reports whether moving from `from` to `to` is a
+// legal A2A task state transition. The check targets non-terminal
+// moves: a task cannot go backwards from a later state to an earlier one
+// (e.g. a working task cannot return to submitted). Transitions out of a
+// terminal state are governed by the taskupdate manager and are not restricted
+// here (the push-failure path may, for example, move a completed task to
+// failed). Updates that keep the state unchanged are always allowed.
+// isKnownTaskState reports whether s is one of the task states defined by the A2A
+// protocol. TaskState is a plain string type whose UnmarshalJSON accepts arbitrary
+// values, so unrecognized states must be rejected explicitly.
+func isKnownTaskState(s a2a.TaskState) bool {
+	switch s {
+	case a2a.TaskStateUnspecified, a2a.TaskStateAuthRequired, a2a.TaskStateCanceled,
+		a2a.TaskStateCompleted, a2a.TaskStateFailed, a2a.TaskStateInputRequired,
+		a2a.TaskStateRejected, a2a.TaskStateSubmitted, a2a.TaskStateWorking:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidTaskStateTransition reports whether the from -> to task-state transition is
+// allowed by the A2A state machine. It also rejects states that are not recognized
+// A2A task states, so unknown values (e.g. decoded from arbitrary input) cannot pass
+// through the permissive entry/pause cases.
+func ValidTaskStateTransition(from, to a2a.TaskState) bool {
+	if !isKnownTaskState(from) || !isKnownTaskState(to) {
+		return false
+	}
+	if from == to {
+		return true
+	}
+	if from.Terminal() {
+		// Terminal-state moves are handled by the taskupdate manager.
+		return true
+	}
+	switch from {
+	case a2a.TaskStateUnspecified, a2a.TaskStateSubmitted, a2a.TaskStateAuthRequired:
+		// Entry/pause states: any forward transition is allowed.
+		return true
+	case a2a.TaskStateWorking:
+		return to == a2a.TaskStateInputRequired ||
+			to == a2a.TaskStateCompleted ||
+			to == a2a.TaskStateFailed ||
+			to == a2a.TaskStateCanceled ||
+			to == a2a.TaskStateRejected ||
+			to == a2a.TaskStateAuthRequired
+	case a2a.TaskStateInputRequired:
+		return to == a2a.TaskStateSubmitted ||
+			to == a2a.TaskStateWorking ||
+			to == a2a.TaskStateCompleted ||
+			to == a2a.TaskStateFailed ||
+			to == a2a.TaskStateCanceled ||
+			to == a2a.TaskStateRejected ||
+			to == a2a.TaskStateAuthRequired
+	default:
+		return false
+	}
 }
