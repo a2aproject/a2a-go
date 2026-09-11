@@ -181,6 +181,12 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	status, err := parseTaskStateOpt(query, "status")
+	if err != nil {
+		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
+		return
+	}
+
 	statusTimestampAfter, err := parseTimeOpt(query, "statusTimestampAfter")
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
@@ -189,7 +195,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 
 	request := &a2a.ListTasksRequest{
 		ContextID:            query.Get("contextId"),
-		Status:               a2a.TaskState(query.Get("status")),
+		Status:               status,
 		PageSize:             pageSize,
 		PageToken:            query.Get("pageToken"),
 		HistoryLength:        historyLength,
@@ -564,4 +570,18 @@ func parseBool(query url.Values, key string) (bool, error) {
 		return false, fmt.Errorf("invalid %s: %w", key, err)
 	}
 	return v, nil
+}
+
+func parseTaskStateOpt(query url.Values, key string) (a2a.TaskState, error) {
+	val := query.Get(key)
+	if val == "" {
+		return a2a.TaskStateUnspecified, nil
+	}
+	// Reuse TaskState's own validation by unmarshaling the quoted value;
+	// unknown states are rejected here instead of silently reaching the handler.
+	var state a2a.TaskState
+	if err := json.Unmarshal([]byte(strconv.Quote(val)), &state); err != nil {
+		return a2a.TaskStateUnspecified, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	return state, nil
 }
