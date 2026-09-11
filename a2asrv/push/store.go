@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -33,14 +35,33 @@ var ErrPushConfigNotFound = errors.New("push config not found")
 // Authorization (cross-tenant isolation) is enforced at the handler level
 // via taskStore.Get; this store is a plain in-memory CRUD store.
 type InMemoryPushConfigStore struct {
-	mu      sync.RWMutex
-	configs map[a2a.TaskID]map[string]*a2a.PushConfig
+	mu                   sync.RWMutex
+	configs              map[a2a.TaskID]map[string]*a2a.PushConfig
+	allowPrivateNetworks bool
 }
 
-// NewInMemoryStore creates an empty store.
+// StoreConfig configures [InMemoryPushConfigStore].
+type StoreConfig struct {
+	// AllowPrivateNetworks relaxes create-time URL SSRF checks so loopback
+	// and private literal targets can be stored. Defaults to false. Pair with
+	// [HTTPSenderConfig.AllowPrivateNetworks] for trusted internal deployments.
+	AllowPrivateNetworks bool
+}
+
+// NewInMemoryStore creates an empty store with create-time push URL SSRF checks enabled.
 func NewInMemoryStore() *InMemoryPushConfigStore {
+	return NewInMemoryStoreWithConfig(nil)
+}
+
+// NewInMemoryStoreWithConfig creates an empty store using the given config.
+func NewInMemoryStoreWithConfig(config *StoreConfig) *InMemoryPushConfigStore {
+	allowPrivate := false
+	if config != nil {
+		allowPrivate = config.AllowPrivateNetworks
+	}
 	return &InMemoryPushConfigStore{
-		configs: make(map[a2a.TaskID]map[string]*a2a.PushConfig),
+		configs:              make(map[a2a.TaskID]map[string]*a2a.PushConfig),
+		allowPrivateNetworks: allowPrivate,
 	}
 }
 
@@ -49,22 +70,50 @@ func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
-func validateConfig(config *a2a.PushConfig) error {
+func validateConfig(config *a2a.PushConfig, allowPrivateNetworks bool) error {
 	if config == nil {
 		return errors.New("push config cannot be nil")
 	}
 	if config.URL == "" {
 		return errors.New("push config endpoint cannot be empty")
 	}
-	if _, err := url.ParseRequestURI(config.URL); err != nil {
+	if err := validatePushEndpointURL(config.URL, allowPrivateNetworks); err != nil {
 		return fmt.Errorf("invalid push config endpoint URL: %w", err)
+	}
+	return nil
+}
+
+// validatePushEndpointURL parses the endpoint. Non-http(s) schemes are stored
+// so other senders (for example topic:// MQ) can use the same config.
+// For http(s), reject private/loopback literal hosts at write time.
+// Dial-time checks in HTTPPushSender still cover DNS rebinding.
+func validatePushEndpointURL(raw string, allowPrivateNetworks bool) error {
+	u, err := url.ParseRequestURI(raw)
+	if err != nil {
+		return err
+	}
+	if !isHTTPPushScheme(u.Scheme) {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("host is required")
+	}
+	if allowPrivateNetworks {
+		return nil
+	}
+	if host == "localhost" || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("%w: %s", errBlockedPushTarget, host)
+	}
+	if ip := net.ParseIP(host); ip != nil && isBlockedIP(ip) {
+		return fmt.Errorf("%w: %s", errBlockedPushTarget, ip)
 	}
 	return nil
 }
 
 // Save adds a copy of push config to the store.
 func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
-	if err := validateConfig(config); err != nil {
+	if err := validateConfig(config, s.allowPrivateNetworks); err != nil {
 		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
 	}
 

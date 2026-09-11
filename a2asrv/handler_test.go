@@ -779,8 +779,10 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	ctx := t.Context()
 
 	pushConfig := &a2a.PushConfig{URL: "http://localhost:1"}
-	pushConfigStore := push.NewInMemoryStore()
-	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true})
+	// Localhost must be stored so dial-time FailOnError can fail the task; create-time
+	// SSRF defaults to reject private targets.
+	pushConfigStore := push.NewInMemoryStoreWithConfig(&push.StoreConfig{AllowPrivateNetworks: true})
+	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	input := &a2a.SendMessageRequest{

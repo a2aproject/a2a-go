@@ -513,9 +513,9 @@ func run() error {
 		},
 	}
 
-	pushStore := push.NewInMemoryStore()
 	// The ITK harness delivers to loopback notification servers, so it opts out
 	// of the default SSRF guard that rejects loopback and private targets.
+	pushStore := push.NewInMemoryStoreWithConfig(&push.StoreConfig{AllowPrivateNetworks: true})
 	pushSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
 
 	executor := &V10AgentExecutor{}

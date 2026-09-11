@@ -206,7 +206,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			name:    "invalid request URL",
 			event:   events,
 			config:  &a2a.PushConfig{URL: "::"},
-			wantErr: "failed to create HTTP request",
+			wantErr: "failed to parse push notification URL",
 		},
 		{
 			name:    "http client fails",
@@ -275,6 +275,23 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 	})
 }
 
+func TestHTTPPushSender_SendPushIgnoresNonHTTP(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+	sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
+
+	for _, raw := range []string{"topic://name", "file:///etc/passwd"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+			err := sender.SendPush(ctx, &a2a.PushConfig{URL: raw}, event)
+			if err != nil {
+				t.Fatalf("SendPush() error = %v, want %v", err, nil)
+			}
+		})
+	}
+}
+
 func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 	ctx := context.Background()
 	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
@@ -288,6 +305,8 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 			"http://169.254.169.254/latest/meta-data/", // cloud metadata (link-local)
 			"http://10.0.0.5/webhook",                  // RFC 1918
 			"http://192.168.1.10/webhook",              // RFC 1918
+			"http://100.64.0.1/webhook",                // RFC 6598 CGNAT / shared
+			"http://198.18.0.1/webhook",                // RFC 2544 benchmarking
 			"http://0.0.0.0:8080/webhook",              // unspecified
 		}
 		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
