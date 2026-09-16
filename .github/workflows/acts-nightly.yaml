@@ -1,4 +1,8 @@
-name: Nightly ITK
+name: Nightly ACTS
+
+# Conformance counterpart of `itk-nightly.yaml`, on the same schedule. Separate
+# workflows so neither shows up red for the other's failure and each can be
+# re-run on its own.
 
 on:
   schedule:
@@ -9,14 +13,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: itk-nightly
+  group: acts-nightly
   cancel-in-progress: true
 
 jobs:
-  nightly:
+  acts:
     # Don't run scheduled builds on forks.
     if: github.event_name != 'schedule' || github.repository == 'a2aproject/a2a-go'
-    name: Nightly ITK Run
+    name: Nightly ACTS Run
     runs-on: ubuntu-latest
 
     steps:
@@ -61,20 +65,41 @@ jobs:
           restore-keys: |
             itk-launcher-${{ runner.os }}-
 
-      - name: Run Nightly ITK Tests
+      - name: Run Nightly ACTS Conformance
         run: bash run_itk.sh
         working-directory: itk
         env:
           A2A_ITK_REVISION: main
+          ITK_ACTS_RUN: "1"
+          ITK_ACTS_TRANSPORTS: jsonrpc,grpc,rest
+          # Does not gate on conformance, unlike the PR tier: a `must` failure
+          # is the metric being recorded. The step fails only if the service
+          # errored or the report came back malformed — exactly when
+          # publishing should be skipped.
           ITK_NIGHTLY_RUN: "True"
           ITK_SKIP_BUILD: "1"
 
-      - name: Upload Results to Rolling Release
+      - name: Upload ACTS reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acts-reports-go-nightly
+          path: itk/acts-report-*.json
+          if-no-files-found: warn
+          # Outlives the rolling asset's 7-run window, so every entry it
+          # carries still has its full report to link to.
+          retention-days: 30
+
+      - name: Upload ACTS Results to Rolling Release
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
+          # The conformance counterpart of itk_go.json, on the same permanent
+          # tag: process_acts_results.py fetches the existing acts_go.json,
+          # appends one entry covering all three bindings, and this puts it
+          # back.
           tag_name: "nightly-metrics"
           prerelease: true
           files: |
-            itk/itk_go.json
+            itk/acts_go.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
