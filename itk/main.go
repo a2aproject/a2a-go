@@ -478,10 +478,15 @@ func run() error {
 	jsonRPCV0Addr := fmt.Sprintf("http://127.0.0.1:%d", *httpPort)
 
 	agentCard := &a2a.AgentCard{
-		Name:         "ITK v10 Agent",
-		Description:  "Multi-transport Go agent with A2A v0.3 compatibility.",
-		Version:      "1.0.0-alpha",
-		Capabilities: actsCapabilities(),
+		Name:        "ITK v10 Agent",
+		Description: "Multi-transport Go agent with A2A v0.3 compatibility.",
+		Version:     "1.0.0-alpha",
+		// Authentication is not a capability — AgentCapabilities has no member
+		// for it — so it is declared at the top level, where the ACTS
+		// authentication precondition reads both of these.
+		Capabilities:         actsCapabilities(),
+		SecuritySchemes:      actsSecuritySchemes(),
+		SecurityRequirements: actsSecurityRequirements(),
 		Skills: []a2a.AgentSkill{{
 			ID:          "itk",
 			Name:        "ITK harness",
@@ -570,7 +575,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", *httpPort),
-		Handler:           loggingMiddleware(logger, mux),
+		Handler:           loggingMiddleware(logger, actsCredentialMiddleware(mux)),
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
@@ -591,8 +596,8 @@ func run() error {
 	})
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryLoggingInterceptor(logger)),
-		grpc.StreamInterceptor(streamLoggingInterceptor(logger)),
+		grpc.ChainUnaryInterceptor(unaryLoggingInterceptor(logger), actsUnaryAuthInterceptor()),
+		grpc.ChainStreamInterceptor(streamLoggingInterceptor(logger), actsStreamAuthInterceptor()),
 	)
 	a2agrpcv0.NewHandler(requestHandler).RegisterWith(grpcServer)
 	a2agrpc.NewHandler(requestHandler).RegisterWith(grpcServer)
