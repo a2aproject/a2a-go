@@ -200,7 +200,7 @@ func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *
 	path := rest.MakeGetTaskPath(string(req.ID))
 	q := url.Values{}
 	if req.HistoryLength != nil {
-		q.Add("historyLength", strconv.Itoa(*req.HistoryLength))
+		q.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
@@ -225,25 +225,25 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 
 	query := url.Values{}
 	if req.ContextID != "" {
-		query.Add("contextId", string(req.ContextID))
+		query.Add(rest.QueryContextID, string(req.ContextID))
 	}
 	if req.Status != "" {
-		query.Add("status", string(req.Status))
+		query.Add(rest.QueryStatus, string(req.Status))
 	}
 	if req.PageSize != 0 {
-		query.Add("pageSize", strconv.Itoa(req.PageSize))
+		query.Add(rest.QueryPageSize, strconv.Itoa(req.PageSize))
 	}
 	if req.PageToken != "" {
-		query.Add("pageToken", string(req.PageToken))
+		query.Add(rest.QueryPageToken, string(req.PageToken))
 	}
 	if req.HistoryLength != nil {
-		query.Add("historyLength", strconv.Itoa(*req.HistoryLength))
+		query.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
-		query.Add("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))
+		query.Add(rest.QueryStatusTimestampAfter, req.StatusTimestampAfter.Format(time.RFC3339))
 	}
 	if req.IncludeArtifacts {
-		query.Add("includeArtifacts", "true")
+		query.Add(rest.QueryIncludeArtifacts, "true")
 	}
 
 	if encoded := query.Encode(); encoded != "" {

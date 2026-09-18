@@ -652,6 +652,47 @@ func TestREST_ListTasks_Success(t *testing.T) {
 	}
 }
 
+func TestREST_ListTasks_ClientRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	var capturedReq *a2a.ListTasksRequest
+	mock := &mockRequestHandler{
+		listTasksFunc: func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+			capturedReq = req
+			return &a2a.ListTasksResponse{}, nil
+		},
+	}
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+	client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+	}
+
+	cutoff := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	historyLength := 100
+	req := &a2a.ListTasksRequest{
+		ContextID:            "ctx-999",
+		Status:               a2a.TaskStateWorking,
+		PageSize:             50,
+		PageToken:            "next-page-token",
+		HistoryLength:        &historyLength,
+		StatusTimestampAfter: &cutoff,
+		IncludeArtifacts:     true,
+	}
+	if _, err := client.ListTasks(t.Context(), req); err != nil {
+		t.Fatalf("client.ListTasks() error = %v, want nil", err)
+	}
+	if capturedReq == nil {
+		t.Fatal("expected request to be captured, but got nil")
+	}
+	if diff := cmp.Diff(req, capturedReq); diff != "" {
+		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestREST_GetTask_Success(t *testing.T) {
 	var capturedReq *a2a.GetTaskRequest
 

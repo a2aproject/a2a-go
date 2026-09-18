@@ -136,7 +136,7 @@ func (h *restHandler) handleGetTask(taskID string, rw http.ResponseWriter, req *
 		return
 	}
 
-	historyLength, err := parseIntOpt(req.URL.Query(), "historyLength")
+	historyLength, err := parseIntOpt(req.URL.Query(), rest.QueryHistoryLength)
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
 		return
@@ -163,35 +163,35 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 	ctx := req.Context()
 	query := req.URL.Query()
 
-	pageSize, err := parseInt(query, "pageSize")
+	pageSize, err := parseInt(query, rest.QueryPageSize)
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
 
-	includeArtifacts, err := parseBool(query, "includeArtifacts")
+	includeArtifacts, err := parseBool(query, rest.QueryIncludeArtifacts)
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
 
-	historyLength, err := parseIntOpt(query, "historyLength")
+	historyLength, err := parseIntOpt(query, rest.QueryHistoryLength)
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
 
-	statusTimestampAfter, err := parseTimeOpt(query, "statusTimestampAfter")
+	statusTimestampAfter, err := parseTimeOpt(query, rest.QueryStatusTimestampAfter)
 	if err != nil {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
 
 	request := &a2a.ListTasksRequest{
-		ContextID:            query.Get("contextId"),
-		Status:               a2a.TaskState(query.Get("status")),
+		ContextID:            query.Get(rest.QueryContextID),
+		Status:               a2a.TaskState(query.Get(rest.QueryStatus)),
 		PageSize:             pageSize,
-		PageToken:            query.Get("pageToken"),
+		PageToken:            query.Get(rest.QueryPageToken),
 		HistoryLength:        historyLength,
 		StatusTimestampAfter: statusTimestampAfter,
 		IncludeArtifacts:     includeArtifacts,
