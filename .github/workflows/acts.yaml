@@ -1,0 +1,86 @@
+name: ACTS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.github/CODEOWNERS'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acts:
+    name: ACTS Conformance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clone a2a-itk
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: a2aproject/a2a-itk
+          ref: main
+          path: itk/a2a-itk
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build itk_service image (GHA layer cache)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: itk/a2a-itk
+          tags: itk_service:latest
+          load: true
+          cache-from: type=gha,scope=itk_service
+          cache-to: type=gha,mode=max,scope=itk_service
+
+      - name: Cache launcher peer-SDK checkouts + build outputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/a2a-itk-launcher
+          key: itk-launcher-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            itk-launcher-${{ runner.os }}-
+
+      - name: Run ACTS Conformance Suite
+        # Temporarily advisory: the driver gates on `must` conformance here,
+        # which no SDK passes yet. Delete this line to make it a merge
+        # requirement.
+        continue-on-error: true
+        run: bash run_itk.sh
+        working-directory: itk
+        env:
+          A2A_ITK_REVISION: main
+          ITK_ACTS_RUN: "1"
+          ITK_ACTS_TRANSPORTS: jsonrpc,grpc,rest
+          ITK_SKIP_BUILD: "1"
+
+      - name: Upload ACTS reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acts-reports-go
+          path: itk/acts-report-*.json
+          if-no-files-found: warn
+          retention-days: 14
