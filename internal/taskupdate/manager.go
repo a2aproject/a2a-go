@@ -82,6 +82,10 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 		if err := mgr.validate(v); err != nil {
 			return nil, err
 		}
+		if mgr.lastStored != nil && !taskstore.ValidTaskStateTransition(mgr.lastStored.Task.Status.State, v.Status.State) {
+			return nil, fmt.Errorf("invalid task state transition from %q to %q: %w",
+				mgr.lastStored.Task.Status.State, v.Status.State, a2a.ErrInvalidAgentResponse)
+		}
 		copy, err := utils.DeepCopy(v)
 		if err != nil {
 			return nil, err
@@ -129,6 +133,10 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		task, err := a2aevent.ApplyStatusUpdate(lastStored.Task, event)
 		if err != nil {
 			return nil, err
+		}
+		if !taskstore.ValidTaskStateTransition(lastStored.Task.Status.State, event.Status.State) {
+			return nil, fmt.Errorf("invalid task state transition from %q to %q: %w",
+				lastStored.Task.Status.State, event.Status.State, a2a.ErrInvalidAgentResponse)
 		}
 
 		vt, err := mgr.saveVersionedTask(ctx, task, event, lastStored.Version)
