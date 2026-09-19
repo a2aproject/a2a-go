@@ -15,6 +15,7 @@
 package a2asrv
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,6 +26,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -718,5 +720,127 @@ func TestREST_GetTask_Success(t *testing.T) {
 				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestJSONRPCHandler_DefaultKeepAliveEnabled is a regression test for SSE keep-alive:
+// SSE keep-alive must be enabled by default (non-zero interval) and
+// WithTransportKeepAlive(0) must still disable it.
+func TestJSONRPCHandler_DefaultKeepAliveEnabled(t *testing.T) {
+	h := NewJSONRPCHandler(&mockRequestHandler{}).(*jsonrpcHandler)
+	if h.cfg.KeepAliveInterval <= 0 {
+		t.Fatalf("default KeepAliveInterval = %v, want > 0", h.cfg.KeepAliveInterval)
+	}
+
+	h2 := NewJSONRPCHandler(&mockRequestHandler{}, WithTransportKeepAlive(0)).(*jsonrpcHandler)
+	if h2.cfg.KeepAliveInterval != 0 {
+		t.Fatalf("KeepAliveInterval with WithTransportKeepAlive(0) = %v, want 0", h2.cfg.KeepAliveInterval)
+	}
+}
+
+// TestREST_SSE_KeepAliveHeartbeats verifies that keep-alive comments are
+// emitted on an idle SSE stream.
+func TestREST_SSE_KeepAliveHeartbeats(t *testing.T) {
+	firstEvent := make(chan struct{})
+	mock := &mockRequestHandler{
+		subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				if !yield(&a2a.Task{ID: req.ID}, nil) {
+					return
+				}
+				close(firstEvent)
+				<-ctx.Done()
+			}
+		},
+	}
+	handler := NewRESTHandler(mock, WithTransportKeepAlive(50*time.Millisecond))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	resp, err := server.Client().Get(server.URL + "/tasks/task-1:subscribe")
+	if err != nil {
+		t.Fatalf("server.Client().Get() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	br := bufio.NewReader(resp.Body)
+	// Consume the first event (id:/data:/blank line).
+	for range 3 {
+		if _, err := br.ReadString('\n'); err != nil {
+			t.Fatalf("reading first SSE event: %v", err)
+		}
+	}
+	<-firstEvent
+
+	// An idle stream must emit keep-alive comments.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			t.Fatalf("reading keep-alive: %v", err)
+		}
+		if strings.Contains(line, "keep-alive") {
+			return
+		}
+	}
+	t.Fatal("no keep-alive comment received on an idle SSE stream")
+}
+
+// TestREST_RequestBodyTooLarge is a regression test for request body limits: request bodies
+// larger than maxRequestBodySize must be rejected instead of buffered.
+func TestREST_RequestBodyTooLarge(t *testing.T) {
+	mock := &mockRequestHandler{}
+	handler := NewRESTHandler(mock)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	oversized := strings.Repeat("a", maxRequestBodySize+1)
+	body := `{"jsonrpc":"2.0","method":"tasks/send","params":{"message":{"role":"user","parts":[{"text":"` + oversized + `"}]}},"id":"1"}`
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+rest.MakeSendMessagePath(), bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("expected oversized body to be rejected, got HTTP 200")
+	}
+}
+
+// TestJSONRPC_RequestBodyTooLarge is a regression test for request body limits on the
+// JSON-RPC transport. JSON-RPC responses are always HTTP 200, so the error
+// must be detected in the response body.
+func TestJSONRPC_RequestBodyTooLarge(t *testing.T) {
+	mock := &mockRequestHandler{}
+	handler := NewJSONRPCHandler(mock)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	oversized := strings.Repeat("a", maxRequestBodySize+1)
+	body := `{"jsonrpc":"2.0","method":"tasks/send","params":{"message":{"role":"user","parts":[{"text":"` + oversized + `"}]}},"id":"1"}`
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("server.Client().Do() error = %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var payload struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(payload.Error) == 0 || string(payload.Error) == "null" {
+		t.Fatalf("expected an oversized-body rejection error, got %q", payload.Error)
 	}
 }
