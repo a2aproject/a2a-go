@@ -615,7 +615,7 @@ func TestREST_ListTasks_Success(t *testing.T) {
 
 	query := url.Values{}
 	query.Set("contextId", "ctx-999")
-	query.Set("status", "running")
+	query.Set("status", "TASK_STATE_WORKING")
 	query.Set("pageSize", "50")
 	query.Set("pageToken", "next-page-token")
 	query.Set("historyLength", "100")
@@ -639,7 +639,7 @@ func TestREST_ListTasks_Success(t *testing.T) {
 	intPtr := func(i int) *int { return &i }
 	want := &a2a.ListTasksRequest{
 		ContextID:            "ctx-999",
-		Status:               a2a.TaskState("running"),
+		Status:               a2a.TaskStateWorking,
 		PageSize:             50,
 		PageToken:            "next-page-token",
 		IncludeArtifacts:     true,
@@ -718,5 +718,21 @@ func TestREST_GetTask_Success(t *testing.T) {
 				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestREST_ListTasks_InvalidStatus is a regression test for task state validation: an
+// invalid status query parameter must be rejected with HTTP 400 instead of
+// being silently passed through as an opaque TaskState.
+func TestREST_ListTasks_InvalidStatus(t *testing.T) {
+	mock := &mockRequestHandler{}
+	handler := NewRESTHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, rest.MakeListTasksPath()+"?status=BOGUS_STATE", nil)
+	rw := httptest.NewRecorder()
+	handler.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400, got %d. body: %s", rw.Code, rw.Body.String())
 	}
 }

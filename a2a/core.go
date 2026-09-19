@@ -319,12 +319,20 @@ func (ts *TaskState) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	if s == "TASK_STATE_UNSPECIFIED" {
+	switch s {
+	case "TASK_STATE_UNSPECIFIED":
 		*ts = TaskStateUnspecified
 		return nil
+	case string(TaskStateAuthRequired), string(TaskStateCanceled), string(TaskStateCompleted),
+		string(TaskStateFailed), string(TaskStateInputRequired), string(TaskStateRejected),
+		string(TaskStateSubmitted), string(TaskStateWorking):
+		*ts = TaskState(s)
+		return nil
+	default:
+		// Reject unknown values instead of silently accepting them; an
+		// invalid enum token must not pass as a valid task state.
+		return fmt.Errorf("invalid task state %q", s)
 	}
-	*ts = TaskState(s)
-	return nil
 }
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
