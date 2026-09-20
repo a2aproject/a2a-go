@@ -925,7 +925,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
 		}
 		if iface.ProtocolVersion == "" {
-			iface.ProtocolVersion = a2a.ProtocolVersion(Version)
+			iface.ProtocolVersion = Version
 		}
 		ifaces = append(ifaces, iface)
 	}
@@ -942,7 +942,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			ifaces = append(ifaces, &a2a.AgentInterface{
 				URL:             ai.URL,
 				ProtocolBinding: a2a.TransportProtocol(ai.Transport),
-				ProtocolVersion: a2a.ProtocolVersion(Version),
+				ProtocolVersion: Version,
 			})
 		}
 	}

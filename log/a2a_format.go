@@ -46,7 +46,7 @@ func DefaultA2ATypeFormatter(val any) (slog.Value, bool) {
 			attrs = append(attrs, slog.String("task_id", string(v.TaskID)))
 		}
 		if v.ContextID != "" {
-			attrs = append(attrs, slog.String("context_id", string(v.ContextID)))
+			attrs = append(attrs, slog.String("context_id", v.ContextID))
 		}
 		attrs = append(attrs, slog.Int("parts", len(v.Parts)))
 		return slog.GroupValue(attrs...), true
@@ -57,7 +57,7 @@ func DefaultA2ATypeFormatter(val any) (slog.Value, bool) {
 		}
 		return slog.GroupValue(
 			slog.String("task_id", string(v.TaskID)),
-			slog.String("context_id", string(v.ContextID)),
+			slog.String("context_id", v.ContextID),
 			slog.String("state", v.Status.State.String()),
 		), true
 
@@ -67,7 +67,7 @@ func DefaultA2ATypeFormatter(val any) (slog.Value, bool) {
 		}
 		attrs := []slog.Attr{
 			slog.String("task_id", string(v.TaskID)),
-			slog.String("context_id", string(v.ContextID)),
+			slog.String("context_id", v.ContextID),
 		}
 		if v.Artifact != nil {
 			attrs = append(attrs, slog.String("artifact_id", string(v.Artifact.ID)))

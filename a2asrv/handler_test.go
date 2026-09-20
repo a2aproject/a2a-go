@@ -957,7 +957,6 @@ func TestRequestHandler_SendMessage_TaskVersion(t *testing.T) {
 		// TODO: use cleanup callback when added
 		time.Sleep(15 * time.Millisecond)
 	}
-
 }
 
 func TestRequestHandler_SendMessage_AgentExecutorPanicFailsTask(t *testing.T) {
@@ -2207,7 +2206,6 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 				return
 			}
 			if tc.wantErr == nil {
-
 				got, err := handler.ListTaskPushConfigs(ctx, &a2a.ListTaskPushConfigRequest{TaskID: taskID})
 				if err != nil {
 					t.Errorf("ListTaskPushConfigs() for verification failed: %v", err)

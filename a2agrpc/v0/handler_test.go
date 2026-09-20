@@ -145,8 +145,8 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 	m.capturedGetTaskRequest = req
 	if task, ok := m.tasks[req.ID]; ok {
 		if req.HistoryLength != nil && *req.HistoryLength > 0 {
-			if len(task.History) > int(*req.HistoryLength) {
-				task.History = task.History[len(task.History)-int(*req.HistoryLength):]
+			if len(task.History) > *req.HistoryLength {
+				task.History = task.History[len(task.History)-*req.HistoryLength:]
 			}
 		}
 		return task, nil
@@ -1230,7 +1230,7 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 func TestGrpcHandler_GetAgentCard(t *testing.T) {
 	ctx := t.Context()
 
-	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)}}}
+	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2av0.Version}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
 		t.Fatalf("failed to convert agent card for test setup: %v", err)
