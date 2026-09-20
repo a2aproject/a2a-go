@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	"golang.org/x/mod/semver"
@@ -34,7 +33,6 @@ type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
 	transports   map[transportKey]TransportFactory
-	cardVerifier *a2acrypto.Verifier
 }
 
 type transportKey struct {
@@ -84,6 +82,10 @@ func NewFromEndpoints(ctx context.Context, endpoints []*a2a.AgentInterface, opts
 // If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
 // and proceed in the order specified by the AdditionalInterfaces.
 //
+// The provided card is assumed to be trusted. Verifying AgentCard signatures is the card
+// resolver's responsibility, so fetch cards through the resolver before calling this method
+// when the card comes from an untrusted source.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
 	if len(card.SupportedInterfaces) == 0 {
@@ -111,21 +113,6 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
 	client.card.Store(card)
-	if f.cardVerifier != nil && len(card.Signatures) > 0 {
-		var verified bool
-		var lastErr error
-		for _, sig := range card.Signatures {
-			if err := f.cardVerifier.Verify(card, &sig); err == nil {
-				verified = true
-				break
-			} else {
-				lastErr = err
-			}
-		}
-		if !verified {
-			return nil, fmt.Errorf("agent card signature verification failed: %w", lastErr)
-		}
-	}
 	return client, nil
 }
 
@@ -287,14 +274,6 @@ func (defaultsDisabledOpt) apply(f *Factory) {}
 // WithDefaultsDisabled attaches call interceptors to clients created by the factory.
 func WithDefaultsDisabled() FactoryOption {
 	return defaultsDisabledOpt{}
-}
-
-// WithCardVerifier sets a verifier to validate AgentCard signatures when creating clients.
-// If set, signed cards are verified in CreateFromCard; unsigned cards pass through.
-func WithCardVerifier(v *a2acrypto.Verifier) FactoryOption {
-	return factoryOptionFn(func(f *Factory) {
-		f.cardVerifier = v
-	})
 }
 
 // NewFactory creates a new Factory applying the provided configurations.

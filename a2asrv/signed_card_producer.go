@@ -24,12 +24,16 @@ import (
 
 // NewSignedCardProducer wraps an AgentCardProducer to automatically sign every
 // produced AgentCard before returning it.
-func NewSignedCardProducer(signer *a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
-	return &signedCardProducer{signer: signer, wrapped: wrapped}
+//
+// Multiple signers can be passed so that keys can be rotated without dropping a
+// signature: every signer signs the same card and its signature is added to the
+// produced card. The card returned by the wrapped producer is left unmodified.
+func NewSignedCardProducer(signers []*a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
+	return &signedCardProducer{signers: signers, wrapped: wrapped}
 }
 
 type signedCardProducer struct {
-	signer  *a2acrypto.Signer
+	signers []*a2acrypto.Signer
 	wrapped AgentCardProducer
 }
 
@@ -38,12 +42,17 @@ func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, err
 	}
-	sig, err := p.signer.Sign(card)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign agent card: %w", err)
-	}
 	cardCopy := *card
 	cardCopy.Signatures = append([]a2a.AgentCardSignature(nil), card.Signatures...)
-	cardCopy.Signatures = append(cardCopy.Signatures, *sig)
+	for i, signer := range p.signers {
+		if signer == nil {
+			return nil, fmt.Errorf("failed to sign agent card: signer at index %d is nil", i)
+		}
+		sig, err := signer.Sign(card)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign agent card: %w", err)
+		}
+		cardCopy.Signatures = append(cardCopy.Signatures, *sig)
+	}
 	return &cardCopy, nil
 }
