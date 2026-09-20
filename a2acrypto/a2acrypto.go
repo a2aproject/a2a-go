@@ -25,8 +25,7 @@ import (
 // MUST NOT use the signer-supplied jku to select or fetch the trust root:
 // jku is carried in the artifact's own protected header, so honoring it lets
 // a signer nominate its own key material. kid MAY be used to select among
-// keys enrolled out-of-band through a verifier-controlled path (AgentIDKeyResolver
-// does this: fixed endpoint, kid lookup, explicit error on miss).
+// keys enrolled out-of-band through a verifier-controlled path.
 //
 // A resolver that fetches by URL MUST constrain the target to a verifier-side
 // allowlist. The same constraint applies to x5u (X.509 URL, RFC 7515) if the

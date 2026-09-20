@@ -38,7 +38,7 @@ func (s *Signer) Sign(card *a2a.AgentCard) (*a2a.AgentCardSignature, error) {
 	protected := map[string]any{
 		"alg": s.algorithm,
 		"kid": s.kid,
-		"typ": "JOSE+JSON",
+		"typ": "JOSE",
 	}
 	if s.jwksURL != "" {
 		protected["jku"] = s.jwksURL

@@ -240,8 +240,8 @@ func TestSign_protected_header_has_typ(t *testing.T) {
 	if err := json.Unmarshal(protectedJSON, &protected); err != nil {
 		t.Fatalf("failed to parse protected header: %v", err)
 	}
-	if typ, ok := protected["typ"].(string); !ok || typ != "JOSE+JSON" {
-		t.Errorf("protected header typ = %v, want JOSE+JSON", protected["typ"])
+	if typ, ok := protected["typ"].(string); !ok || typ != "JOSE" {
+		t.Errorf("protected header typ = %v, want JOSE", protected["typ"])
 	}
 }
 

@@ -28,6 +28,27 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
+// requiredRepeatedFields lists the AgentCard fields the specification marks as
+// REQUIRED that hold repeated values.
+var requiredRepeatedFields = []string{
+	"defaultInputModes",
+	"defaultOutputModes",
+	"skills",
+	"supportedInterfaces",
+}
+
+// normalizeRequiredRepeatedFields replaces a nil value with an empty list for the
+// REQUIRED repeated fields. encoding/json serializes a nil slice as null, and null
+// is not the Protocol Buffers JSON representation of an empty repeated field, so the
+// canonical form would otherwise carry a value no conforming reader produces.
+func normalizeRequiredRepeatedFields(obj map[string]any) {
+	for _, field := range requiredRepeatedFields {
+		if value, ok := obj[field]; ok && value == nil {
+			obj[field] = []any{}
+		}
+	}
+}
+
 // canonicalPayload serializes an AgentCard to RFC 8785 JSON Canonicalization
 // Scheme (JCS) format. It recursively sorts all object keys by UTF-16 code
 // unit order and excludes the top-level signatures field, ensuring
@@ -42,6 +63,9 @@ func canonicalPayload(card *a2a.AgentCard) ([]byte, error) {
 	dec.UseNumber()
 	if err := dec.Decode(&obj); err != nil {
 		return nil, err
+	}
+	if asMap, ok := obj.(map[string]any); ok {
+		normalizeRequiredRepeatedFields(asMap)
 	}
 	sortObjectKeys(obj, true)
 	return jcsMarshal(obj)
