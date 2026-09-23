@@ -281,7 +281,7 @@ func staticVerifier(pub crypto.PublicKey) *Verifier {
 }
 
 func staticSigner(spec SignatureSpec) *Signer {
-	return NewSigner(SignerConfig{KeyResolver: StaticPrivateKeyResolver(spec)})
+	return NewSigner(SignerConfig{KeyResolver: FixedSignatureSpec(spec)})
 }
 
 func signOne(t *testing.T, signer *Signer, raw json.RawMessage) *a2a.AgentCardSignature {

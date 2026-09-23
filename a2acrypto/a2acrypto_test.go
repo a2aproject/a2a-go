@@ -48,7 +48,7 @@ func TestGoldenSignMatchesReference(t *testing.T) {
 	}
 	key := ed25519.NewKeyFromSeed(seed)
 
-	signer := NewSigner(SignerConfig{KeyResolver: StaticPrivateKeyResolver(
+	signer := NewSigner(SignerConfig{KeyResolver: FixedSignatureSpec(
 		SignatureSpec{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"},
 	)})
 	sig := signOne(t, signer, g.CardJSON)

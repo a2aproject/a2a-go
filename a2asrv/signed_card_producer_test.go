@@ -85,7 +85,7 @@ func TestSignedCardProducerSignsWithEveryResolvedKey(t *testing.T) {
 	next, nextVerifier := testKeyPair(t, "kid-next")
 
 	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
-		KeyResolver: a2acrypto.StaticPrivateKeyResolver(current, next),
+		KeyResolver: a2acrypto.FixedSignatureSpec(current, next),
 	})
 	producer := NewSignedCardProducer(signer, testCardProducer(card))
 
@@ -117,13 +117,13 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 	card := testAgentCard()
 	existing, existingVerifier := testKeyPair(t, "kid-existing")
 	existingSigner := a2acrypto.NewSigner(a2acrypto.SignerConfig{
-		KeyResolver: a2acrypto.StaticPrivateKeyResolver(existing),
+		KeyResolver: a2acrypto.FixedSignatureSpec(existing),
 	})
 	card.Signatures = []a2a.AgentCardSignature{*signOnce(t, existingSigner, mustMarshalCard(t, card))}
 
 	added, addedVerifier := testKeyPair(t, "kid-added")
 	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
-		KeyResolver: a2acrypto.StaticPrivateKeyResolver(added),
+		KeyResolver: a2acrypto.FixedSignatureSpec(added),
 	})
 	producer := NewSignedCardProducer(signer, testCardProducer(card))
 
@@ -148,7 +148,7 @@ func TestSignedCardProducerReturnsSignError(t *testing.T) {
 	t.Parallel()
 
 	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
-		KeyResolver: a2acrypto.StaticPrivateKeyResolver(a2acrypto.SignatureSpec{KeyID: "kid"}),
+		KeyResolver: a2acrypto.FixedSignatureSpec(a2acrypto.SignatureSpec{KeyID: "kid"}),
 	})
 	producer := NewSignedCardProducer(signer, testCardProducer(testAgentCard()))
 

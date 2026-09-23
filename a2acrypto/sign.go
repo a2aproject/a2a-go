@@ -26,8 +26,57 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
+// SignatureSpec describes one key with which to sign an AgentCard. An empty
+// Algorithm is inferred from the key.
+type SignatureSpec struct {
+	PrivateKey crypto.Signer
+	KeyID      string
+	Algorithm  string
+	JWKSURL    string
+}
+
+// SignatureSpecResolver returns the keys a Signer should sign with.
+//
+// Resolve is called on every Sign, so returning a different set over time rotates
+// signing keys without restarting the server.
+type SignatureSpecResolver interface {
+	// Resolve returns the specs to sign with right now. An empty slice signs nothing.
+	Resolve(ctx context.Context) ([]SignatureSpec, error)
+}
+
+// SignatureSpecResolverFunc adapts a function to a [SignatureSpecResolver].
+type SignatureSpecResolverFunc func(ctx context.Context) ([]SignatureSpec, error)
+
+// Resolve implements [SignatureSpecResolver].
+func (f SignatureSpecResolverFunc) Resolve(ctx context.Context) ([]SignatureSpec, error) {
+	return f(ctx)
+}
+
+// FixedSignatureSpec returns a [SignatureSpecResolver] that always resolves to the given specs.
+func FixedSignatureSpec(specs ...SignatureSpec) SignatureSpecResolver {
+	fixed := append([]SignatureSpec(nil), specs...)
+	return SignatureSpecResolverFunc(func(context.Context) ([]SignatureSpec, error) {
+		return fixed, nil
+	})
+}
+
+// SignerConfig configures AgentCard signing.
+type SignerConfig struct {
+	KeyResolver SignatureSpecResolver
+}
+
+// Signer creates JWS signatures for AgentCards.
+type Signer struct {
+	pkr SignatureSpecResolver
+}
+
+// NewSigner creates a Signer using the provided configuration.
+func NewSigner(config SignerConfig) *Signer {
+	return &Signer{pkr: config.KeyResolver}
+}
+
 // Sign computes a JWS signature (RFC 7515) over an AgentCard's raw JSON for each
-// key currently resolved by the Signer's [PrivateKeyResolver], returning one
+// key currently resolved by the Signer's [SignatureSpecResolver], returning one
 // signature per key. The bytes are canonicalized as given (RFC 8785, excluding
 // the top-level signatures field).
 func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) ([]*a2a.AgentCardSignature, error) {
