@@ -196,7 +196,7 @@ func (f *Factory) selectTransport(available []*a2a.AgentInterface) ([]transportC
 		if candidate != nil {
 			priority := len(f.config.PreferredTransports)
 			for j, clientPref := range f.config.PreferredTransports {
-				if clientPref == a2a.TransportProtocol(opt.ProtocolBinding) {
+				if clientPref == opt.ProtocolBinding {
 					priority = j
 					break
 				}

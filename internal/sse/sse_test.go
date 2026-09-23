@@ -72,7 +72,6 @@ func TestSSE_Success(t *testing.T) {
 	if eventCount != wantEvents {
 		t.Fatalf("ParseDataStream() emitted %d events, want %d", eventCount, wantEvents)
 	}
-
 }
 
 func TestSSE_LargePayload(t *testing.T) {

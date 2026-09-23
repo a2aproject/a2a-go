@@ -255,8 +255,8 @@ func interceptAfter[T any](ctx context.Context, interceptors []CallInterceptor, 
 	response := &Response{Payload: payload, Err: responseErr}
 
 	var zero T
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if err := interceptors[i].After(ctx, callCtx, response); err != nil {
+	for _, interceptor := range slices.Backward(interceptors) {
+		if err := interceptor.After(ctx, callCtx, response); err != nil {
 			return zero, err
 		}
 	}

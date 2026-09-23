@@ -608,7 +608,7 @@ func NewRawPart(raw []byte) *Part {
 
 // NewFileURLPart creates a Part that contains a URL.
 func NewFileURLPart(url URL, mimeType string) *Part {
-	return &Part{Content: URL(url), MediaType: mimeType}
+	return &Part{Content: url, MediaType: mimeType}
 }
 
 // NewDataPart creates a Part that contains structured data.

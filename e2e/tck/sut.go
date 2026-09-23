@@ -92,7 +92,6 @@ func main() {
 	if err := group.Wait(); err != nil {
 		log.Fatalf("Server shutdown: %v", err)
 	}
-
 }
 
 func newAgentCard(cardURL string, preferredTransport a2a.TransportProtocol) *a2a.AgentCard {
