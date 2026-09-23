@@ -120,6 +120,135 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
+func TestSecurityRequirementsJSONMarshal(t *testing.T) {
+	tests := []struct {
+		name string
+		in   SecurityRequirementsOptions
+		want string
+	}{
+		{
+			name: "populated scopes",
+			in: SecurityRequirementsOptions{
+				{"oauth2": {"read"}},
+			},
+			want: `[{"schemes":{"oauth2":{"list":["read"]}}}]`,
+		},
+		{
+			name: "empty scopes",
+			in: SecurityRequirementsOptions{
+				{"bearer": {}},
+			},
+			want: `[{"schemes":{"bearer":{}}}]`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mustMarshal(t, tc.in); got != tc.want {
+				t.Fatalf("Marshal() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONUnmarshal(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want SecurityRequirementsOptions
+	}{
+		{
+			name: "canonical populated scopes",
+			json: `[{"schemes":{"oauth2":{"list":["openid","profile"]}}}]`,
+			want: SecurityRequirementsOptions{
+				{"oauth2": {"openid", "profile"}},
+			},
+		},
+		{
+			name: "canonical empty scopes",
+			json: `[{"schemes":{"bearer":{}}}]`,
+			want: SecurityRequirementsOptions{
+				{"bearer": {}},
+			},
+		},
+		{
+			name: "legacy array scopes",
+			json: `[{"schemes":{"oauth2":["openid","profile"]}}]`,
+			want: SecurityRequirementsOptions{
+				{"oauth2": {"openid", "profile"}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "empty scopes",
+			json: `[{"schemes":{"bearer":{}}}]`,
+		},
+		{
+			name: "populated scopes",
+			json: `[{"schemes":{"oauth2":{"list":["openid","profile"]}}}]`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if remarshalled := mustMarshal(t, got); remarshalled != tc.json {
+				t.Fatalf("RoundTrip() = %v, want %v", remarshalled, tc.json)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONUnmarshalError(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantError string
+	}{
+		{
+			name:      "string scopes",
+			json:      `[{"schemes":{"oauth2":"openid"}}]`,
+			wantError: `cannot unmarshal`,
+		},
+		{
+			name:      "number scopes",
+			json:      `[{"schemes":{"oauth2":42}}]`,
+			wantError: `cannot unmarshal`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if err == nil {
+				t.Fatalf("Unmarshal() error = %v, want %v", err, tc.wantError)
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("Unmarshal() error = %v, want %v", err, tc.wantError)
+			}
+		})
+	}
+}
+
 func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -152,7 +281,7 @@ func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
 }
 
 func TestAgentCardParsing(t *testing.T) {
-	cardJSON := `
+	cardJSONTemplate := `
 {
   "name": "GeoSpatial Route Planner Agent",
   "description": "Provides advanced route planning, traffic analysis, and custom map generation services. This agent can calculate optimal routes, estimate travel times considering real-time traffic, and create personalized maps with points of interest.",
@@ -180,7 +309,7 @@ func TestAgentCardParsing(t *testing.T) {
       }
     }
   },
-  "securityRequirements": [{ "schemes": { "google": ["openid", "profile", "email"] } }],
+  "securityRequirements": [{ "schemes": { "google": %s } }],
   "defaultInputModes": ["application/json", "text/plain"],
   "defaultOutputModes": ["application/json", "image/png"],
   "skills": [
@@ -199,7 +328,7 @@ func TestAgentCardParsing(t *testing.T) {
         "application/vnd.geo+json",
         "text/html"
       ],
-      "securityRequirements": [{ "schemes": { "google": ["https://www.googleapis.com/auth/maps"] } }]
+      "securityRequirements": [{ "schemes": { "google": %s } }]
     },
     {
       "id": "custom-map-generator",
@@ -298,13 +427,35 @@ func TestAgentCardParsing(t *testing.T) {
 		},
 	}
 
-	var got AgentCard
-	if err := json.Unmarshal([]byte(cardJSON), &got); err != nil {
-		t.Fatalf("AgentCard parsing failed: %v", err)
+	tests := []struct {
+		name        string
+		cardScopes  string
+		skillScopes string
+	}{
+		{
+			name:        "protojson scopes",
+			cardScopes:  `{"list": ["openid", "profile", "email"]}`,
+			skillScopes: `{"list": ["https://www.googleapis.com/auth/maps"]}`,
+		},
+		{
+			name:        "legacy array scopes",
+			cardScopes:  `["openid", "profile", "email"]`,
+			skillScopes: `["https://www.googleapis.com/auth/maps"]`,
+		},
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cardJSON := fmt.Sprintf(cardJSONTemplate, tc.cardScopes, tc.skillScopes)
+			var got AgentCard
+			if err := json.Unmarshal([]byte(cardJSON), &got); err != nil {
+				t.Fatalf("AgentCard parsing failed: %v", err)
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
+			}
+		})
 	}
 }
 
