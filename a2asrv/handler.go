@@ -370,7 +370,16 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 
 		subscription, err := h.execManager.Resubscribe(ctx, req.ID)
 		if err != nil {
-			yield(nil, fmt.Errorf("%w: %w", a2a.ErrTaskNotFound, err))
+			storedTask, getErr := h.taskStore.Get(ctx, req.ID)
+			if getErr != nil || storedTask == nil {
+				yield(nil, fmt.Errorf("%w: %w", a2a.ErrTaskNotFound, err))
+				return
+			}
+			if storedTask.Task.Status.State.Terminal() {
+				yield(nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Task.Status.State, a2a.ErrUnsupportedOperation))
+				return
+			}
+			yield(storedTask.Task, nil)
 			return
 		}
 

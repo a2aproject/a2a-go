@@ -225,7 +225,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	if storedTask.Status.State.Terminal() {
-		return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrUnsupportedOperation)
 	}
 
 	updateHistory := !slices.ContainsFunc(storedTask.History, func(m *a2a.Message) bool {
