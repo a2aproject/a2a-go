@@ -82,6 +82,10 @@ func NewFromEndpoints(ctx context.Context, endpoints []*a2a.AgentInterface, opts
 // If PreferredTransports were not provided, we start from the PreferredTransport specified in the AgentCard
 // and proceed in the order specified by the AdditionalInterfaces.
 //
+// The provided card is assumed to be trusted. Verifying AgentCard signatures is the card
+// resolver's responsibility, so fetch cards through the resolver before calling this method
+// when the card comes from an untrusted source.
+//
 // The method fails if we couldn't establish a compatible transport.
 func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Client, error) {
 	if len(card.SupportedInterfaces) == 0 {
