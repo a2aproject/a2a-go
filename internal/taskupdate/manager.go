@@ -18,10 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
@@ -116,62 +115,21 @@ func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.St
 }
 
 func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*taskstore.StoredTask, error) {
-	task, err := utils.DeepCopy(mgr.lastStored.Task)
+	updatedTask, err := a2aevent.ApplyArtifactUpdate(mgr.lastStored.Task, event)
 	if err != nil {
 		return nil, err
 	}
-
-	// The copy is required because the event will be passed to subscriber goroutines, while
-	// the artifact might be modified in our goroutine by other TaskArtifactUpdateEvent-s.
-	artifact, err := utils.DeepCopy(event.Artifact)
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy artifact: %w", err)
-	}
-
-	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
-		return a.ID == artifact.ID
-	})
-
-	if updateIdx < 0 {
-		if event.Append {
-			return nil, fmt.Errorf("no artifact found for update")
-		}
-		task.Artifacts = append(task.Artifacts, artifact)
-		return mgr.saveTask(ctx, task, event)
-	}
-
-	if !event.Append {
-		task.Artifacts[updateIdx] = artifact
-		return mgr.saveTask(ctx, task, event)
-	}
-
-	toUpdate := task.Artifacts[updateIdx]
-	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
-	if toUpdate.Metadata == nil && artifact.Metadata != nil {
-		toUpdate.Metadata = make(map[string]any, len(artifact.Metadata))
-	}
-	maps.Copy(toUpdate.Metadata, artifact.Metadata)
-	return mgr.saveTask(ctx, task, event)
+	return mgr.saveTask(ctx, updatedTask, event)
 }
 
 func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*taskstore.StoredTask, error) {
-	lastStored, err := utils.DeepCopy(mgr.lastStored)
-	if err != nil {
-		return nil, err
-	}
+	lastStored := mgr.lastStored
 
 	for range maxCancelationAttempts {
-		task := lastStored.Task
-		if task.Status.Message != nil {
-			task.History = append(task.History, task.Status.Message)
+		task, err := a2aevent.ApplyStatusUpdate(lastStored.Task, event)
+		if err != nil {
+			return nil, err
 		}
-		if event.Metadata != nil {
-			if task.Metadata == nil {
-				task.Metadata = make(map[string]any)
-			}
-			maps.Copy(task.Metadata, event.Metadata)
-		}
-		task.Status = event.Status
 
 		vt, err := mgr.saveVersionedTask(ctx, task, event, lastStored.Version)
 		if err == nil {

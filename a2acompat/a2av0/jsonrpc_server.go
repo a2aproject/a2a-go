@@ -334,7 +334,6 @@ func (h *jsonrpcHandler) onSendMessageStream(ctx context.Context, raw json.RawMe
 			}
 		}
 	}
-
 }
 
 func (h *jsonrpcHandler) onGetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {

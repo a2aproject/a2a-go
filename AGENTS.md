@@ -16,6 +16,7 @@
 
 ### Test Writing
 
+* Do not leave comments in tests unless they explain a non-trivial implementation detail. Test name and test case setup should be self-explanatory.
 * ALWAYS use existing test files as a reference when generating new tests. Prioritize files in the same package if they exist.
 * Write "table-driven tests" when logic can be shared across multiple test cases.
 * Prioritize testing observable behavior of exported methods, not the internal state.

@@ -276,7 +276,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 	}
 	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error)
+	sseChan, panicChan := make(chan []byte), make(chan error, 1)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -422,7 +422,6 @@ func (h *restHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.
 	if err := json.NewEncoder(rw).Encode(result); err != nil {
 		log.Error(ctx, "failed to encode response", err)
 	}
-
 }
 
 func (h *restHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *http.Request) {

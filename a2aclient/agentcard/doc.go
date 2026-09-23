@@ -31,5 +31,9 @@ By default the request is sent for a well-known card location, but this can be c
 		a2aclient.WithPath(customPath),
 		a2aclient.WithHeader(key, value),
 	)
+
+A file:// URL can be used to load the card from the local file system instead of over HTTP.
+
+	card, err := resolver.Resolve(ctx, "file:///path/to/agent-card.json")
 */
 package agentcard

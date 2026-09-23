@@ -152,13 +152,12 @@ func (h *Handler) ListTasks(ctx context.Context, pbReq *a2apb.ListTasksRequest) 
 
 // CancelTask implements a2apb.A2AServiceServer.
 func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
-	taskID, err := pbconv.ExtractTaskID(pbReq.GetName())
+	req, err := pbconv.FromProtoCancelTaskRequest(pbReq)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "request conversion failed: %v", err.Error())
 	}
-
 	ctx, callCtx := withCallContext(ctx)
-	task, err := h.handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskID})
+	task, err := h.handler.CancelTask(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -175,13 +174,13 @@ func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest
 
 // TaskSubscription implements a2apb.A2AServiceServer.
 func (h *Handler) TaskSubscription(pbReq *a2apb.TaskSubscriptionRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
-	taskID, err := pbconv.ExtractTaskID(pbReq.GetName())
+	req, err := pbconv.FromProtoTaskSubscriptionRequest(pbReq)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "failed to extract task id: %v", err)
+		return status.Errorf(codes.InvalidArgument, "request conversion failed: %v", err.Error())
 	}
 
 	ctx, callCtx := withCallContext(stream.Context())
-	for event, err := range h.handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}) {
+	for event, err := range h.handler.SubscribeToTask(ctx, req) {
 		if err != nil {
 			return grpcutil.ToGRPCError(err)
 		}
@@ -275,7 +274,7 @@ func (h *Handler) ListTaskPushNotificationConfig(ctx context.Context, pbReq *a2a
 
 // GetAgentCard implements a2apb.A2AServiceServer.
 func (h *Handler) GetAgentCard(ctx context.Context, pbReq *a2apb.GetAgentCardRequest) (*a2apb.AgentCard, error) {
-	card, err := h.handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
+	card, err := h.handler.GetExtendedAgentCard(ctx, pbconv.FromProtoGetAgentCardRequest(pbReq))
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}

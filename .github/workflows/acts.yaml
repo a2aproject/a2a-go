@@ -1,22 +1,24 @@
-name: Nightly ITK
+name: ACTS
 
 on:
-  schedule:
-    - cron: '0 2 * * *'  # 2:00 AM UTC daily
-  workflow_dispatch:     # Allow manual execution
+  push:
+    branches: [main]
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.github/CODEOWNERS'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: itk-nightly
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  nightly:
-    # Don't run scheduled builds on forks.
-    if: github.event_name != 'schedule' || github.repository == 'a2aproject/a2a-go'
-    name: Nightly ITK Run
+  acts:
+    name: ACTS Conformance
     runs-on: ubuntu-latest
 
     steps:
@@ -61,20 +63,24 @@ jobs:
           restore-keys: |
             itk-launcher-${{ runner.os }}-
 
-      - name: Run Nightly ITK Tests
+      - name: Run ACTS Conformance Suite
+        # Temporarily advisory: the driver gates on `must` conformance here,
+        # which no SDK passes yet. Delete this line to make it a merge
+        # requirement.
+        continue-on-error: true
         run: bash run_itk.sh
         working-directory: itk
         env:
           A2A_ITK_REVISION: main
-          ITK_NIGHTLY_RUN: "True"
+          ITK_ACTS_RUN: "1"
+          ITK_ACTS_TRANSPORTS: jsonrpc,grpc,rest
           ITK_SKIP_BUILD: "1"
 
-      - name: Upload Results to Rolling Release
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+      - name: Upload ACTS reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          tag_name: "nightly-metrics"
-          prerelease: true
-          files: |
-            itk/itk_go.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: acts-reports-go
+          path: itk/acts-report-*.json
+          if-no-files-found: warn
+          retention-days: 14

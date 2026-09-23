@@ -9,6 +9,9 @@ linters:
     - goheader
     - revive
     - modernize
+    - unconvert
+    - unused
+    - whitespace
   settings:
     revive:
       rules:

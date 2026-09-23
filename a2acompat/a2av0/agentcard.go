@@ -88,19 +88,11 @@ func (p *compatProducer) CardJSON(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	compatCard, err := toCompatCard(card)
-	if err != nil {
-		return nil, err
-	}
-	return json.MarshalIndent(compatCard, "", "  ")
+	return json.MarshalIndent(toCompatCard(card), "", "  ")
 }
 
-func toCompatCard(card *a2a.AgentCard) (*agentCardCompat, error) {
-	preferredInterface, additionalInterfaces, err := mapToCompatInterfaces(card)
-	if err != nil {
-		return nil, err
-	}
-	return &agentCardCompat{
+func toCompatCard(card *a2a.AgentCard) *agentCardCompat {
+	cardCompat := &agentCardCompat{
 		DefaultInputModes:    card.DefaultInputModes,
 		DefaultOutputModes:   card.DefaultOutputModes,
 		Description:          card.Description,
@@ -115,14 +107,17 @@ func toCompatCard(card *a2a.AgentCard) (*agentCardCompat, error) {
 		SecurityRequirements: card.SecurityRequirements,
 
 		ProtocolVersion:                   Version,
-		URL:                               preferredInterface.URL,
-		PreferredTransport:                preferredInterface.ProtocolBinding,
-		AdditionalInterfaces:              additionalInterfaces,
 		Skills:                            mapToCompatSkills(card.Skills),
 		Security:                          mapToCompatSecurity(card.SecurityRequirements),
 		SecuritySchemes:                   mapToCompatSecuritySchemes(card.SecuritySchemes),
 		SupportsAuthenticatedExtendedCard: card.Capabilities.ExtendedAgentCard,
-	}, nil
+	}
+	if preferredInterface, additionalInterfaces, ok := mapToCompatInterfaces(card); ok {
+		cardCompat.URL = preferredInterface.URL
+		cardCompat.PreferredTransport = preferredInterface.ProtocolBinding
+		cardCompat.AdditionalInterfaces = additionalInterfaces
+	}
+	return cardCompat
 }
 
 func mapFromCompatSecuritySchemes(schemes namedSecuritySchemes) a2a.NamedSecuritySchemes {
@@ -275,12 +270,12 @@ func mapFromCompatInterfaces(card agentCardCompat) []*a2a.AgentInterface {
 	return out
 }
 
-func mapToCompatInterfaces(card *a2a.AgentCard) (*a2a.AgentInterface, []agentInterface, error) {
+func mapToCompatInterfaces(card *a2a.AgentCard) (*a2a.AgentInterface, []agentInterface, bool) {
 	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
 		return i.ProtocolVersion == Version
 	})
 	if agentInterfaceIdx == -1 {
-		return nil, nil, fmt.Errorf("at least 1 interface supporting %s must be listed", Version)
+		return nil, nil, false
 	}
 	var additionalInterfaces []agentInterface
 	for i, iface := range card.SupportedInterfaces {
@@ -289,7 +284,7 @@ func mapToCompatInterfaces(card *a2a.AgentCard) (*a2a.AgentInterface, []agentInt
 		}
 		additionalInterfaces = append(additionalInterfaces, agentInterface{URL: iface.URL, Transport: iface.ProtocolBinding})
 	}
-	return card.SupportedInterfaces[agentInterfaceIdx], additionalInterfaces, nil
+	return card.SupportedInterfaces[agentInterfaceIdx], additionalInterfaces, true
 }
 
 func mapFromCompatSkills(skills []agentSkill) []a2a.AgentSkill {

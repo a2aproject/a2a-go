@@ -41,18 +41,6 @@ import (
 	a2alog "github.com/a2aproject/a2a-go/v2/log"
 )
 
-type agentExecutor struct{}
-
-func (*agentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {
-		yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello from the observable agent!")), nil)
-	}
-}
-
-func (*agentExecutor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
-	return func(yield func(a2a.Event, error) bool) {}
-}
-
 var (
 	port    = flag.Int("port", 9001, "Port for the server to listen on.")
 	level   = flag.String("level", "info", "Log level: debug, info, warn, error.")
@@ -117,7 +105,12 @@ func main() {
 	// 5. Wire everything together.
 	//    WithLogger sets the base logger for request-scoped structured logs.
 	//    WithCallInterceptors attaches the logging interceptor.
-	requestHandler := a2asrv.NewHandler(&agentExecutor{},
+	requestHandler := a2asrv.NewHandler(
+		a2asrv.AgentExecutorFunc(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello from the observable agent!")), nil)
+			}
+		}),
 		a2asrv.WithLogger(logger),
 		a2asrv.WithCallInterceptors(loggingInterceptor),
 	)

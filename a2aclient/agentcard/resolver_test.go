@@ -19,6 +19,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -58,10 +61,10 @@ func mustServe(t *testing.T, path string, body []byte, callback func(r *http.Req
 
 func TestResolver_DefaultPath(t *testing.T) {
 	want := &a2a.AgentCard{Name: "TestResolver_DefaultPath"}
-	url := mustServe(t, defaultAgentCardPath, mustMarshal(t, want), nil)
+	cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, want), nil)
 	resolver := Resolver{}
 
-	for _, u := range []string{url, url + "/"} {
+	for _, u := range []string{cardURL, cardURL + "/"} {
 		got, err := resolver.Resolve(t.Context(), u)
 		if err != nil {
 			t.Fatalf("Resolve(%s) failed with: %v", u, err)
@@ -133,10 +136,10 @@ func TestResolver_CustomPath(t *testing.T) {
 	ctx := t.Context()
 	path := "/custom/agent.json"
 	want := &a2a.AgentCard{Name: "TestResolver_DefaultPath"}
-	url := mustServe(t, path, mustMarshal(t, want), nil)
+	cardURL := mustServe(t, path, mustMarshal(t, want), nil)
 
 	resolver := Resolver{}
-	got, err := resolver.Resolve(ctx, url)
+	got, err := resolver.Resolve(ctx, cardURL)
 	var httpErr *ErrStatusNotOK
 	if err == nil || !errors.As(err, &httpErr) {
 		t.Fatalf("expected Resolve() to fail with ErrStatusNotOK, got %v, %v", got, err)
@@ -146,7 +149,7 @@ func TestResolver_CustomPath(t *testing.T) {
 	}
 
 	for _, p := range []string{path, strings.TrimPrefix(path, "/")} {
-		got, err = resolver.Resolve(ctx, url, WithPath(p))
+		got, err = resolver.Resolve(ctx, cardURL, WithPath(p))
 		if err != nil {
 			t.Fatalf("Resolve(%s) failed with %v", p, err)
 		}
@@ -161,12 +164,12 @@ func TestResolver_CustomHeader(t *testing.T) {
 
 	capturedHeader := []string{}
 	card := &a2a.AgentCard{Name: "TestResolver_CustomHeader"}
-	url := mustServe(t, defaultAgentCardPath, mustMarshal(t, card), func(req *http.Request) {
+	cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, card), func(req *http.Request) {
 		capturedHeader = req.Header[h]
 	})
 
 	resolver := NewResolver(nil)
-	_, err := resolver.Resolve(t.Context(), url, WithRequestHeader(h, hval))
+	_, err := resolver.Resolve(t.Context(), cardURL, WithRequestHeader(h, hval))
 	if err != nil {
 		t.Fatalf("Resolve() failed with: %v", err)
 	}
@@ -177,12 +180,77 @@ func TestResolver_CustomHeader(t *testing.T) {
 }
 
 func TestResolver_MalformedJSON(t *testing.T) {
-	url := mustServe(t, defaultAgentCardPath, []byte(`}{`), nil)
+	cardURL := mustServe(t, defaultAgentCardPath, []byte(`}{`), nil)
 
 	resolver := NewResolver(nil)
-	got, err := resolver.Resolve(t.Context(), url)
+	got, err := resolver.Resolve(t.Context(), cardURL)
 	if err == nil {
 		t.Fatalf("expected Resolve() to fail on malformed response, got: %v", got)
+	}
+}
+
+func TestResolver_FileURL(t *testing.T) {
+	t.Parallel()
+	want := &a2a.AgentCard{Name: "TestResolver_FileURL"}
+	dir := t.TempDir()
+	cardPath := filepath.Join(dir, "agent-card.json")
+	if err := os.WriteFile(cardPath, mustMarshal(t, want), 0o600); err != nil {
+		t.Fatalf("failed to write card file: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		url       *url.URL
+		opts      []ResolveOption
+		wantErr   bool
+		wantErrIs error
+	}{
+		{
+			name:      "missing file",
+			url:       &url.URL{Scheme: "file", Path: filepath.Join(dir, "missing.json")},
+			wantErr:   true,
+			wantErrIs: os.ErrNotExist,
+		},
+		{
+			name:    "unsupported host",
+			url:     &url.URL{Scheme: "file", Host: "remotehost", Path: "/agent-card.json"},
+			wantErr: true,
+		},
+		{
+			name: "empty host",
+			url:  &url.URL{Scheme: "file", Path: cardPath},
+		},
+		{
+			name: "localhost",
+			url:  &url.URL{Scheme: "file", Host: "localhost", Path: cardPath},
+		},
+		{
+			name: "path as option",
+			url:  &url.URL{Scheme: "file", Host: "localhost", Path: dir},
+			opts: []ResolveOption{WithPath("agent-card.json")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := DefaultResolver.Resolve(t.Context(), tt.url.String(), tt.opts...)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Resolve(%s) = %v, want error", tt.url, got)
+				}
+				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+					t.Errorf("Resolve(%s) error = %v, want error matching %v", tt.url, err, tt.wantErrIs)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Resolve(%s) error = %v, want nil", tt.url, err)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Resolve(%s) wrong result (-want +got) diff = %s", tt.url, diff)
+			}
+		})
 	}
 }
 

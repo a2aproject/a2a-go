@@ -144,8 +144,8 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 	m.capturedGetTaskRequest = req
 	if task, ok := m.tasks[req.ID]; ok {
 		if req.HistoryLength != nil && *req.HistoryLength > 0 {
-			if len(task.History) > int(*req.HistoryLength) {
-				task.History = task.History[len(task.History)-int(*req.HistoryLength):]
+			if len(task.History) > *req.HistoryLength {
+				task.History = task.History[len(task.History)-*req.HistoryLength:]
 			}
 		}
 		return task, nil
