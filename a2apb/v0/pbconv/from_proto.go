@@ -115,7 +115,7 @@ func fromProtoFilePart(pPart *a2apb.FilePart, meta map[string]any) (a2a.Part, er
 	switch f := pPart.GetFile().(type) {
 	case *a2apb.FilePart_FileWithBytes:
 		buf := make([]byte, base64.StdEncoding.DecodedLen(len(f.FileWithBytes)))
-		n, err := base64.StdEncoding.Decode(buf, []byte(f.FileWithBytes))
+		n, err := base64.StdEncoding.Decode(buf, f.FileWithBytes)
 		if err != nil {
 			return a2a.Part{}, fmt.Errorf("failed to decode base64 string: %w", err)
 		}
@@ -631,7 +631,7 @@ func fromProtoAdditionalInterfaces(pCard *a2apb.AgentCard) []*a2a.AgentInterface
 		interfaces[i+1] = &a2a.AgentInterface{
 			ProtocolBinding: a2a.TransportProtocol(pIface.GetTransport()),
 			URL:             pIface.GetUrl(),
-			ProtocolVersion: a2a.ProtocolVersion(a2av0.Version),
+			ProtocolVersion: a2av0.Version,
 		}
 	}
 	return interfaces

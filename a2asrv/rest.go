@@ -422,7 +422,6 @@ func (h *restHandler) handleGetTaskPushConfig(rw http.ResponseWriter, req *http.
 	if err := json.NewEncoder(rw).Encode(result); err != nil {
 		log.Error(ctx, "failed to encode response", err)
 	}
-
 }
 
 func (h *restHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *http.Request) {

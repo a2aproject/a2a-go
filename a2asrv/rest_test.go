@@ -226,7 +226,7 @@ func TestREST_Validations(t *testing.T) {
 		{
 			name:    "GetAndDeleteTaskPushConfig",
 			methods: []string{http.MethodGet, http.MethodDelete},
-			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs/" + string(config.ID),
+			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs/" + config.ID,
 		},
 		{
 			name:    "GetExtendedAgentCard",

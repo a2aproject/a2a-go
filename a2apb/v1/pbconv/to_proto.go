@@ -154,7 +154,7 @@ func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.
 	return &a2apb.GetTaskPushNotificationConfigRequest{
 		Tenant: req.Tenant,
 		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Id:     req.ID,
 	}, nil
 }
 
@@ -167,7 +167,7 @@ func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*
 	return &a2apb.DeleteTaskPushNotificationConfigRequest{
 		Tenant: req.Tenant,
 		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Id:     req.ID,
 	}, nil
 }
 
@@ -535,7 +535,6 @@ func ToProtoTaskPushConfig(config *a2a.PushConfig) (*a2apb.TaskPushNotificationC
 	}
 
 	return pConf, nil
-
 }
 
 // ToProtoListTaskPushConfigResponse converts a [a2a.ListTaskPushConfigResponse] to a [a2apb.ListTaskPushNotificationConfigResponse].
@@ -732,7 +731,7 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_HttpAuthSecurityScheme{
 				HttpAuthSecurityScheme: &a2apb.HTTPAuthSecurityScheme{
-					Scheme:       string(s.Scheme),
+					Scheme:       s.Scheme,
 					Description:  s.Description,
 					BearerFormat: s.BearerFormat,
 				},

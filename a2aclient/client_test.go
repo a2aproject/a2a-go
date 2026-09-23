@@ -888,7 +888,6 @@ func TestClient_Intercept_RequestModification(t *testing.T) {
 	if reqMsg != "Modified" {
 		t.Fatalf("reqMsg = %q, want %q", reqMsg, "Modified")
 	}
-
 }
 
 func TestClient_Intercept_ResponseAndErrorModification(t *testing.T) {
