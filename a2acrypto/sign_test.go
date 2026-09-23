@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,53 +30,15 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-func mustGenerateECDSAP256Key(t *testing.T) crypto.Signer {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	return key
-}
-
-func makeTestCard() *a2a.AgentCard {
-	return &a2a.AgentCard{
-		Name:        "Test Agent",
-		Description: "A test agent for signing",
-		Version:     "1.0.0",
-		Skills: []a2a.AgentSkill{
-			{ID: "skill-1", Name: "test skill"},
-		},
-	}
-}
-
-func mustMarshalCard(t *testing.T, card *a2a.AgentCard) json.RawMessage {
-	t.Helper()
-	raw, err := json.Marshal(card)
-	if err != nil {
-		t.Fatalf("failed to marshal card: %v", err)
-	}
-	return raw
-}
-
-func staticVerifier(kid string, pub crypto.PublicKey) *Verifier {
-	return NewVerifier(VerifierConfig{KeyResolver: KeyResolverFunc(func(_ context.Context, kid string) (crypto.PublicKey, error) {
-		return pub, nil
-	})})
-}
-
 func TestSignAndVerifyES256(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "test-kid", Algorithm: "ES256"})
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "test-kid", Algorithm: "ES256"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig, err := signer.Sign(card)
-	if err != nil {
-		t.Fatalf("Sign() error = %v, want nil", err)
-	}
+	sig := signOne(t, signer, card)
 	if sig.Protected == "" {
 		t.Error("signature protected header is empty")
 	}
@@ -84,7 +46,7 @@ func TestSignAndVerifyES256(t *testing.T) {
 		t.Error("signature is empty")
 	}
 
-	verifier := staticVerifier("test-kid", key.Public())
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, card, sig); err != nil {
 		t.Fatalf("Verify() error = %v, want nil", err)
 	}
@@ -95,17 +57,14 @@ func TestSignAndVerify_tampered_card_fails(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
 
-	sig, err := signer.Sign(mustMarshalCard(t, makeTestCard()))
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	sig := signOne(t, signer, mustMarshalCard(t, makeTestCard()))
 
 	tampered := makeTestCard()
 	tampered.Name = "Evil Agent"
 
-	verifier := staticVerifier("kid", key.Public())
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, mustMarshalCard(t, tampered), sig); err == nil {
 		t.Error("Verify() returned nil for tampered card, want error")
 	}
@@ -116,15 +75,12 @@ func TestSignAlgorithmInference(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig, err := signer.Sign(card)
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	sig := signOne(t, signer, card)
 
-	verifier := staticVerifier("kid", key.Public())
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, card, sig); err != nil {
 		t.Errorf("Verify() with inferred algorithm error = %v", err)
 	}
@@ -135,7 +91,7 @@ func TestVerify_nil_signature(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	verifier := staticVerifier("kid", key.Public())
+	verifier := staticVerifier(key.Public())
 
 	if err := verifier.Verify(ctx, mustMarshalCard(t, makeTestCard()), nil); err == nil {
 		t.Error("Verify(nil sig) returned nil, want error")
@@ -150,15 +106,12 @@ func TestSignAndVerifyEd25519(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
 	}
-	signer := NewSigner(SignerConfig{PrivateKey: priv, KeyID: "ed25519-kid"})
+	signer := staticSigner(SignatureSpec{PrivateKey: priv, KeyID: "ed25519-kid"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig, err := signer.Sign(card)
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	sig := signOne(t, signer, card)
 
-	verifier := staticVerifier("ed25519-kid", pub)
+	verifier := staticVerifier(pub)
 	if err := verifier.Verify(ctx, card, sig); err != nil {
 		t.Fatalf("Verify() error = %v", err)
 	}
@@ -169,18 +122,15 @@ func TestSign_excludes_signatures_from_payload(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
 
 	card := makeTestCard()
 	card.Signatures = []a2a.AgentCardSignature{{Protected: "existing", Signature: "sig"}}
 	raw := mustMarshalCard(t, card)
 
-	sig, err := signer.Sign(raw)
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	sig := signOne(t, signer, raw)
 
-	verifier := staticVerifier("kid", key.Public())
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, raw, sig); err != nil {
 		t.Fatalf("Verify() with pre-existing signatures error = %v", err)
 	}
@@ -190,12 +140,9 @@ func TestSign_protected_header_has_typ(t *testing.T) {
 	t.Parallel()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
 
-	sig, err := signer.Sign(mustMarshalCard(t, makeTestCard()))
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	sig := signOne(t, signer, mustMarshalCard(t, makeTestCard()))
 
 	protectedJSON, err := base64.RawURLEncoding.DecodeString(sig.Protected)
 	if err != nil {
@@ -233,12 +180,9 @@ func TestCanonical_U2028_U2029_literal(t *testing.T) {
 	}
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := NewSigner(SignerConfig{PrivateKey: key, KeyID: "kid"})
-	sig, err := signer.Sign(raw)
-	if err != nil {
-		t.Fatalf("Sign() with U+2028/U+2029 error = %v", err)
-	}
-	verifier := staticVerifier("kid", key.Public())
+	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
+	sig := signOne(t, signer, raw)
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, raw, sig); err != nil {
 		t.Fatalf("Verify() with U+2028/U+2029 error = %v", err)
 	}
@@ -299,4 +243,55 @@ func TestCanonical_float_matches_rfc8785(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustGenerateECDSAP256Key(t *testing.T) crypto.Signer {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	return key
+}
+
+func makeTestCard() *a2a.AgentCard {
+	return &a2a.AgentCard{
+		Name:        "Test Agent",
+		Description: "A test agent for signing",
+		Version:     "1.0.0",
+		Skills: []a2a.AgentSkill{
+			{ID: "skill-1", Name: "test skill"},
+		},
+	}
+}
+
+func mustMarshalCard(t *testing.T, card *a2a.AgentCard) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(card)
+	if err != nil {
+		t.Fatalf("failed to marshal card: %v", err)
+	}
+	return raw
+}
+
+func staticVerifier(pub crypto.PublicKey) *Verifier {
+	return NewVerifier(VerifierConfig{KeyResolver: KeyResolverFunc(func(_ context.Context, kid string) (crypto.PublicKey, error) {
+		return pub, nil
+	})})
+}
+
+func staticSigner(spec SignatureSpec) *Signer {
+	return NewSigner(SignerConfig{KeyResolver: StaticPrivateKeyResolver(spec)})
+}
+
+func signOne(t *testing.T, signer *Signer, raw json.RawMessage) *a2a.AgentCardSignature {
+	t.Helper()
+	sigs, err := signer.Sign(t.Context(), raw)
+	if err != nil {
+		t.Fatalf("Sign() error = %v, want nil", err)
+	}
+	if len(sigs) != 1 {
+		t.Fatalf("Sign() = %d signatures, want 1", len(sigs))
+	}
+	return sigs[0]
 }

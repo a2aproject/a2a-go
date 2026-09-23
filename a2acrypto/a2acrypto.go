@@ -20,7 +20,7 @@ import (
 	"crypto"
 )
 
-// KeyResolver returns the public key that a Verifier uses to check an
+// PublicKeyResolver returns the public key that a Verifier uses to check an
 // AgentCard's signature.
 //
 // A signature names its key with two fields in its header:
@@ -37,7 +37,7 @@ import (
 // a forger could then serve both a fake card and a key set that "verifies" it. A
 // resolver that does fetch keys by URL MUST restrict the URL to a verifier-side
 // allowlist rather than trust the jku.
-type KeyResolver interface {
+type PublicKeyResolver interface {
 	// ResolveKey returns the public key for the given kid. untrustedJKU is the
 	// signer-supplied JWK Set URL; it MUST NOT be blindly trusted to select or fetch the key.
 	ResolveKey(ctx context.Context, kid, untrustedJKU string) (crypto.PublicKey, error)
@@ -45,12 +45,12 @@ type KeyResolver interface {
 
 // VerifierConfig configures signature verification.
 type VerifierConfig struct {
-	KeyResolver KeyResolver
+	KeyResolver PublicKeyResolver
 }
 
 // Verifier verifies AgentCard JWS signatures.
 type Verifier struct {
-	kr KeyResolver
+	kr PublicKeyResolver
 }
 
 // NewVerifier creates a Verifier using the provided configuration.
@@ -58,32 +58,53 @@ func NewVerifier(config VerifierConfig) *Verifier {
 	return &Verifier{kr: config.KeyResolver}
 }
 
-// SignerConfig configures AgentCard signing.
-type SignerConfig struct {
+// SignatureSpec describes one key with which to sign an AgentCard. An empty
+// Algorithm is inferred from the key.
+type SignatureSpec struct {
 	PrivateKey crypto.Signer
 	KeyID      string
 	Algorithm  string
 	JWKSURL    string
 }
 
+// PrivateKeyResolver returns the keys a Signer should sign with.
+//
+// Resolve is called on every Sign, so returning a different set over time rotates
+// signing keys without restarting the server.
+type PrivateKeyResolver interface {
+	// Resolve returns the specs to sign with right now. An empty slice signs nothing.
+	Resolve(ctx context.Context) ([]SignatureSpec, error)
+}
+
+// PrivateKeyResolverFunc adapts a function to a [PrivateKeyResolver].
+type PrivateKeyResolverFunc func(ctx context.Context) ([]SignatureSpec, error)
+
+// Resolve implements [PrivateKeyResolver].
+func (f PrivateKeyResolverFunc) Resolve(ctx context.Context) ([]SignatureSpec, error) {
+	return f(ctx)
+}
+
+// StaticPrivateKeyResolver returns a [PrivateKeyResolver] that always resolves to
+// the given specs. Use it for a fixed signing key; for rotation supply a resolver
+// that returns the current set on each call.
+func StaticPrivateKeyResolver(specs ...SignatureSpec) PrivateKeyResolver {
+	fixed := append([]SignatureSpec(nil), specs...)
+	return PrivateKeyResolverFunc(func(context.Context) ([]SignatureSpec, error) {
+		return fixed, nil
+	})
+}
+
+// SignerConfig configures AgentCard signing.
+type SignerConfig struct {
+	KeyResolver PrivateKeyResolver
+}
+
 // Signer creates JWS signatures for AgentCards.
 type Signer struct {
-	key       crypto.Signer
-	kid       string
-	algorithm string
-	jwksURL   string
+	pkr PrivateKeyResolver
 }
 
 // NewSigner creates a Signer using the provided configuration.
 func NewSigner(config SignerConfig) *Signer {
-	alg := config.Algorithm
-	if alg == "" {
-		alg = inferAlgorithm(config.PrivateKey)
-	}
-	return &Signer{
-		key:       config.PrivateKey,
-		kid:       config.KeyID,
-		algorithm: alg,
-		jwksURL:   config.JWKSURL,
-	}
+	return &Signer{pkr: config.KeyResolver}
 }

@@ -26,18 +26,20 @@ import (
 // NewSignedCardProducer wraps an AgentCardProducer to automatically sign every
 // produced AgentCard before returning it.
 //
-// Multiple signers can be passed so that keys can be rotated without dropping a
-// signature: every signer signs the same card and its signature is added to the
-// produced card. The card returned by the wrapped producer is left unmodified.
-func NewSignedCardProducer(signers []*a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
-	return &signedCardProducer{signers: signers, wrapped: wrapped}
+// The signer resolves its signing keys on every call, so keys can be rotated
+// without restarting the server: a card is signed once per currently-resolved
+// key, and each signature is added to the produced card. The card returned by
+// the wrapped producer is left unmodified.
+func NewSignedCardProducer(signer *a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
+	return &signedCardProducer{signer: signer, wrapped: wrapped}
 }
 
 type signedCardProducer struct {
-	signers []*a2acrypto.Signer
+	signer  *a2acrypto.Signer
 	wrapped AgentCardProducer
 }
 
+// Card implements [AgentCardProducer].
 func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	card, err := p.wrapped.Card(ctx)
 	if err != nil {
@@ -47,16 +49,13 @@ func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal agent card: %w", err)
 	}
+	sigs, err := p.signer.Sign(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign agent card: %w", err)
+	}
 	cardCopy := *card
 	cardCopy.Signatures = append([]a2a.AgentCardSignature(nil), card.Signatures...)
-	for i, signer := range p.signers {
-		if signer == nil {
-			return nil, fmt.Errorf("failed to sign agent card: signer at index %d is nil", i)
-		}
-		sig, err := signer.Sign(raw)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign agent card: %w", err)
-		}
+	for _, sig := range sigs {
 		cardCopy.Signatures = append(cardCopy.Signatures, *sig)
 	}
 	return &cardCopy, nil

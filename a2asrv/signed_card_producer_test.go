@@ -36,18 +36,33 @@ func mustMarshalCard(t *testing.T, card *a2a.AgentCard) json.RawMessage {
 	return raw
 }
 
-// testSignerPair returns a signer and a verifier that trusts only this signer's key.
-func testSignerPair(t *testing.T, kid string) (*a2acrypto.Signer, *a2acrypto.Verifier) {
+// testKeyPair returns a signing spec and a verifier that trusts only its key.
+func testKeyPair(t *testing.T, kid string) (a2acrypto.SignatureSpec, *a2acrypto.Verifier) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
 	}
-	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{PrivateKey: key, KeyID: kid})
-	resolver := a2acrypto.NewStaticKeyResolver(map[string]crypto.PublicKey{kid: key.Public()})
-	verifier := a2acrypto.NewVerifier(a2acrypto.VerifierConfig{KeyResolver: resolver})
-	return signer, verifier
+	spec := a2acrypto.SignatureSpec{PrivateKey: key, KeyID: kid}
+	verifier := a2acrypto.NewVerifier(a2acrypto.VerifierConfig{
+		KeyResolver: a2acrypto.KeyResolverFunc(func(context.Context, string) (crypto.PublicKey, error) {
+			return key.Public(), nil
+		}),
+	})
+	return spec, verifier
+}
+
+func signOnce(t *testing.T, signer *a2acrypto.Signer, raw json.RawMessage) *a2a.AgentCardSignature {
+	t.Helper()
+	sigs, err := signer.Sign(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("Sign() error = %v, want nil", err)
+	}
+	if len(sigs) != 1 {
+		t.Fatalf("Sign() = %d signatures, want 1", len(sigs))
+	}
+	return sigs[0]
 }
 
 func testCardProducer(card *a2a.AgentCard) AgentCardProducer {
@@ -62,27 +77,30 @@ func testAgentCard() *a2a.AgentCard {
 	}
 }
 
-func TestSignedCardProducerSignsWithEverySigner(t *testing.T) {
+func TestSignedCardProducerSignsWithEveryResolvedKey(t *testing.T) {
 	t.Parallel()
 
 	card := testAgentCard()
-	current, currentVerifier := testSignerPair(t, "kid-current")
-	next, nextVerifier := testSignerPair(t, "kid-next")
+	current, currentVerifier := testKeyPair(t, "kid-current")
+	next, nextVerifier := testKeyPair(t, "kid-next")
 
-	producer := NewSignedCardProducer([]*a2acrypto.Signer{current, next}, testCardProducer(card))
+	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
+		KeyResolver: a2acrypto.StaticPrivateKeyResolver(current, next),
+	})
+	producer := NewSignedCardProducer(signer, testCardProducer(card))
 
 	signed, err := producer.Card(context.Background())
 	if err != nil {
 		t.Fatalf("Card() error = %v, want nil", err)
 	}
 
-	// Rotation works by publishing a signature per key, so every signer must be represented.
+	// Rotation works by publishing a signature per key, so every resolved key must be represented.
 	if len(signed.Signatures) != 2 {
 		t.Fatalf("Card() produced %d signatures, want 2", len(signed.Signatures))
 	}
 	signedRaw := mustMarshalCard(t, signed)
 	for i, verifier := range []*a2acrypto.Verifier{currentVerifier, nextVerifier} {
-		if err := verifier.Verify(signedRaw, &signed.Signatures[i]); err != nil {
+		if err := verifier.Verify(context.Background(), signedRaw, &signed.Signatures[i]); err != nil {
 			t.Errorf("signature %d did not verify: %v", i, err)
 		}
 	}
@@ -97,15 +115,17 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 	t.Parallel()
 
 	card := testAgentCard()
-	existing, existingVerifier := testSignerPair(t, "kid-existing")
-	existingSig, err := existing.Sign(mustMarshalCard(t, card))
-	if err != nil {
-		t.Fatalf("Sign() error = %v, want nil", err)
-	}
-	card.Signatures = []a2a.AgentCardSignature{*existingSig}
+	existing, existingVerifier := testKeyPair(t, "kid-existing")
+	existingSigner := a2acrypto.NewSigner(a2acrypto.SignerConfig{
+		KeyResolver: a2acrypto.StaticPrivateKeyResolver(existing),
+	})
+	card.Signatures = []a2a.AgentCardSignature{*signOnce(t, existingSigner, mustMarshalCard(t, card))}
 
-	added, addedVerifier := testSignerPair(t, "kid-added")
-	producer := NewSignedCardProducer([]*a2acrypto.Signer{added}, testCardProducer(card))
+	added, addedVerifier := testKeyPair(t, "kid-added")
+	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
+		KeyResolver: a2acrypto.StaticPrivateKeyResolver(added),
+	})
+	producer := NewSignedCardProducer(signer, testCardProducer(card))
 
 	signed, err := producer.Card(context.Background())
 	if err != nil {
@@ -116,20 +136,23 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 		t.Fatalf("Card() produced %d signatures, want 2", len(signed.Signatures))
 	}
 	signedRaw := mustMarshalCard(t, signed)
-	if err := existingVerifier.Verify(signedRaw, &signed.Signatures[0]); err != nil {
+	if err := existingVerifier.Verify(context.Background(), signedRaw, &signed.Signatures[0]); err != nil {
 		t.Errorf("pre-existing signature did not verify: %v", err)
 	}
-	if err := addedVerifier.Verify(signedRaw, &signed.Signatures[1]); err != nil {
+	if err := addedVerifier.Verify(context.Background(), signedRaw, &signed.Signatures[1]); err != nil {
 		t.Errorf("added signature did not verify: %v", err)
 	}
 }
 
-func TestSignedCardProducerRejectsNilSigner(t *testing.T) {
+func TestSignedCardProducerReturnsSignError(t *testing.T) {
 	t.Parallel()
 
-	producer := NewSignedCardProducer([]*a2acrypto.Signer{nil}, testCardProducer(testAgentCard()))
+	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{
+		KeyResolver: a2acrypto.StaticPrivateKeyResolver(a2acrypto.SignatureSpec{KeyID: "kid"}),
+	})
+	producer := NewSignedCardProducer(signer, testCardProducer(testAgentCard()))
 
 	if _, err := producer.Card(context.Background()); err == nil {
-		t.Error("Card() returned nil error for a nil signer, want error")
+		t.Error("Card() returned nil error for a nil signing key, want error")
 	}
 }

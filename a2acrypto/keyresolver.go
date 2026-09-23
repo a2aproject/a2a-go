@@ -24,10 +24,10 @@ import (
 	"slices"
 )
 
-// KeyResolverFunc simplifies creating a [KeyResolver] backed by a set of known keys.
+// KeyResolverFunc simplifies creating a [PublicKeyResolver] backed by a set of known keys.
 type KeyResolverFunc func(ctx context.Context, kid string) (crypto.PublicKey, error)
 
-// ResolveKey implements [KeyResolver].
+// ResolveKey implements [PublicKeyResolver].
 func (f KeyResolverFunc) ResolveKey(ctx context.Context, kid, _ string) (crypto.PublicKey, error) {
 	key, err := f(ctx, kid)
 	if err != nil {

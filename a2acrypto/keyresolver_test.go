@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 	"testing"
 )
 
-func TestKeyResolverFunc_Found(t *testing.T) {
+func TestPublicKeyResolverFunc_Found(t *testing.T) {
 	t.Parallel()
 
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
@@ -71,19 +71,13 @@ func TestJWKSKeyResolverVerifiesSignedCard(t *testing.T) {
 	srv := jwksServer(t, ed25519JWKS("k1", pub))
 
 	raw := mustMarshalCard(t, makeTestCard())
-	sig, err := NewSigner(SignerConfig{PrivateKey: priv, KeyID: "k1", JWKSURL: srv.URL}).Sign(raw)
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
+	signer := staticSigner(SignatureSpec{PrivateKey: priv, KeyID: "k1", JWKSURL: srv.URL})
+	sig := signOne(t, signer, raw)
 
 	resolver := NewJWKSKeyResolver(srv.Client(), []string{srv.URL})
 	if err := NewVerifier(VerifierConfig{KeyResolver: resolver}).Verify(t.Context(), raw, sig); err != nil {
 		t.Errorf("Verify() error = %v, want nil", err)
 	}
-}
-
-type equalKey interface {
-	Equal(crypto.PublicKey) bool
 }
 
 func TestJWKSKeyResolverResolveKey(t *testing.T) {
@@ -199,4 +193,8 @@ func jwksServer(t *testing.T, body string) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+type equalKey interface {
+	Equal(crypto.PublicKey) bool
 }

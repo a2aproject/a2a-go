@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package a2acrypto
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -25,22 +26,51 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-// Sign computes a JWS signature (RFC 7515) over an AgentCard's raw JSON. The
-// bytes are canonicalized as given (RFC 8785, excluding the top-level signatures
-// field), so a verifier recomputes the same signing input from the card it received.
-func (s *Signer) Sign(raw json.RawMessage) (*a2a.AgentCardSignature, error) {
+// Sign computes a JWS signature (RFC 7515) over an AgentCard's raw JSON for each
+// key currently resolved by the Signer's [PrivateKeyResolver], returning one
+// signature per key. The bytes are canonicalized as given (RFC 8785, excluding
+// the top-level signatures field).
+func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) ([]*a2a.AgentCardSignature, error) {
+	if s.pkr == nil {
+		return nil, fmt.Errorf("no private key resolver configured")
+	}
+	specs, err := s.pkr.Resolve(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve signing keys: %w", err)
+	}
+
 	payload, err := canonicalizeJSON(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed to canonicalize agent card: %w", err)
 	}
 
+	sigs := make([]*a2a.AgentCardSignature, 0, len(specs))
+	for i, spec := range specs {
+		sig, err := signPayload(spec, payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign agent card with key %d: %w", i, err)
+		}
+		sigs = append(sigs, sig)
+	}
+	return sigs, nil
+}
+
+func signPayload(spec SignatureSpec, payload []byte) (*a2a.AgentCardSignature, error) {
+	if spec.PrivateKey == nil {
+		return nil, fmt.Errorf("nil private key")
+	}
+	alg := spec.Algorithm
+	if alg == "" {
+		alg = inferAlgorithm(spec.PrivateKey)
+	}
+
 	protected := map[string]any{
-		"alg": s.algorithm,
-		"kid": s.kid,
+		"alg": alg,
+		"kid": spec.KeyID,
 		"typ": "JOSE",
 	}
-	if s.jwksURL != "" {
-		protected["jku"] = s.jwksURL
+	if spec.JWKSURL != "" {
+		protected["jku"] = spec.JWKSURL
 	}
 
 	protectedJSON, err := json.Marshal(protected)
@@ -52,26 +82,26 @@ func (s *Signer) Sign(raw json.RawMessage) (*a2a.AgentCardSignature, error) {
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
 	signingInput := protectedB64 + "." + payloadB64
 
-	hash, err := algToHash(s.algorithm)
+	hash, err := algToHash(alg)
 	if err != nil {
 		return nil, err
 	}
 
 	var signature []byte
 	if hash == 0 {
-		signature, err = s.key.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
+		signature, err = spec.PrivateKey.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
 	} else {
 		h := hash.New()
 		h.Write([]byte(signingInput))
-		signature, err = s.key.Sign(rand.Reader, h.Sum(nil), hash)
+		signature, err = spec.PrivateKey.Sign(rand.Reader, h.Sum(nil), hash)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
 	}
 
 	// Convert ECDSA DER output to raw R||S for JWS compatibility.
-	if _, ok := s.key.Public().(*ecdsa.PublicKey); ok {
-		signature, err = marshalECDSASignature(signature, s.key.Public().(*ecdsa.PublicKey).Curve)
+	if pub, ok := spec.PrivateKey.Public().(*ecdsa.PublicKey); ok {
+		signature, err = marshalECDSASignature(signature, pub.Curve)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert ECDSA signature: %w", err)
 		}

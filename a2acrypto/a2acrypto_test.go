@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,10 +48,10 @@ func TestGoldenSignMatchesReference(t *testing.T) {
 	}
 	key := ed25519.NewKeyFromSeed(seed)
 
-	sig, err := NewSigner(SignerConfig{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"}).Sign(g.CardJSON)
-	if err != nil {
-		t.Fatalf("Sign() error = %v, want nil", err)
-	}
+	signer := NewSigner(SignerConfig{KeyResolver: StaticPrivateKeyResolver(
+		SignatureSpec{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"},
+	)})
+	sig := signOne(t, signer, g.CardJSON)
 	if sig.Protected != g.ProtectedB64 {
 		t.Errorf("Sign() protected = %s, want %s", sig.Protected, g.ProtectedB64)
 	}
@@ -59,7 +59,7 @@ func TestGoldenSignMatchesReference(t *testing.T) {
 		t.Errorf("Sign() signature = %s, want %s", sig.Signature, g.SignatureB64)
 	}
 
-	verifier := staticVerifier(g.Kid, key.Public())
+	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, g.CardJSON, sig); err != nil {
 		t.Errorf("Verify() error = %v, want nil", err)
 	}
