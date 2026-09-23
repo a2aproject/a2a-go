@@ -1,0 +1,36 @@
+{
+  "kid": "golden-ed25519-1",
+  "ed25519_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "card_json_unsigned": {
+    "name": "Golden Agent",
+    "description": "Cross-SDK golden vector agent.",
+    "provider": {
+      "url": "https://example.com",
+      "organization": "A2A"
+    },
+    "version": "1.0.0",
+    "capabilities": {
+      "streaming": true,
+      "pushNotifications": false
+    },
+    "defaultInputModes": [
+      "text/plain"
+    ],
+    "defaultOutputModes": [
+      "text/plain"
+    ],
+    "skills": [
+      {
+        "id": "s1",
+        "name": "Skill One",
+        "description": "does a thing",
+        "tags": [
+          "x",
+          "y"
+        ]
+      }
+    ]
+  },
+  "protected_b64": "eyJhbGciOiJFZERTQSIsImtpZCI6ImdvbGRlbi1lZDI1NTE5LTEiLCJ0eXAiOiJKT1NFIn0",
+  "signature_b64": "xyFn-PK5oE7j9ksrOpBLyzB33d0rC72rthVbTFX1ubVvuNdcn_mWO-5TNY_b2k3o8VpARYkzTPSIA1K1WvbbAw"
+}
