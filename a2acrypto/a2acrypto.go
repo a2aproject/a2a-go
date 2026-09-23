@@ -16,25 +16,31 @@
 package a2acrypto
 
 import (
+	"context"
 	"crypto"
 )
 
-// KeyResolver resolves a key identifier to a public key for verification.
+// KeyResolver returns the public key that a Verifier uses to check an
+// AgentCard's signature.
 //
-// The trust root MUST be selected by verifier-side policy. Implementations
-// MUST NOT use the signer-supplied jku to select or fetch the trust root:
-// jku is carried in the artifact's own protected header, so honoring it lets
-// a signer nominate its own key material. kid MAY be used to select among
-// keys enrolled out-of-band through a verifier-controlled path.
+// A signature names its key with two fields in its header:
+//   - kid: a short label identifying which key signed the card.
+//   - jku: a URL where the signer claims its public keys live.
 //
-// A resolver that fetches by URL MUST constrain the target to a verifier-side
-// allowlist. The same constraint applies to x5u (X.509 URL, RFC 7515) if the
-// interface is extended to carry it in the future.
+// A card is not trusted until its signature checks out, so both fields are
+// attacker-controlled. The trust root (the set of keys the verifier is willing
+// to accept) must therefore be decided by the verifier, not taken from the card.
+//
+// A typical implementation holds a fixed set of trusted keys and uses kid to pick
+// among them, returning an error when no trusted key matches. jku is passed for information
+// only: implementations MUST NOT fetch a key from it to establish trust, because
+// a forger could then serve both a fake card and a key set that "verifies" it. A
+// resolver that does fetch keys by URL MUST restrict the URL to a verifier-side
+// allowlist rather than trust the jku.
 type KeyResolver interface {
-	// ResolveKey looks up the public key for the given key ID (kid).
-	// The jku parameter is passed for informational purposes only; implementations
-	// MUST NOT use it to select or fetch the trust root. See KeyResolver doc.
-	ResolveKey(kid, jku string) (crypto.PublicKey, error)
+	// ResolveKey returns the public key for the given kid. untrustedJKU is the
+	// signer-supplied JWK Set URL; it MUST NOT be blindly trusted to select or fetch the key.
+	ResolveKey(ctx context.Context, kid, untrustedJKU string) (crypto.PublicKey, error)
 }
 
 // VerifierConfig configures signature verification.

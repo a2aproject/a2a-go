@@ -17,6 +17,7 @@ package agentcard
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,7 +108,7 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 		if err != nil {
 			return nil, err
 		}
-		return r.parseCard(body)
+		return r.parseCard(ctx, body)
 	}
 
 	client := r.Client
@@ -120,7 +121,7 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 		return nil, err
 	}
 
-	return r.parseCard(body)
+	return r.parseCard(ctx, body)
 }
 
 func buildURL(baseURL, path string) (string, error) {
@@ -196,7 +197,7 @@ func readCardFile(u *url.URL) ([]byte, error) {
 	return body, nil
 }
 
-func (r *Resolver) parseCard(body []byte) (*a2a.AgentCard, error) {
+func (r *Resolver) parseCard(ctx context.Context, body []byte) (*a2a.AgentCard, error) {
 	parseFn := r.CardParser
 	if parseFn == nil {
 		parseFn = DefaultCardParser
@@ -208,17 +209,17 @@ func (r *Resolver) parseCard(body []byte) (*a2a.AgentCard, error) {
 
 	if r.Verifier != nil && len(card.Signatures) > 0 {
 		var verified bool
-		var lastErr error
+		var errs []error
 		for _, sig := range card.Signatures {
-			if err := r.Verifier.Verify(card, &sig); err == nil {
+			if err := r.Verifier.Verify(ctx, body, &sig); err == nil {
 				verified = true
 				break
 			} else {
-				lastErr = err
+				errs = append(errs, err)
 			}
 		}
 		if !verified {
-			return nil, fmt.Errorf("agent card signature verification failed: %w", lastErr)
+			return nil, fmt.Errorf("agent card signature verification failed: %w", errors.Join(errs...))
 		}
 	}
 

@@ -24,63 +24,24 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
-
-	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-// requiredRepeatedFields lists the AgentCard fields the specification marks as
-// REQUIRED that hold repeated values.
-var requiredRepeatedFields = []string{
-	"defaultInputModes",
-	"defaultOutputModes",
-	"skills",
-	"supportedInterfaces",
-}
-
-// normalizeRequiredRepeatedFields replaces a nil value with an empty list for the
-// REQUIRED repeated fields. encoding/json serializes a nil slice as null, and null
-// is not the Protocol Buffers JSON representation of an empty repeated field, so the
-// canonical form would otherwise carry a value no conforming reader produces.
-func normalizeRequiredRepeatedFields(obj map[string]any) {
-	for _, field := range requiredRepeatedFields {
-		if value, ok := obj[field]; ok && value == nil {
-			obj[field] = []any{}
-		}
-	}
-}
-
-// canonicalPayload serializes an AgentCard to RFC 8785 JSON Canonicalization
-// Scheme (JCS) format. It recursively sorts all object keys by UTF-16 code
-// unit order and excludes the top-level signatures field, ensuring
-// deterministic signing input.
-func canonicalPayload(card *a2a.AgentCard) ([]byte, error) {
-	payload, err := json.Marshal(card)
-	if err != nil {
-		return nil, err
-	}
+// canonicalizeJSON returns the RFC 8785 (JCS) canonical form of an AgentCard's
+// raw JSON, excluding the top-level signatures field.
+func canonicalizeJSON(raw []byte) ([]byte, error) {
 	var obj any
-	dec := json.NewDecoder(bytes.NewReader(payload))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&obj); err != nil {
 		return nil, err
 	}
-	if asMap, ok := obj.(map[string]any); ok {
-		normalizeRequiredRepeatedFields(asMap)
-	}
-	sortObjectKeys(obj, true)
+	dropSignatures(obj)
 	return jcsMarshal(obj)
 }
 
-// jcsMarshal serializes v as RFC 8785 canonical JSON.
-//
-// Key requirements:
-//   - Object keys sorted by UTF-16 code unit order (RFC 8785 §3.2.3)
-//   - No whitespace outside string literals
-//   - Strings: only escape '"', '\', and control characters (U+0000–U+001F)
-//   - U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR are literal
-//     (Go's encoding/json escapes them even with SetEscapeHTML(false))
-//   - Numbers: no leading zeros, no trailing zeros after decimal
-//   - No escaping of &, <, > per RFC 8785 §3.2.2.2
+// jcsMarshal serializes v as RFC 8785 canonical JSON. encoding/json cannot be
+// used: it sorts keys by code point rather than UTF-16 code unit, escapes
+// U+2028/U+2029, and formats numbers differently.
 func jcsMarshal(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := writeJCS(&buf, v); err != nil {
@@ -165,9 +126,9 @@ func writeJCSArray(w io.Writer, arr []any) error {
 	return nil
 }
 
-// writeJCSString writes a JSON string with RFC 8785 escaping.
-// Only escapes: ", \, and control characters (U+0000–U+001F).
-// U+2028, U+2029, &, <, > are written as literal UTF-8 bytes.
+// writeJCSString writes s as a JSON string with RFC 8785 escaping: only ", \,
+// and control characters (U+0000–U+001F) are escaped; &, <, >, U+2028 and
+// U+2029 stay literal.
 func writeJCSString(w io.Writer, s string) error {
 	if _, err := w.Write([]byte("\"")); err != nil {
 		return err
@@ -208,9 +169,7 @@ func writeJCSString(w io.Writer, s string) error {
 					return err
 				}
 			} else {
-				// U+2028, U+2029, U+0080+, and printable ASCII — literal bytes.
-				// This is the key difference from Go's encoding/json, which
-				// escapes U+2028 and U+2029 as \u2028 / \u2029.
+				// Literal bytes; unlike encoding/json this keeps U+2028/U+2029 unescaped.
 				if _, err := w.Write([]byte(string(r))); err != nil {
 					return err
 				}
@@ -235,8 +194,6 @@ func sortedKeys(obj map[string]any) []string {
 	return keys
 }
 
-// utf16Compare compares two strings by UTF-16 code unit order.
-// Returns -1, 0, or 1.
 func utf16Compare(a, b string) int {
 	ua := utf16.Encode([]rune(a))
 	ub := utf16.Encode([]rune(b))
@@ -258,12 +215,9 @@ func utf16Compare(a, b string) int {
 	return 0
 }
 
-// canonicalNumber formats a json.Number per RFC 8785 §3.2.2.3. Numbers
-// serialize from their binary64 value (ECMAScript Number), not their exact
-// decimal token: for integers >= 2^53 the token and the double's shortest
-// round-trip diverge (2^60 = 1152921504606846976 -> "1152921504606847000"),
-// and values above int64 must not fall back to the verbatim token. Routing
-// every token through float64 keeps a single code path for both branches.
+// canonicalNumber formats a json.Number per RFC 8785 §3.2.2.3, serializing from
+// its binary64 value rather than the decimal token, which diverge for integers
+// >= 2^53 (2^60 -> "1152921504606847000").
 func canonicalNumber(n json.Number) string {
 	f, err := strconv.ParseFloat(string(n), 64)
 	if err != nil {
@@ -273,9 +227,8 @@ func canonicalNumber(n json.Number) string {
 }
 
 // canonicalFloat formats a float64 per RFC 8785 §3.2.2.2 (ECMAScript
-// Number::toString): decimal notation for 1e-6 <= |x| < 1e21, exponential
-// otherwise with no leading zeros in the exponent, and -0 serialized as 0.
-// Go's strconv 'g' format diverges in all three regions, so it cannot be used.
+// Number::toString): decimal for 1e-6 <= |x| < 1e21, exponential otherwise, and
+// -0 as 0. strconv's 'g' format diverges in all three regions.
 func canonicalFloat(f float64) string {
 	if f == 0 {
 		return "0"
@@ -305,20 +258,10 @@ func normalizeExponent(s string) string {
 	return s[:i+1] + sign + exp
 }
 
-// sortObjectKeys recursively sorts object keys in lexicographic order and,
-// when root is true, removes the top-level "signatures" key per A2A §8.4.1.
-func sortObjectKeys(v any, root bool) {
-	switch val := v.(type) {
-	case map[string]any:
-		if root {
-			delete(val, "signatures")
-		}
-		for _, vv := range val {
-			sortObjectKeys(vv, false)
-		}
-	case []any:
-		for _, item := range val {
-			sortObjectKeys(item, false)
-		}
+// dropSignatures removes the top-level signatures field, which A2A §8.4.1
+// excludes from the signing payload.
+func dropSignatures(v any) {
+	if obj, ok := v.(map[string]any); ok {
+		delete(obj, "signatures")
 	}
 }

@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -42,13 +43,17 @@ func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, err
 	}
+	raw, err := json.Marshal(card)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal agent card: %w", err)
+	}
 	cardCopy := *card
 	cardCopy.Signatures = append([]a2a.AgentCardSignature(nil), card.Signatures...)
 	for i, signer := range p.signers {
 		if signer == nil {
 			return nil, fmt.Errorf("failed to sign agent card: signer at index %d is nil", i)
 		}
-		sig, err := signer.Sign(card)
+		sig, err := signer.Sign(raw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to sign agent card: %w", err)
 		}

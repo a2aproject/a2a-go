@@ -25,12 +25,11 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-// Sign computes a JWS signature for the given AgentCard.
-// It serializes the card using RFC 8785 JSON Canonicalization Scheme (JCS),
-// which excludes the signatures field and sorts object keys, then builds the
-// protected header and signs.
-func (s *Signer) Sign(card *a2a.AgentCard) (*a2a.AgentCardSignature, error) {
-	payload, err := canonicalPayload(card)
+// Sign computes a JWS signature (RFC 7515) over an AgentCard's raw JSON. The
+// bytes are canonicalized as given (RFC 8785, excluding the top-level signatures
+// field), so a verifier recomputes the same signing input from the card it received.
+func (s *Signer) Sign(raw json.RawMessage) (*a2a.AgentCardSignature, error) {
+	payload, err := canonicalizeJSON(raw)
 	if err != nil {
 		return nil, fmt.Errorf("failed to canonicalize agent card: %w", err)
 	}

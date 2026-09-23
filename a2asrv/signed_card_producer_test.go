@@ -20,16 +20,20 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 )
 
-type testCardKeyResolver struct{ key crypto.PublicKey }
-
-func (r testCardKeyResolver) ResolveKey(string, string) (crypto.PublicKey, error) {
-	return r.key, nil
+func mustMarshalCard(t *testing.T, card *a2a.AgentCard) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(card)
+	if err != nil {
+		t.Fatalf("failed to marshal card: %v", err)
+	}
+	return raw
 }
 
 // testSignerPair returns a signer and a verifier that trusts only this signer's key.
@@ -41,7 +45,8 @@ func testSignerPair(t *testing.T, kid string) (*a2acrypto.Signer, *a2acrypto.Ver
 		t.Fatalf("failed to generate key: %v", err)
 	}
 	signer := a2acrypto.NewSigner(a2acrypto.SignerConfig{PrivateKey: key, KeyID: kid})
-	verifier := a2acrypto.NewVerifier(a2acrypto.VerifierConfig{KeyResolver: testCardKeyResolver{key: key.Public()}})
+	resolver := a2acrypto.NewStaticKeyResolver(map[string]crypto.PublicKey{kid: key.Public()})
+	verifier := a2acrypto.NewVerifier(a2acrypto.VerifierConfig{KeyResolver: resolver})
 	return signer, verifier
 }
 
@@ -75,8 +80,9 @@ func TestSignedCardProducerSignsWithEverySigner(t *testing.T) {
 	if len(signed.Signatures) != 2 {
 		t.Fatalf("Card() produced %d signatures, want 2", len(signed.Signatures))
 	}
+	signedRaw := mustMarshalCard(t, signed)
 	for i, verifier := range []*a2acrypto.Verifier{currentVerifier, nextVerifier} {
-		if err := verifier.Verify(signed, &signed.Signatures[i]); err != nil {
+		if err := verifier.Verify(signedRaw, &signed.Signatures[i]); err != nil {
 			t.Errorf("signature %d did not verify: %v", i, err)
 		}
 	}
@@ -92,7 +98,7 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 
 	card := testAgentCard()
 	existing, existingVerifier := testSignerPair(t, "kid-existing")
-	existingSig, err := existing.Sign(card)
+	existingSig, err := existing.Sign(mustMarshalCard(t, card))
 	if err != nil {
 		t.Fatalf("Sign() error = %v, want nil", err)
 	}
@@ -109,10 +115,11 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 	if len(signed.Signatures) != 2 {
 		t.Fatalf("Card() produced %d signatures, want 2", len(signed.Signatures))
 	}
-	if err := existingVerifier.Verify(signed, &signed.Signatures[0]); err != nil {
+	signedRaw := mustMarshalCard(t, signed)
+	if err := existingVerifier.Verify(signedRaw, &signed.Signatures[0]); err != nil {
 		t.Errorf("pre-existing signature did not verify: %v", err)
 	}
-	if err := addedVerifier.Verify(signed, &signed.Signatures[1]); err != nil {
+	if err := addedVerifier.Verify(signedRaw, &signed.Signatures[1]); err != nil {
 		t.Errorf("added signature did not verify: %v", err)
 	}
 }

@@ -21,12 +21,11 @@ import (
 	"math/big"
 )
 
-// ecdsaSignature is the ASN.1 structure used by Go's crypto/ecdsa.
 type ecdsaSignature struct {
 	R, S *big.Int
 }
 
-// marshalECDSASignature converts DER-encoded ECDSA signature to raw R||S (JWS format).
+// marshalECDSASignature converts a DER-encoded ECDSA signature to JWS raw R||S form.
 func marshalECDSASignature(der []byte, curve elliptic.Curve) ([]byte, error) {
 	var sig ecdsaSignature
 	if _, err := asn1.Unmarshal(der, &sig); err != nil {
@@ -39,7 +38,7 @@ func marshalECDSASignature(der []byte, curve elliptic.Curve) ([]byte, error) {
 	return out, nil
 }
 
-// unmarshalECDSASignature converts raw R||S to r, s *big.Int for verification.
+// unmarshalECDSASignature parses a JWS raw R||S signature into r and s.
 func unmarshalECDSASignature(raw []byte, curve elliptic.Curve) (r, s *big.Int, err error) {
 	keySize := (curve.Params().BitSize + 7) / 8
 	if len(raw) != 2*keySize {
