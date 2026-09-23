@@ -31,37 +31,14 @@ import (
 // ErrVerificationFailed indicates the signature did not verify.
 var ErrVerificationFailed = errors.New("signature verification failed")
 
-// PublicKeyResolver returns the public key that a Verifier uses to check an
-// AgentCard's signature.
-//
-// A signature names its key with two fields in its header:
-//   - kid: a short label identifying which key signed the card.
-//   - jku: a URL where the signer claims its public keys live.
-//
-// A card is not trusted until its signature checks out, so both fields are
-// attacker-controlled. The trust root (the set of keys the verifier is willing
-// to accept) must therefore be decided by the verifier, not taken from the card.
-//
-// A typical implementation holds a fixed set of trusted keys and uses kid to pick
-// among them, returning an error when no trusted key matches. jku is passed for information
-// only: implementations MUST NOT fetch a key from it to establish trust, because
-// a forger could then serve both a fake card and a key set that "verifies" it. A
-// resolver that does fetch keys by URL MUST restrict the URL to a verifier-side
-// allowlist rather than trust the jku.
-type PublicKeyResolver interface {
-	// ResolveKey returns the public key for the given kid. untrustedJKU is the
-	// signer-supplied JWK Set URL; it MUST NOT be blindly trusted to select or fetch the key.
-	ResolveKey(ctx context.Context, kid, untrustedJKU string) (crypto.PublicKey, error)
-}
-
 // VerifierConfig configures signature verification.
 type VerifierConfig struct {
-	KeyResolver PublicKeyResolver
+	KeyResolver KeyResolver
 }
 
 // Verifier verifies AgentCard JWS signatures.
 type Verifier struct {
-	kr PublicKeyResolver
+	kr KeyResolver
 }
 
 // NewVerifier creates a Verifier using the provided configuration.

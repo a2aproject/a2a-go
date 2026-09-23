@@ -40,15 +40,15 @@ type SignatureSpec struct {
 // Resolve is called on every Sign, so returning a different set over time rotates
 // signing keys without restarting the server.
 type SignatureSpecResolver interface {
-	// Resolve returns the specs to sign with right now. An empty slice signs nothing.
-	Resolve(ctx context.Context) ([]SignatureSpec, error)
+	// ResolveSpec returns the specs to sign with right now. An empty slice signs nothing.
+	ResolveSpec(ctx context.Context) ([]SignatureSpec, error)
 }
 
 // SignatureSpecResolverFunc adapts a function to a [SignatureSpecResolver].
 type SignatureSpecResolverFunc func(ctx context.Context) ([]SignatureSpec, error)
 
-// Resolve implements [SignatureSpecResolver].
-func (f SignatureSpecResolverFunc) Resolve(ctx context.Context) ([]SignatureSpec, error) {
+// ResolveSpec implements [SignatureSpecResolver].
+func (f SignatureSpecResolverFunc) ResolveSpec(ctx context.Context) ([]SignatureSpec, error) {
 	return f(ctx)
 }
 
@@ -83,7 +83,7 @@ func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) ([]*a2a.AgentCar
 	if s.pkr == nil {
 		return nil, fmt.Errorf("no private key resolver configured")
 	}
-	specs, err := s.pkr.Resolve(ctx)
+	specs, err := s.pkr.ResolveSpec(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve signing keys: %w", err)
 	}
