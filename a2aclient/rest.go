@@ -225,7 +225,7 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 
 	query := url.Values{}
 	if req.ContextID != "" {
-		query.Add("contextId", string(req.ContextID))
+		query.Add("contextId", req.ContextID)
 	}
 	if req.Status != "" {
 		query.Add("status", string(req.Status))
@@ -234,7 +234,7 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 		query.Add("pageSize", strconv.Itoa(req.PageSize))
 	}
 	if req.PageToken != "" {
-		query.Add("pageToken", string(req.PageToken))
+		query.Add("pageToken", req.PageToken)
 	}
 	if req.HistoryLength != nil {
 		query.Add("historyLength", strconv.Itoa(*req.HistoryLength))
@@ -339,7 +339,7 @@ func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params Service
 
 // GetTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	path := rest.MakeGetPushConfigPath(string(req.TaskID), string(req.ID))
+	path := rest.MakeGetPushConfigPath(string(req.TaskID), req.ID)
 	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -390,7 +390,7 @@ func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params Service
 
 // DeleteTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
-	path := rest.MakeDeletePushConfigPath(string(req.TaskID), string(req.ID))
+	path := rest.MakeDeletePushConfigPath(string(req.TaskID), req.ID)
 	return t.doRequest(ctx, &restRequest{
 		method:  "DELETE",
 		params:  params,

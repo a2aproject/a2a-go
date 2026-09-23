@@ -152,7 +152,6 @@ func TestAgentCardHandler(t *testing.T) {
 			})
 		}
 	}
-
 }
 
 func TestAgentCardHandler_ServerError(t *testing.T) {

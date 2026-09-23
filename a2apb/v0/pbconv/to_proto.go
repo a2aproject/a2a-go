@@ -757,7 +757,7 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_HttpAuthSecurityScheme{
 				HttpAuthSecurityScheme: &a2apb.HTTPAuthSecurityScheme{
-					Scheme:       string(s.Scheme),
+					Scheme:       s.Scheme,
 					Description:  s.Description,
 					BearerFormat: s.BearerFormat,
 				},
@@ -899,7 +899,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	}
 
 	agentInterfaceIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
-		return i.ProtocolVersion == a2a.ProtocolVersion(a2av0.Version)
+		return i.ProtocolVersion == a2av0.Version
 	})
 	if agentInterfaceIdx == -1 {
 		return nil, fmt.Errorf("at least 1 interface supporting %s must be listed", a2av0.Version)
@@ -909,7 +909,7 @@ func ToProtoAgentCard(card *a2a.AgentCard) (*a2apb.AgentCard, error) {
 	result.PreferredTransport = string(card.SupportedInterfaces[agentInterfaceIdx].ProtocolBinding)
 	var additionalInterfaces []*a2a.AgentInterface
 	for i, iface := range card.SupportedInterfaces {
-		if i == agentInterfaceIdx || iface.ProtocolVersion != a2a.ProtocolVersion(a2av0.Version) {
+		if i == agentInterfaceIdx || iface.ProtocolVersion != a2av0.Version {
 			continue
 		}
 		additionalInterfaces = append(additionalInterfaces, iface)

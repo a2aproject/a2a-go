@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -330,8 +331,8 @@ func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallIn
 	}
 
 	var zero T
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if err := interceptors[i].After(ctx, &resp); err != nil {
+	for _, interceptor := range slices.Backward(interceptors) {
+		if err := interceptor.After(ctx, &resp); err != nil {
 			return zero, err
 		}
 	}
