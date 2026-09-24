@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,26 +23,23 @@ import (
 	"fmt"
 )
 
-func inferAlgorithm(key crypto.Signer) string {
+func inferAlgorithm(key crypto.Signer) (string, error) {
 	switch pub := key.Public().(type) {
 	case *ecdsa.PublicKey:
 		switch pub.Curve {
 		case elliptic.P256():
-			return "ES256"
+			return "ES256", nil
 		case elliptic.P384():
-			return "ES384"
+			return "ES384", nil
 		case elliptic.P521():
-			return "ES512"
-		default:
-			return ""
+			return "ES512", nil
 		}
 	case ed25519.PublicKey:
-		return "EdDSA"
+		return "EdDSA", nil
 	case *rsa.PublicKey:
-		return "RS256"
-	default:
-		return ""
+		return "RS256", nil
 	}
+	return "", fmt.Errorf("cannot infer algorithm from key type %T", key.Public())
 }
 
 func algToHash(alg string) (crypto.Hash, error) {

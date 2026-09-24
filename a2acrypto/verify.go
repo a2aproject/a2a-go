@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package a2acrypto
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -30,10 +31,31 @@ import (
 // ErrVerificationFailed indicates the signature did not verify.
 var ErrVerificationFailed = errors.New("signature verification failed")
 
-// Verify checks the AgentCard signature against the card content.
-func (v *Verifier) Verify(card *a2a.AgentCard, sig *a2a.AgentCardSignature) error {
+// VerifierConfig configures signature verification.
+type VerifierConfig struct {
+	KeyResolver KeyResolver
+}
+
+// Verifier verifies AgentCard JWS signatures.
+type Verifier struct {
+	kr KeyResolver
+}
+
+// NewVerifier creates a Verifier using the provided configuration.
+func NewVerifier(config VerifierConfig) *Verifier {
+	return &Verifier{kr: config.KeyResolver}
+}
+
+// Verify checks sig against an AgentCard's raw JSON. The bytes are canonicalized
+// as given (RFC 8785, excluding the top-level signatures field); see Signer.Sign.
+func (v *Verifier) Verify(ctx context.Context, raw json.RawMessage, sig *a2a.AgentCardSignature) error {
 	if sig == nil {
 		return fmt.Errorf("%w: nil signature", ErrVerificationFailed)
+	}
+
+	payload, err := canonicalizeJSON(raw)
+	if err != nil {
+		return fmt.Errorf("%w: failed to canonicalize card for verification: %v", ErrVerificationFailed, err)
 	}
 
 	protectedJSON, err := base64.RawURLEncoding.DecodeString(sig.Protected)
@@ -61,14 +83,9 @@ func (v *Verifier) Verify(card *a2a.AgentCard, sig *a2a.AgentCardSignature) erro
 		return fmt.Errorf("%w: no key resolver configured", ErrVerificationFailed)
 	}
 
-	pubKey, err := v.kr.ResolveKey(kid, jku)
+	pubKey, err := v.kr.ResolveKey(ctx, kid, jku)
 	if err != nil {
 		return fmt.Errorf("%w: key resolution failed: %v", ErrVerificationFailed, err)
-	}
-
-	payload, err := canonicalPayload(card)
-	if err != nil {
-		return fmt.Errorf("%w: failed to canonicalize card for verification: %v", ErrVerificationFailed, err)
 	}
 
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
