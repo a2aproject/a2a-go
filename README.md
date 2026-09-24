@@ -112,11 +112,11 @@ For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/git
 
 ## 🔧 CLI
 
-The SDK ships with a command-line tool for working with A2A agents - send messages, inspect tasks, resolve agent cards, or setup simple a2a servers.
+A companion command-line tool for working with A2A agents - send messages, inspect tasks, resolve agent cards, or setup simple a2a servers - lives in its own repository: [**a2aproject/a2a-cli**](https://github.com/a2aproject/a2a-cli).
 
 ```bash
 # Install
-go install github.com/a2aproject/a2a-go/v2/cmd/a2a@latest
+go install github.com/a2aproject/a2a-cli@latest
 
 # Discover an agent
 a2a discover https://agent.example.com
@@ -128,7 +128,7 @@ a2a send https://agent.example.com "Hello, what can you do?"
 a2a serve --exec "./my-script.sh" --port 8080
 ```
 
-See [cmd/README.md](./cmd/README.md) or run `a2a help` for the full command reference.
+See the [a2a-cli README](https://github.com/a2aproject/a2a-cli#readme) or run `a2a help` for the full command reference.
 
 ---
 
