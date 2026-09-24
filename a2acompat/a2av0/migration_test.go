@@ -38,8 +38,8 @@ func TestToV1Payload(t *testing.T) {
 		},
 		{
 			name:  "TaskQueryParams",
-			input: &a2alegacy.TaskQueryParams{ID: "t1", HistoryLength: intPtr(5)},
-			want:  &a2a.GetTaskRequest{ID: "t1", HistoryLength: intPtr(5)},
+			input: &a2alegacy.TaskQueryParams{ID: "t1", HistoryLength: new(5)},
+			want:  &a2a.GetTaskRequest{ID: "t1", HistoryLength: new(5)},
 		},
 		{
 			name:  "ListTasksRequest",
@@ -47,7 +47,7 @@ func TestToV1Payload(t *testing.T) {
 			want: &a2a.ListTasksRequest{
 				ContextID:     "ctx1",
 				PageSize:      10,
-				HistoryLength: intPtr(0),
+				HistoryLength: new(0),
 			},
 		},
 		{
@@ -161,12 +161,12 @@ func TestFromV1Payload(t *testing.T) {
 		},
 		{
 			name:  "GetTaskRequest",
-			input: &a2a.GetTaskRequest{ID: "t1", HistoryLength: intPtr(5)},
-			want:  &a2alegacy.TaskQueryParams{ID: "t1", HistoryLength: intPtr(5)},
+			input: &a2a.GetTaskRequest{ID: "t1", HistoryLength: new(5)},
+			want:  &a2alegacy.TaskQueryParams{ID: "t1", HistoryLength: new(5)},
 		},
 		{
 			name:  "ListTasksRequest",
-			input: &a2a.ListTasksRequest{ContextID: "ctx1", PageSize: 10, HistoryLength: intPtr(3)},
+			input: &a2a.ListTasksRequest{ContextID: "ctx1", PageSize: 10, HistoryLength: new(3)},
 			want:  &a2alegacy.ListTasksRequest{ContextID: "ctx1", PageSize: 10, HistoryLength: 3},
 		},
 		{
@@ -286,8 +286,4 @@ func TestFromV1Payload(t *testing.T) {
 			}
 		})
 	}
-}
-
-func intPtr(v int) *int {
-	return &v
 }

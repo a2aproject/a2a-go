@@ -26,8 +26,10 @@ import (
 )
 
 // Ptr returns a pointer to the argument simplifying pointer to primitive literals creation.
+//
+//go:fix inline
 func Ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.

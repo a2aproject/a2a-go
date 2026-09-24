@@ -31,7 +31,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -1439,7 +1438,7 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 				{ID: id2, ContextID: "context2", History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
 				{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			},
-			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: utils.Ptr(2), StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
+			request:      &a2a.ListTasksRequest{PageSize: 2, ContextID: "context1", Status: a2a.TaskStateCompleted, HistoryLength: new(2), StatusTimestampAfter: &cutOffTime, IncludeArtifacts: true},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, Artifacts: []*a2a.Artifact{{Name: "artifact3"}}, ContextID: "context1", History: []*a2a.Message{{ID: "test-message-8"}, {ID: "test-message-9"}}, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}}, TotalSize: 1, PageSize: 2},
 			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
@@ -1450,7 +1449,7 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 				{ID: id2, History: []*a2a.Message{{ID: "test-message-4"}, {ID: "test-message-5"}}},
 				{ID: id3, History: []*a2a.Message{{ID: "test-message-6"}, {ID: "test-message-7"}, {ID: "test-message-8"}, {ID: "test-message-9"}}},
 			},
-			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			request:      &a2a.ListTasksRequest{HistoryLength: new(0)},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3, History: []*a2a.Message{}}, {ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}, TotalSize: 3, PageSize: 50},
 			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},

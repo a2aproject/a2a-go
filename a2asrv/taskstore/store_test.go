@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -291,20 +290,20 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 		},
 		{
 			name:         "HistoryLength filter",
-			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(2)},
+			request:      &a2a.ListTasksRequest{HistoryLength: new(2)},
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}, {ID: id1, History: []*a2a.Message{{ID: "messageId2"}, {ID: "messageId3"}}}}},
 		},
 		{
 			name:         "HistoryLength filter with 0",
-			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			request:      &a2a.ListTasksRequest{HistoryLength: new(0)},
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}},
 		},
 		{
 			name:         "with negative HistoryLength filter",
 			givenTasks:   []*a2a.Task{{ID: id1, History: []*a2a.Message{{ID: "messageId1"}, {ID: "messageId2"}, {ID: "messageId3"}}}, {ID: id2, History: []*a2a.Message{{ID: "messageId4"}, {ID: "messageId5"}}}},
-			request:      &a2a.ListTasksRequest{HistoryLength: utils.Ptr(-1)},
+			request:      &a2a.ListTasksRequest{HistoryLength: new(-1)},
 			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id2, History: []*a2a.Message{}}, {ID: id1, History: []*a2a.Message{}}}},
 		},
 		{

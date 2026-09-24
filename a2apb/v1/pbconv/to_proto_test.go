@@ -834,11 +834,11 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			Url:          "https://example.com/org",
 		},
 		Version:          "0.1.0",
-		DocumentationUrl: proto.String("https://example.com/docs"),
+		DocumentationUrl: new("https://example.com/docs"),
 		Capabilities: &a2apb.AgentCapabilities{
-			Streaming:         proto.Bool(true),
-			PushNotifications: proto.Bool(true),
-			ExtendedAgentCard: proto.Bool(true),
+			Streaming:         new(true),
+			PushNotifications: new(true),
+			ExtendedAgentCard: new(true),
 			Extensions: []*a2apb.AgentExtension{
 				{Uri: "ext-uri", Description: "ext-desc", Required: true, Params: extParams},
 			},
@@ -895,7 +895,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Signatures: []*a2apb.AgentCardSignature{
 			{Protected: "abc", Signature: "def", Header: mustMakeProtoMetadata(t, map[string]any{"version": "1"})},
 		},
-		IconUrl: proto.String("https://icons.com/icon.png"),
+		IconUrl: new("https://icons.com/icon.png"),
 	}
 
 	tests := []struct {
