@@ -20,14 +20,23 @@ KID = "golden-ed25519-1"
 
 priv = Ed25519PrivateKey.from_private_bytes(SEED)
 
+# capabilities uses streaming=False and push_notifications=False so the golden
+# exercises the explicit-false case.
 card = types.AgentCard(
     name="Golden Agent",
     description="Cross-SDK golden vector agent.",
     version="1.0.0",
     provider=types.AgentProvider(organization="A2A", url="https://example.com"),
-    capabilities=types.AgentCapabilities(streaming=True, push_notifications=False),
+    capabilities=types.AgentCapabilities(streaming=False, push_notifications=False),
     default_input_modes=["text/plain"],
     default_output_modes=["text/plain"],
+    supported_interfaces=[
+        types.AgentInterface(
+            url="https://example.com/a2a",
+            protocol_binding="JSONRPC",
+            protocol_version="0.3.0",
+        )
+    ],
     skills=[
         types.AgentSkill(
             id="s1", name="Skill One", description="does a thing", tags=["x", "y"]

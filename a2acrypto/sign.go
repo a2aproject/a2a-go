@@ -26,66 +26,56 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-// SignatureSpec describes one key with which to sign an AgentCard. An empty
-// Algorithm is inferred from the key.
-type SignatureSpec struct {
-	PrivateKey crypto.Signer
-	KeyID      string
-	Algorithm  string
-	JWKSURL    string
-}
-
-// SignatureSpecResolver returns the keys a Signer should sign with.
-//
-// Resolve is called on every Sign, so returning a different set over time rotates
-// signing keys without restarting the server.
-type SignatureSpecResolver interface {
-	// ResolveSpec returns the specs to sign with right now. An empty slice signs nothing.
-	ResolveSpec(ctx context.Context) ([]SignatureSpec, error)
-}
-
-// SignatureSpecResolverFunc adapts a function to a [SignatureSpecResolver].
-type SignatureSpecResolverFunc func(ctx context.Context) ([]SignatureSpec, error)
-
-// ResolveSpec implements [SignatureSpecResolver].
-func (f SignatureSpecResolverFunc) ResolveSpec(ctx context.Context) ([]SignatureSpec, error) {
-	return f(ctx)
-}
-
-// FixedSignatureSpec returns a [SignatureSpecResolver] that always resolves to the given specs.
-func FixedSignatureSpec(specs ...SignatureSpec) SignatureSpecResolver {
-	fixed := append([]SignatureSpec(nil), specs...)
-	return SignatureSpecResolverFunc(func(context.Context) ([]SignatureSpec, error) {
-		return fixed, nil
-	})
-}
-
 // SignerConfig configures AgentCard signing.
 type SignerConfig struct {
-	KeyResolver SignatureSpecResolver
+	// PrivateKey is used to create a signature.
+	PrivateKey crypto.Signer
+	// KeyID is the kid in the signature header.
+	KeyID string
+	// Algorithm is alg in the signature header. Inferred from the private key if not provided.
+	Algorithm string
+	// JWKSURL is a jku in the signature header.
+	JWKSURL string
 }
 
 // Signer creates JWS signatures for AgentCards.
 type Signer struct {
-	pkr SignatureSpecResolver
+	key       crypto.Signer
+	hash      crypto.Hash
+	kid       string
+	algorithm string
+	jwksURL   string
 }
 
 // NewSigner creates a Signer using the provided configuration.
-func NewSigner(config SignerConfig) *Signer {
-	return &Signer{pkr: config.KeyResolver}
+func NewSigner(config SignerConfig) (*Signer, error) {
+	if config.Algorithm == "" {
+		alg, err := inferAlgorithm(config.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		config.Algorithm = alg
+	}
+	hash, err := algToHash(config.Algorithm)
+	if err != nil {
+		return nil, err
+	}
+	return &Signer{
+		key:       config.PrivateKey,
+		kid:       config.KeyID,
+		algorithm: config.Algorithm,
+		jwksURL:   config.JWKSURL,
+		hash:      hash,
+	}, nil
 }
 
 // Sign computes a JWS signature (RFC 7515) over an AgentCard's raw JSON for each
 // key currently resolved by the Signer's [SignatureSpecResolver], returning one
 // signature per key. The bytes are canonicalized as given (RFC 8785, excluding
 // the top-level signatures field).
-func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) ([]*a2a.AgentCardSignature, error) {
-	if s.pkr == nil {
-		return nil, fmt.Errorf("no private key resolver configured")
-	}
-	specs, err := s.pkr.ResolveSpec(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve signing keys: %w", err)
+func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) (*a2a.AgentCardSignature, error) {
+	if s.key == nil {
+		return nil, fmt.Errorf("nil private key")
 	}
 
 	payload, err := canonicalizeJSON(raw)
@@ -93,33 +83,13 @@ func (s *Signer) Sign(ctx context.Context, raw json.RawMessage) ([]*a2a.AgentCar
 		return nil, fmt.Errorf("failed to canonicalize agent card: %w", err)
 	}
 
-	sigs := make([]*a2a.AgentCardSignature, 0, len(specs))
-	for i, spec := range specs {
-		sig, err := signPayload(spec, payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign agent card with key %d: %w", i, err)
-		}
-		sigs = append(sigs, sig)
-	}
-	return sigs, nil
-}
-
-func signPayload(spec SignatureSpec, payload []byte) (*a2a.AgentCardSignature, error) {
-	if spec.PrivateKey == nil {
-		return nil, fmt.Errorf("nil private key")
-	}
-	alg := spec.Algorithm
-	if alg == "" {
-		alg = inferAlgorithm(spec.PrivateKey)
-	}
-
 	protected := map[string]any{
-		"alg": alg,
-		"kid": spec.KeyID,
+		"alg": s.algorithm,
+		"kid": s.kid,
 		"typ": "JOSE",
 	}
-	if spec.JWKSURL != "" {
-		protected["jku"] = spec.JWKSURL
+	if s.jwksURL != "" {
+		protected["jku"] = s.jwksURL
 	}
 
 	protectedJSON, err := json.Marshal(protected)
@@ -131,25 +101,20 @@ func signPayload(spec SignatureSpec, payload []byte) (*a2a.AgentCardSignature, e
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
 	signingInput := protectedB64 + "." + payloadB64
 
-	hash, err := algToHash(alg)
-	if err != nil {
-		return nil, err
-	}
-
 	var signature []byte
-	if hash == 0 {
-		signature, err = spec.PrivateKey.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
+	if s.hash == 0 {
+		signature, err = s.key.Sign(rand.Reader, []byte(signingInput), crypto.Hash(0))
 	} else {
-		h := hash.New()
+		h := s.hash.New()
 		h.Write([]byte(signingInput))
-		signature, err = spec.PrivateKey.Sign(rand.Reader, h.Sum(nil), hash)
+		signature, err = s.key.Sign(rand.Reader, h.Sum(nil), s.hash)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
 	}
 
 	// Convert ECDSA DER output to raw R||S for JWS compatibility.
-	if pub, ok := spec.PrivateKey.Public().(*ecdsa.PublicKey); ok {
+	if pub, ok := s.key.Public().(*ecdsa.PublicKey); ok {
 		signature, err = marshalECDSASignature(signature, pub.Curve)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert ECDSA signature: %w", err)

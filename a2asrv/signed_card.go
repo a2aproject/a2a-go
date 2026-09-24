@@ -23,20 +23,22 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 )
 
+// SignerResolverFunc is used for dynamic signer resolution.
+type SignerResolverFunc func(context.Context) ([]*a2acrypto.Signer, error)
+
 // NewSignedCardProducer wraps an AgentCardProducer to automatically sign every
 // produced AgentCard before returning it.
 //
-// The signer resolves its signing keys on every call, so keys can be rotated
-// without restarting the server: a card is signed once per currently-resolved
-// key, and each signature is added to the produced card. The card returned by
-// the wrapped producer is left unmodified.
-func NewSignedCardProducer(signer *a2acrypto.Signer, wrapped AgentCardProducer) AgentCardProducer {
-	return &signedCardProducer{signer: signer, wrapped: wrapped}
+// Signer are resolved on every call, so keys can be rotated without restarting the server:
+// a card is signed once per currently-resolved key, and each signature is added to the produced card.
+// The card returned by the wrapped producer is left unmodified.
+func NewSignedCardProducer(wrapped AgentCardProducer, sr SignerResolverFunc) AgentCardProducer {
+	return &signedCardProducer{signerResolver: sr, wrapped: wrapped}
 }
 
 type signedCardProducer struct {
-	signer  *a2acrypto.Signer
-	wrapped AgentCardProducer
+	signerResolver SignerResolverFunc
+	wrapped        AgentCardProducer
 }
 
 // Card implements [AgentCardProducer].
@@ -49,9 +51,17 @@ func (p *signedCardProducer) Card(ctx context.Context) (*a2a.AgentCard, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal agent card: %w", err)
 	}
-	sigs, err := p.signer.Sign(ctx, raw)
+	signers, err := p.signerResolver(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign agent card: %w", err)
+		return nil, fmt.Errorf("failed to resolve signers: %w", err)
+	}
+	var sigs []*a2a.AgentCardSignature
+	for i, signer := range signers {
+		sig, err := signer.Sign(ctx, raw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign agent card with key %d: %w", i, err)
+		}
+		sigs = append(sigs, sig)
 	}
 	cardCopy := *card
 	cardCopy.Signatures = append([]a2a.AgentCardSignature(nil), card.Signatures...)

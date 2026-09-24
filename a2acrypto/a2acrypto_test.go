@@ -20,6 +20,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"testing"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 // testdata/golden.json is produced by the a2a-python reference SDK.
@@ -48,10 +50,8 @@ func TestGoldenSignMatchesReference(t *testing.T) {
 	}
 	key := ed25519.NewKeyFromSeed(seed)
 
-	signer := NewSigner(SignerConfig{KeyResolver: FixedSignatureSpec(
-		SignatureSpec{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"},
-	)})
-	sig := signOne(t, signer, g.CardJSON)
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"})
+	sig := mustSign(t, signer, g.CardJSON)
 	if sig.Protected != g.ProtectedB64 {
 		t.Errorf("Sign() protected = %s, want %s", sig.Protected, g.ProtectedB64)
 	}
@@ -62,5 +62,34 @@ func TestGoldenSignMatchesReference(t *testing.T) {
 	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, g.CardJSON, sig); err != nil {
 		t.Errorf("Verify() error = %v, want nil", err)
+	}
+}
+
+func TestGoldenServerCardMatchesReference(t *testing.T) {
+	t.Parallel()
+
+	var g golden
+	if err := json.Unmarshal(goldenJSON, &g); err != nil {
+		t.Fatalf("parse golden.json: %v", err)
+	}
+	seed, err := hex.DecodeString(g.SeedHex)
+	if err != nil {
+		t.Fatalf("seed hex: %v", err)
+	}
+	key := ed25519.NewKeyFromSeed(seed)
+
+	var card a2a.AgentCard
+	if err := json.Unmarshal(g.CardJSON, &card); err != nil {
+		t.Fatalf("unmarshal card: %v", err)
+	}
+	raw, err := json.Marshal(&card)
+	if err != nil {
+		t.Fatalf("marshal card: %v", err)
+	}
+
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: g.Kid, Algorithm: "EdDSA"})
+	sig := mustSign(t, signer, raw)
+	if sig.Signature != g.SignatureB64 {
+		t.Errorf("server card signature = %s, want %s", sig.Signature, g.SignatureB64)
 	}
 }

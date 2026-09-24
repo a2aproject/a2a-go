@@ -4,13 +4,20 @@
   "card_json_unsigned": {
     "name": "Golden Agent",
     "description": "Cross-SDK golden vector agent.",
+    "supportedInterfaces": [
+      {
+        "url": "https://example.com/a2a",
+        "protocolBinding": "JSONRPC",
+        "protocolVersion": "0.3.0"
+      }
+    ],
     "provider": {
       "url": "https://example.com",
       "organization": "A2A"
     },
     "version": "1.0.0",
     "capabilities": {
-      "streaming": true,
+      "streaming": false,
       "pushNotifications": false
     },
     "defaultInputModes": [
@@ -32,5 +39,5 @@
     ]
   },
   "protected_b64": "eyJhbGciOiJFZERTQSIsImtpZCI6ImdvbGRlbi1lZDI1NTE5LTEiLCJ0eXAiOiJKT1NFIn0",
-  "signature_b64": "xyFn-PK5oE7j9ksrOpBLyzB33d0rC72rthVbTFX1ubVvuNdcn_mWO-5TNY_b2k3o8VpARYkzTPSIA1K1WvbbAw"
+  "signature_b64": "Qg-XC-eai-ciwJK-I26pFjM1tm33xGrG0nSgHRX3thxqXuOg__BLo2U1UYVcCAAP-pw_ds-7lNYOhDvHBTBCBg"
 }

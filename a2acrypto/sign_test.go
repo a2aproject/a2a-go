@@ -35,10 +35,10 @@ func TestSignAndVerifyES256(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "test-kid", Algorithm: "ES256"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "test-kid", Algorithm: "ES256"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig := signOne(t, signer, card)
+	sig := mustSign(t, signer, card)
 	if sig.Protected == "" {
 		t.Error("signature protected header is empty")
 	}
@@ -57,9 +57,9 @@ func TestSignAndVerify_tampered_card_fails(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
 
-	sig := signOne(t, signer, mustMarshalCard(t, makeTestCard()))
+	sig := mustSign(t, signer, mustMarshalCard(t, makeTestCard()))
 
 	tampered := makeTestCard()
 	tampered.Name = "Evil Agent"
@@ -75,10 +75,10 @@ func TestSignAlgorithmInference(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig := signOne(t, signer, card)
+	sig := mustSign(t, signer, card)
 
 	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, card, sig); err != nil {
@@ -106,10 +106,10 @@ func TestSignAndVerifyEd25519(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
 	}
-	signer := staticSigner(SignatureSpec{PrivateKey: priv, KeyID: "ed25519-kid"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: priv, KeyID: "ed25519-kid"})
 
 	card := mustMarshalCard(t, makeTestCard())
-	sig := signOne(t, signer, card)
+	sig := mustSign(t, signer, card)
 
 	verifier := staticVerifier(pub)
 	if err := verifier.Verify(ctx, card, sig); err != nil {
@@ -122,13 +122,13 @@ func TestSign_excludes_signatures_from_payload(t *testing.T) {
 	ctx := t.Context()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
 
 	card := makeTestCard()
 	card.Signatures = []a2a.AgentCardSignature{{Protected: "existing", Signature: "sig"}}
 	raw := mustMarshalCard(t, card)
 
-	sig := signOne(t, signer, raw)
+	sig := mustSign(t, signer, raw)
 
 	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, raw, sig); err != nil {
@@ -140,9 +140,9 @@ func TestSign_protected_header_has_typ(t *testing.T) {
 	t.Parallel()
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
 
-	sig := signOne(t, signer, mustMarshalCard(t, makeTestCard()))
+	sig := mustSign(t, signer, mustMarshalCard(t, makeTestCard()))
 
 	protectedJSON, err := base64.RawURLEncoding.DecodeString(sig.Protected)
 	if err != nil {
@@ -180,8 +180,8 @@ func TestCanonical_U2028_U2029_literal(t *testing.T) {
 	}
 
 	key := mustGenerateECDSAP256Key(t)
-	signer := staticSigner(SignatureSpec{PrivateKey: key, KeyID: "kid"})
-	sig := signOne(t, signer, raw)
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
+	sig := mustSign(t, signer, raw)
 	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, raw, sig); err != nil {
 		t.Fatalf("Verify() with U+2028/U+2029 error = %v", err)
@@ -280,18 +280,20 @@ func staticVerifier(pub crypto.PublicKey) *Verifier {
 	})})
 }
 
-func staticSigner(spec SignatureSpec) *Signer {
-	return NewSigner(SignerConfig{KeyResolver: FixedSignatureSpec(spec)})
+func mustNewSigner(t *testing.T, cfg SignerConfig) *Signer {
+	t.Helper()
+	sig, err := NewSigner(cfg)
+	if err != nil {
+		t.Fatalf("NewSigner() error = %v, want nil", err)
+	}
+	return sig
 }
 
-func signOne(t *testing.T, signer *Signer, raw json.RawMessage) *a2a.AgentCardSignature {
+func mustSign(t *testing.T, signer *Signer, raw json.RawMessage) *a2a.AgentCardSignature {
 	t.Helper()
-	sigs, err := signer.Sign(t.Context(), raw)
+	sig, err := signer.Sign(t.Context(), raw)
 	if err != nil {
 		t.Fatalf("Sign() error = %v, want nil", err)
 	}
-	if len(sigs) != 1 {
-		t.Fatalf("Sign() = %d signatures, want 1", len(sigs))
-	}
-	return sigs[0]
+	return sig
 }

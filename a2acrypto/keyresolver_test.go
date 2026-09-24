@@ -71,8 +71,8 @@ func TestJWKSKeyResolverVerifiesSignedCard(t *testing.T) {
 	srv := jwksServer(t, ed25519JWKS("k1", pub))
 
 	raw := mustMarshalCard(t, makeTestCard())
-	signer := staticSigner(SignatureSpec{PrivateKey: priv, KeyID: "k1", JWKSURL: srv.URL})
-	sig := signOne(t, signer, raw)
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: priv, KeyID: "k1", JWKSURL: srv.URL})
+	sig := mustSign(t, signer, raw)
 
 	resolver := NewJWKSKeyResolver(srv.Client(), []string{srv.URL})
 	if err := NewVerifier(VerifierConfig{KeyResolver: resolver}).Verify(t.Context(), raw, sig); err != nil {
