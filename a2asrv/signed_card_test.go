@@ -64,6 +64,9 @@ func TestSignedCardProducerKeepsExistingSignatures(t *testing.T) {
 	card := newTestAgentCard()
 	existingSigner, existingVerifier := newSignerVerifierPair(t, "kid-existing")
 	signature, err := existingSigner.Sign(t.Context(), mustMarshalCard(t, card))
+	if err != nil {
+		t.Fatalf("existingSigner.Sign() error = %v", err)
+	}
 	card.Signatures = []a2a.AgentCardSignature{*signature}
 
 	addedSigner, addedVerifier := newSignerVerifierPair(t, "kid-added")
