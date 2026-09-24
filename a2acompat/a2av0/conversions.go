@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -670,7 +669,7 @@ func FromV1SendMessageRequest(req *a2a.SendMessageRequest) *a2alegacy.MessageSen
 			AcceptedOutputModes: req.Config.AcceptedOutputModes,
 			HistoryLength:       req.Config.HistoryLength,
 		}
-		res.Config.Blocking = utils.Ptr(!req.Config.ReturnImmediately)
+		res.Config.Blocking = new(!req.Config.ReturnImmediately)
 		if req.Config.PushConfig != nil {
 			legacyTaskPushConfig := FromV1PushConfig(req.Config.PushConfig)
 			res.Config.PushConfig = &legacyTaskPushConfig.Config
