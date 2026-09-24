@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/google/go-cmp/cmp"
@@ -115,6 +116,57 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 
 	if diff := cmp.Diff(listTasksResult, wantResult); diff != "" {
 		t.Errorf("ListTasks() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
+	t.Parallel()
+
+	cutoff := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	historyLength := 7
+	var gotQuery url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/tasks" {
+			t.Errorf("expected path /tasks, got %s", r.URL.Path)
+		}
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tasks":[]}`))
+	}))
+	defer server.Close()
+
+	transport := newRESTTransport(t, server)
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{
+		ContextID:            "ctx-999",
+		Status:               a2a.TaskStateWorking,
+		PageSize:             25,
+		PageToken:            "next-page",
+		HistoryLength:        &historyLength,
+		StatusTimestampAfter: &cutoff,
+		IncludeArtifacts:     true,
+	})
+	if err != nil {
+		t.Fatalf("ListTasks() error = %v, want nil", err)
+	}
+
+	want := url.Values{
+		"contextId":            []string{"ctx-999"},
+		"status":               []string{string(a2a.TaskStateWorking)},
+		"pageSize":             []string{"25"},
+		"pageToken":            []string{"next-page"},
+		"historyLength":        []string{"7"},
+		"statusTimestampAfter": []string{cutoff.Format(time.RFC3339)},
+		"includeArtifacts":     []string{"true"},
+	}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+	if got := gotQuery.Get("lastUpdatedAfter"); got != "" {
+		t.Fatalf("ListTasks() lastUpdatedAfter = %q, want empty", got)
 	}
 }
 
