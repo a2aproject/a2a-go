@@ -25,113 +25,164 @@ import (
 )
 
 // ApplyUpdate returns a new [a2a.Task] produced by applying the event to the provided task.
-// The input task is never modified.
+// The input task is never modified, the output task does not share any mutable structs with inputs.
 func ApplyUpdate(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
-	if _, ok := event.(*a2a.Message); ok {
-		return nil, fmt.Errorf("message cannot be applied to the task state")
-	}
-
-	if task.Status.State.Terminal() {
-		return nil, fmt.Errorf("%q task state updates are not allowed", task.Status.State)
-	}
-
-	if err := validateSameTask(task, event); err != nil {
+	if err := validateUpdate(task, event); err != nil {
 		return nil, err
 	}
-
 	if v, ok := event.(*a2a.Task); ok {
-		return utils.DeepCopy(v)
+		copy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return copy, nil
+	}
+
+	taskCopy, err := utils.DeepCopy(task)
+	if err != nil {
+		return nil, err
 	}
 
 	switch v := event.(type) {
 	case *a2a.TaskArtifactUpdateEvent:
-		return applyArtifactUpdate(task, v)
+		eventCopy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return applyShallowArtifactUpdate(taskCopy, eventCopy)
+
 	case *a2a.TaskStatusUpdateEvent:
-		return applyStatusUpdate(task, v)
+		eventCopy, err := utils.DeepCopy(v)
+		if err != nil {
+			return nil, err
+		}
+		return applyShallowStatusUpdate(taskCopy, eventCopy), nil
+
+	default:
+		return nil, fmt.Errorf("unexpected event type %T", v)
+	}
+}
+
+// ApplyShallowUpdate returns a new [a2a.Task] produced by applying the event to the provided task.
+// The input task is never modified. The output task shares mutable structs with inputs.
+func ApplyShallowUpdate(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
+	if err := validateUpdate(task, event); err != nil {
+		return nil, err
+	}
+	if v, ok := event.(*a2a.Task); ok {
+		shallow := *v
+		return &shallow, nil
+	}
+	switch v := event.(type) {
+	case *a2a.TaskArtifactUpdateEvent:
+		return applyShallowArtifactUpdate(task, v)
+	case *a2a.TaskStatusUpdateEvent:
+		return applyShallowStatusUpdate(task, v), nil
 	default:
 		return nil, fmt.Errorf("unexpected event type %T", v)
 	}
 }
 
 // ApplyArtifactUpdate returns a new [a2a.Task] with the event's artifact applied to the provided task.
-// The input task is never modified.
-func ApplyArtifactUpdate(base *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
-	if err := validateSameTask(base, event); err != nil {
+func ApplyArtifactUpdate(task *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
+	if err := validateUpdate(task, event); err != nil {
 		return nil, err
 	}
-	return applyArtifactUpdate(base, event)
+	taskCopy, err := utils.DeepCopy(task)
+	if err != nil {
+		return nil, err
+	}
+	eventCopy, err := utils.DeepCopy(event)
+	if err != nil {
+		return nil, err
+	}
+	return applyShallowArtifactUpdate(taskCopy, eventCopy)
 }
 
 // ApplyStatusUpdate returns a new [a2a.Task] with the event's status applied to a copy of base.
-// The input task is never modified.
-func ApplyStatusUpdate(base *a2a.Task, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
-	if err := validateSameTask(base, event); err != nil {
+func ApplyStatusUpdate(task *a2a.Task, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
+	if err := validateUpdate(task, event); err != nil {
 		return nil, err
 	}
-	return applyStatusUpdate(base, event)
+	taskCopy, err := utils.DeepCopy(task)
+	if err != nil {
+		return nil, err
+	}
+	eventCopy, err := utils.DeepCopy(event)
+	if err != nil {
+		return nil, err
+	}
+	return applyShallowStatusUpdate(taskCopy, eventCopy), nil
 }
 
-func applyArtifactUpdate(base *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
+func applyShallowArtifactUpdate(src *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
 	if len(event.Artifact.Parts) == 0 {
 		return nil, fmt.Errorf("artifact cannot be empty")
 	}
 
-	task, err := utils.DeepCopy(base)
-	if err != nil {
-		return nil, err
-	}
+	task := *src
 
-	artifact, err := utils.DeepCopy(event.Artifact)
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy artifact: %w", err)
-	}
-
+	artifact := event.Artifact
 	updateIdx := slices.IndexFunc(task.Artifacts, func(a *a2a.Artifact) bool {
 		return a.ID == artifact.ID
 	})
+	if updateIdx < 0 && event.Append {
+		return nil, fmt.Errorf("no artifact found for update")
+	}
+	task.Artifacts = slices.Clone(src.Artifacts)
 
 	if updateIdx < 0 {
-		if event.Append {
-			return nil, fmt.Errorf("no artifact found for update")
-		}
 		task.Artifacts = append(task.Artifacts, artifact)
-		return task, nil
+		return &task, nil
 	}
 
 	if !event.Append {
 		task.Artifacts[updateIdx] = artifact
-		return task, nil
+		return &task, nil
 	}
 
-	toUpdate := task.Artifacts[updateIdx]
+	toUpdate := *task.Artifacts[updateIdx]
+	toUpdate.Parts = slices.Clone(toUpdate.Parts)
 	toUpdate.Parts = append(toUpdate.Parts, artifact.Parts...)
-	if toUpdate.Metadata == nil && artifact.Metadata != nil {
-		toUpdate.Metadata = make(map[string]any, len(artifact.Metadata))
+	task.Artifacts[updateIdx] = &toUpdate
+
+	if artifact.Metadata != nil {
+		if toUpdate.Metadata == nil {
+			toUpdate.Metadata = make(map[string]any, len(artifact.Metadata))
+		} else {
+			toUpdate.Metadata = maps.Clone(toUpdate.Metadata)
+		}
+		maps.Copy(toUpdate.Metadata, artifact.Metadata)
 	}
-	maps.Copy(toUpdate.Metadata, artifact.Metadata)
-	return task, nil
+	return &task, nil
 }
 
-func applyStatusUpdate(base *a2a.Task, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
-	task, err := utils.DeepCopy(base)
-	if err != nil {
-		return nil, err
-	}
+func applyShallowStatusUpdate(src *a2a.Task, event *a2a.TaskStatusUpdateEvent) *a2a.Task {
+	task := *src
 	if task.Status.Message != nil {
+		task.History = slices.Clone(src.History)
 		task.History = append(task.History, task.Status.Message)
 	}
 	if event.Metadata != nil {
 		if task.Metadata == nil {
-			task.Metadata = make(map[string]any)
+			task.Metadata = make(map[string]any, len(event.Metadata))
+		} else {
+			task.Metadata = maps.Clone(src.Metadata)
 		}
 		maps.Copy(task.Metadata, event.Metadata)
 	}
 	task.Status = event.Status
-	return task, nil
+	return &task
 }
 
-func validateSameTask(tip1 a2a.TaskInfoProvider, tip2 a2a.TaskInfoProvider) error {
-	ti1, ti2 := tip1.TaskInfo(), tip2.TaskInfo()
+func validateUpdate(task *a2a.Task, event a2a.Event) error {
+	if _, ok := event.(*a2a.Message); ok {
+		return fmt.Errorf("message cannot be applied to the task state")
+	}
+	if task.Status.State.Terminal() {
+		return fmt.Errorf("%q task state updates are not allowed", task.Status.State)
+	}
+	ti1, ti2 := task.TaskInfo(), event.TaskInfo()
 	if ti1.TaskID != ti2.TaskID {
 		return fmt.Errorf("task IDs don't match: %s != %s", ti1.TaskID, ti2.TaskID)
 	}
@@ -139,4 +190,23 @@ func validateSameTask(tip1 a2a.TaskInfoProvider, tip2 a2a.TaskInfoProvider) erro
 		return fmt.Errorf("context IDs don't match: %s != %s", ti1.ContextID, ti2.ContextID)
 	}
 	return nil
+}
+
+// IsFinal returns true for events which end the agent execution.
+func IsFinal(event a2a.Event) bool {
+	if _, ok := event.(*a2a.Message); ok {
+		return true
+	}
+
+	var state a2a.TaskState
+	switch v := event.(type) {
+	case *a2a.TaskStatusUpdateEvent:
+		state = v.Status.State
+	case *a2a.Task:
+		state = v.Status.State
+	default:
+		return false
+	}
+
+	return state.Terminal() || state == a2a.TaskStateInputRequired
 }

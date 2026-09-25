@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
@@ -152,6 +153,7 @@ type factory struct {
 	agent              AgentExecutor
 	interceptors       []ExecutorContextInterceptor
 	taskRetrySupported bool
+	materializer       taskstore.UpdateMaterializer
 }
 
 var _ taskexec.Factory = (*factory)(nil)
@@ -178,9 +180,13 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		}
 	}
 
+	updateManager, err := taskupdate.NewManager(f.taskStore, execCtx.ctx.TaskInfo(), execCtx.task, f.materializer)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
+	}
 	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors}
 	processor := newProcessor(
-		taskupdate.NewManager(f.taskStore, execCtx.ctx.TaskInfo(), execCtx.task),
+		updateManager,
 		f.pushConfigStore,
 		f.pushSender,
 		execCtx.ctx,
@@ -302,7 +308,11 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	}
 
 	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}
-	updateManager := taskupdate.NewManager(f.taskStore, execCtx.TaskInfo(), &taskstore.StoredTask{Task: task, Version: version})
+	// the canceler writes the task owned by the manager if it was already canceled, which the manager accepts as idempotent
+	updateManager, err := taskupdate.NewManager(f.taskStore, execCtx.TaskInfo(), &taskstore.StoredTask{Task: task, Version: version}, f.materializer)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
+	}
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx, f.taskStore)
 	return canceler, processor, &cleaner{agent: f.agent, execCtx: execCtx}, nil
 }
@@ -424,7 +434,7 @@ func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore,
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
-	versioned, processingErr := p.updateManager.Process(ctx, event)
+	version, processingErr := p.updateManager.Process(ctx, event)
 
 	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {
 		log.Debug(ctx, "occ conflict detected, reloading task")
@@ -448,7 +458,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	}
 
 	if processingErr != nil {
-		return p.setTaskFailed(ctx, event, processingErr)
+		return p.setTaskFailed(ctx, processingErr)
 	}
 
 	if msg, ok := event.(*a2a.Message); ok {
@@ -459,13 +469,15 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	}
 
 	if err := p.sendPushNotifications(ctx, event); err != nil {
-		return p.setTaskFailed(ctx, event, err)
+		return p.setTaskFailed(ctx, err)
 	}
 
-	task := versioned.Task
-	result := &taskexec.ProcessorResult{TaskVersion: versioned.Version}
-	if taskupdate.IsFinal(event) {
-		result.ExecutionResult = task
+	if !a2aevent.IsFinal(event) {
+		return &taskexec.ProcessorResult{TaskVersion: version}, nil
+	}
+	result, err := p.loadResult(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load result: %w", err)
 	}
 	return result, nil
 }
@@ -473,30 +485,46 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
-	versioned, err := p.updateManager.SetTaskFailed(ctx, nil, cause)
-	if err != nil {
+	if err := p.updateManager.SetTaskFailed(ctx); err != nil {
 		return nil, err
+	}
+
+	result, err := p.loadResult(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("set failed result: %w: %w", err, cause)
 	}
 
 	log.Warn(ctx, "task moved to failed state due to an error", "cause", cause)
 
-	return versioned.Task, nil
+	return result.ExecutionResult, nil
 }
 
-func (p *processor) setTaskFailed(ctx context.Context, event a2a.Event, cause error) (*taskexec.ProcessorResult, error) {
-	versioned, err := p.updateManager.SetTaskFailed(ctx, event, cause)
+func (p *processor) setTaskFailed(ctx context.Context, cause error) (*taskexec.ProcessorResult, error) {
+	if err := p.updateManager.SetTaskFailed(ctx); err != nil {
+		return nil, fmt.Errorf("set failed: %w: %w", err, cause)
+	}
+
+	result, err := p.loadResult(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("set failed result: %w: %w", err, cause)
 	}
 
 	log.Warn(ctx, "task moved to failed state due to a processor error", "cause", cause)
 
-	return &taskexec.ProcessorResult{
-		ExecutionResult:       versioned.Task,
-		EventOverride:         versioned.Task,
-		TaskVersion:           versioned.Version,
-		ExecutionFailureCause: cause,
-	}, nil
+	result.EventOverride = result.ExecutionResult
+	result.ExecutionFailureCause = cause
+	return result, nil
+}
+
+func (p *processor) loadResult(ctx context.Context) (*taskexec.ProcessorResult, error) {
+	if stored, ok := p.updateManager.InMemorySnapshot(); ok {
+		return &taskexec.ProcessorResult{ExecutionResult: stored.Task, TaskVersion: stored.Version}, nil
+	}
+	stored, err := p.store.Get(ctx, p.execCtx.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	return &taskexec.ProcessorResult{ExecutionResult: stored.Task, TaskVersion: stored.Version}, nil
 }
 
 func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) error {

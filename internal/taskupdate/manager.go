@@ -30,167 +30,188 @@ const maxCancelationAttempts = 10
 // Manager is used for processing [a2a.Event] related to an [a2a.Task]. It updates
 // the Task accordingly and uses [taskstore.Store] to store the new state.
 type Manager struct {
-	taskInfo   a2a.TaskInfo
-	lastStored *taskstore.StoredTask
-	store      taskstore.Store
+	taskInfo     a2a.TaskInfo
+	store        taskstore.Store
+	materializer taskstore.UpdateMaterializer
+	initTask     *taskstore.StoredTask
+
+	// tracked is the state produced by the materializer. It can be shared with the store and event subscribers,
+	// so it must never be modified in place.
+	tracked *a2a.Task
+	// state is tracked separately, because custom materializers are not required to track it.
+	state a2a.TaskState
+	// version is the last known stored version.
+	version taskstore.TaskVersion
 }
 
-// NewManager is a [Manager] constructor function.
-func NewManager(store taskstore.Store, info a2a.TaskInfo, task *taskstore.StoredTask) *Manager {
-	return &Manager{
-		taskInfo:   info,
-		lastStored: task,
-		store:      store,
+// NewManager is a [Manager] constructor function. A full [taskstore.UpdateMaterializer] backed by
+// [a2aevent.ApplyShallowUpdate] is used if m is nil.
+func NewManager(store taskstore.Store, info a2a.TaskInfo, task *taskstore.StoredTask, m taskstore.UpdateMaterializer) (*Manager, error) {
+	mgr := &Manager{taskInfo: info, store: store, materializer: m, initTask: task}
+	if mgr.materializer == nil {
+		mgr.materializer = taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)
 	}
+	if task != nil {
+		copy, err := utils.DeepCopy(task.Task)
+		if err != nil {
+			return nil, err
+		}
+		mgr.track(copy, task.Version, copy.Status.State)
+	}
+	return mgr, nil
 }
 
-// SetTaskFailed attempts to move the Task to failed state and returns it in case of a success.
-func (mgr *Manager) SetTaskFailed(ctx context.Context, event a2a.Event, cause error) (*taskstore.StoredTask, error) {
-	if mgr.lastStored == nil {
-		return nil, fmt.Errorf("execution failed before a task was created: %w", cause)
+// InMemorySnapshot returns the latest materialized task state if update manager has it.
+func (mgr *Manager) InMemorySnapshot() (*taskstore.StoredTask, bool) {
+	if mgr.tracked != nil && mgr.materializer.ReturnsFullSnapshot() {
+		return &taskstore.StoredTask{Task: mgr.tracked, Version: mgr.version}, true
 	}
+	return nil, false
+}
 
-	task := *mgr.lastStored.Task // copy to update task status
-
-	// do not store cause.Error() as part of status to not disclose the cause to clients
-	task.Status = a2a.TaskStatus{State: a2a.TaskStateFailed}
-
-	if _, err := mgr.saveTask(ctx, &task, event); err != nil {
-		return nil, fmt.Errorf("failed to store failed task state: %w: %w", err, cause)
+// SetTaskFailed attempts to move the Task to failed state and returns the version of the stored task.
+// The store receives a synthesized failed [a2a.TaskStatusUpdateEvent], so that stores which derive
+// the task state from events record the failure.
+func (mgr *Manager) SetTaskFailed(ctx context.Context) error {
+	if mgr.tracked == nil {
+		return fmt.Errorf("execution failed before a task was created")
 	}
-
-	return mgr.lastStored, nil
+	_, err := mgr.apply(ctx, a2a.NewStatusUpdateEvent(mgr.taskInfo, a2a.TaskStateFailed, nil))
+	return err
 }
 
 // Process validates the event associated with the managed [a2a.Task] and integrates the new state into it.
-func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (*taskstore.StoredTask, error) {
+func (mgr *Manager) Process(ctx context.Context, event a2a.Event) (taskstore.TaskVersion, error) {
 	if _, ok := event.(*a2a.Message); ok {
-		if mgr.lastStored != nil {
-			return nil, fmt.Errorf("message not allowed after task was stored: %w", a2a.ErrInvalidAgentResponse)
+		if mgr.tracked != nil {
+			return taskstore.TaskVersionMissing, fmt.Errorf("message not allowed after task was stored: %w", a2a.ErrInvalidAgentResponse)
 		}
-		return nil, nil
+		return taskstore.TaskVersionMissing, nil
 	}
 
-	if mgr.lastStored != nil && mgr.lastStored.Task.Status.State.Terminal() {
-		if mgr.lastStored.Task == event { // idempotency for the final task state
-			return mgr.lastStored, nil
+	if mgr.state.Terminal() {
+		if v, ok := event.(*a2a.Task); ok {
+			if mgr.initTask != nil && v == mgr.initTask.Task {
+				return mgr.version, nil
+			}
 		}
-		return nil, fmt.Errorf("%q task state updates are not allowed: %w", mgr.lastStored.Task.Status.State, a2a.ErrInvalidAgentResponse)
+		return taskstore.TaskVersionMissing, fmt.Errorf("%q task state updates are not allowed: %w", mgr.state, a2a.ErrInvalidAgentResponse)
 	}
 
 	if v, ok := event.(*a2a.Task); ok {
 		if err := mgr.validate(v); err != nil {
-			return nil, err
+			return taskstore.TaskVersionMissing, err
 		}
-		copy, err := utils.DeepCopy(v)
-		if err != nil {
-			return nil, err
+		if mgr.tracked == nil {
+			return mgr.create(ctx, v)
 		}
-		return mgr.saveTask(ctx, copy, event)
-	}
-
-	if mgr.lastStored == nil {
-		return nil, fmt.Errorf("first event must be a Task or a message: %w", a2a.ErrInvalidAgentResponse)
+		return mgr.apply(ctx, event)
 	}
 
 	switch v := event.(type) {
 	case *a2a.TaskArtifactUpdateEvent:
 		if err := mgr.validate(v); err != nil {
-			return nil, err
+			return taskstore.TaskVersionMissing, err
 		}
 		if len(v.Artifact.Parts) == 0 {
-			return nil, fmt.Errorf("artifact cannot be empty: %w", a2a.ErrInvalidAgentResponse)
+			return taskstore.TaskVersionMissing, fmt.Errorf("artifact cannot be empty: %w", a2a.ErrInvalidAgentResponse)
 		}
-		return mgr.updateArtifact(ctx, v)
+		return mgr.apply(ctx, v)
 
 	case *a2a.TaskStatusUpdateEvent:
 		if err := mgr.validate(v); err != nil {
-			return nil, err
+			return taskstore.TaskVersionMissing, err
 		}
 		return mgr.updateStatus(ctx, v)
 
 	default:
-		return nil, fmt.Errorf("unexpected event type %T", v)
+		return taskstore.TaskVersionMissing, fmt.Errorf("unexpected event type %T", v)
 	}
 }
 
-func (mgr *Manager) updateArtifact(ctx context.Context, event *a2a.TaskArtifactUpdateEvent) (*taskstore.StoredTask, error) {
-	updatedTask, err := a2aevent.ApplyArtifactUpdate(mgr.lastStored.Task, event)
-	if err != nil {
-		return nil, err
-	}
-	return mgr.saveTask(ctx, updatedTask, event)
-}
-
-func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (*taskstore.StoredTask, error) {
-	lastStored := mgr.lastStored
-
+func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdateEvent) (taskstore.TaskVersion, error) {
 	for range maxCancelationAttempts {
-		task, err := a2aevent.ApplyStatusUpdate(lastStored.Task, event)
-		if err != nil {
-			return nil, err
-		}
-
-		vt, err := mgr.saveVersionedTask(ctx, task, event, lastStored.Version)
+		version, err := mgr.apply(ctx, event)
 		if err == nil {
-			return vt, nil
+			return version, nil
 		}
 
 		if !errors.Is(err, taskstore.ErrConcurrentModification) || event.Status.State != a2a.TaskStateCanceled {
-			return nil, err
+			return taskstore.TaskVersionMissing, err
 		}
 
 		storedTask, getErr := mgr.store.Get(ctx, event.TaskID)
 		if getErr != nil {
-			return nil, fmt.Errorf("failed to get task: %w", getErr)
+			return taskstore.TaskVersionMissing, fmt.Errorf("failed to get task: %w", getErr)
 		}
+
+		if storedTask.Task.Status.State.Terminal() && storedTask.Task.Status.State != a2a.TaskStateCanceled {
+			return taskstore.TaskVersionMissing, fmt.Errorf("task moved to %q before it could be cancelled: %w", storedTask.Task.Status.State, taskstore.ErrConcurrentModification)
+		}
+
+		mgr.track(storedTask.Task, storedTask.Version, storedTask.Task.Status.State)
 
 		if storedTask.Task.Status.State == a2a.TaskStateCanceled {
-			mgr.lastStored = storedTask
-			return mgr.lastStored, nil
+			return mgr.version, nil
 		}
-
-		if storedTask.Task.Status.State.Terminal() {
-			return nil, fmt.Errorf("task moved to %q before it could be cancelled: %w", storedTask.Task.Status.State, taskstore.ErrConcurrentModification)
-		}
-
-		lastStored = storedTask
 	}
 
-	return nil, fmt.Errorf("max task cancelation attempts reached")
+	return taskstore.TaskVersionMissing, fmt.Errorf("max task cancelation attempts reached")
 }
 
-func (mgr *Manager) saveTask(ctx context.Context, task *a2a.Task, event a2a.Event) (*taskstore.StoredTask, error) {
-	version := taskstore.TaskVersionMissing
-	if mgr.lastStored != nil {
-		version = mgr.lastStored.Version
+func (mgr *Manager) create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+	created, err := utils.DeepCopy(task)
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to copy task: %w", err)
 	}
-	return mgr.saveVersionedTask(ctx, task, event, version)
+	version, err := mgr.store.Create(ctx, created)
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to create task: %w", err)
+	}
+	mgr.track(created, version, created.Status.State)
+	return version, nil
 }
 
-func (mgr *Manager) saveVersionedTask(ctx context.Context, task *a2a.Task, event a2a.Event, prevVersion taskstore.TaskVersion) (*taskstore.StoredTask, error) {
-	var version taskstore.TaskVersion
-	var err error
-	if mgr.lastStored == nil {
-		version, err = mgr.store.Create(ctx, task)
-	} else {
-		version, err = mgr.store.Update(ctx, &taskstore.UpdateRequest{
-			Task:        task,
-			Event:       event,
-			PrevVersion: prevVersion,
-		})
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to save task state: %w", err)
+func (mgr *Manager) apply(ctx context.Context, event a2a.Event) (taskstore.TaskVersion, error) {
+	if mgr.tracked == nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("first event must be a Task or a message: %w", a2a.ErrInvalidAgentResponse)
 	}
 
-	mgr.lastStored = &taskstore.StoredTask{Task: task, Version: version}
-
-	result, err := utils.DeepCopy(mgr.lastStored)
+	prevTask := mgr.tracked
+	task, err := mgr.materializer.ApplyUpdate(ctx, prevTask, event)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a result: %w", err)
+		return taskstore.TaskVersionMissing, fmt.Errorf("apply event: %w", err)
 	}
-	return result, nil
+	if task == nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("bug: task materializer returned nil task for %T", event)
+	}
+
+	version, err := mgr.store.Update(ctx, &taskstore.UpdateRequest{
+		Task:        task,
+		Event:       event,
+		PrevTask:    prevTask,
+		PrevVersion: mgr.version,
+	})
+	if err != nil {
+		return taskstore.TaskVersionMissing, fmt.Errorf("failed to save task state: %w", err)
+	}
+
+	state := mgr.state
+	switch v := event.(type) {
+	case *a2a.Task:
+		state = v.Status.State
+	case *a2a.TaskStatusUpdateEvent:
+		state = v.Status.State
+	}
+	mgr.track(task, version, state)
+
+	return version, nil
+}
+
+func (mgr *Manager) track(t *a2a.Task, v taskstore.TaskVersion, state a2a.TaskState) {
+	mgr.tracked = t
+	mgr.version = v
+	mgr.state = state
 }
 
 func (mgr *Manager) validate(provider a2a.TaskInfoProvider) error {

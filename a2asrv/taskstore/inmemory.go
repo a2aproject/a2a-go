@@ -17,7 +17,6 @@ package taskstore
 import (
 	"context"
 	"encoding/base64"
-	"encoding/gob"
 	"fmt"
 	"slices"
 	"sort"
@@ -55,11 +54,6 @@ type InMemory struct {
 }
 
 var _ Store = (*InMemory)(nil)
-
-func init() {
-	gob.Register(map[string]any{})
-	gob.Register([]any{})
-}
 
 // NewInMemory creates an empty [InMemory] store.
 func NewInMemory(config *InMemoryStoreConfig) *InMemory {

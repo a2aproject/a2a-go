@@ -25,6 +25,14 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+var modes = []struct {
+	suffix      string
+	applyUpdate func(*a2a.Task, a2a.Event) (*a2a.Task, error)
+}{
+	{suffix: "", applyUpdate: a2aevent.ApplyUpdate},
+	{suffix: "_shallow", applyUpdate: a2aevent.ApplyShallowUpdate},
+}
+
 func TestApplyUpdate(t *testing.T) {
 	t.Parallel()
 	tip, ti := newTestTaskInfo()
@@ -92,39 +100,41 @@ func TestApplyUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if tc.wantErrContain != "" {
-				if err == nil {
-					t.Fatalf("a2aevent.ApplyUpdate() error = nil, want error")
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if tc.wantErrContain != "" {
+					if err == nil {
+						t.Fatalf("applyUpdateFn() error = nil, want error")
+					}
+					if !strings.Contains(err.Error(), tc.wantErrContain) {
+						t.Fatalf("applyUpdateFn() error = %v, want msg containing %q", err, tc.wantErrContain)
+					}
+					if diff := cmp.Diff(tc.base, before); diff != "" { // input modified
+						t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+					}
+					return
 				}
-				if !strings.Contains(err.Error(), tc.wantErrContain) {
-					t.Fatalf("a2aevent.ApplyUpdate() error = %v, want msg containing %q", err, tc.wantErrContain)
+
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
 				}
-				if diff := cmp.Diff(tc.base, before); diff != "" { // input modified
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
 					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -228,35 +238,37 @@ func TestApplyUpdate_ArtifactUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("a2aevent.ApplyUpdate() error = nil, want error")
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if tc.wantErr {
+					if err == nil {
+						t.Fatalf("applyUpdateFn() error = nil, want error")
+					}
+					if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
+						t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
 				}
 				if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
 					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -340,27 +352,29 @@ func TestApplyUpdate_StatusUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
-			if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+				}
+				opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
+				if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
+					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+				}
+			})
+		}
 	}
 }
 
