@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.6.0](https://github.com/a2aproject/a2a-go/compare/v2.5.0...v2.6.0) (2026-09-25)
+
+
+### Features
+
+* **a2acrypto:** add AgentCard JWS signing and verification (fixes [#141](https://github.com/a2aproject/a2a-go/issues/141)) ([#368](https://github.com/a2aproject/a2a-go/issues/368)) ([b03b830](https://github.com/a2aproject/a2a-go/commit/b03b830d43ea8924d3c8006fc1d7a5715478f550))
+* **itk:** use shared scenarios ([#429](https://github.com/a2aproject/a2a-go/issues/429)) ([e54a070](https://github.com/a2aproject/a2a-go/commit/e54a070b4435c76b4b99795eb7ab319037a3bab4))
+
+
+### Bug Fixes
+
+* a2acrypto canonicalization and refactoring ([#441](https://github.com/a2aproject/a2a-go/issues/441)) ([012cc74](https://github.com/a2aproject/a2a-go/commit/012cc74900780787f7b71540978aae3c87782296))
+* **a2asrv:** return spec error codes for terminal and parked tasks ([#438](https://github.com/a2aproject/a2a-go/issues/438)) ([#442](https://github.com/a2aproject/a2a-go/issues/442)) ([a2f11cb](https://github.com/a2aproject/a2a-go/commit/a2f11cbe7bcf05e15d6443bc92c9775becc629c9))
+* align ListTasks timestamp query parameter ([#425](https://github.com/a2aproject/a2a-go/issues/425)) ([621e01e](https://github.com/a2aproject/a2a-go/commit/621e01ee5537a5eb414f8f1768cb1c8bea4ca75b))
+* **ci:** skip scheduled nightly workflows on forks ([#427](https://github.com/a2aproject/a2a-go/issues/427)) ([03b1f84](https://github.com/a2aproject/a2a-go/commit/03b1f8483cc9cbdd3e95567100d95c5509687eb5)), closes [#426](https://github.com/a2aproject/a2a-go/issues/426)
+* compare recovery timestamps by value ([#428](https://github.com/a2aproject/a2a-go/issues/428)) ([b3d23f5](https://github.com/a2aproject/a2a-go/commit/b3d23f5dc39cd3c2d74ab9d9c040a91e8f8c88a6))
+* support ProtoJSON security requirement scopes in Agent Cards ([#437](https://github.com/a2aproject/a2a-go/issues/437)) ([76da16e](https://github.com/a2aproject/a2a-go/commit/76da16e668de714a18bcc726b2360880bece90a5))
+
 ## [2.5.0](https://github.com/a2aproject/a2a-go/compare/v2.4.0...v2.5.0) (2026-08-18)
 
 
