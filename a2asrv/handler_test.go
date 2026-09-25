@@ -264,7 +264,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				input: &a2a.SendMessageRequest{
 					Message: newUserMessage(completedTaskSeed, "Test"),
 				},
-				wantErr: fmt.Errorf("executor setup failed: failed to load exec ctx: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrInvalidParams),
+				wantErr: fmt.Errorf("executor setup failed: failed to load exec ctx: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrUnsupportedOperation),
 			},
 		}
 	}
@@ -2433,4 +2433,34 @@ func withTestTask(t *testing.T, taskID a2a.TaskID) RequestHandlerOption {
 		Authenticator: testAuthenticator(),
 	}).WithTasks(t, &a2a.Task{ID: taskID, ContextID: "test-context"})
 	return WithTaskStore(ts)
+}
+
+func TestRequestHandler_SubscribeToTask_TerminalTask(t *testing.T) {
+	ctx := t.Context()
+	completed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	ts := testutil.NewTestTaskStore().WithTasks(t, completed)
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+
+	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: completed.ID}))
+
+	if result != nil || !errors.Is(err, a2a.ErrUnsupportedOperation) {
+		t.Fatalf("SubscribeToTask() = (%v, %v), want error %v", result, err, a2a.ErrUnsupportedOperation)
+	}
+}
+
+func TestRequestHandler_SubscribeToTask_InputRequiredTaskYieldsSnapshot(t *testing.T) {
+	ctx := t.Context()
+	parked := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+	ts := testutil.NewTestTaskStore().WithTasks(t, parked)
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+
+	gotEvents, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: parked.ID}))
+	if err != nil {
+		t.Fatalf("SubscribeToTask() unexpected error: %v", err)
+	}
+
+	wantEvents := []a2a.Event{parked}
+	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
+		t.Fatalf("SubscribeToTask() events mismatch (-want +got):\n%s", diff)
+	}
 }
