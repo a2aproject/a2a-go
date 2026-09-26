@@ -615,7 +615,7 @@ func TestREST_ListTasks_Success(t *testing.T) {
 
 	query := url.Values{}
 	query.Set("contextId", "ctx-999")
-	query.Set("status", "running")
+	query.Set("status", "TASK_STATE_WORKING")
 	query.Set("pageSize", "50")
 	query.Set("pageToken", "next-page-token")
 	query.Set("historyLength", "100")
@@ -639,7 +639,7 @@ func TestREST_ListTasks_Success(t *testing.T) {
 	intPtr := func(i int) *int { return &i }
 	want := &a2a.ListTasksRequest{
 		ContextID:            "ctx-999",
-		Status:               a2a.TaskState("running"),
+		Status:               a2a.TaskStateWorking,
 		PageSize:             50,
 		PageToken:            "next-page-token",
 		IncludeArtifacts:     true,
@@ -757,6 +757,49 @@ func TestREST_GetTask_Success(t *testing.T) {
 
 			if diff := cmp.Diff(tc.wantReq, capturedReq); diff != "" {
 				t.Fatalf("getTask request mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestREST_ListTasks_UnknownStatusDefaultsToUnspecified(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		status     string
+		wantStatus a2a.TaskState
+	}{
+		{name: "known status", status: "TASK_STATE_WORKING", wantStatus: a2a.TaskStateWorking},
+		{name: "unknown status", status: "BOGUS_STATE", wantStatus: a2a.TaskStateUnspecified},
+		{name: "lowercase known status", status: "task_state_working", wantStatus: a2a.TaskStateUnspecified},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var capturedReq *a2a.ListTasksRequest
+			mock := &mockRequestHandler{
+				listTasksFunc: func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+					capturedReq = req
+					return &a2a.ListTasksResponse{}, nil
+				},
+			}
+			handler := NewRESTHandler(mock)
+
+			req := httptest.NewRequest(http.MethodGet, rest.MakeListTasksPath()+"?status="+tc.status, nil)
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			if rw.Code != http.StatusOK {
+				t.Fatalf("expected HTTP 200, got %d. body: %s", rw.Code, rw.Body.String())
+			}
+			if capturedReq == nil {
+				t.Fatal("expected request to be captured, but got nil")
+			}
+			if capturedReq.Status != tc.wantStatus {
+				t.Fatalf("listTasks status = %q, want %q", capturedReq.Status, tc.wantStatus)
 			}
 		})
 	}

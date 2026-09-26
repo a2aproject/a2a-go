@@ -518,3 +518,43 @@ func TestMessageRole_Codec(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskStateUnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		json string
+		want TaskState
+	}{
+		{name: "unspecified", json: `"TASK_STATE_UNSPECIFIED"`, want: TaskStateUnspecified},
+		{name: "auth required", json: `"TASK_STATE_AUTH_REQUIRED"`, want: TaskStateAuthRequired},
+		{name: "canceled", json: `"TASK_STATE_CANCELED"`, want: TaskStateCanceled},
+		{name: "completed", json: `"TASK_STATE_COMPLETED"`, want: TaskStateCompleted},
+		{name: "failed", json: `"TASK_STATE_FAILED"`, want: TaskStateFailed},
+		{name: "input required", json: `"TASK_STATE_INPUT_REQUIRED"`, want: TaskStateInputRequired},
+		{name: "rejected", json: `"TASK_STATE_REJECTED"`, want: TaskStateRejected},
+		{name: "submitted", json: `"TASK_STATE_SUBMITTED"`, want: TaskStateSubmitted},
+		{name: "working", json: `"TASK_STATE_WORKING"`, want: TaskStateWorking},
+
+		{name: "empty string", json: `""`, want: TaskStateUnspecified},
+		{name: "empty string as unspecified", json: `"TASK_STATE_UNSPECIFIED"`, want: TaskStateUnspecified},
+		{name: "unknown token", json: `"BOGUS_STATE"`, want: TaskStateUnspecified},
+		{name: "lowercase known token", json: `"task_state_completed"`, want: TaskStateUnspecified},
+		{name: "truncated token", json: `"TASK_STATE_"`, want: TaskStateUnspecified},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got TaskState
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("UnmarshalJSON(%s) error = %v", tc.json, err)
+			}
+			if got != tc.want {
+				t.Fatalf("UnmarshalJSON(%s) = %q, want %q", tc.json, got, tc.want)
+			}
+		})
+	}
+}
