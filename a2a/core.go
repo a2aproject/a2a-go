@@ -319,12 +319,22 @@ func (ts *TaskState) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	if s == "TASK_STATE_UNSPECIFIED" {
-		*ts = TaskStateUnspecified
-		return nil
-	}
-	*ts = TaskState(s)
+	*ts = TaskStateFromString(s)
 	return nil
+}
+
+// TaskStateFromString maps a wire value to its TaskState. Any value outside the
+// known set, including the empty string, maps to TaskStateUnspecified, which the
+// spec defines as the unknown or indeterminate state.
+func TaskStateFromString(s string) TaskState {
+	switch s {
+	case string(TaskStateSubmitted), string(TaskStateWorking), string(TaskStateCompleted),
+		string(TaskStateFailed), string(TaskStateCanceled), string(TaskStateInputRequired),
+		string(TaskStateRejected), string(TaskStateAuthRequired), string(TaskStateUnspecified):
+		return TaskState(s)
+	default:
+		return TaskStateUnspecified
+	}
 }
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
