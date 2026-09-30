@@ -189,7 +189,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 
 	request := &a2a.ListTasksRequest{
 		ContextID:            query.Get(rest.QueryContextID),
-		Status:               a2a.TaskState(query.Get(rest.QueryStatus)),
+		Status:               a2a.TaskStateFromString(query.Get(rest.QueryStatus)),
 		PageSize:             pageSize,
 		PageToken:            query.Get(rest.QueryPageToken),
 		HistoryLength:        historyLength,
