@@ -102,6 +102,11 @@ type AgentExecutor interface {
 	//
 	// Failures should generally be reported by writing events carrying the cancelation information
 	// and task state. An error should be returned in special cases or before a task was created.
+	//
+	// Events are not copied by the server stack: they are passed to the task store and delivered to subscribers
+	// concurrently, and parts of them can be shared with the tracked task state. An event and the data it references
+	// (messages, artifacts, parts, metadata) MUST NOT be modified after the event was emitted.
+	// [ExecutorContext.StoredTask] MUST NOT be modified either.
 	Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error]
 
 	// Cancel is called when a client requests the agent to stop working on a task.
@@ -238,15 +243,18 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 		return m.ID == message.ID // message will already be present if we're retrying execution
 	})
 
+	// trackedTask is the materializer output passed to the update manager, it can be partial.
+	// The agent always gets the full task state.
+	trackedTask := storedTask
 	if updateHistory {
-		storedTask.History = append(storedTask.History, message)
-		lastVersion, err = f.taskStore.Update(ctx, &taskstore.UpdateRequest{
-			Task:        storedTask,
-			Event:       message,
-			PrevVersion: lastVersion,
-		})
+		trackedTask, lastVersion, err = f.updateHistory(ctx, storedTask, lastVersion, message)
 		if err != nil {
-			return nil, fmt.Errorf("task message history update failed: %w", err)
+			return nil, fmt.Errorf("history update: %w", err)
+		}
+		if f.materializer.ReturnsFullSnapshot() {
+			storedTask = trackedTask
+		} else if storedTask, err = a2aevent.ApplyShallowUpdate(storedTask, message); err != nil {
+			return nil, fmt.Errorf("history update: %w", err)
 		}
 	} else {
 		log.Debug(ctx, "history update skipped because message was already in history")
@@ -262,10 +270,30 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 			Tenant:     params.Tenant,
 		},
 		task: &taskstore.StoredTask{
-			Task:    storedTask,
+			Task:    trackedTask,
 			Version: lastVersion,
 		},
 	}, nil
+}
+
+func (f *factory) updateHistory(ctx context.Context, task *a2a.Task, version taskstore.TaskVersion, message *a2a.Message) (*a2a.Task, taskstore.TaskVersion, error) {
+	newTask, err := f.materializer.ApplyUpdate(ctx, task, message)
+	if err != nil {
+		return nil, taskstore.TaskVersionMissing, fmt.Errorf("apply event: %w", err)
+	}
+	if newTask == nil {
+		return nil, taskstore.TaskVersionMissing, fmt.Errorf("bug: task materializer returned nil task for %T", message)
+	}
+	newVersion, err := f.taskStore.Update(ctx, &taskstore.UpdateRequest{
+		Task:        newTask,
+		Event:       message,
+		PrevTask:    task,
+		PrevVersion: version,
+	})
+	if err != nil {
+		return nil, taskstore.TaskVersionMissing, fmt.Errorf("store update: %w", err)
+	}
+	return newTask, newVersion, nil
 }
 
 func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMessageRequest) (*executionContext, error) {
@@ -308,7 +336,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	}
 
 	canceler := &canceler{agent: f.agent, execCtx: execCtx, task: task, interceptors: f.interceptors}
-	// the canceler writes the task owned by the manager if it was already canceled, which the manager accepts as idempotent
+	// if the task was already canceled the canceler emits it as is, which the manager accepts as an idempotent update
 	updateManager, err := taskupdate.NewManager(f.taskStore, execCtx.TaskInfo(), &taskstore.StoredTask{Task: task, Version: version}, f.materializer)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
@@ -486,7 +514,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
 	if err := p.updateManager.SetTaskFailed(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("set failed: %w: %w", err, cause)
 	}
 
 	result, err := p.loadResult(ctx)

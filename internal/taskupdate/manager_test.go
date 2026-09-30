@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
@@ -51,7 +52,7 @@ func makeTextParts(texts ...string) a2a.ContentParts {
 func newUpdater(t *testing.T, task *a2a.Task) (*Manager, *testutil.TestTaskStore) {
 	t.Helper()
 	saver := testutil.NewTestTaskStore()
-	m, err := NewManager(saver, task.TaskInfo(), nil, nil)
+	m, err := NewManager(saver, task.TaskInfo(), nil, taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate))
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
@@ -61,7 +62,7 @@ func newUpdater(t *testing.T, task *a2a.Task) (*Manager, *testutil.TestTaskStore
 func newUpdaterWithStoredTask(t *testing.T, task *a2a.Task) (*Manager, *testutil.TestTaskStore) {
 	t.Helper()
 	saver := testutil.NewTestTaskStore().WithTasks(t, task)
-	m, err := NewManager(saver, task.TaskInfo(), saver.MustGet(t, task.ID), nil)
+	m, err := NewManager(saver, task.TaskInfo(), saver.MustGet(t, task.ID), taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate))
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
@@ -858,5 +859,111 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 				}
 			}
 		})
+	}
+}
+
+func TestManager_SetTaskFailedAfterTerminalState(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name         string
+		materializer taskstore.UpdateMaterializer
+	}{
+		{name: "full materializer", materializer: taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)},
+		{name: "partial materializer", materializer: taskstore.NewNoOpUpdateMaterializer()},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			task := newSubmittedTask()
+			store := testutil.NewTestTaskStore().WithTasks(t, task)
+			m, err := NewManager(store, task.TaskInfo(), store.MustGet(t, task.ID), tc.materializer)
+			if err != nil {
+				t.Fatalf("NewManager() error = %v", err)
+			}
+			wantVersion := mustProcess(t, m, a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil))
+
+			if err := m.SetTaskFailed(t.Context()); err == nil {
+				t.Fatalf("m.SetTaskFailed() error = nil, want error")
+			}
+
+			stored := store.MustGet(t, task.ID)
+			if stored.Version != wantVersion {
+				t.Fatalf("store.Get() version = %v, want %v", stored.Version, wantVersion)
+			}
+		})
+	}
+}
+
+func TestManager_UpdateRequestPrevTask(t *testing.T) {
+	t.Parallel()
+	task := newSubmittedTask()
+	task.Metadata = map[string]any{"foo": "bar"}
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	var requests []*taskstore.UpdateRequest
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		requests = append(requests, req)
+		return store.InMemory.Update(ctx, req)
+	}
+	idOnly := func(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
+		return &a2a.Task{ID: task.ID, ContextID: task.ContextID}, nil
+	}
+	m, err := NewManager(store, task.TaskInfo(), store.MustGet(t, task.ID), taskstore.NewPartialUpdateMaterializer(idOnly))
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	mustProcess(t, m, a2a.NewArtifactEvent(task, a2a.NewTextPart("foo")))
+	mustProcess(t, m, a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil))
+	mustProcess(t, m, a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil))
+
+	if len(requests) != 3 {
+		t.Fatalf("store.Update() called %d times, want 3", len(requests))
+	}
+	if diff := cmp.Diff(task, requests[0].PrevTask); diff != "" {
+		t.Fatalf("store.Update() wrong first PrevTask (-want +got) diff = %s", diff)
+	}
+	for i := 1; i < len(requests); i++ {
+		if requests[i].PrevTask != requests[i-1].Task {
+			t.Fatalf("store.Update() PrevTask = %v, want previous update Task %v", requests[i].PrevTask, requests[i-1].Task)
+		}
+	}
+}
+
+func TestManager_PartialMaterializer_CancelationRetryUsesStoredTask(t *testing.T) {
+	t.Parallel()
+	task := newSubmittedTask()
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	var inputs []*a2a.Task
+	idOnly := func(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
+		inputs = append(inputs, task)
+		return &a2a.Task{ID: task.ID, ContextID: task.ContextID}, nil
+	}
+	m, err := NewManager(store, task.TaskInfo(), store.MustGet(t, task.ID), taskstore.NewPartialUpdateMaterializer(idOnly))
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	concurrentTask := &a2a.Task{
+		ID:        task.ID,
+		ContextID: task.ContextID,
+		Status:    a2a.TaskStatus{State: a2a.TaskStateWorking},
+		Metadata:  map[string]any{"foo": "bar"},
+	}
+	conflicted := false
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		if conflicted {
+			return store.InMemory.Update(ctx, req)
+		}
+		conflicted = true
+		if _, err := store.InMemory.Update(ctx, &taskstore.UpdateRequest{Task: concurrentTask}); err != nil {
+			return taskstore.TaskVersionMissing, err
+		}
+		return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+	}
+
+	mustProcess(t, m, a2a.NewStatusUpdateEvent(task, a2a.TaskStateCanceled, nil))
+
+	wantInputs := []*a2a.Task{task, concurrentTask}
+	if diff := cmp.Diff(wantInputs, inputs); diff != "" {
+		t.Fatalf("materializer.ApplyUpdate() wrong input tasks (-want +got) diff = %s", diff)
 	}
 }

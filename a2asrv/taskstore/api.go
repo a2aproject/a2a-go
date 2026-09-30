@@ -85,8 +85,7 @@ type Store interface {
 	Create(ctx context.Context, task *a2a.Task) (TaskVersion, error)
 
 	// Update updates the stored task. It should return [a2a.ErrTaskNotFound] if a task with the provided ID doesn't exist.
-	// When a new user message gets appended to task history, [UpdateRequest.PrevTask] is nil and [UpdateRequest.Event] is
-	// the message.
+	// When a new user message gets appended to the history of an existing task, [UpdateRequest.Event] is the message.
 	Update(ctx context.Context, update *UpdateRequest) (TaskVersion, error)
 
 	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].

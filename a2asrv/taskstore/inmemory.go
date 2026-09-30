@@ -89,7 +89,7 @@ func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, err
 		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
 
-	copy, err := utils.DeepCopy(task)
+	taskCopy, err := utils.DeepCopy(task)
 	if err != nil {
 		return TaskVersionMissing, err
 	}
@@ -102,7 +102,7 @@ func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, err
 
 	version := TaskVersion(1)
 	s.tasks[task.ID] = &storedTask{
-		task:        copy,
+		task:        taskCopy,
 		version:     version,
 		user:        userName,
 		lastUpdated: s.config.TimeProvider(),
@@ -121,7 +121,7 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
 
-	copy, err := utils.DeepCopy(req.Task)
+	taskCopy, err := utils.DeepCopy(req.Task)
 	if err != nil {
 		return TaskVersionMissing, err
 	}
@@ -144,7 +144,7 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 
 	version := stored.version + 1
 	s.tasks[req.Task.ID] = &storedTask{
-		task:        copy,
+		task:        taskCopy,
 		version:     version,
 		user:        stored.user,
 		lastUpdated: s.config.TimeProvider(),

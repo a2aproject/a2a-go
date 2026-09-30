@@ -25,55 +25,27 @@ import (
 )
 
 // ApplyUpdate returns a new [a2a.Task] produced by applying the event to the provided task.
+// An [a2a.Message] is appended to the task history and must have [a2a.MessageRoleUser] role.
 // The input task is never modified, the output task does not share any mutable structs with inputs.
 func ApplyUpdate(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
-	if err := validateUpdate(task, event); err != nil {
-		return nil, err
-	}
-	if v, ok := event.(*a2a.Task); ok {
-		copy, err := utils.DeepCopy(v)
-		if err != nil {
-			return nil, err
-		}
-		return copy, nil
-	}
-
-	taskCopy, err := utils.DeepCopy(task)
-	if err != nil {
-		return nil, err
-	}
-
-	switch v := event.(type) {
-	case *a2a.TaskArtifactUpdateEvent:
-		eventCopy, err := utils.DeepCopy(v)
-		if err != nil {
-			return nil, err
-		}
-		return applyShallowArtifactUpdate(taskCopy, eventCopy)
-
-	case *a2a.TaskStatusUpdateEvent:
-		eventCopy, err := utils.DeepCopy(v)
-		if err != nil {
-			return nil, err
-		}
-		return applyShallowStatusUpdate(taskCopy, eventCopy), nil
-
-	default:
-		return nil, fmt.Errorf("unexpected event type %T", v)
-	}
+	return deepCopyResult(ApplyShallowUpdate(task, event))
 }
 
 // ApplyShallowUpdate returns a new [a2a.Task] produced by applying the event to the provided task.
+// An [a2a.Message] is appended to the task history and must have [a2a.MessageRoleUser] role.
 // The input task is never modified. The output task shares mutable structs with inputs.
 func ApplyShallowUpdate(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
 	if err := validateUpdate(task, event); err != nil {
 		return nil, err
 	}
-	if v, ok := event.(*a2a.Task); ok {
-		shallow := *v
-		return &shallow, nil
-	}
 	switch v := event.(type) {
+	case *a2a.Task:
+		shallow := *v
+		shallow.Artifacts = slices.Clone(v.Artifacts)
+		shallow.Metadata = maps.Clone(v.Metadata)
+		return &shallow, nil
+	case *a2a.Message:
+		return applyShallowHistoryUpdate(task, v), nil
 	case *a2a.TaskArtifactUpdateEvent:
 		return applyShallowArtifactUpdate(task, v)
 	case *a2a.TaskStatusUpdateEvent:
@@ -84,35 +56,24 @@ func ApplyShallowUpdate(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
 }
 
 // ApplyArtifactUpdate returns a new [a2a.Task] with the event's artifact applied to the provided task.
+// The input task is never modified, the output task does not share any mutable structs with inputs.
 func ApplyArtifactUpdate(task *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
-	if err := validateUpdate(task, event); err != nil {
-		return nil, err
-	}
-	taskCopy, err := utils.DeepCopy(task)
-	if err != nil {
-		return nil, err
-	}
-	eventCopy, err := utils.DeepCopy(event)
-	if err != nil {
-		return nil, err
-	}
-	return applyShallowArtifactUpdate(taskCopy, eventCopy)
+	return ApplyUpdate(task, event)
 }
 
-// ApplyStatusUpdate returns a new [a2a.Task] with the event's status applied to a copy of base.
+// ApplyStatusUpdate returns a new [a2a.Task] with the event's status applied to the provided task.
+// The input task is never modified, the output task does not share any mutable structs with inputs.
 func ApplyStatusUpdate(task *a2a.Task, event *a2a.TaskStatusUpdateEvent) (*a2a.Task, error) {
-	if err := validateUpdate(task, event); err != nil {
-		return nil, err
-	}
-	taskCopy, err := utils.DeepCopy(task)
+	return ApplyUpdate(task, event)
+}
+
+// deepCopyResult is used to perform a single deep copy of a shallow update result instead of
+// copying the task and the event separately before applying the update.
+func deepCopyResult(task *a2a.Task, err error) (*a2a.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	eventCopy, err := utils.DeepCopy(event)
-	if err != nil {
-		return nil, err
-	}
-	return applyShallowStatusUpdate(taskCopy, eventCopy), nil
+	return utils.DeepCopy(task)
 }
 
 func applyShallowArtifactUpdate(src *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {
@@ -160,7 +121,7 @@ func applyShallowArtifactUpdate(src *a2a.Task, event *a2a.TaskArtifactUpdateEven
 func applyShallowStatusUpdate(src *a2a.Task, event *a2a.TaskStatusUpdateEvent) *a2a.Task {
 	task := *src
 	if task.Status.Message != nil {
-		task.History = slices.Clone(src.History)
+		task.History = slices.Clone(task.History)
 		task.History = append(task.History, task.Status.Message)
 	}
 	if event.Metadata != nil {
@@ -175,19 +136,31 @@ func applyShallowStatusUpdate(src *a2a.Task, event *a2a.TaskStatusUpdateEvent) *
 	return &task
 }
 
+func applyShallowHistoryUpdate(src *a2a.Task, msg *a2a.Message) *a2a.Task {
+	task := *src
+	task.History = slices.Clone(src.History)
+	task.History = append(task.History, msg)
+	return &task
+}
+
 func validateUpdate(task *a2a.Task, event a2a.Event) error {
-	if _, ok := event.(*a2a.Message); ok {
-		return fmt.Errorf("message cannot be applied to the task state")
+	msg, isMsg := event.(*a2a.Message)
+	if isMsg && msg.Role != a2a.MessageRoleUser {
+		return fmt.Errorf("only user messages can be applied to the task state, got %q", msg.Role)
 	}
 	if task.Status.State.Terminal() {
 		return fmt.Errorf("%q task state updates are not allowed", task.Status.State)
 	}
 	ti1, ti2 := task.TaskInfo(), event.TaskInfo()
 	if ti1.TaskID != ti2.TaskID {
-		return fmt.Errorf("task IDs don't match: %s != %s", ti1.TaskID, ti2.TaskID)
+		if !(isMsg && msg.TaskID == "") {
+			return fmt.Errorf("task IDs don't match: %s != %s", ti1.TaskID, ti2.TaskID)
+		}
 	}
 	if ti1.ContextID != ti2.ContextID {
-		return fmt.Errorf("context IDs don't match: %s != %s", ti1.ContextID, ti2.ContextID)
+		if !(isMsg && msg.ContextID == "") {
+			return fmt.Errorf("context IDs don't match: %s != %s", ti1.ContextID, ti2.ContextID)
+		}
 	}
 	return nil
 }

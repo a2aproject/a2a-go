@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -36,6 +37,8 @@ import (
 // duration configured via [WithAgentInactivityTimeout]. Callers can detect
 // this condition with errors.Is.
 var ErrAgentInactivityTimeout = taskexec.ErrAgentInactivityTimeout
+
+var defaultMaterializer = taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -213,13 +216,18 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		option(ih, h)
 	}
 
+	materializer := h.materializer
+	if materializer == nil {
+		materializer = defaultMaterializer
+	}
+
 	execFactory := &factory{
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushSender:      h.pushSender,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
-		materializer:    h.materializer,
+		materializer:    materializer,
 		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,

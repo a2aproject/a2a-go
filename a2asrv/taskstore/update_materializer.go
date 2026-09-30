@@ -26,17 +26,15 @@ import (
 // task snapshot in memory.
 type UpdateMaterializer interface {
 	// ApplyUpdate is called for every [a2a.Task], [a2a.TaskStatusUpdateEvent] and [a2a.TaskArtifactUpdateEvent] produced by
-	// an agent. The input task is passed to [Store.Update] as [UpdateRequest.PrevTask] and the output task is passed
+	// an agent, and for a user [a2a.Message] which gets appended to the history of an existing task. The input task is passed to [Store.Update] as [UpdateRequest.PrevTask] and the output task is passed
 	// to [Store.Update] as [UpdateRequest.Task]. The output task becomes the input task argument for the next invocation.
 	//
 	// The task argument can be:
 	//   - the task returned by the previous call;
 	//   - the full task state returned by [Store.Get] or passed to [Store.Create]. This happens when an execution starts,
-	//     when an execution continues an existing task and when the SDK reloads the task to retry an update
-	//     (for example, to retry a cancelation).
+	//     when an execution continues an existing task and when the SDK reloads the task to retry an update.
 	//
-	// Implementations SHOULD NOT modify the task or the event, because they are shared with the store
-	// and event subscribers.
+	// Implementations MUST NOT modify the task or the event, because they can be shared with the store and event subscribers.
 	ApplyUpdate(ctx context.Context, task *a2a.Task, event a2a.Event) (*a2a.Task, error)
 
 	// ReturnsFullSnapshot reports whether tasks returned by [ApplyUpdate] are complete task snapshots as [Store.Get]
@@ -55,7 +53,7 @@ func (m *updateMaterializer) ApplyUpdate(ctx context.Context, task *a2a.Task, ev
 	return m.fn(task, event)
 }
 
-// Partial implements [UpdateMaterializer.Partial].
+// ReturnsFullSnapshot implements [UpdateMaterializer.ReturnsFullSnapshot].
 func (m *updateMaterializer) ReturnsFullSnapshot() bool {
 	return m.full
 }
@@ -74,6 +72,8 @@ func NewPartialUpdateMaterializer(fn func(*a2a.Task, a2a.Event) (*a2a.Task, erro
 // the full [a2a.Task] state during the execution. It can be useful for a [Store] which is only persisting events.
 func NewNoOpUpdateMaterializer() UpdateMaterializer {
 	return &updateMaterializer{full: false, fn: func(t *a2a.Task, e a2a.Event) (*a2a.Task, error) {
-		return t, nil
+		return &a2a.Task{
+			ID: t.ID, ContextID: t.ContextID, Status: a2a.TaskStatus{State: t.Status.State},
+		}, nil
 	}}
 }

@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
@@ -44,19 +43,18 @@ type Manager struct {
 	version taskstore.TaskVersion
 }
 
-// NewManager is a [Manager] constructor function. A full [taskstore.UpdateMaterializer] backed by
-// [a2aevent.ApplyShallowUpdate] is used if m is nil.
+// NewManager is a [Manager] constructor function.
 func NewManager(store taskstore.Store, info a2a.TaskInfo, task *taskstore.StoredTask, m taskstore.UpdateMaterializer) (*Manager, error) {
 	mgr := &Manager{taskInfo: info, store: store, materializer: m, initTask: task}
 	if mgr.materializer == nil {
-		mgr.materializer = taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)
+		return nil, fmt.Errorf("materializer must be set")
 	}
 	if task != nil {
-		copy, err := utils.DeepCopy(task.Task)
+		taskCopy, err := utils.DeepCopy(task.Task)
 		if err != nil {
 			return nil, err
 		}
-		mgr.track(copy, task.Version, copy.Status.State)
+		mgr.track(taskCopy, task.Version, taskCopy.Status.State)
 	}
 	return mgr, nil
 }
@@ -69,12 +67,15 @@ func (mgr *Manager) InMemorySnapshot() (*taskstore.StoredTask, bool) {
 	return nil, false
 }
 
-// SetTaskFailed attempts to move the Task to failed state and returns the version of the stored task.
+// SetTaskFailed attempts to move the Task to failed state. It fails if the task is already in a terminal state.
 // The store receives a synthesized failed [a2a.TaskStatusUpdateEvent], so that stores which derive
 // the task state from events record the failure.
 func (mgr *Manager) SetTaskFailed(ctx context.Context) error {
 	if mgr.tracked == nil {
 		return fmt.Errorf("execution failed before a task was created")
+	}
+	if mgr.state.Terminal() {
+		return fmt.Errorf("%q task can not be moved to failed state", mgr.state)
 	}
 	_, err := mgr.apply(ctx, a2a.NewStatusUpdateEvent(mgr.taskInfo, a2a.TaskStateFailed, nil))
 	return err
