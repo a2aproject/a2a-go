@@ -427,6 +427,19 @@ func TestFromRESTErrorEdgeCases(t *testing.T) {
 			responseBody: `not json`,
 			wantError:    a2a.ErrParseError,
 		},
+		{
+			name:         "application/a2a+json is decoded",
+			contentType:  "application/a2a+json",
+			responseBody: `{"error":{"code":404,"status":"NOT_FOUND","message":"no such task","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"TASK_NOT_FOUND","domain":"a2a-protocol.org"}]}}`,
+			wantError:    a2a.ErrTaskNotFound,
+			wantMessage:  "no such task",
+		},
+		{
+			name:         "application/json with parameters is decoded",
+			contentType:  "application/json; charset=utf-8",
+			responseBody: `{"error":{"code":404,"status":"NOT_FOUND","message":"no such task","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"TASK_NOT_FOUND","domain":"a2a-protocol.org"}]}}`,
+			wantError:    a2a.ErrTaskNotFound,
+		},
 	}
 
 	for _, tt := range tests {

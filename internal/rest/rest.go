@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -271,10 +271,17 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 	return out
 }
 
+func isJSONErrorContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return mediaType == "application/json" || mediaType == "application/a2a+json"
+}
+
 // FromRESTError converts an HTTP error response in google.rpc.Status format to an a2a error.
 func FromRESTError(resp *http.Response) error {
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "application/json") {
+	if !isJSONErrorContentType(resp.Header.Get("Content-Type")) {
 		return a2a.ErrServerError
 	}
 
