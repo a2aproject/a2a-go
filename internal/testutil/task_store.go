@@ -55,6 +55,16 @@ func (m *TestTaskStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.
 	return m.InMemory.Get(ctx, taskID)
 }
 
+// MustGet delegates to [taskstore.TaskStore.Get] and fails the test on error.
+func (m *TestTaskStore) MustGet(t *testing.T, taskID a2a.TaskID) *taskstore.StoredTask {
+	t.Helper()
+	res, err := m.Get(t.Context(), taskID)
+	if err != nil {
+		t.Fatalf("taskStore.Get() error = %v", err)
+	}
+	return res
+}
+
 // SetSaveError overrides Save execution with given error
 func (m *TestTaskStore) SetSaveError(err error) *TestTaskStore {
 	m.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {

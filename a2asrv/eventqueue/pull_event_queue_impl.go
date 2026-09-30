@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -201,7 +201,7 @@ func (r *pullReader) dispatchMessages(ctx context.Context, resp *PullResponse) s
 		case <-ctx.Done():
 			return true
 		}
-		if taskupdate.IsFinal(msg.Event) {
+		if a2aevent.IsFinal(msg.Event) {
 			return true
 		}
 	}
