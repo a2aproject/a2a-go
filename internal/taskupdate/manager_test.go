@@ -132,7 +132,7 @@ func TestManager_StatusUpdateImmutableAfterSave(t *testing.T) {
 	event2.Metadata = map[string]any{key: "baz"}
 	_ = mustProcess(t, m, event2)
 
-	if v, _ := event.Metadata[key]; v != "bar" {
+	if v := event.Metadata[key]; v != "bar" {
 		t.Fatalf("event.Metadata changed got %q, want %q", v, "bar")
 	}
 }
