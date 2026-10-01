@@ -312,25 +312,45 @@ func TestREST_Validations(t *testing.T) {
 
 func TestREST_InvalidPayloads(t *testing.T) {
 	method := http.MethodPost
-	payload := "[]"
 	expectedErr := a2a.ErrParseError
 	taskID := a2a.NewTaskID()
+	// Without the trailing check these bodies reach the handler and fail there with another error.
+	emptyRequest := `{}`
 
 	testCases := []struct {
-		name string
-		path string
+		name    string
+		path    string
+		payload string
 	}{
 		{
-			name: "SendMessage with invalid payload",
-			path: "/message:send",
+			name:    "SendMessage with invalid payload",
+			path:    "/message:send",
+			payload: "[]",
 		},
 		{
-			name: "SendMessageStream with invalid payload",
-			path: "/message:stream",
+			name:    "SendMessageStream with invalid payload",
+			path:    "/message:stream",
+			payload: "[]",
 		},
 		{
-			name: "CreateTaskPushConfig with invalid payload",
-			path: "/tasks/" + string(taskID) + "/pushNotificationConfigs",
+			name:    "CreateTaskPushConfig with invalid payload",
+			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
+			payload: "[]",
+		},
+		{
+			name:    "SendMessage with trailing data",
+			path:    "/message:send",
+			payload: emptyRequest + "TRAILING_GARBAGE",
+		},
+		{
+			name:    "SendMessage with concatenated payloads",
+			path:    "/message:send",
+			payload: emptyRequest + emptyRequest,
+		},
+		{
+			name:    "CreateTaskPushConfig with trailing data",
+			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
+			payload: `{"url":"https://example.com/push"}}`,
 		},
 	}
 
@@ -341,7 +361,7 @@ func TestREST_InvalidPayloads(t *testing.T) {
 	ctx := t.Context()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(ctx, method, server.URL+tc.path, bytes.NewBufferString(payload))
+			req, err := http.NewRequestWithContext(ctx, method, server.URL+tc.path, bytes.NewBufferString(tc.payload))
 			if err != nil {
 				t.Fatalf("failed to create request: %v", err)
 			}
