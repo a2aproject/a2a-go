@@ -30,6 +30,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/pathtemplate"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -100,7 +101,7 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var message a2a.SendMessageRequest
-	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
+	if err := utils.DecodeJSON(req.Body, &message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -121,7 +122,7 @@ func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Reques
 func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var message a2a.SendMessageRequest
-	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
+	if err := utils.DecodeJSON(req.Body, &message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -377,7 +378,7 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 	}
 
 	request := &a2a.PushConfig{}
-	if err := json.NewDecoder(req.Body).Decode(request); err != nil {
+	if err := utils.DecodeJSON(req.Body, request); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
