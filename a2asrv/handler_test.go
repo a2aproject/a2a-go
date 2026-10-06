@@ -789,7 +789,7 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 		Config:  &a2a.SendMessageConfig{PushConfig: pushConfig},
 	}
 	agentEvents := []a2a.Event{
-		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
 	}
 	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
 	wantResult.History = []*a2a.Message{input.Message}

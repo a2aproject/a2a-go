@@ -152,7 +152,7 @@ func TestManager_ArtifactImmutableAfterSave(t *testing.T) {
 		t.Fatalf("len(event.Artifact.Parts) = %d, want 1", l)
 	}
 	if l := len(event.Artifact.Metadata); l != 0 {
-		t.Fatalf("len(event.Artifact.Parts) = %d, want 0", l)
+		t.Fatalf("len(event.Artifact.Metadata) = %d, want 0", l)
 	}
 }
 
@@ -187,7 +187,7 @@ func TestManager_StatusUpdate_StateChanges(t *testing.T) {
 		_ = mustProcess(t, m, a2a.NewStatusUpdateEvent(task, state, nil))
 		stored := saver.MustGet(t, task.ID)
 		if stored.Task.Status.State != state {
-			t.Fatalf("task state not updated: got = %v, want = %v", state, stored.Task.Status.State)
+			t.Fatalf("task state not updated: got = %v, want = %v", stored.Task.Status.State, state)
 		}
 	}
 }
