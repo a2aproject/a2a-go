@@ -169,11 +169,19 @@ func FromGRPCError(err error) error {
 			}
 		}
 	} else {
+		// No ErrorInfo reason: matching by code alone is ambiguous because
+		// several a2a errors share a gRPC code (e.g. FailedPrecondition maps
+		// to ErrTaskNotCancelable, ErrUnsupportedOperation, ...). Use the
+		// single mapping when only one error exists for the code, otherwise
+		// fall back to the conservative generic error instead of guessing.
+		var matched []error
 		for _, mapping := range errorMappings {
 			if s.Code() == mapping.code {
-				baseErr = mapping.err
-				break
+				matched = append(matched, mapping.err)
 			}
+		}
+		if len(matched) == 1 {
+			baseErr = matched[0]
 		}
 	}
 
