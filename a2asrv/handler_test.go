@@ -2464,3 +2464,116 @@ func TestRequestHandler_SubscribeToTask_InputRequiredTaskYieldsSnapshot(t *testi
 		t.Fatalf("SubscribeToTask() events mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		card    *a2a.AgentCard
+		request *a2a.SendMessageRequest
+		wantErr error
+	}{
+		{
+			name: "accepts default input mode",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+		},
+		{
+			name: "ignores parameters and case in media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/text.txt"), "Text/Plain; charset=utf-8")),
+			},
+		},
+		{
+			name: "ignores parameters and case in card input modes",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "TEXT/PLAIN; charset=UTF-8"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/text.txt"), "text/plain")),
+			},
+		},
+		{
+			name: "accepts parts without media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello")),
+			},
+		},
+		{
+			name: "rejects media type not in default input modes",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/unsupported.unsupported"), "unsupported/unsupported")),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name: "accepts skill input modes",
+			card: &a2a.AgentCard{
+				Skills:            []a2a.AgentSkill{{Name: "test-skill", InputModes: []string{"application/custom"}}},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/custom.custom"), "application/custom")),
+			},
+		},
+		{
+			name: "rejects default input mode when every skill declares input modes",
+			card: &a2a.AgentCard{
+				Skills:            []a2a.AgentSkill{{Name: "test-skill", InputModes: []string{"application/custom"}}},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name: "accepts default input modes when a skill declares none",
+			card: &a2a.AgentCard{
+				Skills: []a2a.AgentSkill{
+					{Name: "test-skill"},
+					{Name: "test-skill-2", InputModes: []string{"application/custom"}},
+					{Name: "test-skill-3", InputModes: []string{"image/png"}},
+				},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			ts := testutil.NewTestTaskStore()
+			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
+			handler := NewHandler(executor, WithTaskStore(ts), WithInputModeChecks(tt.card))
+
+			_, err := handler.SendMessage(ctx, tt.request)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			ts := testutil.NewTestTaskStore()
+			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
+			handler := NewHandler(executor, WithTaskStore(ts), WithInputModeChecks(tt.card))
+
+			_, err := collectEvents(handler.SendStreamingMessage(ctx, tt.request))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SendStreamingMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
