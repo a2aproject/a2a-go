@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -319,7 +320,11 @@ func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.T
 
 func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {
 	timeStrNano := updatedTime.Format(time.RFC3339Nano)
-	return base64.URLEncoding.EncodeToString(fmt.Appendf(nil, "%s_%s", timeStrNano, taskID))
+	// The task ID is client-controlled and may itself contain "_", so a plain
+	// "_" separator would make the token ambiguous. Prefix the ID with its
+	// byte length so the fields can be split unambiguously. The whole token
+	// remains base64url-encoded as before.
+	return base64.URLEncoding.EncodeToString(fmt.Appendf(nil, "%s_%d_%s", timeStrNano, len(taskID), taskID))
 }
 
 func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
@@ -328,17 +333,28 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 		return time.Time{}, "", a2a.ErrParseError
 	}
 
-	parts := strings.Split(string(decoded), "_")
-	if len(parts) != 2 {
+	// New tokens have the form "<time>_<length>_<taskID>". Legacy tokens
+	// (without the length prefix) have the form "<time>_<taskID>" and are
+	// still accepted for backward compatibility.
+	parts := strings.SplitN(string(decoded), "_", 3)
+	var taskID string
+	switch len(parts) {
+	case 2: // legacy format
+		taskID = parts[1]
+	case 3: // length-prefixed format
+		length, err := strconv.Atoi(parts[1])
+		if err != nil || length < 0 || length != len(parts[2]) {
+			return time.Time{}, "", a2a.ErrParseError
+		}
+		taskID = parts[2]
+	default:
 		return time.Time{}, "", a2a.ErrParseError
 	}
-
-	taskID := a2a.TaskID(parts[1])
 
 	updatedTime, err := time.Parse(time.RFC3339Nano, parts[0])
 	if err != nil {
 		return time.Time{}, "", a2a.ErrParseError
 	}
 
-	return updatedTime, taskID, nil
+	return updatedTime, a2a.TaskID(taskID), nil
 }
