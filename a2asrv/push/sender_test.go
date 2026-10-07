@@ -206,7 +206,7 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 			name:    "invalid request URL",
 			event:   events,
 			config:  &a2a.PushConfig{URL: "::"},
-			wantErr: "failed to create HTTP request",
+			wantErr: "failed to parse push notification URL",
 		},
 		{
 			name:    "http client fails",
@@ -275,6 +275,23 @@ func TestHTTPPushSender_SendPushError(t *testing.T) {
 	})
 }
 
+func TestHTTPPushSender_SendPushIgnoresNonHTTP(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+	sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
+
+	for _, raw := range []string{"topic://name", "file:///etc/passwd"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+			err := sender.SendPush(ctx, &a2a.PushConfig{URL: raw}, event)
+			if err != nil {
+				t.Fatalf("SendPush() error = %v, want %v", err, nil)
+			}
+		})
+	}
+}
+
 func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 	ctx := context.Background()
 	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
@@ -288,6 +305,8 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 			"http://169.254.169.254/latest/meta-data/", // cloud metadata (link-local)
 			"http://10.0.0.5/webhook",                  // RFC 1918
 			"http://192.168.1.10/webhook",              // RFC 1918
+			"http://100.64.0.1/webhook",                // RFC 6598 CGNAT / shared
+			"http://198.18.0.1/webhook",                // RFC 2544 benchmarking
 			"http://0.0.0.0:8080/webhook",              // unspecified
 		}
 		sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: true})
@@ -354,6 +373,67 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 		}
 		if finalToken != "" {
 			t.Errorf("notification token leaked to a different host on redirect: %q, want empty", finalToken)
+		}
+	})
+}
+
+func TestHTTPPushSender_ValidateConfig(t *testing.T) {
+	ctx := t.Context()
+	sender := NewHTTPPushSender(nil)
+
+	testCases := []struct {
+		name    string
+		config  *a2a.PushConfig
+		wantErr string
+	}{
+		{name: "nil", config: nil, wantErr: "push config cannot be nil"},
+		{name: "empty url", config: &a2a.PushConfig{}, wantErr: "push config endpoint cannot be empty"},
+		{name: "not a url", config: &a2a.PushConfig{URL: "not a url"}, wantErr: "invalid URI for request"},
+		{name: "topic stored", config: &a2a.PushConfig{URL: "topic://name"}},
+		{name: "file stored", config: &a2a.PushConfig{URL: "file:///etc/passwd"}},
+		{name: "public https", config: &a2a.PushConfig{URL: "https://example.com/push"}},
+		{name: "uppercase scheme", config: &a2a.PushConfig{URL: "HTTP://example.com/push"}},
+		{
+			name:    "loopback",
+			config:  &a2a.PushConfig{URL: "http://127.0.0.1/webhook"},
+			wantErr: "127.0.0.1",
+		},
+		{
+			name:    "localhost",
+			config:  &a2a.PushConfig{URL: "http://localhost:1/webhook"},
+			wantErr: "localhost",
+		},
+		{
+			name:    "LOCALHOST",
+			config:  &a2a.PushConfig{URL: "http://LOCALHOST/hook"},
+			wantErr: "LOCALHOST",
+		},
+		{
+			name:    "dotted LOCALHOST",
+			config:  &a2a.PushConfig{URL: "http://foo.LOCALHOST/hook"},
+			wantErr: "foo.LOCALHOST",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := sender.ValidateConfig(ctx, tc.config)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateConfig() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ValidateConfig() error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("AllowPrivateNetworks keeps localhost", func(t *testing.T) {
+		open := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
+		if err := open.ValidateConfig(ctx, &a2a.PushConfig{URL: "http://LOCALHOST/hook"}); err != nil {
+			t.Fatalf("ValidateConfig() with AllowPrivateNetworks error = %v", err)
 		}
 	})
 }
