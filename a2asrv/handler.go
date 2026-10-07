@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -38,6 +39,8 @@ import (
 // duration configured via [WithAgentInactivityTimeout]. Callers can detect
 // this condition with errors.Is.
 var ErrAgentInactivityTimeout = taskexec.ErrAgentInactivityTimeout
+
+var defaultMaterializer = taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
 type RequestHandler interface {
@@ -87,6 +90,7 @@ type defaultRequestHandler struct {
 
 	pushConfigStore        push.ConfigStore
 	taskStore              taskstore.Store
+	materializer           taskstore.UpdateMaterializer
 	workQueue              workqueue.Queue
 	ctxCodec               ContextCodec
 	reqContextInterceptors []ExecutorContextInterceptor
@@ -203,6 +207,16 @@ func WithTaskStore(store taskstore.Store) RequestHandlerOption {
 	}
 }
 
+// WithUpdateMaterializer overrides the [taskstore.UpdateMaterializer] which computes the task state passed to [taskstore.Store.Update]
+// during agent execution. By default the full task state is kept in memory while an agent is running.
+// Custom implementations allow stores which derive the task state from [taskstore.UpdateRequest.Event]
+// to avoid the cost of materialization.
+func WithUpdateMaterializer(m taskstore.UpdateMaterializer) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.materializer = m
+	}
+}
+
 // ContextCodec is used for propagating context values through [workqueue.Queue].
 type ContextCodec = taskexec.ContextCodec
 
@@ -233,12 +247,18 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		option(ih, h)
 	}
 
+	materializer := h.materializer
+	if materializer == nil {
+		materializer = defaultMaterializer
+	}
+
 	execFactory := &factory{
 		agent:           h.agentExecutor,
 		taskStore:       h.taskStore,
 		pushSender:      h.pushSender,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
+		materializer:    materializer,
 		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,
