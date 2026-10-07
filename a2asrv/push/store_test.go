@@ -60,21 +60,6 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 			},
 		},
 		{
-			name:    "nil config",
-			config:  nil,
-			wantErr: fmt.Errorf("%w: push config cannot be nil", a2a.ErrInvalidParams),
-		},
-		{
-			name:    "empty URL",
-			config:  &a2a.PushConfig{},
-			wantErr: fmt.Errorf("%w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
-		},
-		{
-			name:    "invalid URL",
-			config:  &a2a.PushConfig{URL: "not a url"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: parse \"not a url\": invalid URI for request", a2a.ErrInvalidParams),
-		},
-		{
 			name:   "topic scheme stored for non-http senders",
 			config: &a2a.PushConfig{URL: "topic://name"},
 			want: &a2a.PushConfig{
@@ -89,16 +74,6 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 				TaskID: taskID,
 				URL:    "file:///etc/passwd",
 			},
-		},
-		{
-			name:    "loopback literal",
-			config:  &a2a.PushConfig{URL: "http://127.0.0.1/webhook"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: %w: 127.0.0.1", a2a.ErrInvalidParams, errBlockedPushTarget),
-		},
-		{
-			name:    "localhost hostname",
-			config:  &a2a.PushConfig{URL: "http://localhost:1/webhook"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: %w: localhost", a2a.ErrInvalidParams, errBlockedPushTarget),
 		},
 	}
 
@@ -127,16 +102,6 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 		})
 	}
 
-	t.Run("AllowPrivateNetworks opts out of create-time guard", func(t *testing.T) {
-		store := NewInMemoryStoreWithConfig(&StoreConfig{AllowPrivateNetworks: true})
-		saved, err := store.Save(ctx, taskID, &a2a.PushConfig{URL: "http://127.0.0.1/webhook"})
-		if err != nil {
-			t.Fatalf("Save() with AllowPrivateNetworks failed: %v", err)
-		}
-		if saved.URL != "http://127.0.0.1/webhook" {
-			t.Fatalf("Save() URL = %q", saved.URL)
-		}
-	})
 }
 
 func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {

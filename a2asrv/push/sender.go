@@ -42,9 +42,12 @@ var tokenHeader = http.CanonicalHeaderKey("A2A-Notification-Token")
 
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {
-	client      *http.Client
-	failOnError bool
+	client       *http.Client
+	failOnError  bool
+	allowPrivate bool
 }
+
+var _ ConfigValidator = (*HTTPPushSender)(nil)
 
 // HTTPSenderConfig allows to configure [HTTPPushSender].
 type HTTPSenderConfig struct {
@@ -86,8 +89,9 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 		client.Transport = ssrfGuardedTransport()
 	}
 	return &HTTPPushSender{
-		client:      client,
-		failOnError: config != nil && config.FailOnError,
+		client:       client,
+		failOnError:  config != nil && config.FailOnError,
+		allowPrivate: allowPrivate,
 	}
 }
 
@@ -176,9 +180,49 @@ func limitPushRedirects(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-func isHTTPPushScheme(scheme string) bool {
-	s := strings.ToLower(scheme)
-	return s == "http" || s == "https"
+func isHTTPPushScheme(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	// url.Parse lowercases the scheme, so HTTP and http are the same value.
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+// ValidateConfig checks a push config before it is stored.
+// Non-http(s) URLs are accepted so other senders can use the same config.
+// An http(s) URL with a loopback, private, or localhost host is rejected
+// unless AllowPrivateNetworks is set. LOCALHOST is the same host as localhost.
+func (s *HTTPPushSender) ValidateConfig(ctx context.Context, config *a2a.PushConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if config == nil {
+		return errors.New("push config cannot be nil")
+	}
+	if config.URL == "" {
+		return errors.New("push config endpoint cannot be empty")
+	}
+	u, err := url.ParseRequestURI(config.URL)
+	if err != nil {
+		return fmt.Errorf("invalid push config endpoint URL: %w", err)
+	}
+	if !isHTTPPushScheme(u) {
+		return nil
+	}
+	if s.allowPrivate {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("invalid push config endpoint URL: host is required")
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("invalid push config endpoint URL: %w: %s", errBlockedPushTarget, host)
+	}
+	if ip := net.ParseIP(host); ip != nil && isBlockedIP(ip) {
+		return fmt.Errorf("invalid push config endpoint URL: %w: %s", errBlockedPushTarget, ip)
+	}
+	return nil
 }
 
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
@@ -195,7 +239,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 	if err != nil {
 		return s.handleError(ctx, fmt.Errorf("failed to parse push notification URL: %w", err))
 	}
-	if !isHTTPPushScheme(u.Scheme) {
+	if !isHTTPPushScheme(u) {
 		return nil
 	}
 

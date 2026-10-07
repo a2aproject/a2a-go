@@ -180,6 +180,9 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		if f.pushConfigStore == nil || f.pushSender == nil {
 			return nil, nil, nil, fmt.Errorf("bug: message with push config received bug push is not configured: %w", a2a.ErrPushNotificationNotSupported)
 		}
+		if err := validatePushConfig(ctx, f.pushSender, params.Config.PushConfig); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to save push config for task %s: %w", tid, err)
+		}
 		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to save push config for task %s: %w", tid, err)
 		}

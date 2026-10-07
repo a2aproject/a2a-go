@@ -376,3 +376,64 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPPushSender_ValidateConfig(t *testing.T) {
+	ctx := t.Context()
+	sender := NewHTTPPushSender(nil)
+
+	testCases := []struct {
+		name    string
+		config  *a2a.PushConfig
+		wantErr string
+	}{
+		{name: "nil", config: nil, wantErr: "push config cannot be nil"},
+		{name: "empty url", config: &a2a.PushConfig{}, wantErr: "push config endpoint cannot be empty"},
+		{name: "not a url", config: &a2a.PushConfig{URL: "not a url"}, wantErr: "invalid URI for request"},
+		{name: "topic stored", config: &a2a.PushConfig{URL: "topic://name"}},
+		{name: "file stored", config: &a2a.PushConfig{URL: "file:///etc/passwd"}},
+		{name: "public https", config: &a2a.PushConfig{URL: "https://example.com/push"}},
+		{name: "uppercase scheme", config: &a2a.PushConfig{URL: "HTTP://example.com/push"}},
+		{
+			name:    "loopback",
+			config:  &a2a.PushConfig{URL: "http://127.0.0.1/webhook"},
+			wantErr: "127.0.0.1",
+		},
+		{
+			name:    "localhost",
+			config:  &a2a.PushConfig{URL: "http://localhost:1/webhook"},
+			wantErr: "localhost",
+		},
+		{
+			name:    "LOCALHOST",
+			config:  &a2a.PushConfig{URL: "http://LOCALHOST/hook"},
+			wantErr: "LOCALHOST",
+		},
+		{
+			name:    "dotted LOCALHOST",
+			config:  &a2a.PushConfig{URL: "http://foo.LOCALHOST/hook"},
+			wantErr: "foo.LOCALHOST",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := sender.ValidateConfig(ctx, tc.config)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateConfig() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ValidateConfig() error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("AllowPrivateNetworks keeps localhost", func(t *testing.T) {
+		open := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
+		if err := open.ValidateConfig(ctx, &a2a.PushConfig{URL: "http://LOCALHOST/hook"}); err != nil {
+			t.Fatalf("ValidateConfig() with AllowPrivateNetworks error = %v", err)
+		}
+	})
+}
