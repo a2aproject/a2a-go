@@ -493,7 +493,7 @@ func run() error {
 			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
 			Tags:        []string{"itk", "acts"},
 		}},
-		DefaultInputModes:  []string{"text"},
+		DefaultInputModes:  []string{"text", "application/x-protobuf"},
 		DefaultOutputModes: []string{"text"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
