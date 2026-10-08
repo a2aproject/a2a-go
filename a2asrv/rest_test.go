@@ -281,6 +281,8 @@ func TestREST_Validations(t *testing.T) {
 						t.Fatalf("failed to create request: %v", err)
 					}
 
+					req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+
 					resp, err := server.Client().Do(req)
 					if err != nil {
 						t.Fatalf("request failed: %v", err)
@@ -415,6 +417,8 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+
 			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("server.Client().Do() error = %v", err)
@@ -495,6 +499,8 @@ func TestRESTTenant(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+
 			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("server.Client().Do() error = %v", err)
@@ -546,7 +552,7 @@ func TestREST_ServiceParams(t *testing.T) {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer test-token")
-
+	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	resp, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("server.Client().Do() error = %v", err)
@@ -800,6 +806,66 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 			}
 			if capturedReq.Status != tc.wantStatus {
 				t.Fatalf("listTasks status = %q, want %q", capturedReq.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestREST_VersionNegotiation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		header   string
+		urlQuery string
+		wantErr  error
+	}{
+		{name: "supported version header", header: "1.0"},
+		{name: "no header", wantErr: a2a.ErrVersionNotSupported},
+		{name: "unsupported version header", header: "99.0", wantErr: a2a.ErrVersionNotSupported},
+		{name: "supported version query parameter", urlQuery: "?A2A-Version=1.0"},
+		{name: "unsupported version query parameter", urlQuery: "?A2A-Version=99.0", wantErr: a2a.ErrVersionNotSupported},
+		{name: "header takes precedence over query parameter", header: "99.0", urlQuery: "?A2A-Version=1.0", wantErr: a2a.ErrVersionNotSupported},
+	}
+
+	handler := &InterceptedHandler{Handler: &mockRequestHandler{}}
+	server := httptest.NewServer(NewRESTHandler(handler))
+	t.Cleanup(server.Close)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+rest.MakeGetTaskPath("task-id")+tc.urlQuery, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			if tc.header != "" {
+				req.Header.Set(a2a.SvcParamVersion, tc.header)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+			if tc.wantErr == nil {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+			} else {
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+				}
+				if err := rest.FromRESTError(resp); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("error = %v, want %v", err, tc.wantErr)
+				}
 			}
 		})
 	}

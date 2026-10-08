@@ -174,9 +174,9 @@ func TestREST_ServerSubscribeTask_UsesGET(t *testing.T) {
 	}
 }
 
-func TestREST_ServerExtensionsFrom(t *testing.T) {
+func TestREST_ServerExtensionsAndProtocolVersionFrom(t *testing.T) {
 	t.Parallel()
-	mock := &mockExtensionRESTHandler{}
+	mock := &mockHeaderRESTHandler{}
 	handler := NewRESTHandler(mock)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -198,6 +198,9 @@ func TestREST_ServerExtensionsFrom(t *testing.T) {
 
 	if len(mock.lastRequestedURIs) != 1 || mock.lastRequestedURIs[0] != "uri1" {
 		t.Fatalf("mock.lastRequestedURIs = %v, want [uri1]", mock.lastRequestedURIs)
+	}
+	if mock.lastProtocolVersion != Version {
+		t.Fatalf("mock.lastProtocolVersion = %v, want %v", mock.lastProtocolVersion, Version)
 	}
 }
 
@@ -723,14 +726,18 @@ func (h *mockRESTHandler) DeleteTaskPushConfig(_ context.Context, _ *a2a.DeleteT
 	return nil
 }
 
-type mockExtensionRESTHandler struct {
+type mockHeaderRESTHandler struct {
 	a2asrv.RequestHandler
-	lastRequestedURIs []string
+	lastRequestedURIs   []string
+	lastProtocolVersion a2a.ProtocolVersion
 }
 
-func (h *mockExtensionRESTHandler) SendMessage(ctx context.Context, _ *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockHeaderRESTHandler) SendMessage(ctx context.Context, _ *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	if ext, ok := a2asrv.ExtensionsFrom(ctx); ok {
 		h.lastRequestedURIs = ext.RequestedURIs()
+	}
+	if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
+		h.lastProtocolVersion = callCtx.ProtocolVersion
 	}
 	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok"))
 	msg.ID = "resp-1"

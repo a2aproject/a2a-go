@@ -569,6 +569,46 @@ func TestInterceptedHandler_CallContextPropagation(t *testing.T) {
 	}
 }
 
+func TestInterceptedHandler_VersionNegotiation(t *testing.T) {
+	tests := []struct {
+		name    string
+		served  a2a.ProtocolVersion
+		header  []string
+		wantErr error
+	}{
+		{name: "no served version", header: []string{"1.0"}},
+		{name: "1.0 served, 1.0 header", served: a2a.Version, header: []string{"1.0"}},
+		{name: "1.0 served, no header", served: a2a.Version, wantErr: a2a.ErrVersionNotSupported},
+		{name: "1.0 served, 0.3 header", served: a2a.Version, header: []string{"0.3"}, wantErr: a2a.ErrVersionNotSupported},
+		{name: "0.3 served, no header", served: "0.3"},
+		{name: "0.3 served, 1.0 header", served: "0.3", header: []string{"1.0"}, wantErr: a2a.ErrVersionNotSupported},
+		{name: "0.3 served, 0.3 header", served: "0.3", header: []string{"0.3"}},
+	}
+	for _, tc := range tests {
+		for _, mc := range methodCalls {
+			t.Run(tc.name+"/"+mc.method, func(t *testing.T) {
+				t.Parallel()
+				mockHandler := &mockHandler{}
+				handler := &InterceptedHandler{Handler: mockHandler}
+				meta := map[string][]string{}
+				if tc.header != nil {
+					meta[a2a.SvcParamVersion] = tc.header
+				}
+				ctx, callCtx := NewCallContext(t.Context(), NewServiceParams(meta))
+				callCtx.ProtocolVersion = tc.served
+
+				_, err := mc.call(ctx, handler)
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("%s() error = %v, want %v", mc.method, err, tc.wantErr)
+				}
+				if err != nil && mockHandler.lastCallContext != nil {
+					t.Fatalf("%s() lastCallContext = %v, want nil", mc.method, mockHandler.lastCallContext)
+				}
+			})
+		}
+	}
+}
+
 func TestInterceptedHandler_ContextDataPassing(t *testing.T) {
 	for _, tc := range methodCalls {
 		t.Run(tc.method, func(t *testing.T) {
