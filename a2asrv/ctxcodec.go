@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
@@ -27,9 +28,10 @@ type encodedCtx struct {
 }
 
 type encodedCallCtx struct {
-	Tenant    string              `json:"tenant,omitempty"`
-	SvcParams map[string][]string `json:"svcParams,omitempty"`
-	User      *User               `json:"user,omitempty"`
+	Tenant          string              `json:"tenant,omitempty"`
+	SvcParams       map[string][]string `json:"svcParams,omitempty"`
+	User            *User               `json:"user,omitempty"`
+	ProtocolVersion a2a.ProtocolVersion `json:"protocolVersion,omitempty"`
 }
 
 type callCtxCodec struct {
@@ -51,9 +53,10 @@ func (c *callCtxCodec) Encode(ctx context.Context) (map[string]any, error) {
 
 	if cc, ok := CallContextFrom(ctx); ok {
 		result.CallContext = &encodedCallCtx{
-			Tenant:    cc.tenant,
-			SvcParams: cc.svcParams.cloneRaw(),
-			User:      cc.User,
+			Tenant:          cc.tenant,
+			SvcParams:       cc.svcParams.cloneRaw(),
+			User:            cc.User,
+			ProtocolVersion: cc.ProtocolVersion,
 		}
 	}
 
@@ -76,6 +79,7 @@ func (c *callCtxCodec) Decode(ctx context.Context, data map[string]any) (context
 		localCtx, callCtx := NewCallContext(ctx, svcParams)
 		callCtx.tenant = ecc.Tenant
 		callCtx.User = ecc.User
+		callCtx.ProtocolVersion = ecc.ProtocolVersion
 		ctx = localCtx
 	}
 

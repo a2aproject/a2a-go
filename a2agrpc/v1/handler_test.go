@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
@@ -1204,8 +1205,6 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 }
 
 func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
-	ctx := t.Context()
-
 	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
@@ -1256,6 +1255,7 @@ func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
 			client := startTestServer(t, handler)
+			ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(a2a.SvcParamVersion, string(a2a.Version)))
 			resp, err := client.GetExtendedAgentCard(ctx, &a2apb.GetExtendedAgentCardRequest{})
 			if tt.wantErr != codes.OK {
 				if err == nil {

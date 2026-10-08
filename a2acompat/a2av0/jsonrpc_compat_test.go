@@ -48,8 +48,8 @@ func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
 	}
 }
 
-func TestJSONRPC_ServerExtensionsFrom(t *testing.T) {
-	mock := &mockExtensionHandler{}
+func TestJSONRPC_ServerExtensionsAndProtocolVersionFrom(t *testing.T) {
+	mock := &mockHeaderHandler{}
 	handler := NewJSONRPCHandler(mock)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -72,16 +72,24 @@ func TestJSONRPC_ServerExtensionsFrom(t *testing.T) {
 	if len(mock.lastRequestedURIs) != 1 || mock.lastRequestedURIs[0] != "uri1" {
 		t.Errorf("expected RequestedURIs [uri1], got %v", mock.lastRequestedURIs)
 	}
+
+	if mock.lastProtocolVersion != Version {
+		t.Fatalf("mock.lastProtocolVersion = %v, want %v", mock.lastProtocolVersion, Version)
+	}
 }
 
-type mockExtensionHandler struct {
+type mockHeaderHandler struct {
 	a2asrv.RequestHandler
-	lastRequestedURIs []string
+	lastRequestedURIs   []string
+	lastProtocolVersion a2a.ProtocolVersion
 }
 
-func (h *mockExtensionHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockHeaderHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	if ext, ok := a2asrv.ExtensionsFrom(ctx); ok {
 		h.lastRequestedURIs = ext.RequestedURIs()
+	}
+	if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
+		h.lastProtocolVersion = callCtx.ProtocolVersion
 	}
 	return &a2a.Message{ID: "resp-1", Role: a2a.MessageRoleAgent, Parts: a2a.ContentParts{a2a.NewTextPart("ok")}}, nil
 }

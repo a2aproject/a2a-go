@@ -49,8 +49,8 @@ func NewJSONRPCHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOp
 // ServeHTTP handles incoming HTTP requests.
 func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, _ = a2asrv.NewCallContext(ctx, ToServiceParams(req.Header))
-
+	ctx, callCtx := a2asrv.NewCallContext(ctx, ToServiceParams(req.Header))
+	callCtx.ProtocolVersion = Version
 	if req.Method != "POST" {
 		h.writeJSONRPCError(ctx, rw, a2a.ErrInvalidRequest, nil)
 		return

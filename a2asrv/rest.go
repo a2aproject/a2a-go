@@ -61,7 +61,8 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
+		ctx, callCtx := NewCallContext(req.Context(), newHTTPServiceParams(req))
+		callCtx.ProtocolVersion = a2a.Version
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
 }
