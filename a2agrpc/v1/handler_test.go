@@ -116,8 +116,9 @@ var defaultMockHandler = &mockRequestHandler{
 
 // mockRequestHandler is a mock of a2asrv.RequestHandler.
 type mockRequestHandler struct {
-	tasks       map[a2a.TaskID]*a2a.Task
-	pushConfigs map[a2a.TaskID]map[string]*a2a.PushConfig
+	tasks                    map[a2a.TaskID]*a2a.Task
+	pushConfigs              map[a2a.TaskID]map[string]*a2a.PushConfig
+	pushConfigsNextPageToken string
 
 	// Fields to capture call parameters
 	capturedGetTaskRequest              *a2a.GetTaskRequest
@@ -249,7 +250,7 @@ func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.L
 			for _, v := range pushConfigs {
 				result = append(result, v)
 			}
-			return &a2a.ListTaskPushConfigResponse{Configs: result}, nil
+			return &a2a.ListTaskPushConfigResponse{Configs: result, NextPageToken: m.pushConfigsNextPageToken}, nil
 		}
 		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil // no configs for task id
 	}
@@ -1062,11 +1063,12 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
-		name       string
-		req        *a2apb.ListTaskPushNotificationConfigsRequest
-		want       *a2apb.ListTaskPushNotificationConfigsResponse
-		wantParams *a2a.ListTaskPushConfigRequest
-		wantErr    codes.Code
+		name          string
+		req           *a2apb.ListTaskPushNotificationConfigsRequest
+		nextPageToken string
+		want          *a2apb.ListTaskPushNotificationConfigsResponse
+		wantParams    *a2a.ListTaskPushConfigRequest
+		wantErr       codes.Code
 	}{
 		{
 			name: "success",
@@ -1086,6 +1088,24 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			wantParams: &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 		},
 		{
+			name:          "next page token",
+			req:           &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: string(taskID), PageSize: 2},
+			nextPageToken: "next",
+			want: &a2apb.ListTaskPushNotificationConfigsResponse{
+				Configs: []*a2apb.TaskPushNotificationConfig{
+					{
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-1", configID),
+					},
+					{
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-2", configID),
+					},
+				},
+				NextPageToken: "next",
+			},
+		},
+		{
 			name:    "handler error",
 			req:     &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: "handler-error"},
 			wantErr: codes.Internal,
@@ -1095,6 +1115,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedListTaskPushConfigRequest = nil
+			mockHandler.pushConfigsNextPageToken = tt.nextPageToken
 			resp, err := client.ListTaskPushNotificationConfigs(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
