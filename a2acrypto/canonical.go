@@ -24,11 +24,15 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // canonicalizeJSON returns the RFC 8785 (JCS) canonical form of an AgentCard's
 // raw JSON, excluding the top-level signatures field.
 func canonicalizeJSON(raw []byte) ([]byte, error) {
+	if err := validateUnicode(raw); err != nil {
+		return nil, err
+	}
 	var obj any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -264,4 +268,49 @@ func dropSignatures(v any) {
 	if obj, ok := v.(map[string]any); ok {
 		delete(obj, "signatures")
 	}
+}
+
+// encoding/json replaces malformed Unicode with U+FFFD. Check raw bytes before
+// decoding so signing and verification cannot silently change the input.
+func validateUnicode(raw []byte) error {
+	if !utf8.Valid(raw) {
+		return fmt.Errorf("invalid UTF-8 in JSON")
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		next, err := unicodeEscapeEnd(raw, i)
+		if err != nil {
+			return err
+		}
+		i = next
+	}
+	return nil
+}
+
+func unicodeEscapeEnd(raw []byte, offset int) (int, error) {
+	unit, ok := unicodeEscape(raw, offset)
+	if !ok {
+		return offset + 1, nil
+	}
+	if unit < 0xd800 || unit > 0xdfff {
+		return offset + 5, nil
+	}
+	low, paired := unicodeEscape(raw, offset+6)
+	if unit >= 0xdc00 || !paired || low < 0xdc00 || low > 0xdfff {
+		return 0, fmt.Errorf("invalid Unicode surrogate escape at byte %d", offset)
+	}
+	return offset + 11, nil
+}
+
+func unicodeEscape(raw []byte, offset int) (uint16, bool) {
+	if offset+6 > len(raw) {
+		return 0, false
+	}
+	if raw[offset] != '\\' || raw[offset+1] != 'u' {
+		return 0, false
+	}
+	unit, err := strconv.ParseUint(string(raw[offset+2:offset+6]), 16, 16)
+	return uint16(unit), err == nil
 }
