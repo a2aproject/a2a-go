@@ -402,6 +402,17 @@ type TaskStatus struct {
 	Timestamp *time.Time `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
 }
 
+// MarshalJSON implements json.Marshaler. The spec requires JSON timestamps in UTC,
+// so the timestamp is converted to UTC whatever location it was created in.
+func (s TaskStatus) MarshalJSON() ([]byte, error) {
+	type wire TaskStatus
+	if s.Timestamp != nil {
+		utc := s.Timestamp.UTC()
+		s.Timestamp = &utc
+	}
+	return json.Marshal(wire(s))
+}
+
 // Meta implements MetadataCarrier.
 func (t *Task) Meta() map[string]any {
 	return t.Metadata
@@ -543,7 +554,7 @@ type TaskStatusUpdateEvent struct {
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
 func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *Message) *TaskStatusUpdateEvent {
-	now := time.Now()
+	now := time.Now().UTC()
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskStatusUpdateEvent{
 		ContextID: taskInfo.ContextID,
