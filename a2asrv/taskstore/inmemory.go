@@ -322,7 +322,8 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 		return time.Time{}, "", a2a.ErrParseError
 	}
 
-	parts := strings.Split(string(decoded), "_")
+	// The timestamp has no underscore. The task id can, so only the first separator is the boundary.
+	parts := strings.SplitN(string(decoded), "_", 2)
 	if len(parts) != 2 {
 		return time.Time{}, "", a2a.ErrParseError
 	}

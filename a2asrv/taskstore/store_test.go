@@ -493,6 +493,35 @@ func TestInMemoryTaskStore_ConcurrentVersionIncrements(t *testing.T) {
 	}
 }
 
+func TestInMemoryTaskStore_ListContinuesPastTaskIDWithUnderscore(t *testing.T) {
+	store := NewInMemory(&InMemoryStoreConfig{
+		Authenticator: getAuthInfo,
+		TimeProvider:  newIncreasingTimeProvider(startTime),
+	})
+	older := &a2a.Task{ID: "task_older"}
+	newer := &a2a.Task{ID: "task_newer"}
+	mustCreate(t, store, older, newer)
+
+	first, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: 1})
+	if err != nil {
+		t.Fatalf("List() failed: %v", err)
+	}
+	if len(first.Tasks) != 1 || first.Tasks[0].ID != newer.ID {
+		t.Fatalf("first page = %#v, want %s", first.Tasks, newer.ID)
+	}
+	if first.NextPageToken == "" {
+		t.Fatal("NextPageToken is empty")
+	}
+
+	second, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: 1, PageToken: first.NextPageToken})
+	if err != nil {
+		t.Fatalf("List() with page token failed: %v", err)
+	}
+	if len(second.Tasks) != 1 || second.Tasks[0].ID != older.ID {
+		t.Fatalf("second page = %#v, want %s", second.Tasks, older.ID)
+	}
+}
+
 func TestInMemoryTaskStore_ConcurrentTaskModification(t *testing.T) {
 	store := NewInMemory(nil)
 
