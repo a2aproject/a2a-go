@@ -493,7 +493,7 @@ func run() error {
 			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
 			Tags:        []string{"itk", "acts"},
 		}},
-		DefaultInputModes:  []string{"text"},
+		DefaultInputModes:  []string{"text", "application/x-protobuf"},
 		DefaultOutputModes: []string{"text"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
@@ -551,6 +551,8 @@ func run() error {
 		// Makes the advertised capabilities enforcing rather than advisory, so
 		// the reduced pass actually refuses what its card no longer offers.
 		a2asrv.WithCapabilityChecks(&agentCard.Capabilities),
+		// Makes the advertised input modes enforcing rather than advisory.
+		a2asrv.WithInputModeChecks(agentCard),
 		// The card advertises extendedAgentCard, and a capability is a promise:
 		// without a producer every binding answers the ACTS extended-card tests
 		// with ExtendedCardNotConfigured.
