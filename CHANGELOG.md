@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.1](https://github.com/a2aproject/a2a-go/compare/v2.6.0...v2.6.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* decode application/a2a+json error responses in the REST client ([#448](https://github.com/a2aproject/a2a-go/issues/448)) ([3e1aa7f](https://github.com/a2aproject/a2a-go/commit/3e1aa7fa38015722bf03dce19b025aee729177bf))
+* **grpc:** forward next_page_token in push config list responses ([#455](https://github.com/a2aproject/a2a-go/issues/455)) ([7210014](https://github.com/a2aproject/a2a-go/commit/721001455933970829ee631c2f19d6d423d9f43e))
+
 ## [2.6.0](https://github.com/a2aproject/a2a-go/compare/v2.5.0...v2.6.0) (2026-09-25)
 
 
