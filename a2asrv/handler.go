@@ -38,6 +38,11 @@ import (
 // this condition with errors.Is.
 var ErrAgentInactivityTimeout = taskexec.ErrAgentInactivityTimeout
 
+// ErrAgentFirstOutputTimeout is the execution cancellation cause when no event
+// satisfies the matcher configured by [WithAgentFirstOutputTimeout] in time.
+// Inspect it with errors.Is(context.Cause(ctx), ErrAgentFirstOutputTimeout).
+var ErrAgentFirstOutputTimeout = taskexec.ErrAgentFirstOutputTimeout
+
 var defaultMaterializer = taskstore.NewFullUpdateMaterializer(a2aevent.ApplyShallowUpdate)
 
 // RequestHandler defines a transport-agnostic interface for handling incoming A2A requests.
@@ -93,7 +98,9 @@ type defaultRequestHandler struct {
 	ctxCodec               ContextCodec
 	reqContextInterceptors []ExecutorContextInterceptor
 
-	agentInactivityTimeout time.Duration
+	agentInactivityTimeout  time.Duration
+	agentFirstOutputTimeout time.Duration
+	agentFirstOutputMatcher func(a2a.Event) bool
 
 	authenticatedCardProducer ExtendedAgentCardProducer
 	capabilities              *a2a.AgentCapabilities
@@ -149,6 +156,29 @@ func WithExecutionPanicHandler(handler func(r any) error) RequestHandlerOption {
 func WithAgentInactivityTimeout(d time.Duration) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.agentInactivityTimeout = d
+	}
+}
+
+// WithAgentFirstOutputTimeout limits how long each agent execution may wait for
+// its first matching output. A nil matcher accepts any event. A non-positive
+// duration disables this timeout (the default).
+//
+// The timer starts with the producer/consumer execution, after executor setup.
+// Only a successful write of a matching event to the internal event pipe disarms
+// it; other events do not reset it. This measures producer output, not delivery
+// to the client, and excludes admission, work-queue waiting, and executor setup.
+// The matcher runs synchronously in the producer before each write until matched;
+// it must return promptly, not mutate events, and be safe for concurrent executions.
+//
+// On expiry, the execution context is canceled with [ErrAgentFirstOutputTimeout]
+// and the existing failure path finalizes the task. Executors must honor context
+// cancellation. This applies to blocking and streaming sends in both local and
+// cluster modes, but not cancellation executions or task subscriptions.
+// [WithAgentInactivityTimeout] remains independent and may expire first.
+func WithAgentFirstOutputTimeout(d time.Duration, matcher func(a2a.Event) bool) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.agentFirstOutputTimeout = d
+		h.agentFirstOutputMatcher = matcher
 	}
 }
 
@@ -237,14 +267,16 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			panic("TaskStore and QueueManager must be provided for cluster mode")
 		}
 		h.execManager = taskexec.NewDistributedManager(taskexec.DistributedManagerConfig{
-			WorkQueue:              h.workQueue,
-			TaskStore:              h.taskStore,
-			QueueManager:           h.queueManager,
-			ConcurrencyConfig:      h.concurrencyConfig,
-			Factory:                execFactory,
-			ContextCodec:           &callCtxCodec{AttrCodec: h.ctxCodec},
-			PanicHandler:           h.panicHandler,
-			AgentInactivityTimeout: h.agentInactivityTimeout,
+			WorkQueue:               h.workQueue,
+			TaskStore:               h.taskStore,
+			QueueManager:            h.queueManager,
+			ConcurrencyConfig:       h.concurrencyConfig,
+			Factory:                 execFactory,
+			ContextCodec:            &callCtxCodec{AttrCodec: h.ctxCodec},
+			PanicHandler:            h.panicHandler,
+			AgentInactivityTimeout:  h.agentInactivityTimeout,
+			AgentFirstOutputTimeout: h.agentFirstOutputTimeout,
+			AgentFirstOutputMatcher: h.agentFirstOutputMatcher,
 		})
 	} else {
 		if h.queueManager == nil {
@@ -257,12 +289,14 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
-			QueueManager:           h.queueManager,
-			ConcurrencyConfig:      h.concurrencyConfig,
-			Factory:                execFactory,
-			TaskStore:              h.taskStore,
-			PanicHandler:           h.panicHandler,
-			AgentInactivityTimeout: h.agentInactivityTimeout,
+			QueueManager:            h.queueManager,
+			ConcurrencyConfig:       h.concurrencyConfig,
+			Factory:                 execFactory,
+			TaskStore:               h.taskStore,
+			PanicHandler:            h.panicHandler,
+			AgentInactivityTimeout:  h.agentInactivityTimeout,
+			AgentFirstOutputTimeout: h.agentFirstOutputTimeout,
+			AgentFirstOutputMatcher: h.agentFirstOutputMatcher,
 		})
 	}
 

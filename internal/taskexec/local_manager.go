@@ -51,11 +51,13 @@ var (
 // Both cancelations and executions are started in detached context and run until completion.
 // The type is suitable only for single-process execution management.
 type localManager struct {
-	queueManager      eventqueue.Manager
-	factory           Factory
-	store             taskstore.Store
-	panicHandler      PanicHandlerFn
-	inactivityTimeout time.Duration
+	queueManager       eventqueue.Manager
+	factory            Factory
+	store              taskstore.Store
+	panicHandler       PanicHandlerFn
+	inactivityTimeout  time.Duration
+	firstOutputTimeout time.Duration
+	firstOutputMatcher func(a2a.Event) bool
 
 	mu           sync.Mutex
 	executions   map[a2a.TaskID]*localExecution
@@ -96,19 +98,26 @@ type LocalManagerConfig struct {
 	// configured duration. The terminating cause is [ErrAgentInactivityTimeout].
 	// A value of 0 disables the watcher, preserving prior behavior.
 	AgentInactivityTimeout time.Duration
+	// AgentFirstOutputTimeout bounds time to the first successfully written matching event.
+	// Non-positive values disable the timeout. It only applies to executions.
+	AgentFirstOutputTimeout time.Duration
+	// AgentFirstOutputMatcher selects the first output; nil accepts any event.
+	AgentFirstOutputMatcher func(a2a.Event) bool
 }
 
 // NewLocalManager is a [localManager] constructor function.
 func NewLocalManager(cfg LocalManagerConfig) Manager {
 	manager := &localManager{
-		queueManager:      cfg.QueueManager,
-		factory:           cfg.Factory,
-		store:             cfg.TaskStore,
-		panicHandler:      cfg.PanicHandler,
-		inactivityTimeout: cfg.AgentInactivityTimeout,
-		limiter:           newConcurrencyLimiter(cfg.ConcurrencyConfig),
-		executions:        make(map[a2a.TaskID]*localExecution),
-		cancelations:      make(map[a2a.TaskID]*cancelation),
+		queueManager:       cfg.QueueManager,
+		factory:            cfg.Factory,
+		store:              cfg.TaskStore,
+		panicHandler:       cfg.PanicHandler,
+		inactivityTimeout:  cfg.AgentInactivityTimeout,
+		firstOutputTimeout: cfg.AgentFirstOutputTimeout,
+		firstOutputMatcher: cfg.AgentFirstOutputMatcher,
+		limiter:            newConcurrencyLimiter(cfg.ConcurrencyConfig),
+		executions:         make(map[a2a.TaskID]*localExecution),
+		cancelations:       make(map[a2a.TaskID]*cancelation),
 	}
 	if manager.queueManager == nil {
 		manager.queueManager = eventqueue.NewInMemoryManager()
@@ -292,7 +301,8 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		handleErrorFn: processor.ProcessError,
 	}
 	tracker := newInactivityTracker(m.inactivityTimeout)
-	producerWriter := newActivityTrackingWriter(execution.pipe.Writer, tracker)
+	firstOutput := newFirstOutputTracker(m.firstOutputTimeout, m.firstOutputMatcher)
+	producerWriter := newFirstOutputTrackingWriter(newActivityTrackingWriter(execution.pipe.Writer, tracker), firstOutput)
 	result, err := runProducerConsumer(
 		ctx,
 		func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) },
@@ -300,6 +310,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		nil,
 		m.panicHandler,
 		tracker,
+		firstOutput,
 	)
 
 	cleaner.Cleanup(ctx, result, err)
@@ -347,6 +358,7 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 		nil,
 		m.panicHandler,
 		tracker,
+		nil,
 	)
 
 	cleaner.Cleanup(ctx, result, err)

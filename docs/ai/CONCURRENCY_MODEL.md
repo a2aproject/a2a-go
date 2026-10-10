@@ -341,6 +341,35 @@ In cluster mode, the frontend does not spawn execution goroutines. The backend's
 - **Pipe reads with canceled context**: `pipeReader.Read` returns `ctx.Err()`.
 - **Pipe writes with canceled context**: `pipeWriter.Write` returns `ctx.Err()` only if the channel send would block. If the buffer has space, the write succeeds despite context cancellation.
 
+### First-output and inactivity budgets
+
+`WithAgentFirstOutputTimeout(duration, matcher)` adds a per-execution budget at
+the same producer/consumer boundary as `WithAgentInactivityTimeout`. Local
+`handleExecution` and cluster `workQueueHandler` create a fresh tracker for each
+execution. Cancellation executions and subscriptions do not create one.
+
+`firstOutputTrackingWriter` evaluates the matcher before publishing an event to
+the concurrently running consumer, but only records a match after the inner
+write succeeds. A nil matcher accepts any event. Nonmatching events never reset
+the first-output timer; the first successful match disarms it permanently.
+An atomic pending/written/expired state resolves concurrent output and expiry
+without reporting a timeout after the match has already been recorded.
+
+`runProducerConsumer` starts the timer before launching the producer. The watcher
+returns `ErrAgentFirstOutputTimeout` on expiry, canceling the errgroup context.
+Existing `ProcessError` handling attempts to persist a failed task. Before task
+creation, the failure is returned as an error instead. As with other execution
+failures, a failed Task result can replace the local error returned to the caller;
+the agent observes the typed cancellation cause through `context.Cause(ctx)`.
+Cluster delivery still follows the configured event queue/work queue lifecycle.
+
+Inactivity tracking remains independent, including before the first matching
+output. A positive first-output budget does not override a shorter inactivity
+budget. Both are disabled by non-positive durations. This is a producer budget:
+admission, work-queue waiting, executor setup, persistence, and network delivery
+are outside its measurement. A producer or matcher that ignores cancellation can
+still prevent `group.Wait()` from returning.
+
 ## Common Pitfalls In Tests
 
 1. **Assuming `AgentExecutor.Cancel` is always called**: the canceler short-circuits if the task is already canceled when loaded from the store (agentexec.go:328). This affects test synchronization.

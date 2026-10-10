@@ -30,6 +30,10 @@ import (
 // condition with errors.Is.
 var ErrAgentInactivityTimeout = errors.New("agent inactivity timeout")
 
+// ErrAgentFirstOutputTimeout is the execution cancellation cause when an agent
+// does not write a matching output within its first-output budget.
+var ErrAgentFirstOutputTimeout = errors.New("agent first output timeout")
+
 // Manager provides an API for executing and canceling tasks.
 type Manager interface {
 	// Resubscribe is used to resubscribe to events of an active execution.

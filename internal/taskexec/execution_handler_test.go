@@ -124,7 +124,7 @@ func TestRunProducerConsumer(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil, tc.panicHandler, nil)
+			result, err := runProducerConsumer(t.Context(), tc.producer, tc.consumer, nil, tc.panicHandler, nil, nil)
 			if tc.wantErr != nil && err == nil {
 				t.Fatalf("expected error, got %v", result)
 			}
@@ -156,6 +156,7 @@ func TestRunProducerConsumer_CausePropagation(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	if gotProducerErr != consumerErr {
 		t.Fatalf("expected producer error = %s, got %s", consumerErr, gotProducerErr)
@@ -184,6 +185,7 @@ func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
 			nil,
 			nil,
 			tracker,
+			nil,
 		)
 		if !errors.Is(err, ErrAgentInactivityTimeout) {
 			t.Fatalf("runProducerConsumer() error = %v, want errors.Is(_, ErrAgentInactivityTimeout)", err)
@@ -230,6 +232,7 @@ func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
 			nil,
 			nil,
 			tracker,
+			nil,
 		)
 		if err != nil {
 			t.Fatalf("runProducerConsumer() error = %v, want nil (timer should have been reset)", err)
@@ -255,6 +258,7 @@ func TestRunProducerConsumer_InactivityTimeout(t *testing.T) {
 			nil,
 			nil,
 			newInactivityTracker(0),
+			nil,
 		)
 		if err != nil {
 			t.Fatalf("runProducerConsumer() error = %v, want nil", err)
