@@ -24,10 +24,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 func TestSignAndVerifyES256(t *testing.T) {
@@ -185,6 +188,46 @@ func TestCanonical_U2028_U2029_literal(t *testing.T) {
 	verifier := staticVerifier(key.Public())
 	if err := verifier.Verify(ctx, raw, sig); err != nil {
 		t.Fatalf("Verify() with U+2028/U+2029 error = %v", err)
+	}
+}
+
+func TestCanonical_rejects_trailing_data(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	raw := mustMarshalCard(t, makeTestCard())
+	key := mustGenerateECDSAP256Key(t)
+	signer := mustNewSigner(t, SignerConfig{PrivateKey: key, KeyID: "kid"})
+	sig := mustSign(t, signer, raw)
+	verifier := staticVerifier(key.Public())
+
+	cases := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{"trailing garbage", slices.Concat(raw, json.RawMessage("TRAILING_GARBAGE"))},
+		{"concatenated cards", slices.Concat(raw, raw)},
+		{"extra closing brace", slices.Concat(raw, json.RawMessage("}"))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := canonicalizeJSON(tc.raw); !errors.Is(err, utils.ErrTrailingData) {
+				t.Fatalf("canonicalizeJSON() error = %v, want %v", err, utils.ErrTrailingData)
+			}
+			if err := verifier.Verify(ctx, tc.raw, sig); !errors.Is(err, ErrVerificationFailed) {
+				t.Fatalf("Verify() error = %v, want %v", err, ErrVerificationFailed)
+			}
+		})
+	}
+
+	withWhitespace := slices.Concat(raw, json.RawMessage("\n\t "))
+	if _, err := canonicalizeJSON(withWhitespace); err != nil {
+		t.Fatalf("canonicalizeJSON() with trailing whitespace error = %v", err)
+	}
+	if err := verifier.Verify(ctx, withWhitespace, sig); err != nil {
+		t.Fatalf("Verify() with trailing whitespace error = %v", err)
 	}
 }
 

@@ -17,10 +17,11 @@ package utils
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 )
 
-// ErrTrailingData is returned by [DecodeJSON] when the input has more data after the first JSON value.
+// ErrTrailingData is returned by [DecodeJSON] and [ExpectEOF] when the input has more data after the first JSON value.
 var ErrTrailingData = errors.New("unexpected data after JSON value")
 
 // DecodeJSON decodes exactly one JSON value from r into v. Unlike a single json.Decoder.Decode call,
@@ -30,8 +31,19 @@ func DecodeJSON(r io.Reader, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return err
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return ErrTrailingData
+	return ExpectEOF(dec)
+}
+
+// ExpectEOF reports [ErrTrailingData] if dec has anything other than whitespace left to read.
+// It lets callers that configure their own decoder (e.g. with UseNumber) apply the same check as [DecodeJSON].
+func ExpectEOF(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	switch {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil:
+		return fmt.Errorf("%w: %w", ErrTrailingData, err)
+	default:
+		return fmt.Errorf("%w: %v", ErrTrailingData, tok)
 	}
-	return nil
 }

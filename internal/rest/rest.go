@@ -288,7 +288,7 @@ func FromRESTError(resp *http.Response) error {
 	var body struct {
 		Error ErrorBodyJSON `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := utils.DecodeJSON(resp.Body, &body); err != nil {
 		return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
 	}
 

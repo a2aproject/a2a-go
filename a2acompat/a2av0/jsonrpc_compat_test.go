@@ -16,14 +16,19 @@ package a2av0
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
@@ -84,4 +89,73 @@ func (h *mockExtensionHandler) SendMessage(ctx context.Context, req *a2a.SendMes
 		h.lastRequestedURIs = ext.RequestedURIs()
 	}
 	return &a2a.Message{ID: "resp-1", Role: a2a.MessageRoleAgent, Parts: a2a.ContentParts{a2a.NewTextPart("ok")}}, nil
+}
+
+func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
+	t.Parallel()
+
+	result := json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`)
+
+	testCases := []struct {
+		name    string
+		body    func(resp []byte) []byte
+		wantErr error
+	}{
+		{
+			name: "trailing whitespace is accepted",
+			body: func(resp []byte) []byte { return slices.Concat(resp, []byte("\n\t ")) },
+		},
+		{
+			name:    "trailing garbage",
+			body:    func(resp []byte) []byte { return slices.Concat(resp, []byte("TRAILING_GARBAGE")) },
+			wantErr: utils.ErrTrailingData,
+		},
+		{
+			name:    "concatenated responses",
+			body:    func(resp []byte) []byte { return slices.Concat(resp, resp) },
+			wantErr: utils.ErrTrailingData,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				var rpcReq jsonrpc.ClientRequest
+				if err := json.NewDecoder(req.Body).Decode(&rpcReq); err != nil {
+					t.Errorf("failed to decode request: %v", err)
+					return
+				}
+				resp, err := json.Marshal(jsonrpc.ClientResponse{JSONRPC: jsonrpc.Version, ID: rpcReq.ID, Result: result})
+				if err != nil {
+					t.Errorf("failed to marshal response: %v", err)
+					return
+				}
+				rw.Header().Set("Content-Type", "application/json")
+				_, _ = rw.Write(tc.body(resp))
+			}))
+			defer server.Close()
+
+			transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+
+			task, err := transport.GetTask(context.Background(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetTask() error = %v, want nil", err)
+			}
+			if task.ID != "task-123" {
+				t.Fatalf("Task.ID = %q, want %q", task.ID, a2a.TaskID("task-123"))
+			}
+			if task.Status.State != a2a.TaskStateCompleted {
+				t.Fatalf("Task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateCompleted)
+			}
+		})
+	}
 }

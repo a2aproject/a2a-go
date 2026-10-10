@@ -348,6 +348,16 @@ func TestREST_InvalidPayloads(t *testing.T) {
 			payload: emptyRequest + emptyRequest,
 		},
 		{
+			name:    "SendMessageStream with trailing data",
+			path:    "/message:stream",
+			payload: emptyRequest + "TRAILING_GARBAGE",
+		},
+		{
+			name:    "SendMessageStream with concatenated payloads",
+			path:    "/message:stream",
+			payload: emptyRequest + emptyRequest,
+		},
+		{
 			name:    "CreateTaskPushConfig with trailing data",
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 			payload: `{"url":"https://example.com/push"}}`,

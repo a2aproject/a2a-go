@@ -15,49 +15,105 @@
 package utils
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 )
 
 func TestDecodeJSON(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name    string
 		input   string
 		wantErr error
-		wantAny bool
 	}{
 		{name: "single object", input: `{"a":1}`},
 		{name: "trailing whitespace", input: "{\"a\":1}\n \t\r\n"},
 		{name: "trailing garbage", input: `{"a":1}TRAILING_GARBAGE`, wantErr: ErrTrailingData},
 		{name: "concatenated object", input: `{"a":1}{"a":2}`, wantErr: ErrTrailingData},
 		{name: "extra closing brace", input: `{"a":1}}`, wantErr: ErrTrailingData},
-		{name: "empty input", input: ``, wantAny: true},
-		{name: "invalid json", input: `{"a":`, wantAny: true},
+		{name: "empty input", input: ``, wantErr: io.EOF},
+		{name: "invalid json", input: `{"a":`, wantErr: io.ErrUnexpectedEOF},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var got struct {
 				A int `json:"a"`
 			}
 			err := DecodeJSON(strings.NewReader(tc.input), &got)
-			switch {
-			case tc.wantErr != nil:
+			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("DecodeJSON() error = %v, want %v", err, tc.wantErr)
 				}
-			case tc.wantAny:
-				if err == nil {
-					t.Fatal("DecodeJSON() error = nil, want an error")
+				return
+			}
+			if err != nil {
+				t.Fatalf("DecodeJSON() error = %v", err)
+			}
+			if got.A != 1 {
+				t.Fatalf("DecodeJSON() decoded a = %d, want 1", got.A)
+			}
+		})
+	}
+}
+
+func TestDecodeJSON_WrapsSyntaxError(t *testing.T) {
+	t.Parallel()
+
+	var got any
+	err := DecodeJSON(strings.NewReader(`{"a":1}TRAILING_GARBAGE`), &got)
+
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("DecodeJSON() error = %v, want it to wrap *json.SyntaxError", err)
+	}
+	if !errors.Is(err, ErrTrailingData) {
+		t.Fatalf("DecodeJSON() error = %v, want %v", err, ErrTrailingData)
+	}
+}
+
+func TestExpectEOF(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		input   string
+		wantErr error
+	}{
+		{name: "number with trailing whitespace", input: "1 \n"},
+		{name: "number followed by value", input: `1 2`, wantErr: ErrTrailingData},
+		{name: "number followed by garbage", input: `1 x`, wantErr: ErrTrailingData},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			dec := json.NewDecoder(strings.NewReader(tc.input))
+			dec.UseNumber()
+			var got json.Number
+			if err := dec.Decode(&got); err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			if got != "1" {
+				t.Fatalf("Decode() = %s, want 1", got)
+			}
+
+			err := ExpectEOF(dec)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ExpectEOF() error = %v, want %v", err, tc.wantErr)
 				}
-			default:
-				if err != nil {
-					t.Fatalf("DecodeJSON() error = %v", err)
-				}
-				if got.A != 1 {
-					t.Fatalf("DecodeJSON() decoded a = %d, want 1", got.A)
-				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ExpectEOF() error = %v", err)
 			}
 		})
 	}
