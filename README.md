@@ -84,6 +84,62 @@ For a full documentation visit [**pkg.go.dev/a2asrv**](https://pkg.go.dev/github
     err := http.ListenAndServe(":8080", nil)
     ```
 
+### Agent first-output timeout
+
+Use a separate first-output budget when progress events can arrive before useful
+output. The matcher defines output for your application; this example waits for
+a non-empty text artifact:
+
+```go
+firstText := func(event a2a.Event) bool {
+    update, ok := event.(*a2a.TaskArtifactUpdateEvent)
+    if !ok || update.Artifact == nil {
+        return false
+    }
+    for _, part := range update.Artifact.Parts {
+        if part != nil && part.Text() != "" {
+            return true
+        }
+    }
+    return false
+}
+requestHandler := a2asrv.NewHandler(agentExecutor,
+    a2asrv.WithAgentFirstOutputTimeout(10*time.Second, firstText),
+    a2asrv.WithAgentInactivityTimeout(30*time.Second),
+)
+```
+
+The first-output timer starts when execution starts, after executor setup, and
+stops permanently when a matching event is successfully written to the internal
+event pipe. Other events do not reset it. A nil matcher accepts any first event;
+a non-positive duration disables the feature. The independent inactivity timer
+still resets on every successful event write and may expire first.
+
+This applies to both blocking and streaming sends in local and cluster modes.
+Task subscriptions and cancellation executions do not start a first-output timer.
+It excludes admission, work-queue waiting, executor setup, and delivery to the
+client. Matchers must return promptly, not mutate events, and support concurrent
+executions. Executors must honor context cancellation; the timeout cause is
+detectable with `errors.Is(context.Cause(ctx), a2asrv.ErrAgentFirstOutputTimeout)`.
+
+An optional live smoke test exercises JSON-RPC/SSE with an OpenAI-compatible
+streaming model. Configure `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `MODEL_NAME`
+through your environment, then run:
+
+```sh
+A2A_RUN_MODEL_SMOKE=1 go test -race ./e2e \
+  -run '^TestAgentFirstOutputTimeout_ModelSmoke$' -v -count=1 -timeout=120s
+```
+
+The test makes two real model requests: one forwards model text and keeps the A2A
+stream open beyond the 30-second budget; the other deliberately withholds the
+response body while emitting progress, then verifies timeout cancellation and a
+persisted failed task. The provider must support streaming chat completions and
+produce text within 30 seconds. Normal tests do not call an external model.
+Provider-specific request fields can be supplied as a JSON object through
+`A2A_MODEL_EXTRA_BODY`, for example `'{"thinking":{"type":"disabled"}}'` for a
+provider that supports disabling reasoning.
+
 ### Client 
 
 For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2/a2aclient).

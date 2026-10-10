@@ -157,8 +157,14 @@ func runProducerConsumer(
 	heartbeater workqueue.Heartbeater,
 	panicHandler PanicHandlerFn,
 	inactivity *inactivityTracker,
+	firstOutput *firstOutputTracker,
 ) (a2a.SendMessageResult, error) {
 	group, ctx := errgroup.WithContext(ctx)
+
+	if firstOutput != nil {
+		timer := time.NewTimer(firstOutput.timeout)
+		group.Go(func() error { return firstOutput.wait(ctx, timer) })
+	}
 
 	if inactivity != nil && inactivity.config.timeout > 0 && inactivity.writeRecorded != nil {
 		cfg := inactivity.config

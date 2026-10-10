@@ -29,20 +29,24 @@ import (
 )
 
 type workQueueHandler struct {
-	queueManager      eventqueue.Manager
-	taskStore         taskstore.Store
-	factory           Factory
-	panicHandler      PanicHandlerFn
-	inactivityTimeout time.Duration
+	queueManager       eventqueue.Manager
+	taskStore          taskstore.Store
+	factory            Factory
+	panicHandler       PanicHandlerFn
+	inactivityTimeout  time.Duration
+	firstOutputTimeout time.Duration
+	firstOutputMatcher func(a2a.Event) bool
 }
 
 func newWorkQueueHandler(cfg DistributedManagerConfig) *workQueueHandler {
 	backend := &workQueueHandler{
-		queueManager:      cfg.QueueManager,
-		taskStore:         cfg.TaskStore,
-		factory:           cfg.Factory,
-		panicHandler:      cfg.PanicHandler,
-		inactivityTimeout: cfg.AgentInactivityTimeout,
+		queueManager:       cfg.QueueManager,
+		taskStore:          cfg.TaskStore,
+		factory:            cfg.Factory,
+		panicHandler:       cfg.PanicHandler,
+		inactivityTimeout:  cfg.AgentInactivityTimeout,
+		firstOutputTimeout: cfg.AgentFirstOutputTimeout,
+		firstOutputMatcher: cfg.AgentFirstOutputMatcher,
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -82,6 +86,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 	tracker := newInactivityTracker(b.inactivityTimeout)
 	producerWriter := newActivityTrackingWriter(pipe.Writer, tracker)
 
+	var firstOutput *firstOutputTracker
 	var eventProducer eventProducerFn
 	var eventProcessor Processor
 	var cleaner Cleaner
@@ -95,6 +100,8 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		if err != nil {
 			return nil, fmt.Errorf("executor setup failed: %w", err)
 		}
+		firstOutput = newFirstOutputTracker(b.firstOutputTimeout, b.firstOutputMatcher)
+		producerWriter = newFirstOutputTrackingWriter(producerWriter, firstOutput)
 		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) }
 		eventProcessor = processor
 		cleaner = localCleaner
@@ -139,7 +146,7 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		heartbeater = hb
 	}
 
-	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler, tracker)
+	result, err := runProducerConsumer(ctx, eventProducer, handler.processEvents, heartbeater, b.panicHandler, tracker, firstOutput)
 	cleaner.Cleanup(ctx, result, err)
 	return result, err
 }

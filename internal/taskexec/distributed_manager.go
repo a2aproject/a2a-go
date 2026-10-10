@@ -46,6 +46,11 @@ type DistributedManagerConfig struct {
 	// configured duration. The terminating cause is [ErrAgentInactivityTimeout].
 	// A value of 0 disables the watcher, preserving prior behavior.
 	AgentInactivityTimeout time.Duration
+	// AgentFirstOutputTimeout bounds time to the first successfully written matching event.
+	// Non-positive values disable the timeout. It only applies to executions.
+	AgentFirstOutputTimeout time.Duration
+	// AgentFirstOutputMatcher selects the first output; nil accepts any event.
+	AgentFirstOutputMatcher func(a2a.Event) bool
 }
 
 type distributedManager struct {
