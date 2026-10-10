@@ -758,3 +758,62 @@ func (h *mockStreamingRESTHandler) SubscribeToTask(_ context.Context, req *a2a.S
 		}, nil)
 	}
 }
+
+func TestREST_ClientResponseTrailingData(t *testing.T) {
+	t.Parallel()
+
+	task := `{"id":"task-456","status":{"state":"TASK_STATE_COMPLETED"}}`
+
+	testCases := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{
+			name: "trailing whitespace is accepted",
+			body: task + "\n\t ",
+		},
+		{
+			name:    "trailing garbage",
+			body:    task + "TRAILING_GARBAGE",
+			wantErr: true,
+		},
+		{
+			name:    "concatenated responses",
+			body:    task + task,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				rw.Header().Set("Content-Type", "application/json")
+				_, _ = rw.Write([]byte(tc.body))
+			}))
+			defer fakeServer.Close()
+
+			transport, err := NewRESTTransport(RESTTransportConfig{URL: fakeServer.URL})
+			if err != nil {
+				t.Fatalf("NewRESTTransport() error = %v, want nil", err)
+			}
+
+			got, err := transport.GetTask(context.Background(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-456"})
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("GetTask() error = nil, want an error for body %q", tc.body)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetTask() error = %v, want nil", err)
+			}
+			if got.ID != "task-456" {
+				t.Fatalf("Task.ID = %q, want %q", got.ID, a2a.TaskID("task-456"))
+			}
+		})
+	}
+}

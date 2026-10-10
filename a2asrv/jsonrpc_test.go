@@ -246,6 +246,24 @@ func TestJSONRPC_Validations(t *testing.T) {
 			request: mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: json.RawMessage("[]")}),
 			wantErr: a2a.ErrInvalidParams,
 		},
+		{
+			name:    "trailing data after request",
+			method:  "POST",
+			request: append(mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}), []byte("TRAILING_GARBAGE")...),
+			wantErr: a2a.ErrParseError,
+		},
+		{
+			name:    "concatenated requests",
+			method:  "POST",
+			request: append(mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}), mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "124"})...),
+			wantErr: a2a.ErrParseError,
+		},
+		{
+			name:    "trailing whitespace is accepted",
+			method:  "POST",
+			request: append(mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}), []byte("\n\t ")...),
+			want:    want,
+		},
 	}
 
 	store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{

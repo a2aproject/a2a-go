@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -574,4 +575,59 @@ func newRESTTransport(t *testing.T, server *httptest.Server) Transport {
 		t.Fatalf("url.Parse(%q) error = %v", server.URL, err)
 	}
 	return NewRESTTransport(u, server.Client())
+}
+
+func TestRESTTransport_ResponseTrailingData(t *testing.T) {
+	t.Parallel()
+
+	task := `{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`
+
+	testCases := []struct {
+		name    string
+		body    string
+		wantErr error
+	}{
+		{
+			name: "trailing whitespace is accepted",
+			body: task + "\n\t ",
+		},
+		{
+			name:    "trailing garbage",
+			body:    task + "TRAILING_GARBAGE",
+			wantErr: utils.ErrTrailingData,
+		},
+		{
+			name:    "concatenated responses",
+			body:    task + task,
+			wantErr: utils.ErrTrailingData,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+
+			got, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetTask() error = %v", err)
+			}
+			if got.ID != "task-123" {
+				t.Errorf("got task ID %s, want task-123", got.ID)
+			}
+		})
+	}
 }
