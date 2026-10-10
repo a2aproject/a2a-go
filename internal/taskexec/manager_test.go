@@ -25,6 +25,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
@@ -865,5 +866,63 @@ func TestManager_AgentInactivityTimeout(t *testing.T) {
 	}
 	if !errors.Is(executorCause, ErrAgentInactivityTimeout) {
 		t.Fatalf("context.Cause(executorCtx) = %v, want errors.Is(_, ErrAgentInactivityTimeout)", executorCause)
+	}
+}
+
+func TestManager_StalledSubscriptionReleasesConcurrencyQuota(t *testing.T) {
+	t.Parallel()
+
+	executors := make(chan *testExecutor, 2)
+	manager := NewLocalManager(LocalManagerConfig{
+		QueueManager: eventqueue.NewInMemoryManager(
+			eventqueue.WithQueueBufferSize(0),
+			eventqueue.WithSubscriberTimeout(20*time.Millisecond),
+		),
+		ConcurrencyConfig: limiter.ConcurrencyConfig{MaxExecutions: 1},
+		TaskStore:         testutil.NewTestTaskStore(),
+		Factory: &testFactory{
+			CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
+				executor := newExecutor()
+				executor.nextEventTerminal = true
+				executors <- executor
+				return executor, executor, executor, nil
+			},
+		},
+	})
+
+	first, err := manager.Execute(t.Context(), &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+	if err != nil {
+		t.Fatalf("first Execute() error = %v", err)
+	}
+	firstExecutor := <-executors
+	<-firstExecutor.executeCalled
+
+	firstExecutor.mustWrite(t, &a2a.Task{ID: first.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
+
+	var second Subscription
+	deadline := time.After(time.Second)
+	for second == nil {
+		var executeErr error
+		second, executeErr = manager.Execute(t.Context(), &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+		if executeErr == nil {
+			break
+		}
+		second = nil
+		select {
+		case <-deadline:
+			t.Fatalf("second Execute() remained blocked by the first execution quota: %v", executeErr)
+		case <-time.After(time.Millisecond):
+		}
+	}
+
+	secondExecutor := <-executors
+	<-secondExecutor.executeCalled
+	secondEvents, secondErr := consumeEvents(t, second)
+	secondExecutor.mustWrite(t, &a2a.Task{ID: second.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
+	if err := <-secondErr; err != nil {
+		t.Fatalf("second subscription error = %v", err)
+	}
+	if got := <-secondEvents; len(got) != 1 {
+		t.Fatalf("second execution emitted %d events, want 1", len(got))
 	}
 }
