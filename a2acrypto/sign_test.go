@@ -202,32 +202,45 @@ func TestCanonical_rejects_trailing_data(t *testing.T) {
 	verifier := staticVerifier(key.Public())
 
 	cases := []struct {
-		name string
-		raw  json.RawMessage
+		name                string
+		raw                 json.RawMessage
+		wantCanonicalizeErr error
+		wantVerifyErr       error
 	}{
-		{"trailing garbage", slices.Concat(raw, json.RawMessage("TRAILING_GARBAGE"))},
-		{"concatenated cards", slices.Concat(raw, raw)},
-		{"extra closing brace", slices.Concat(raw, json.RawMessage("}"))},
+		{
+			name: "trailing whitespace is accepted",
+			raw:  slices.Concat(raw, json.RawMessage("\n\t ")),
+		},
+		{
+			name:                "trailing garbage",
+			raw:                 slices.Concat(raw, json.RawMessage("TRAILING_GARBAGE")),
+			wantCanonicalizeErr: utils.ErrTrailingData,
+			wantVerifyErr:       ErrVerificationFailed,
+		},
+		{
+			name:                "concatenated cards",
+			raw:                 slices.Concat(raw, raw),
+			wantCanonicalizeErr: utils.ErrTrailingData,
+			wantVerifyErr:       ErrVerificationFailed,
+		},
+		{
+			name:                "extra closing brace",
+			raw:                 slices.Concat(raw, json.RawMessage("}")),
+			wantCanonicalizeErr: utils.ErrTrailingData,
+			wantVerifyErr:       ErrVerificationFailed,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := canonicalizeJSON(tc.raw); !errors.Is(err, utils.ErrTrailingData) {
-				t.Fatalf("canonicalizeJSON() error = %v, want %v", err, utils.ErrTrailingData)
+			if _, err := canonicalizeJSON(tc.raw); !errors.Is(err, tc.wantCanonicalizeErr) {
+				t.Fatalf("canonicalizeJSON() error = %v, want %v", err, tc.wantCanonicalizeErr)
 			}
-			if err := verifier.Verify(ctx, tc.raw, sig); !errors.Is(err, ErrVerificationFailed) {
-				t.Fatalf("Verify() error = %v, want %v", err, ErrVerificationFailed)
+			if err := verifier.Verify(ctx, tc.raw, sig); !errors.Is(err, tc.wantVerifyErr) {
+				t.Fatalf("Verify() error = %v, want %v", err, tc.wantVerifyErr)
 			}
 		})
-	}
-
-	withWhitespace := slices.Concat(raw, json.RawMessage("\n\t "))
-	if _, err := canonicalizeJSON(withWhitespace); err != nil {
-		t.Fatalf("canonicalizeJSON() with trailing whitespace error = %v", err)
-	}
-	if err := verifier.Verify(ctx, withWhitespace, sig); err != nil {
-		t.Fatalf("Verify() with trailing whitespace error = %v", err)
 	}
 }
 

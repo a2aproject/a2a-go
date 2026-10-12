@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
@@ -95,6 +96,7 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 	t.Parallel()
 
 	result := json.RawMessage(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"completed"}}`)
+	want := &a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 
 	testCases := []struct {
 		name    string
@@ -123,7 +125,7 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 				var rpcReq jsonrpc.ClientRequest
-				if err := json.NewDecoder(req.Body).Decode(&rpcReq); err != nil {
+				if err := utils.DecodeJSON(req.Body, &rpcReq); err != nil {
 					t.Errorf("failed to decode request: %v", err)
 					return
 				}
@@ -139,22 +141,15 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 
 			transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
 
-			task, err := transport.GetTask(context.Background(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
-
+			got, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+			}
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
-				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("GetTask() error = %v, want nil", err)
-			}
-			if task.ID != "task-123" {
-				t.Fatalf("Task.ID = %q, want %q", task.ID, a2a.TaskID("task-123"))
-			}
-			if task.Status.State != a2a.TaskStateCompleted {
-				t.Fatalf("Task.Status.State = %q, want %q", task.Status.State, a2a.TaskStateCompleted)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
 		})
 	}

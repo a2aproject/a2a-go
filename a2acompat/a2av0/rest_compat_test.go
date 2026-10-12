@@ -28,6 +28,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/google/go-cmp/cmp"
 )
 
 // --- server tests ---
@@ -763,6 +764,7 @@ func TestREST_ClientResponseTrailingData(t *testing.T) {
 	t.Parallel()
 
 	task := `{"id":"task-456","status":{"state":"TASK_STATE_COMPLETED"}}`
+	want := &a2a.Task{ID: "task-456", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 
 	testCases := []struct {
 		name    string
@@ -800,19 +802,15 @@ func TestREST_ClientResponseTrailingData(t *testing.T) {
 				t.Fatalf("NewRESTTransport() error = %v, want nil", err)
 			}
 
-			got, err := transport.GetTask(context.Background(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-456"})
-
+			got, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-456"})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("GetTask() error = %v, wantErr %v", err, tc.wantErr)
+			}
 			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("GetTask() error = nil, want an error for body %q", tc.body)
-				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("GetTask() error = %v, want nil", err)
-			}
-			if got.ID != "task-456" {
-				t.Fatalf("Task.ID = %q, want %q", got.ID, a2a.TaskID("task-456"))
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
 		})
 	}

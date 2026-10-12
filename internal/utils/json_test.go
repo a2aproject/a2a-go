@@ -47,14 +47,11 @@ func TestDecodeJSON(t *testing.T) {
 				A int `json:"a"`
 			}
 			err := DecodeJSON(strings.NewReader(tc.input), &got)
-			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("DecodeJSON() error = %v, want %v", err, tc.wantErr)
-				}
-				return
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("DecodeJSON() error = %v, want %v", err, tc.wantErr)
 			}
-			if err != nil {
-				t.Fatalf("DecodeJSON() error = %v", err)
+			if tc.wantErr != nil {
+				return
 			}
 			if got.A != 1 {
 				t.Fatalf("DecodeJSON() decoded a = %d, want 1", got.A)
@@ -105,15 +102,8 @@ func TestExpectEOF(t *testing.T) {
 				t.Fatalf("Decode() = %s, want 1", got)
 			}
 
-			err := ExpectEOF(dec)
-			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("ExpectEOF() error = %v, want %v", err, tc.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ExpectEOF() error = %v", err)
+			if err := ExpectEOF(dec); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("ExpectEOF() error = %v, want %v", err, tc.wantErr)
 			}
 		})
 	}

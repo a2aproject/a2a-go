@@ -581,6 +581,7 @@ func TestRESTTransport_ResponseTrailingData(t *testing.T) {
 	t.Parallel()
 
 	task := `{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`
+	want := &a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 
 	testCases := []struct {
 		name    string
@@ -615,18 +616,14 @@ func TestRESTTransport_ResponseTrailingData(t *testing.T) {
 			transport := newRESTTransport(t, server)
 
 			got, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
-
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+			}
 			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
-				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("GetTask() error = %v", err)
-			}
-			if got.ID != "task-123" {
-				t.Errorf("got task ID %s, want task-123", got.ID)
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
 		})
 	}
