@@ -122,7 +122,7 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
 	t.Parallel()
 
-	cutoff := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	cutoff := time.Date(2026, 6, 20, 14, 0, 0, 123456789, time.FixedZone("UTC+2", 2*60*60))
 	historyLength := 7
 	var gotQuery url.Values
 
@@ -159,7 +159,7 @@ func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
 		"pageSize":             []string{"25"},
 		"pageToken":            []string{"next-page"},
 		"historyLength":        []string{"7"},
-		"statusTimestampAfter": []string{cutoff.Format(time.RFC3339)},
+		"statusTimestampAfter": []string{"2026-06-20T12:00:00.123Z"},
 		"includeArtifacts":     []string{"true"},
 	}
 	if diff := cmp.Diff(want, gotQuery); diff != "" {
