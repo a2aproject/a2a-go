@@ -27,6 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -61,7 +62,7 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}()
 
 	var payload jsonrpc.ServerRequest
-	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+	if err := utils.DecodeJSON(req.Body, &payload); err != nil {
 		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
 		return
 	}

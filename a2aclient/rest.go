@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -154,7 +155,7 @@ func (t *RESTTransport) doRequest(ctx context.Context, req *restRequest, result 
 	}()
 
 	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		if err := utils.DecodeJSON(resp.Body, result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 	}

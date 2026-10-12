@@ -27,6 +27,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -439,6 +440,27 @@ func TestFromRESTErrorEdgeCases(t *testing.T) {
 			contentType:  "application/json; charset=utf-8",
 			responseBody: `{"error":{"code":404,"status":"NOT_FOUND","message":"no such task","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"TASK_NOT_FOUND","domain":"a2a-protocol.org"}]}}`,
 			wantError:    a2a.ErrTaskNotFound,
+		},
+		{
+			name:         "Trailing data after error body",
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS") + "TRAILING_GARBAGE",
+			wantError:    a2a.ErrParseError,
+			wantMessage:  utils.ErrTrailingData.Error(),
+		},
+		{
+			name:         "Concatenated error bodies",
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS") + makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS"),
+			wantError:    a2a.ErrParseError,
+			wantMessage:  utils.ErrTrailingData.Error(),
+		},
+		{
+			name:         "Trailing whitespace after error body",
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS") + "\n\t ",
+			wantError:    a2a.ErrInvalidParams,
+			wantMessage:  "bad request",
 		},
 	}
 
