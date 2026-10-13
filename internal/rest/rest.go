@@ -41,14 +41,14 @@ const (
 	QueryIncludeArtifacts     = "includeArtifacts"
 )
 
-// TimestampLayout is the timestamp pattern of the spec, YYYY-MM-DDTHH:mm:ss.sssZ.
+// timestampLayout is the timestamp pattern of the spec, YYYY-MM-DDTHH:mm:ss.sssZ.
 // It is the same pattern a2a uses for JSON timestamps.
-const TimestampLayout = "2006-01-02T15:04:05.000Z"
+const timestampLayout = "2006-01-02T15:04:05.000Z"
 
 // FormatTimestamp formats t for a query parameter: in UTC, with exactly three
 // fractional digits, e.g. 2026-10-01T08:30:00.000Z.
 func FormatTimestamp(t time.Time) string {
-	return t.UTC().Format(TimestampLayout)
+	return t.UTC().Format(timestampLayout)
 }
 
 // PathBuilder constructs REST paths for A2A endpoints, optionally rooted

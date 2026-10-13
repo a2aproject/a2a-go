@@ -409,32 +409,17 @@ func (s TaskStatus) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		wire
 		Timestamp *jsonTimestamp `json:"timestamp,omitempty"`
-	}{wire: wire(s), Timestamp: newJSONTimestamp(s.Timestamp)})
+	}{wire: wire(s), Timestamp: (*jsonTimestamp)(s.Timestamp)})
 }
 
-// jsonTimestampLayout is the timestamp pattern of the spec, YYYY-MM-DDTHH:mm:ss.sssZ.
-const jsonTimestampLayout = "2006-01-02T15:04:05.000Z"
+const timestampLayout = "2006-01-02T15:04:05.000Z"
 
-// jsonTimestamp writes a time as the spec requires for JSON timestamps: in UTC,
-// with exactly three fractional digits, e.g. 2026-10-01T08:30:00.000Z.
-// Reading is left to time.Time, which accepts any precision and offset.
+// jsonTimestamp writes a time as ISO 8601 formatted strings in UTC timezone with Millisecond precision.
 type jsonTimestamp time.Time
-
-func newJSONTimestamp(t *time.Time) *jsonTimestamp {
-	if t == nil {
-		return nil
-	}
-	ts := jsonTimestamp(*t)
-	return &ts
-}
 
 // MarshalJSON implements json.Marshaler.
 func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
-	utc := time.Time(t).UTC()
-	if y := utc.Year(); y < 0 || y > 9999 {
-		return nil, fmt.Errorf("timestamp year %d outside of range [0,9999]", y)
-	}
-	return []byte(`"` + utc.Format(jsonTimestampLayout) + `"`), nil
+	return json.Marshal(time.Time(t).UTC().Format(timestampLayout))
 }
 
 // Meta implements MetadataCarrier.
@@ -918,7 +903,7 @@ func (r ListTasksRequest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		wire
 		StatusTimestampAfter *jsonTimestamp `json:"statusTimestampAfter,omitempty"`
-	}{wire: wire(r), StatusTimestampAfter: newJSONTimestamp(r.StatusTimestampAfter)})
+	}{wire: wire(r), StatusTimestampAfter: (*jsonTimestamp)(r.StatusTimestampAfter)})
 }
 
 // ListTasksResponse defines the response for a request to tasks/list.
