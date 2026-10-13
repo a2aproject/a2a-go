@@ -21,7 +21,6 @@ import (
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // ApplyUpdate returns a new [a2a.Task] produced by applying the event to the provided task.
@@ -73,7 +72,7 @@ func deepCopyResult(task *a2a.Task, err error) (*a2a.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return utils.DeepCopy(task)
+	return a2a.CopyTask(task), nil
 }
 
 func applyShallowArtifactUpdate(src *a2a.Task, event *a2a.TaskArtifactUpdateEvent) (*a2a.Task, error) {

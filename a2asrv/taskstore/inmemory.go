@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 type storedTask struct {
@@ -89,10 +88,7 @@ func (s *InMemory) Create(ctx context.Context, task *a2a.Task) (TaskVersion, err
 		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
 
-	taskCopy, err := utils.DeepCopy(task)
-	if err != nil {
-		return TaskVersionMissing, err
-	}
+	taskCopy := a2a.CopyTask(task)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,10 +117,7 @@ func (s *InMemory) Update(ctx context.Context, req *UpdateRequest) (TaskVersion,
 		return TaskVersionMissing, fmt.Errorf("taskstore auth failed: %w", err)
 	}
 
-	taskCopy, err := utils.DeepCopy(req.Task)
-	if err != nil {
-		return TaskVersionMissing, err
-	}
+	taskCopy := a2a.CopyTask(req.Task)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,10 +164,7 @@ func (s *InMemory) Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, err
 		return nil, a2a.ErrTaskNotFound
 	}
 
-	task, err := utils.DeepCopy(storedTask.task)
-	if err != nil {
-		return nil, fmt.Errorf("task copy failed: %w", err)
-	}
+	task := a2a.CopyTask(storedTask.task)
 
 	return &StoredTask{Task: task, Version: storedTask.version, User: storedTask.user}, nil
 }
@@ -210,10 +200,7 @@ func (s *InMemory) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.Li
 		return nil, err
 	}
 
-	listTasksResult, err := toListTasksResult(tasksPage, req)
-	if err != nil {
-		return nil, err
-	}
+	listTasksResult := toListTasksResult(tasksPage, req)
 
 	return &a2a.ListTasksResponse{
 		Tasks:         listTasksResult,
@@ -285,14 +272,11 @@ func applyPagination(filteredTasks []*storedTask, pageSize int, req *a2a.ListTas
 	return tasksPage, nextPageToken, nil
 }
 
-func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.Task, error) {
+func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) []*a2a.Task {
 	var result []*a2a.Task
 	const defaultMaxHistoryLength = 100
 	for _, storedTask := range tasks {
-		taskCopy, err := utils.DeepCopy(storedTask.task)
-		if err != nil {
-			return nil, err
-		}
+		taskCopy := a2a.CopyTask(storedTask.task)
 		historyLength := defaultMaxHistoryLength
 		if req.HistoryLength != nil {
 			historyLength = *req.HistoryLength
@@ -308,7 +292,7 @@ func toListTasksResult(tasks []*storedTask, req *a2a.ListTasksRequest) ([]*a2a.T
 
 		result = append(result, taskCopy)
 	}
-	return result, nil
+	return result
 }
 
 func encodePageToken(updatedTime time.Time, taskID a2a.TaskID) string {

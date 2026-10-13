@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -71,10 +70,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	toSave, err := utils.DeepCopy(config)
-	if err != nil {
-		return nil, err
-	}
+	toSave := a2a.CopyPushConfig(config)
 
 	if toSave.ID == "" {
 		toSave.ID = newID()
@@ -86,12 +82,7 @@ func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, c
 	}
 	s.configs[taskID][toSave.ID] = toSave
 
-	savedCopy, err := utils.DeepCopy(toSave)
-	if err != nil {
-		return nil, err
-	}
-
-	return savedCopy, nil
+	return a2a.CopyPushConfig(toSave), nil
 }
 
 // Get returns a copy of stored config.
@@ -101,7 +92,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, co
 
 	if configs, ok := s.configs[taskID]; ok {
 		if config, ok := configs[configID]; ok {
-			return utils.DeepCopy(config)
+			return a2a.CopyPushConfig(config), nil
 		}
 	}
 
@@ -120,11 +111,7 @@ func (s *InMemoryPushConfigStore) List(ctx context.Context, taskID a2a.TaskID) (
 
 	result := make([]*a2a.PushConfig, 0, len(configs))
 	for _, config := range configs {
-		cp, err := utils.DeepCopy(config)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, cp)
+		result = append(result, a2a.CopyPushConfig(config))
 	}
 	return result, nil
 }
