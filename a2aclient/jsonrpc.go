@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"mime"
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -156,6 +157,23 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 			log.Error(ctx, "failed to close http response body", err)
 		}
 		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+	}
+	// The server may refuse a streaming call before opening a stream (e.g. task in a terminal
+	// state) and answer with a plain JSON-RPC error instead of SSE.
+	if mediaType, _, _ := mime.ParseMediaType(httpResp.Header.Get("Content-Type")); mediaType == jsonrpc.ContentJSON {
+		defer func() {
+			if err := httpResp.Body.Close(); err != nil {
+				log.Error(ctx, "failed to close http response body", err)
+			}
+		}()
+		var resp jsonrpc.ClientResponse
+		if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to decode non-streaming response: %w", err)
+		}
+		if resp.Error != nil {
+			return nil, jsonrpc.FromJSONRPCError(resp.Error)
+		}
+		return nil, fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
 	}
 
 	return httpResp.Body, nil

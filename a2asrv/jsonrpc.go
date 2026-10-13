@@ -141,6 +141,14 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 	}
 }
 
+// sseItem is what the producer goroutine hands to the response writer: a marshaled JSON-RPC
+// response carrying one event, or the error that ended the sequence. Errors travel unmarshaled
+// because how they are written depends on whether the SSE stream has started yet.
+type sseItem struct {
+	data []byte
+	err  error
+}
+
 func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
@@ -148,9 +156,36 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 		return
 	}
 
-	sseWriter.WriteHeaders()
+	// The SSE headers are written lazily, on the first event or keep-alive. Until then nothing has
+	// been sent, so a request that fails before producing any event (unsupported operation, task in
+	// a terminal state, task not found, ...) is answered with a regular JSON-RPC error response
+	// rather than an error event inside an otherwise empty stream.
+	streamStarted := false
+	startStream := func() {
+		if !streamStarted {
+			sseWriter.WriteHeaders()
+			streamStarted = true
+		}
+	}
 
-	sseChan, panicChan := make(chan []byte), make(chan error, 1)
+	// writeError reports err as a plain JSON-RPC error response before the stream has started,
+	// and as an SSE event after.
+	writeError := func(err error) {
+		if !streamStarted {
+			h.writeJSONRPCError(ctx, rw, err, req.ID)
+			return
+		}
+		data, ok := marshalJSONRPCError(req, err)
+		if !ok {
+			log.Error(ctx, "failed to marshal error response", err)
+			return
+		}
+		if err := sseWriter.WriteData(ctx, data); err != nil {
+			log.Error(ctx, "failed to write an event", err)
+		}
+	}
+
+	sseChan, panicChan := make(chan sseItem), make(chan error, 1)
 	requestCtx, cancelExecCtx := context.WithCancel(ctx)
 	defer cancelExecCtx()
 	go func() {
@@ -158,7 +193,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			if r := recover(); r != nil {
 				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
-				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
+				// Only close if not panicked, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
 			}
 		}()
@@ -197,21 +232,30 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 				log.Error(ctx, "failed to marshal error response", err)
 				return
 			}
+			startStream()
 			if err := sseWriter.WriteData(ctx, data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
 			}
 			// Prevent the handler from hanging
 			return
 		case <-keepAliveChan:
+			startStream()
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
 				return
 			}
-		case data, ok := <-sseChan:
+		case item, ok := <-sseChan:
 			if !ok {
+				// A sequence that ended without yielding anything is still answered with an (empty) stream.
+				startStream()
 				return
 			}
-			if err := sseWriter.WriteData(ctx, data); err != nil {
+			if item.err != nil {
+				writeError(item.err)
+				return
+			}
+			startStream()
+			if err := sseWriter.WriteData(ctx, item.data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
 				return
 			}
@@ -219,37 +263,31 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	}
 }
 
-func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpc.ServerRequest, sseChan chan []byte, events iter.Seq2[a2a.Event, error]) {
-	handleError := func(err error) {
-		bytes, ok := marshalJSONRPCError(req, err)
-		if !ok {
-			log.Error(ctx, "failed to marshal error response", err)
-			return
-		}
+func eventSeqToSSEDataStream(ctx context.Context, req *jsonrpc.ServerRequest, sseChan chan<- sseItem, events iter.Seq2[a2a.Event, error]) {
+	send := func(item sseItem) bool {
 		select {
 		case <-ctx.Done():
-			return
-		case sseChan <- bytes:
+			return false
+		case sseChan <- item:
+			return true
 		}
 	}
 
 	for event, err := range events {
 		if err != nil {
-			handleError(err)
+			send(sseItem{err: err})
 			return
 		}
 
 		resp := jsonrpc.ServerResponse{JSONRPC: jsonrpc.Version, ID: req.ID, Result: a2a.StreamResponse{Event: event}}
 		bytes, err := json.Marshal(resp)
 		if err != nil {
-			handleError(err)
+			send(sseItem{err: err})
 			return
 		}
 
-		select {
-		case <-ctx.Done():
+		if !send(sseItem{data: bytes}) {
 			return
-		case sseChan <- bytes:
 		}
 	}
 }

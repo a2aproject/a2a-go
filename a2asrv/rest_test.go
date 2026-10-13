@@ -32,6 +32,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
+	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"github.com/google/go-cmp/cmp"
@@ -196,6 +197,7 @@ func TestREST_Validations(t *testing.T) {
 			name:    "SendMessageStream",
 			methods: []string{http.MethodPost},
 			path:    "/message:stream",
+			body:    a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))},
 		},
 		{
 			name:    "GetTask",
@@ -208,14 +210,14 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/tasks",
 		},
 		{
-			name:    "CancelTask",
-			methods: []string{http.MethodPost},
-			path:    "/tasks/" + string(taskID) + ":cancel",
-		},
-		{
 			name:    "ResubscribeToTask",
 			methods: []string{http.MethodGet, http.MethodPost},
 			path:    "/tasks/" + string(taskID) + ":subscribe",
+		},
+		{
+			name:    "CancelTask",
+			methods: []string{http.MethodPost},
+			path:    "/tasks/" + string(taskID) + ":cancel",
 		},
 		{
 			name:    "CreateAndListTaskPushConfig",
@@ -830,6 +832,114 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 			}
 			if capturedReq.Status != tc.wantStatus {
 				t.Fatalf("listTasks status = %q, want %q", capturedReq.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestREST_StreamingErrors(t *testing.T) {
+	t.Parallel()
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("first"))
+
+	testCases := []struct {
+		name            string
+		events          iter.Seq2[a2a.Event, error]
+		wantStatus      int
+		wantContentType string
+		wantEvents      []a2a.Event
+		wantErr         error
+	}{
+		{
+			name: "error before first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			wantStatus:      http.StatusNotFound,
+			wantContentType: "application/json",
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name: "error after first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				if !yield(msg, nil) {
+					return
+				}
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
+			wantEvents:      []a2a.Event{msg},
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name:            "no events",
+			events:          func(yield func(a2a.Event, error) bool) {},
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			mock := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return tc.events
+				},
+			}
+			server := httptest.NewServer(NewRESTHandler(mock))
+			t.Cleanup(server.Close)
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+rest.MakeSubscribeTaskPath("test-id"), nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("Accept", sse.ContentEventStream)
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("resp.StatusCode = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			if got := resp.Header.Get("Content-Type"); got != tc.wantContentType {
+				t.Fatalf("resp.Header.Get(\"Content-Type\") = %q, want %q", got, tc.wantContentType)
+			}
+
+			if tc.wantContentType != sse.ContentEventStream {
+				if err := rest.FromRESTError(resp); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("rest.FromRESTError() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+
+			var gotEvents []a2a.Event
+			var gotErr error
+			for data, err := range sse.ParseDataStream(resp.Body) {
+				if err != nil {
+					t.Fatalf("sse.ParseDataStream() error = %v", err)
+				}
+				event, err := rest.ParseStreamResponse(data)
+				if err != nil {
+					gotErr = err
+					continue
+				}
+				gotEvents = append(gotEvents, event)
+			}
+			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
+				t.Fatalf("rest.ParseStreamResponse() wrong result (-want +got) diff = %s", diff)
+			}
+			if !errors.Is(gotErr, tc.wantErr) {
+				t.Fatalf("rest.ParseStreamResponse() error = %v, want %v", gotErr, tc.wantErr)
 			}
 		})
 	}

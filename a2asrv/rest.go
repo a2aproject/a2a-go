@@ -275,9 +275,30 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		writeRESTError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error, 1)
+	streamStarted := false
+	startStream := func() {
+		if !streamStarted {
+			sseWriter.WriteHeaders()
+			streamStarted = true
+		}
+	}
+	handleError := func(err error) {
+		if !streamStarted {
+			writeRESTError(ctx, rw, err, a2a.TaskID(""))
+			return
+		}
+		errResp := rest.ToRESTError(err, a2a.TaskID(""))
+		bytes, jErr := json.Marshal(errResp)
+		if jErr != nil {
+			log.Error(ctx, "failed to marshal error response", jErr)
+			return
+		}
+		if err := sseWriter.WriteData(ctx, bytes); err != nil {
+			log.Error(ctx, "failed to write an event", err)
+		}
+	}
+	sseChan, panicChan := make(chan sseItem), make(chan error, 1)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -286,40 +307,34 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			if r := recover(); r != nil {
 				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
-				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
+				// Only close if not panicked, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
 			}
 		}()
 
-		handleError := func(err error) {
-			errResp := rest.ToRESTError(err, a2a.TaskID(""))
-			bytes, jErr := json.Marshal(errResp)
-			if jErr != nil {
-				log.Error(ctx, "failed to marshal error response", jErr)
-				return
-			}
+		send := func(item sseItem) bool {
 			select {
 			case <-requestCtx.Done():
-			case sseChan <- bytes:
+				return false
+			case sseChan <- item:
+				return true
 			}
 		}
 
 		for event, err := range eventSequence {
 			if err != nil {
-				handleError(err)
+				send(sseItem{err: err})
 				return
 			}
 
 			bytes, jErr := json.Marshal(a2a.StreamResponse{Event: event})
 			if jErr != nil {
-				handleError(jErr)
+				send(sseItem{err: jErr})
 				return
 			}
 
-			select {
-			case <-requestCtx.Done():
+			if !send(sseItem{data: bytes}) {
 				return
-			case sseChan <- bytes:
 			}
 		}
 	}()
@@ -347,21 +362,30 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 				log.Error(ctx, "failed to marshal panic error response", jErr)
 				return
 			}
+			startStream()
 			if err := sseWriter.WriteData(ctx, data); err != nil {
 				log.Error(ctx, "failed to write panic event", err)
 			}
 			// Prevent the handler from hanging
 			return
 		case <-keepAliveChan:
+			startStream()
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
 				return
 			}
-		case data, ok := <-sseChan:
+		case item, ok := <-sseChan:
 			if !ok {
+				// A sequence that ended without yielding anything is still answered with an (empty) stream.
+				startStream()
 				return
 			}
-			if err := sseWriter.WriteData(ctx, data); err != nil {
+			if item.err != nil {
+				handleError(item.err)
+				return
+			}
+			startStream()
+			if err := sseWriter.WriteData(ctx, item.data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
 				return
 			}
