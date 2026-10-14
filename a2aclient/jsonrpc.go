@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"mime"
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -158,7 +159,30 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
 	}
 
+	contentType := httpResp.Header.Get("Content-Type")
+	if mediaType, _, err := mime.ParseMediaType(contentType); err == nil && mediaType == jsonrpc.ContentJSON {
+		defer func() {
+			if err := httpResp.Body.Close(); err != nil {
+				log.Error(ctx, "failed to close http response body", err)
+			}
+		}()
+		return nil, decodeNonStreamingResponse(httpResp.Body, contentType)
+	}
+
 	return httpResp.Body, nil
+}
+
+// decodeNonStreamingResponse handles servers that reject a streaming request before the stream
+// starts by replying with a plain JSON-RPC error instead of an SSE stream.
+func decodeNonStreamingResponse(body io.Reader, contentType string) error {
+	var resp jsonrpc.ClientResponse
+	if err := utils.DecodeJSON(body, &resp); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+	if resp.Error != nil {
+		return jsonrpc.FromJSONRPCError(resp.Error)
+	}
+	return fmt.Errorf("unexpected non-streaming response with Content-Type %q", contentType)
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.

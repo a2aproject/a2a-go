@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -396,6 +397,82 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	// Second event should be a TaskStatusUpdateEvent
 	if _, ok := events[1].(*a2a.TaskStatusUpdateEvent); !ok {
 		t.Errorf("got events[1] type %T, want *TaskStatusUpdateEvent", events[1])
+	}
+}
+
+func TestJSONRPCTransport_StreamingJSONErrorResponse(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		method      string
+		contentType string
+		call        func(Transport) iter.Seq2[a2a.Event, error]
+	}{
+		{
+			name:        "SendStreamingMessage",
+			method:      "SendStreamingMessage",
+			contentType: "application/json",
+			call: func(transport Transport) iter.Seq2[a2a.Event, error] {
+				return transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+					Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+				})
+			},
+		},
+		{
+			name:        "SubscribeToTask",
+			method:      "SubscribeToTask",
+			contentType: "application/json",
+			call: func(transport Transport) iter.Seq2[a2a.Event, error] {
+				return transport.SubscribeToTask(t.Context(), ServiceParams{}, &a2a.SubscribeToTaskRequest{ID: "task-123"})
+			},
+		},
+		{
+			name:        "SubscribeToTask with charset",
+			method:      "SubscribeToTask",
+			contentType: "application/json; charset=utf-8",
+			call: func(transport Transport) iter.Seq2[a2a.Event, error] {
+				return transport.SubscribeToTask(t.Context(), ServiceParams{}, &a2a.SubscribeToTaskRequest{ID: "task-123"})
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				req := mustDecodeJSONRPC(t, r, tc.method)
+				w.Header().Set("Content-Type", tc.contentType)
+				resp := jsonrpc.ClientResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Error:   &jsonrpc.Error{Code: -32001, Message: "Task not found"},
+				}
+				if err := json.NewEncoder(w).Encode(resp); err != nil {
+					t.Errorf("Encode() error = %v", err)
+				}
+			}))
+			defer server.Close()
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+
+			var events []a2a.Event
+			var gotErr error
+			for event, err := range tc.call(transport) {
+				if err != nil {
+					gotErr = err
+					break
+				}
+				events = append(events, event)
+			}
+
+			if len(events) != 0 {
+				t.Fatalf("%s() got %d events, want 0", tc.method, len(events))
+			}
+			if !errors.Is(gotErr, a2a.ErrTaskNotFound) {
+				t.Fatalf("%s() error = %v, want %v", tc.method, gotErr, a2a.ErrTaskNotFound)
+			}
+		})
 	}
 }
 
