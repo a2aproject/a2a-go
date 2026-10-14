@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -553,6 +554,120 @@ func TestTaskStateUnmarshalJSON(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("UnmarshalJSON(%s) = %q, want %q", tc.json, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONMarshal(t *testing.T) {
+	t.Parallel()
+
+	utcPlus2 := time.FixedZone("UTC+2", 2*60*60)
+	wholeSecond := time.Date(2026, 10, 1, 10, 30, 0, 0, utcPlus2)
+	millis := time.Date(2026, 10, 1, 10, 30, 0, 142000000, utcPlus2)
+	nanos := time.Date(2026, 10, 1, 6, 10, 55, 114002345, time.UTC)
+
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{
+			name: "whole second",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}`,
+		},
+		{
+			name: "milliseconds",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &millis},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.142Z"}`,
+		},
+		{
+			name: "nanoseconds truncated",
+			in:   &TaskStatus{State: TaskStateWorking, Timestamp: &nanos},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "nil timestamp omitted",
+			in:   TaskStatus{State: TaskStateWorking},
+			want: `{"state":"TASK_STATE_WORKING"}`,
+		},
+		{
+			name: "status inside task",
+			in:   &Task{ID: "task-1", ContextID: "ctx-1", Status: TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond}},
+			want: `{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}}`,
+		},
+		{
+			name: "list tasks request",
+			in:   &ListTasksRequest{ContextID: "ctx-1", StatusTimestampAfter: &nanos},
+			want: `{"contextId":"ctx-1","statusTimestampAfter":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "list tasks request nil timestamp omitted",
+			in:   ListTasksRequest{ContextID: "ctx-1"},
+			want: `{"contextId":"ctx-1"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.in); got != tc.want {
+				t.Fatalf("Marshal() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	noFraction := time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC)
+	threeDigits := noFraction.Add(123 * time.Millisecond)
+	sixDigits := noFraction.Add(123456 * time.Microsecond)
+	nineDigits := noFraction.Add(123456789 * time.Nanosecond)
+
+	tests := []struct {
+		name string
+		json string
+		want TaskStatus
+	}{
+		{
+			name: "no fraction",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &noFraction},
+		},
+		{
+			name: "3 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &threeDigits},
+		},
+		{
+			name: "6 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &sixDigits},
+		},
+		{
+			name: "9 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456789Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &nineDigits},
+		},
+		{
+			name: "no timestamp",
+			json: `{"state":"TASK_STATE_COMPLETED"}`,
+			want: TaskStatus{State: TaskStateCompleted},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got TaskStatus
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}
