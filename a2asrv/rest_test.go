@@ -387,8 +387,8 @@ func TestREST_InvalidPayloads(t *testing.T) {
 				t.Errorf("got %d, want 400 Bad Request", resp.StatusCode)
 			}
 
-			if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
-				t.Errorf("got Content-Type %q, want application/json", contentType)
+			if contentType := resp.Header.Get("Content-Type"); contentType != "application/a2a+json" {
+				t.Errorf("got Content-Type %q, want application/a2a+json", contentType)
 			}
 
 			gotErr := rest.FromRESTError(resp)
@@ -830,6 +830,132 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 			}
 			if capturedReq.Status != tc.wantStatus {
 				t.Fatalf("listTasks status = %q, want %q", capturedReq.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestREST_NegotiateContentType(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockRequestHandler{
+		getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			if req.ID != "existing-task" {
+				return nil, a2a.ErrTaskNotFound
+			}
+			return &a2a.Task{ID: req.ID}, nil
+		},
+	}
+
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	tests := []struct {
+		name            string
+		path            string
+		accept          string
+		wantContentType string
+		wantStatus      int
+	}{
+		{
+			name:            "empty Accept header",
+			path:            "/tasks/existing-task",
+			accept:          "",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "json only",
+			path:            "/tasks/existing-task",
+			accept:          "application/json",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "a2a+json only",
+			path:            "/tasks/existing-task",
+			accept:          "application/a2a+json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "a2a+json preferred",
+			path:            "/tasks/existing-task",
+			accept:          "application/a2a+json, application/json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "fallback to a2a+json",
+			path:            "/tasks/existing-task",
+			accept:          "text/plain",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "*/* accept header",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "text/event-stream accept header",
+			path:            "/tasks/existing-task",
+			accept:          "text/event-stream",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "error response a2a+json",
+			path:            "/tasks/non-existing-task",
+			accept:          "application/a2a+json, application/json, text/plain",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusNotFound,
+		},
+		{
+			name:            "error response json",
+			path:            "/tasks/non-existing-task",
+			accept:          "application/json",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusNotFound,
+		},
+		{
+			name:            "error response text plain",
+			path:            "/tasks/non-existing-task",
+			accept:          "text/plain",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusNotFound,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			if tc.accept != "" {
+				req.Header.Set("Accept", tc.accept)
+			}
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Fatalf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+
+			if resp.Header.Get("Content-Type") != tc.wantContentType {
+				t.Fatalf("response Content-Type = %q, want %q", resp.Header.Get("Content-Type"), tc.wantContentType)
 			}
 		})
 	}
