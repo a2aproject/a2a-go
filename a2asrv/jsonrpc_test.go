@@ -461,6 +461,7 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 	testCases := []struct {
 		name            string
 		events          iter.Seq2[a2a.Event, error]
+		acceptHeader    string
 		wantContentType string
 		wantEvents      []a2a.Event
 		wantErr         error
@@ -470,7 +471,17 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 			events: func(yield func(a2a.Event, error) bool) {
 				yield(nil, a2a.ErrUnsupportedOperation)
 			},
+			acceptHeader:    "text/event-stream, application/json",
 			wantContentType: "application/json",
+			wantErr:         a2a.ErrUnsupportedOperation,
+		},
+		{
+			name: "error before first event but json not accepted",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrUnsupportedOperation)
+			},
+			acceptHeader:    "text/event-stream",
+			wantContentType: sse.ContentEventStream,
 			wantErr:         a2a.ErrUnsupportedOperation,
 		},
 		{
@@ -481,6 +492,7 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 				}
 				yield(nil, a2a.ErrTaskNotFound)
 			},
+			acceptHeader:    "application/json, text/event-stream",
 			wantContentType: sse.ContentEventStream,
 			wantEvents:      []a2a.Event{msg},
 			wantErr:         a2a.ErrTaskNotFound,
@@ -488,6 +500,7 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 		{
 			name:            "no events",
 			events:          func(yield func(a2a.Event, error) bool) {},
+			acceptHeader:    "application/json, text/event-stream",
 			wantContentType: sse.ContentEventStream,
 		},
 	}
@@ -518,7 +531,7 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
-			req.Header.Set("Accept", sse.ContentEventStream)
+			req.Header.Set("Accept", tc.acceptHeader)
 			client := http.Client{}
 			resp, err := client.Do(req)
 			if err != nil {

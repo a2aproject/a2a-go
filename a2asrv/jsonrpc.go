@@ -20,8 +20,10 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"mime"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -78,10 +80,22 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	if payload.Method == jsonrpc.MethodTasksResubscribe || payload.Method == jsonrpc.MethodMessageStream {
-		h.handleStreamingRequest(ctx, rw, &payload)
+		h.handleStreamingRequest(ctx, rw, &payload, acceptsJSON(req.Header))
 	} else {
 		h.handleRequest(ctx, rw, &payload)
 	}
+}
+
+func acceptsJSON(header http.Header) bool {
+	for _, value := range header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(value, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && mediaType == jsonrpc.ContentJSON {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
@@ -149,7 +163,7 @@ type sseItem struct {
 	err  error
 }
 
-func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest) {
+func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.ResponseWriter, req *jsonrpc.ServerRequest, plainErrors bool) {
 	sseWriter, err := sse.NewWriter(rw)
 	if err != nil {
 		h.writeJSONRPCError(ctx, rw, err, req.ID)
@@ -171,7 +185,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 	// writeError reports err as a plain JSON-RPC error response before the stream has started,
 	// and as an SSE event after.
 	writeError := func(err error) {
-		if !streamStarted {
+		if !streamStarted && plainErrors {
 			h.writeJSONRPCError(ctx, rw, err, req.ID)
 			return
 		}
@@ -180,6 +194,7 @@ func (h *jsonrpcHandler) handleStreamingRequest(ctx context.Context, rw http.Res
 			log.Error(ctx, "failed to marshal error response", err)
 			return
 		}
+		startStream()
 		if err := sseWriter.WriteData(ctx, data); err != nil {
 			log.Error(ctx, "failed to write an event", err)
 		}

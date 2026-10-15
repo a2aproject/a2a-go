@@ -844,6 +844,7 @@ func TestREST_StreamingErrors(t *testing.T) {
 	testCases := []struct {
 		name            string
 		events          iter.Seq2[a2a.Event, error]
+		acceptHeader    string
 		wantStatus      int
 		wantContentType string
 		wantEvents      []a2a.Event
@@ -854,8 +855,19 @@ func TestREST_StreamingErrors(t *testing.T) {
 			events: func(yield func(a2a.Event, error) bool) {
 				yield(nil, a2a.ErrTaskNotFound)
 			},
+			acceptHeader:    "text/event-stream, application/json",
 			wantStatus:      http.StatusNotFound,
 			wantContentType: "application/json",
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name: "error before first event (accepts text/event-stream)",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			acceptHeader:    sse.ContentEventStream,
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
 			wantErr:         a2a.ErrTaskNotFound,
 		},
 		{
@@ -896,7 +908,7 @@ func TestREST_StreamingErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
-			req.Header.Set("Accept", sse.ContentEventStream)
+			req.Header.Set("Accept", tc.acceptHeader)
 
 			resp, err := server.Client().Do(req)
 			if err != nil {

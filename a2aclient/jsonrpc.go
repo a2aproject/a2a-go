@@ -145,7 +145,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	httpReq.Header.Set("Accept", sse.ContentEventStream)
+	httpReq.Header.Set("Accept", sse.ContentEventStream+", "+jsonrpc.ContentJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
@@ -160,12 +160,16 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	}
 	// The server may refuse a streaming call before opening a stream (e.g. task in a terminal
 	// state) and answer with a plain JSON-RPC error instead of SSE.
-	if mediaType, _, _ := mime.ParseMediaType(httpResp.Header.Get("Content-Type")); mediaType == jsonrpc.ContentJSON {
-		defer func() {
-			if err := httpResp.Body.Close(); err != nil {
-				log.Error(ctx, "failed to close http response body", err)
-			}
-		}()
+	mediaType, _, err := mime.ParseMediaType(httpResp.Header.Get("Content-Type"))
+	if err != nil || mediaType == sse.ContentEventStream {
+		return httpResp.Body, nil
+	}
+	defer func() {
+		if err := httpResp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
+	if mediaType == jsonrpc.ContentJSON {
 		var resp jsonrpc.ClientResponse
 		if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
 			return nil, fmt.Errorf("failed to decode non-streaming response: %w", err)
@@ -175,8 +179,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		}
 		return nil, fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
 	}
-
-	return httpResp.Body, nil
+	return nil, fmt.Errorf("unexpected Content-Type %q", mediaType)
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.

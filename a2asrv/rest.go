@@ -284,7 +284,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		}
 	}
 	handleError := func(err error) {
-		if !streamStarted {
+		if !streamStarted && acceptsJSON(req.Header) {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
 		}
@@ -294,6 +294,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			log.Error(ctx, "failed to marshal error response", jErr)
 			return
 		}
+		startStream()
 		if err := sseWriter.WriteData(ctx, bytes); err != nil {
 			log.Error(ctx, "failed to write an event", err)
 		}
