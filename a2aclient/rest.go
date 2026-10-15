@@ -114,7 +114,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	if req.streaming {
 		httpReq.Header.Set("Accept", "text/event-stream, application/json")
 	} else {
-		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("Accept", "application/a2a+json, application/json")
 	}
 
 	for k, vals := range req.params {

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"mime"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -61,7 +62,7 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
+		rw.Header().Set("Content-Type", negotiateContentType(req))
 		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
@@ -96,6 +97,18 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 		r2.URL.RawPath = ""
 		restHandler.ServeHTTP(w, r2)
 	})
+}
+
+func negotiateContentType(req *http.Request) string {
+	for _, accept := range req.Header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(accept, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err != nil || mediaType == "application/a2a+json" {
+				return "application/a2a+json"
+			}
+		}
+	}
+	return "application/json"
 }
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
@@ -284,7 +297,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		}
 	}
 	handleError := func(err error) {
-		if !streamStarted && acceptsJSON(req.Header) {
+		if !streamStarted && acceptsJSONContent(req.Header) {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
 		}
@@ -392,6 +405,18 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			}
 		}
 	}
+}
+
+func acceptsJSONContent(header http.Header) bool {
+	for _, value := range header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(value, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && (mediaType == rest.ContentJSON || mediaType == rest.ContentA2AJSON) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -516,7 +541,6 @@ func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *ht
 
 func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
 	errResp := rest.ToRESTError(err, taskID)
-	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(errResp.HTTPStatus())
 
 	if err := json.NewEncoder(rw).Encode(errResp); err != nil {

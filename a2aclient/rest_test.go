@@ -37,6 +37,10 @@ func TestRESTTransport_GetTask(t *testing.T) {
 			t.Errorf("expected path /tasks/task-123?historyLength=2, got %s", r.URL.String())
 		}
 
+		if got := r.Header.Get("Accept"); got != "application/a2a+json, application/json" {
+			t.Errorf("got Accept %s, want application/a2a+json, application/json", got)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"},"history":[{"state":"TASK_STATE_COMPLETED"},{"state":"TASK_STATE_WORKING"}]}`))
 	}))
