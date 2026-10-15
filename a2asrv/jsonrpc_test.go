@@ -33,6 +33,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -390,6 +391,9 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 					break
 				}
 			}
+			if err := scanner.Err(); err != nil {
+				t.Fatalf("scanner.Err() = %v, want nil", err)
+			}
 			if tc.wantEnabled && keepAlives == 0 {
 				t.Error("keep-alive enabled but none received")
 			}
@@ -447,6 +451,143 @@ func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
 	}
 	if payload.ID != "delete-1" {
 		t.Fatalf("payload.ID = %v, want %q", payload.ID, "delete-1")
+	}
+}
+
+func TestJSONRPC_StreamingErrors(t *testing.T) {
+	t.Parallel()
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("first"))
+
+	testCases := []struct {
+		name            string
+		events          iter.Seq2[a2a.Event, error]
+		acceptHeader    string
+		wantContentType string
+		wantEvents      []a2a.Event
+		wantErr         error
+	}{
+		{
+			name: "error before first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrUnsupportedOperation)
+			},
+			acceptHeader:    "text/event-stream, application/json",
+			wantContentType: "application/json",
+			wantErr:         a2a.ErrUnsupportedOperation,
+		},
+		{
+			name: "error before first event but json not accepted",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrUnsupportedOperation)
+			},
+			acceptHeader:    "text/event-stream",
+			wantContentType: sse.ContentEventStream,
+			wantErr:         a2a.ErrUnsupportedOperation,
+		},
+		{
+			name: "error after first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				if !yield(msg, nil) {
+					return
+				}
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			acceptHeader:    "application/json, text/event-stream",
+			wantContentType: sse.ContentEventStream,
+			wantEvents:      []a2a.Event{msg},
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name:            "no events",
+			events:          func(yield func(a2a.Event, error) bool) {},
+			acceptHeader:    "application/json, text/event-stream",
+			wantContentType: sse.ContentEventStream,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			mockHandler := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return tc.events
+				},
+			}
+			server := httptest.NewServer(NewJSONRPCHandler(mockHandler))
+			defer server.Close()
+
+			request := jsonrpc.ServerRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodTasksResubscribe,
+				Params: mustMarshal(t, &a2a.SubscribeToTaskRequest{
+					ID: "task-123",
+				}),
+				ID: "1",
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("Accept", tc.acceptHeader)
+			client := http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("client.Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("resp.StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+			if resp.Header.Get("Content-Type") != tc.wantContentType {
+				t.Fatalf("resp.Header.Get(\"Content-Type\") = %q, want %q", resp.Header.Get("Content-Type"), tc.wantContentType)
+			}
+
+			if tc.wantContentType != sse.ContentEventStream {
+				var payload jsonrpc.ClientResponse
+				if err := utils.DecodeJSON(resp.Body, &payload); err != nil {
+					t.Fatalf("utils.DecodeJSON() error = %v, want valid JSON-RPC response", err)
+				}
+				if err := jsonrpc.FromJSONRPCError(payload.Error); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("jsonrpc.FromJSONRPCError(payload.Error) = %v, want %v", jsonrpc.FromJSONRPCError(payload.Error), tc.wantErr)
+				}
+				return
+			}
+
+			var gotEvents []a2a.Event
+			var gotErr error
+			for data, err := range sse.ParseDataStream(resp.Body) {
+				if err != nil {
+					t.Fatalf("sse.ParseDataStream() error = %v, want valid SSE stream", err)
+				}
+				var payload jsonrpc.ClientResponse
+				if err := json.Unmarshal(data, &payload); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, want valid JSON-RPC response", err)
+				}
+				if err := jsonrpc.FromJSONRPCError(payload.Error); err != nil {
+					gotErr = err
+					continue
+				}
+				var sr a2a.StreamResponse
+				if err := json.Unmarshal(payload.Result, &sr); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, want valid JSON-RPC response", err)
+				}
+				gotEvents = append(gotEvents, sr.Event)
+			}
+			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
+				t.Fatalf("SubscribeToTasks() wrong result (-want +got)\n%s", diff)
+			}
+			if !errors.Is(gotErr, tc.wantErr) {
+				t.Fatalf("SubscribeToTasks() wrong error = %v, want %v", gotErr, tc.wantErr)
+			}
+		})
 	}
 }
 

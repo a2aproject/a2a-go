@@ -254,8 +254,8 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		if r.URL.Path != "/tasks/task-123:subscribe" {
 			t.Errorf("expected path /tasks/task-123:subscribe, got %s", r.URL.Path)
 		}
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -305,8 +305,8 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		if r.URL.Path != "/message:stream" {
 			t.Errorf("expected path /message:stream, got %s", r.URL.Path)
 		}
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
