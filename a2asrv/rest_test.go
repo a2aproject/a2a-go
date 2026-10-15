@@ -855,9 +855,9 @@ func TestREST_StreamingErrors(t *testing.T) {
 			events: func(yield func(a2a.Event, error) bool) {
 				yield(nil, a2a.ErrTaskNotFound)
 			},
-			acceptHeader:    "text/event-stream, application/json",
+			acceptHeader:    "text/event-stream, application/a2a+json",
 			wantStatus:      http.StatusNotFound,
-			wantContentType: "application/json",
+			wantContentType: "application/a2a+json",
 			wantErr:         a2a.ErrTaskNotFound,
 		},
 		{

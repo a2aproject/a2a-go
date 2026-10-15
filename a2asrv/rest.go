@@ -297,7 +297,7 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		}
 	}
 	handleError := func(err error) {
-		if !streamStarted && acceptsJSON(req.Header) {
+		if !streamStarted && acceptsJSONContent(req.Header) {
 			writeRESTError(ctx, rw, err, a2a.TaskID(""))
 			return
 		}
@@ -405,6 +405,18 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			}
 		}
 	}
+}
+
+func acceptsJSONContent(header http.Header) bool {
+	for _, value := range header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(value, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && (mediaType == rest.ContentJSON || mediaType == rest.ContentA2AJSON) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *http.Request) {

@@ -30,6 +30,12 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
+// Content-Type header values.
+const (
+	ContentJSON    = "application/json"
+	ContentA2AJSON = "application/a2a+json"
+)
+
 // Query parameter names for the v1 HTTP+JSON binding.
 const (
 	QueryContextID            = "contextId"
