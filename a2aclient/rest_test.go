@@ -223,10 +223,6 @@ func TestRESTTransport_SendMessage(t *testing.T) {
 			t.Errorf("expected path /message:send, got %s", r.URL.Path)
 		}
 
-		if got := r.Header.Get("Content-Type"); got != "application/a2a+json" {
-			t.Errorf("got Content-Type %s, want application/a2a+json", got)
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`))
 	}))

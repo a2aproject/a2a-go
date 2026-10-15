@@ -110,7 +110,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	if len(reqBody) > 0 {
-		httpReq.Header.Set("Content-Type", "application/a2a+json")
+		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	if req.streaming {
 		httpReq.Header.Set("Accept", sse.ContentEventStream)
