@@ -267,8 +267,8 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 
 func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -349,8 +349,8 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = mustDecodeJSONRPC(t, r, "SubscribeToTask")
 
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")

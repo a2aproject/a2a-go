@@ -240,6 +240,9 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 			break
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner.Err() = %v, want nil", err)
+	}
 	if dataLine == "" {
 		t.Fatal("expected at least one SSE data event")
 	}
