@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
@@ -241,7 +240,7 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 		query.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
-		query.Add(rest.QueryStatusTimestampAfter, req.StatusTimestampAfter.Format(time.RFC3339))
+		query.Add(rest.QueryStatusTimestampAfter, rest.FormatTimestamp(*req.StatusTimestampAfter))
 	}
 	if req.IncludeArtifacts {
 		query.Add(rest.QueryIncludeArtifacts, "true")
