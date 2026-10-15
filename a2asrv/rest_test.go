@@ -387,8 +387,8 @@ func TestREST_InvalidPayloads(t *testing.T) {
 				t.Errorf("got %d, want 400 Bad Request", resp.StatusCode)
 			}
 
-			if contentType := resp.Header.Get("Content-Type"); contentType != "application/a2a+json" {
-				t.Errorf("got Content-Type %q, want application/a2a+json", contentType)
+			if contentType := resp.Header.Get("Content-Type"); contentType != "application/json" {
+				t.Errorf("got Content-Type %q, want application/json", contentType)
 			}
 
 			gotErr := rest.FromRESTError(resp)
@@ -861,7 +861,7 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			name:            "empty Accept header",
 			path:            "/tasks/existing-task",
 			accept:          "",
-			wantContentType: "application/a2a+json",
+			wantContentType: "application/json",
 			wantStatus:      http.StatusOK,
 		},
 		{
@@ -886,24 +886,24 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			wantStatus:      http.StatusOK,
 		},
 		{
-			name:            "fallback to a2a+json",
+			name:            "fallback to json",
 			path:            "/tasks/existing-task",
 			accept:          "text/plain",
-			wantContentType: "application/a2a+json",
+			wantContentType: "application/json",
 			wantStatus:      http.StatusOK,
 		},
 		{
 			name:            "*/* accept header",
 			path:            "/tasks/existing-task",
 			accept:          "*/*",
-			wantContentType: "application/a2a+json",
+			wantContentType: "application/json",
 			wantStatus:      http.StatusOK,
 		},
 		{
 			name:            "text/event-stream accept header",
 			path:            "/tasks/existing-task",
 			accept:          "text/event-stream",
-			wantContentType: "application/a2a+json",
+			wantContentType: "application/json",
 			wantStatus:      http.StatusOK,
 		},
 		{
@@ -924,7 +924,7 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			name:            "error response text plain",
 			path:            "/tasks/non-existing-task",
 			accept:          "text/plain",
-			wantContentType: "application/a2a+json",
+			wantContentType: "application/json",
 			wantStatus:      http.StatusNotFound,
 		},
 	}

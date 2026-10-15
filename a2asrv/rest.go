@@ -100,25 +100,15 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 }
 
 func negotiateContentType(req *http.Request) string {
-	acceptsJSON := false
 	for _, accept := range req.Header.Values("Accept") {
 		for mediaRange := range strings.SplitSeq(accept, ",") {
 			mediaType, _, err := mime.ParseMediaType(mediaRange)
-			if err != nil {
-				continue
-			}
-			if mediaType == "application/a2a+json" {
+			if err != nil || mediaType == "application/a2a+json" {
 				return "application/a2a+json"
-			}
-			if mediaType == "application/json" {
-				acceptsJSON = true
 			}
 		}
 	}
-	if acceptsJSON {
-		return "application/json"
-	}
-	return "application/a2a+json"
+	return "application/json"
 }
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
