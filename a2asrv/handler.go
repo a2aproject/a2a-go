@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"mime"
+	"slices"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -97,6 +99,7 @@ type defaultRequestHandler struct {
 
 	authenticatedCardProducer ExtendedAgentCardProducer
 	capabilities              *a2a.AgentCapabilities
+	inputModes                []string
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -105,10 +108,41 @@ var _ RequestHandler = (*defaultRequestHandler)(nil)
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
 // WithCapabilityChecks sets the provided capabilities for the request handler.
+//
+// Deprecated: Use [WithAgentCardEnforcement] instead.
 func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.capabilities = capabilities
 		ih.capabilities = capabilities
+	}
+}
+
+// WithAgentCardEnforcement makes the request handler validate incoming requests against
+// the provided [a2a.AgentCard] and reject the ones which do not conform to it.
+func WithAgentCardEnforcement(card *a2a.AgentCard) RequestHandlerOption {
+	if card == nil {
+		return func(ih *InterceptedHandler, h *defaultRequestHandler) {}
+	}
+
+	var inputModes []string
+	inheritsDefaults := len(card.Skills) == 0
+	for _, skill := range card.Skills {
+		if len(skill.InputModes) == 0 {
+			inheritsDefaults = true
+			continue
+		}
+		inputModes = append(inputModes, parseMediaTypes(skill.InputModes)...)
+	}
+
+	if inheritsDefaults {
+		inputModes = append(inputModes, parseMediaTypes(card.DefaultInputModes)...)
+	}
+
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		h.inputModes = inputModes
+
+		h.capabilities = &card.Capabilities
+		ih.capabilities = &card.Capabilities
 	}
 }
 
@@ -424,6 +458,9 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 	case req.Message.Role == "":
 		return nil, fmt.Errorf("message role is required: %w", a2a.ErrInvalidParams)
 	}
+	if err := validateMediaTypes(h, req); err != nil {
+		return nil, err
+	}
 	return h.execManager.Execute(ctx, req)
 }
 
@@ -543,4 +580,36 @@ func checkPushNotificationSupport(h *defaultRequestHandler, ctx context.Context)
 		return a2a.ErrPushNotificationNotSupported
 	}
 	return nil
+}
+
+func validateMediaTypes(h *defaultRequestHandler, req *a2a.SendMessageRequest) error {
+	if len(h.inputModes) == 0 {
+		return nil
+	}
+	for _, part := range req.Message.Parts {
+		if part.MediaType == "" {
+			continue
+		}
+		mediaType, _, err := mime.ParseMediaType(part.MediaType)
+		if err != nil {
+			return fmt.Errorf("failed to parse media type %q: %v: %w", part.MediaType, err, a2a.ErrInvalidParams)
+		}
+		if !slices.Contains(h.inputModes, mediaType) {
+			return fmt.Errorf("media type %q is not supported: %w", part.MediaType, a2a.ErrUnsupportedContentType)
+		}
+	}
+	return nil
+}
+
+func parseMediaTypes(mediaTypes []string) []string {
+	var parsed []string
+	for _, mediaType := range mediaTypes {
+		parsedMediaType, _, err := mime.ParseMediaType(mediaType)
+		if err != nil {
+			log.Error(context.Background(), "failed to parse media type", err, "mediaType", mediaType)
+			continue
+		}
+		parsed = append(parsed, parsedMediaType)
+	}
+	return parsed
 }

@@ -57,7 +57,7 @@ var actsTerminalStates = map[string]a2a.TaskState{
 // advertise it and they can never run against a fully capable agent. The
 // runner starts a second SUT with this variable set to reach them. The card
 // alone is not enough here: a2a-go treats capabilities as advisory unless the
-// handler is also given WithCapabilityChecks, which run() does.
+// handler is also given WithAgentCardEnforcement, which run() does.
 func actsCapabilities() a2a.AgentCapabilities {
 	if os.Getenv("ITK_ACTS_REDUCED_CAPABILITIES") != "" {
 		return a2a.AgentCapabilities{}
