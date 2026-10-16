@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
-	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -203,7 +203,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 			subscriptionErr = err
 			break
 		}
-		if taskupdate.IsFinal(event) {
+		if a2aevent.IsFinal(event) {
 			if result, ok := event.(*a2a.Task); ok {
 				return convertToCancelationResult(ctx, result, nil)
 			}

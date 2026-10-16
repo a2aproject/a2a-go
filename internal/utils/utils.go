@@ -25,11 +25,9 @@ import (
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
-// Ptr returns a pointer to the argument simplifying pointer to primitive literals creation.
-//
-//go:fix inline
-func Ptr[T any](v T) *T {
-	return new(v)
+func init() {
+	gob.Register(map[string]any{})
+	gob.Register([]any{})
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.

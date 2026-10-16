@@ -28,6 +28,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/google/go-cmp/cmp"
 )
 
 // --- server tests ---
@@ -174,9 +175,9 @@ func TestREST_ServerSubscribeTask_UsesGET(t *testing.T) {
 	}
 }
 
-func TestREST_ServerExtensionsFrom(t *testing.T) {
+func TestREST_ServerExtensionsAndProtocolVersionFrom(t *testing.T) {
 	t.Parallel()
-	mock := &mockExtensionRESTHandler{}
+	mock := &mockHeaderRESTHandler{}
 	handler := NewRESTHandler(mock)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -198,6 +199,9 @@ func TestREST_ServerExtensionsFrom(t *testing.T) {
 
 	if len(mock.lastRequestedURIs) != 1 || mock.lastRequestedURIs[0] != "uri1" {
 		t.Fatalf("mock.lastRequestedURIs = %v, want [uri1]", mock.lastRequestedURIs)
+	}
+	if mock.lastProtocolVersion != Version {
+		t.Fatalf("mock.lastProtocolVersion = %v, want %v", mock.lastProtocolVersion, Version)
 	}
 }
 
@@ -238,6 +242,9 @@ func TestREST_ServerStreamMessage(t *testing.T) {
 			dataLine = strings.TrimSpace(after)
 			break
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner.Err() = %v, want nil", err)
 	}
 	if dataLine == "" {
 		t.Fatal("expected at least one SSE data event")
@@ -723,14 +730,18 @@ func (h *mockRESTHandler) DeleteTaskPushConfig(_ context.Context, _ *a2a.DeleteT
 	return nil
 }
 
-type mockExtensionRESTHandler struct {
+type mockHeaderRESTHandler struct {
 	a2asrv.RequestHandler
-	lastRequestedURIs []string
+	lastRequestedURIs   []string
+	lastProtocolVersion a2a.ProtocolVersion
 }
 
-func (h *mockExtensionRESTHandler) SendMessage(ctx context.Context, _ *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockHeaderRESTHandler) SendMessage(ctx context.Context, _ *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	if ext, ok := a2asrv.ExtensionsFrom(ctx); ok {
 		h.lastRequestedURIs = ext.RequestedURIs()
+	}
+	if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
+		h.lastProtocolVersion = callCtx.ProtocolVersion
 	}
 	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok"))
 	msg.ID = "resp-1"
@@ -756,5 +767,61 @@ func (h *mockStreamingRESTHandler) SubscribeToTask(_ context.Context, req *a2a.S
 			ContextID: "c1",
 			Status:    a2a.TaskStatus{State: a2a.TaskStateCompleted},
 		}, nil)
+	}
+}
+
+func TestREST_ClientResponseTrailingData(t *testing.T) {
+	t.Parallel()
+
+	task := `{"id":"task-456","status":{"state":"TASK_STATE_COMPLETED"}}`
+	want := &a2a.Task{ID: "task-456", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+
+	testCases := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{
+			name: "trailing whitespace is accepted",
+			body: task + "\n\t ",
+		},
+		{
+			name:    "trailing garbage",
+			body:    task + "TRAILING_GARBAGE",
+			wantErr: true,
+		},
+		{
+			name:    "concatenated responses",
+			body:    task + task,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fakeServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				rw.Header().Set("Content-Type", "application/json")
+				_, _ = rw.Write([]byte(tc.body))
+			}))
+			defer fakeServer.Close()
+
+			transport, err := NewRESTTransport(RESTTransportConfig{URL: fakeServer.URL})
+			if err != nil {
+				t.Fatalf("NewRESTTransport() error = %v, want nil", err)
+			}
+
+			got, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-456"})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("GetTask() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

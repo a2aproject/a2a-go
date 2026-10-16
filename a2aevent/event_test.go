@@ -25,6 +25,14 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+var modes = []struct {
+	suffix      string
+	applyUpdate func(*a2a.Task, a2a.Event) (*a2a.Task, error)
+}{
+	{suffix: "", applyUpdate: a2aevent.ApplyUpdate},
+	{suffix: "_shallow", applyUpdate: a2aevent.ApplyShallowUpdate},
+}
+
 func TestApplyUpdate(t *testing.T) {
 	t.Parallel()
 	tip, ti := newTestTaskInfo()
@@ -40,7 +48,37 @@ func TestApplyUpdate(t *testing.T) {
 			name:           "message cannot be applied",
 			base:           newTask(tip, a2a.TaskStateWorking),
 			event:          a2a.NewMessageForTask(a2a.MessageRoleAgent, tip, a2a.NewTextPart("hi")),
-			wantErrContain: "message cannot be applied",
+			wantErrContain: "only user messages can be applied",
+		},
+		{
+			name:           "message without role cannot be applied",
+			base:           newTask(tip, a2a.TaskStateWorking),
+			event:          a2a.NewMessageForTask(a2a.MessageRoleUnspecified, tip, a2a.NewTextPart("hi")),
+			wantErrContain: "only user messages can be applied",
+		},
+		{
+			name:           "completed task rejects messages",
+			base:           newTask(tip, a2a.TaskStateCompleted),
+			event:          a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("hi")),
+			wantErrContain: "state updates are not allowed",
+		},
+		{
+			name: "message task ID mismatch",
+			base: newTask(tip, a2a.TaskStateWorking),
+			event: &a2a.Message{
+				ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("hi"),
+				TaskID: ti.TaskID + "++", ContextID: ti.ContextID,
+			},
+			wantErrContain: "task IDs don't match",
+		},
+		{
+			name: "message context ID mismatch",
+			base: newTask(tip, a2a.TaskStateWorking),
+			event: &a2a.Message{
+				ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("hi"),
+				TaskID: ti.TaskID, ContextID: ti.ContextID + "++",
+			},
+			wantErrContain: "context IDs don't match",
 		},
 		{
 			name:           "completed task rejects updates",
@@ -92,39 +130,41 @@ func TestApplyUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if tc.wantErrContain != "" {
-				if err == nil {
-					t.Fatalf("a2aevent.ApplyUpdate() error = nil, want error")
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if tc.wantErrContain != "" {
+					if err == nil {
+						t.Fatalf("applyUpdateFn() error = nil, want error")
+					}
+					if !strings.Contains(err.Error(), tc.wantErrContain) {
+						t.Fatalf("applyUpdateFn() error = %v, want msg containing %q", err, tc.wantErrContain)
+					}
+					if diff := cmp.Diff(tc.base, before); diff != "" { // input modified
+						t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+					}
+					return
 				}
-				if !strings.Contains(err.Error(), tc.wantErrContain) {
-					t.Fatalf("a2aevent.ApplyUpdate() error = %v, want msg containing %q", err, tc.wantErrContain)
+
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
 				}
-				if diff := cmp.Diff(tc.base, before); diff != "" { // input modified
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
 					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -228,35 +268,37 @@ func TestApplyUpdate_ArtifactUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("a2aevent.ApplyUpdate() error = nil, want error")
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if tc.wantErr {
+					if err == nil {
+						t.Fatalf("applyUpdateFn() error = nil, want error")
+					}
+					if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
+						t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
 				}
 				if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
 					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base); diff != "" { // input modified
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -340,27 +382,94 @@ func TestApplyUpdate_StatusUpdate(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
 
-			before, err := utils.DeepCopy(tc.base)
-			if err != nil {
-				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
-			}
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
 
-			got, err := a2aevent.ApplyUpdate(tc.base, tc.event)
-			if err != nil {
-				t.Fatalf("a2aevent.ApplyUpdate() error = %v, want nil", err)
-			}
-			opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
-			if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
-				t.Fatalf("a2aevent.ApplyUpdate() wrong result (-want +got) diff = %s", diff)
-			}
-			if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
-				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
-			}
-		})
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+				}
+				opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
+				if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
+					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
+func TestApplyUpdate_UserMessage(t *testing.T) {
+	t.Parallel()
+	_, ti := newTestTaskInfo()
+	testCases := []struct {
+		name  string
+		base  *a2a.Task
+		event *a2a.Message
+		want  *a2a.Task
+	}{
+		{
+			name:  "first message",
+			base:  &a2a.Task{ID: ti.TaskID, ContextID: ti.ContextID},
+			event: &a2a.Message{ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("first")},
+			want: &a2a.Task{
+				ID:        ti.TaskID,
+				ContextID: ti.ContextID,
+				History:   []*a2a.Message{{ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("first")}},
+			},
+		},
+		{
+			name: "second message",
+			base: &a2a.Task{
+				ID: ti.TaskID, ContextID: ti.ContextID,
+				History: []*a2a.Message{{ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("first")}},
+			},
+			event: &a2a.Message{
+				ID: "m2", Role: a2a.MessageRoleUser, Parts: makeTextParts("second"), TaskID: ti.TaskID,
+			},
+			want: &a2a.Task{
+				ID:        ti.TaskID,
+				ContextID: ti.ContextID,
+				History: []*a2a.Message{
+					{ID: "m1", Role: a2a.MessageRoleUser, Parts: makeTextParts("first")},
+					{ID: "m2", Role: a2a.MessageRoleUser, Parts: makeTextParts("second"), TaskID: ti.TaskID},
+				},
+			},
+		},
+	}
+
+	for _, mode := range modes {
+		for _, tc := range testCases {
+			t.Run(tc.name+mode.suffix, func(t *testing.T) {
+				t.Parallel()
+
+				before, err := utils.DeepCopy(tc.base)
+				if err != nil {
+					t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+				}
+
+				got, err := mode.applyUpdate(tc.base, tc.event)
+				if err != nil {
+					t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+				}
+				opts := []cmp.Option{cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")}
+				if diff := cmp.Diff(tc.want, got, opts...); diff != "" {
+					t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(before, tc.base, opts...); diff != "" {
+					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+				}
+			})
+		}
 	}
 }
 

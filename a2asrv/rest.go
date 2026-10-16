@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"mime"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -30,6 +31,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/pathtemplate"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -60,8 +62,9 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
+		rw.Header().Set("Content-Type", negotiateContentType(req))
+		ctx, callCtx := NewCallContext(req.Context(), newHTTPServiceParams(req))
+		callCtx.ProtocolVersion = a2a.Version
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
 }
@@ -97,10 +100,22 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 	})
 }
 
+func negotiateContentType(req *http.Request) string {
+	for _, accept := range req.Header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(accept, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err != nil || mediaType == "application/a2a+json" {
+				return "application/a2a+json"
+			}
+		}
+	}
+	return "application/json"
+}
+
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var message a2a.SendMessageRequest
-	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
+	if err := utils.DecodeJSON(req.Body, &message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -121,7 +136,7 @@ func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Reques
 func (h *restHandler) handleStreamMessage(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	var message a2a.SendMessageRequest
-	if err := json.NewDecoder(req.Body).Decode(&message); err != nil {
+	if err := utils.DecodeJSON(req.Body, &message); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(""))
 		return
 	}
@@ -274,9 +289,31 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		writeRESTError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error, 1)
+	streamStarted := false
+	startStream := func() {
+		if !streamStarted {
+			sseWriter.WriteHeaders()
+			streamStarted = true
+		}
+	}
+	handleError := func(err error) {
+		if !streamStarted && acceptsJSONContent(req.Header) {
+			writeRESTError(ctx, rw, err, a2a.TaskID(""))
+			return
+		}
+		errResp := rest.ToRESTError(err, a2a.TaskID(""))
+		bytes, jErr := json.Marshal(errResp)
+		if jErr != nil {
+			log.Error(ctx, "failed to marshal error response", jErr)
+			return
+		}
+		startStream()
+		if err := sseWriter.WriteData(ctx, bytes); err != nil {
+			log.Error(ctx, "failed to write an event", err)
+		}
+	}
+	sseChan, panicChan := make(chan sseItem), make(chan error, 1)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -285,40 +322,34 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			if r := recover(); r != nil {
 				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
-				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
+				// Only close if not panicked, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
 			}
 		}()
 
-		handleError := func(err error) {
-			errResp := rest.ToRESTError(err, a2a.TaskID(""))
-			bytes, jErr := json.Marshal(errResp)
-			if jErr != nil {
-				log.Error(ctx, "failed to marshal error response", jErr)
-				return
-			}
+		send := func(item sseItem) bool {
 			select {
 			case <-requestCtx.Done():
-			case sseChan <- bytes:
+				return false
+			case sseChan <- item:
+				return true
 			}
 		}
 
 		for event, err := range eventSequence {
 			if err != nil {
-				handleError(err)
+				send(sseItem{err: err})
 				return
 			}
 
 			bytes, jErr := json.Marshal(a2a.StreamResponse{Event: event})
 			if jErr != nil {
-				handleError(jErr)
+				send(sseItem{err: jErr})
 				return
 			}
 
-			select {
-			case <-requestCtx.Done():
+			if !send(sseItem{data: bytes}) {
 				return
-			case sseChan <- bytes:
 			}
 		}
 	}()
@@ -346,26 +377,47 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 				log.Error(ctx, "failed to marshal panic error response", jErr)
 				return
 			}
+			startStream()
 			if err := sseWriter.WriteData(ctx, data); err != nil {
 				log.Error(ctx, "failed to write panic event", err)
 			}
 			// Prevent the handler from hanging
 			return
 		case <-keepAliveChan:
+			startStream()
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
 				return
 			}
-		case data, ok := <-sseChan:
+		case item, ok := <-sseChan:
 			if !ok {
+				// A sequence that ended without yielding anything is still answered with an (empty) stream.
+				startStream()
 				return
 			}
-			if err := sseWriter.WriteData(ctx, data); err != nil {
+			if item.err != nil {
+				handleError(item.err)
+				return
+			}
+			startStream()
+			if err := sseWriter.WriteData(ctx, item.data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
 				return
 			}
 		}
 	}
+}
+
+func acceptsJSONContent(header http.Header) bool {
+	for _, value := range header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(value, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && (mediaType == rest.ContentJSON || mediaType == rest.ContentA2AJSON) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -377,7 +429,7 @@ func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *ht
 	}
 
 	request := &a2a.PushConfig{}
-	if err := json.NewDecoder(req.Body).Decode(request); err != nil {
+	if err := utils.DecodeJSON(req.Body, request); err != nil {
 		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
 		return
 	}
@@ -490,7 +542,6 @@ func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *ht
 
 func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
 	errResp := rest.ToRESTError(err, taskID)
-	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(errResp.HTTPStatus())
 
 	if err := json.NewEncoder(rw).Encode(errResp); err != nil {

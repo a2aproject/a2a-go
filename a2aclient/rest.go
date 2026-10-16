@@ -24,11 +24,11 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -112,9 +112,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	if req.streaming {
-		httpReq.Header.Set("Accept", sse.ContentEventStream)
+		httpReq.Header.Set("Accept", "text/event-stream, application/json")
 	} else {
-		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("Accept", "application/a2a+json, application/json")
 	}
 
 	for k, vals := range req.params {
@@ -154,7 +154,7 @@ func (t *RESTTransport) doRequest(ctx context.Context, req *restRequest, result 
 	}()
 
 	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		if err := utils.DecodeJSON(resp.Body, result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 	}
@@ -240,7 +240,7 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 		query.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
-		query.Add(rest.QueryStatusTimestampAfter, req.StatusTimestampAfter.Format(time.RFC3339))
+		query.Add(rest.QueryStatusTimestampAfter, rest.FormatTimestamp(*req.StatusTimestampAfter))
 	}
 	if req.IncludeArtifacts {
 		query.Add(rest.QueryIncludeArtifacts, "true")

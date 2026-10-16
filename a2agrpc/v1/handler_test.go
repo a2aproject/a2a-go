@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
@@ -116,8 +117,9 @@ var defaultMockHandler = &mockRequestHandler{
 
 // mockRequestHandler is a mock of a2asrv.RequestHandler.
 type mockRequestHandler struct {
-	tasks       map[a2a.TaskID]*a2a.Task
-	pushConfigs map[a2a.TaskID]map[string]*a2a.PushConfig
+	tasks                    map[a2a.TaskID]*a2a.Task
+	pushConfigs              map[a2a.TaskID]map[string]*a2a.PushConfig
+	pushConfigsNextPageToken string
 
 	// Fields to capture call parameters
 	capturedGetTaskRequest              *a2a.GetTaskRequest
@@ -249,7 +251,7 @@ func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.L
 			for _, v := range pushConfigs {
 				result = append(result, v)
 			}
-			return &a2a.ListTaskPushConfigResponse{Configs: result}, nil
+			return &a2a.ListTaskPushConfigResponse{Configs: result, NextPageToken: m.pushConfigsNextPageToken}, nil
 		}
 		return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil // no configs for task id
 	}
@@ -1062,11 +1064,12 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	client := startTestServer(t, mockHandler)
 
 	tests := []struct {
-		name       string
-		req        *a2apb.ListTaskPushNotificationConfigsRequest
-		want       *a2apb.ListTaskPushNotificationConfigsResponse
-		wantParams *a2a.ListTaskPushConfigRequest
-		wantErr    codes.Code
+		name          string
+		req           *a2apb.ListTaskPushNotificationConfigsRequest
+		nextPageToken string
+		want          *a2apb.ListTaskPushNotificationConfigsResponse
+		wantParams    *a2a.ListTaskPushConfigRequest
+		wantErr       codes.Code
 	}{
 		{
 			name: "success",
@@ -1086,6 +1089,24 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 			wantParams: &a2a.ListTaskPushConfigRequest{TaskID: taskID},
 		},
 		{
+			name:          "next page token",
+			req:           &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: string(taskID), PageSize: 2},
+			nextPageToken: "next",
+			want: &a2apb.ListTaskPushNotificationConfigsResponse{
+				Configs: []*a2apb.TaskPushNotificationConfig{
+					{
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-1", configID),
+					},
+					{
+						TaskId: string(taskID),
+						Id:     fmt.Sprintf("%s-2", configID),
+					},
+				},
+				NextPageToken: "next",
+			},
+		},
+		{
 			name:    "handler error",
 			req:     &a2apb.ListTaskPushNotificationConfigsRequest{TaskId: "handler-error"},
 			wantErr: codes.Internal,
@@ -1095,6 +1116,7 @@ func TestGrpcHandler_ListTaskPushNotificationConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockHandler.capturedListTaskPushConfigRequest = nil
+			mockHandler.pushConfigsNextPageToken = tt.nextPageToken
 			resp, err := client.ListTaskPushNotificationConfigs(ctx, tt.req)
 			if tt.wantErr != codes.OK {
 				if err == nil {
@@ -1204,8 +1226,6 @@ func TestGrpcHandler_DeleteTaskPushNotificationConfig(t *testing.T) {
 }
 
 func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
-	ctx := t.Context()
-
 	a2aCard := &a2a.AgentCard{Name: "Test Agent", SupportedInterfaces: []*a2a.AgentInterface{{ProtocolVersion: a2a.Version}}}
 	pCard, err := pbconv.ToProtoAgentCard(a2aCard)
 	if err != nil {
@@ -1256,6 +1276,7 @@ func TestGrpcHandler_GetExtendedAgentCard(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := a2asrv.NewHandler(nil, a2asrv.WithExtendedAgentCardProducer(tt.cardProducer))
 			client := startTestServer(t, handler)
+			ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(a2a.SvcParamVersion, string(a2a.Version)))
 			resp, err := client.GetExtendedAgentCard(ctx, &a2apb.GetExtendedAgentCardRequest{})
 			if tt.wantErr != codes.OK {
 				if err == nil {

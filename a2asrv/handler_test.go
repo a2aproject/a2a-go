@@ -27,10 +27,12 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -787,9 +789,9 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 		Config:  &a2a.SendMessageConfig{PushConfig: pushConfig},
 	}
 	agentEvents := []a2a.Event{
-		newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
 	}
-	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
+	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
 	wantResult.History = []*a2a.Message{input.Message}
 
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
@@ -806,6 +808,29 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	}
 	if task.Status.State != a2a.TaskStateFailed {
 		t.Fatalf("SendMessage() result = %+v, want state %q", result, a2a.TaskStateFailed)
+	}
+}
+
+func TestRequestHandler_TaskExecutionFailOnPushAfterFinalEvent(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	pushConfig := &a2a.PushConfig{URL: "http://localhost:1"}
+	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true})
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	input := &a2a.SendMessageRequest{
+		Message: newUserMessage(taskSeed, "work"),
+		Config:  &a2a.SendMessageConfig{PushConfig: pushConfig},
+	}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	executor := newEventReplayAgent([]a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!")}, nil)
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(push.NewInMemoryStore(), sender))
+
+	if _, err := handler.SendMessage(ctx, input); err == nil {
+		t.Fatalf("handler.SendMessage() error = nil, want error")
+	}
+
+	if got := store.MustGet(t, taskSeed.ID).Task.Status.State; got != a2a.TaskStateCompleted {
+		t.Fatalf("store.Get() state = %q, want %q", got, a2a.TaskStateCompleted)
 	}
 }
 
@@ -1540,39 +1565,64 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := t.Context()
-			store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel, completedTask, canceledTask)
-			executor := &mockAgentExecutor{
-				CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
-					return func(yield func(a2a.Event, error) bool) {
-						event := newFinalTaskStatusUpdate(taskToCancel, a2a.TaskStateCanceled, "Cancelled")
-						yield(event, nil)
+	storeModes := []struct {
+		suffix    string
+		storeOpts func(t *testing.T, tasks ...*a2a.Task) []RequestHandlerOption
+	}{
+		{
+			suffix: "",
+			storeOpts: func(t *testing.T, tasks ...*a2a.Task) []RequestHandlerOption {
+				return []RequestHandlerOption{WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, tasks...))}
+			},
+		},
+		{
+			suffix: "_partial_materializer",
+			storeOpts: func(t *testing.T, tasks ...*a2a.Task) []RequestHandlerOption {
+				store := &eventSourcedTaskStore{InMemory: taskstore.NewInMemory(nil)}
+				for _, task := range tasks {
+					if _, err := store.Create(t.Context(), task); err != nil {
+						t.Fatalf("store.Create() error = %v", err)
 					}
-				},
-			}
-			handler := NewHandler(executor, WithTaskStore(store))
+				}
+				return []RequestHandlerOption{WithTaskStore(store), WithUpdateMaterializer(taskstore.NewNoOpUpdateMaterializer())}
+			},
+		},
+	}
 
-			result, err := handler.CancelTask(ctx, tt.params)
-			if tt.wantErr == nil {
-				if err != nil {
-					t.Errorf("CancelTask() error = %v, wantErr nil", err)
-					return
+	for _, mode := range storeModes {
+		for _, tt := range tests {
+			t.Run(tt.name+mode.suffix, func(t *testing.T) {
+				ctx := t.Context()
+				executor := &mockAgentExecutor{
+					CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+						return func(yield func(a2a.Event, error) bool) {
+							event := newFinalTaskStatusUpdate(taskToCancel, a2a.TaskStateCanceled, "Cancelled")
+							yield(event, nil)
+						}
+					},
 				}
-				if diff := cmp.Diff(result, tt.want); diff != "" {
-					t.Errorf("CancelTask() got = %v, want %v", result, tt.want)
+				handler := NewHandler(executor, mode.storeOpts(t, taskToCancel, completedTask, canceledTask)...)
+
+				result, err := handler.CancelTask(ctx, tt.params)
+				if tt.wantErr == nil {
+					if err != nil {
+						t.Errorf("CancelTask() error = %v, wantErr nil", err)
+						return
+					}
+					if diff := cmp.Diff(result, tt.want); diff != "" {
+						t.Errorf("CancelTask() got = %v, want %v", result, tt.want)
+					}
+				} else {
+					if err == nil {
+						t.Errorf("CancelTask() error = nil, wantErr %q", tt.wantErr)
+						return
+					}
+					if err.Error() != tt.wantErr.Error() {
+						t.Errorf("CancelTask() error = %v, wantErr %v", err, tt.wantErr)
+					}
 				}
-			} else {
-				if err == nil {
-					t.Errorf("CancelTask() error = nil, wantErr %q", tt.wantErr)
-					return
-				}
-				if err.Error() != tt.wantErr.Error() {
-					t.Errorf("CancelTask() error = %v, wantErr %v", err, tt.wantErr)
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -2268,6 +2318,164 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_SendMessage_StoredTaskNotModifiedDuringExecution(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+	var storedTaskBefore, storedTask *a2a.Task
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				before, err := utils.DeepCopy(execCtx.StoredTask)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				storedTaskBefore, storedTask = before, execCtx.StoredTask
+				events := []a2a.Event{
+					a2a.NewArtifactEvent(execCtx, a2a.NewTextPart("foo")),
+					a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateWorking, newAgentMessage("working")),
+					a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil),
+				}
+				for _, event := range events {
+					if !yield(event, nil) {
+						return
+					}
+				}
+			}
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)))
+
+	msg := a2a.NewMessageForTask(a2a.MessageRoleUser, taskSeed, a2a.NewTextPart("work"))
+	if _, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg}); err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff(storedTaskBefore, storedTask); diff != "" {
+		t.Fatalf("ExecutorContext.StoredTask modified during execution (-want +got) diff = %s", diff)
+	}
+}
+
+func TestRequestHandler_SendMessage_WithMaterializer(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	artifactID := a2a.NewArtifactID()
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			appendEvent := newArtifactEvent(execCtx, artifactID, a2a.NewTextPart(", world!"))
+			appendEvent.Append = true
+			return newEventReplayAgent([]a2a.Event{
+				newTaskWithStatus(execCtx, a2a.TaskStateWorking, "working"),
+				newArtifactEvent(execCtx, artifactID, a2a.NewTextPart("Hello")),
+				appendEvent,
+				newTaskStatusUpdate(execCtx, a2a.TaskStateCompleted, "done"),
+			}, nil).Execute(ctx, execCtx)
+		},
+	}
+	trackArtifactIDs := func(task *a2a.Task, event a2a.Event) (*a2a.Task, error) {
+		switch v := event.(type) {
+		case *a2a.Task:
+			return &a2a.Task{ID: v.ID, ContextID: v.ContextID}, nil
+		case *a2a.TaskArtifactUpdateEvent:
+			for _, a := range task.Artifacts {
+				if a.ID == v.Artifact.ID {
+					return task, nil
+				}
+			}
+			task.Artifacts = append(task.Artifacts, &a2a.Artifact{ID: v.Artifact.ID})
+		}
+		return task, nil
+	}
+	store := &eventSourcedTaskStore{InMemory: taskstore.NewInMemory(nil)}
+	materializer := taskstore.NewPartialUpdateMaterializer(trackArtifactIDs)
+	handler := NewHandler(executor, WithTaskStore(store), WithUpdateMaterializer(materializer))
+
+	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))})
+	if err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("handler.SendMessage() = %v, want a2a.Task", result)
+	}
+	wantArtifacts := []*a2a.Artifact{{ID: artifactID, Parts: a2a.ContentParts{a2a.NewTextPart("Hello"), a2a.NewTextPart(", world!")}}}
+	if diff := cmp.Diff(wantArtifacts, task.Artifacts); diff != "" {
+		t.Fatalf("handler.SendMessage() wrong result (-want +got) diff = %s", diff)
+	}
+	if task.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("handler.SendMessage() state = %q, want %q", task.Status.State, a2a.TaskStateCompleted)
+	}
+	wantUpdates := [][]*a2a.Artifact{
+		{{ID: artifactID}},
+		{{ID: artifactID}},
+		{{ID: artifactID}},
+	}
+	if diff := cmp.Diff(wantUpdates, store.updateArtifacts); diff != "" {
+		t.Fatalf("store.Update() wrong artifacts (-want +got) diff = %s", diff)
+	}
+}
+
+func TestRequestHandler_SendMessage_PartialMaterializerFullStoredTask(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	prevMsg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	taskSeed := &a2a.Task{
+		ID:        a2a.NewTaskID(),
+		ContextID: a2a.NewContextID(),
+		Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired},
+		History:   []*a2a.Message{prevMsg},
+		Artifacts: []*a2a.Artifact{{ID: a2a.NewArtifactID(), Parts: a2a.ContentParts{a2a.NewTextPart("foo")}}},
+		Metadata:  map[string]any{"key": "value"},
+	}
+	var gotStoredTask *a2a.Task
+	executor := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			gotStoredTask = execCtx.StoredTask
+			return newEventReplayAgent([]a2a.Event{
+				a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil),
+			}, nil).Execute(ctx, execCtx)
+		},
+	}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	handler := NewHandler(executor, WithTaskStore(store), WithUpdateMaterializer(taskstore.NewNoOpUpdateMaterializer()))
+
+	msg := a2a.NewMessageForTask(a2a.MessageRoleUser, taskSeed, a2a.NewTextPart("work"))
+	if _, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg}); err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+
+	wantStoredTask := *taskSeed
+	wantStoredTask.History = []*a2a.Message{prevMsg, msg}
+	if diff := cmp.Diff(&wantStoredTask, gotStoredTask); diff != "" {
+		t.Fatalf("ExecutorContext.StoredTask wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+type eventSourcedTaskStore struct {
+	*taskstore.InMemory
+	updateArtifacts [][]*a2a.Artifact
+}
+
+func (s *eventSourcedTaskStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+	artifacts, err := utils.DeepCopy(&req.Task.Artifacts)
+	if err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+	s.updateArtifacts = append(s.updateArtifacts, *artifacts)
+
+	stored, err := s.InMemory.Get(ctx, req.Task.ID)
+	if err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+	task, err := a2aevent.ApplyUpdate(stored.Task, req.Event)
+	if err != nil {
+		return taskstore.TaskVersionMissing, err
+	}
+	return s.InMemory.Update(ctx, &taskstore.UpdateRequest{Task: task, Event: req.Event, PrevVersion: req.PrevVersion})
+}
+
 type interceptExecCtxFn func(context.Context, *ExecutorContext) (context.Context, error)
 
 func (fn interceptExecCtxFn) Intercept(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
@@ -2410,6 +2618,7 @@ func TestLoadExecutionContext_EmptyTaskIDWithRetry(t *testing.T) {
 	f := &factory{
 		taskStore:          store,
 		taskRetrySupported: true,
+		materializer:       defaultMaterializer,
 	}
 
 	// Message without TaskID, but task exists in store (retry scenario).
@@ -2422,6 +2631,22 @@ func TestLoadExecutionContext_EmptyTaskIDWithRetry(t *testing.T) {
 	}
 	if execCtx == nil {
 		t.Fatal("loadExecutionContext() returned nil")
+	}
+}
+
+func TestLoadExecutionContext_HistoryUpdateConcurrentModification(t *testing.T) {
+	t.Parallel()
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+	}
+	f := &factory{taskStore: store, materializer: defaultMaterializer}
+
+	msg := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart("work"))
+	_, err := f.loadExecutionContext(t.Context(), task.ID, &a2a.SendMessageRequest{Message: msg})
+	if !errors.Is(err, taskstore.ErrConcurrentModification) {
+		t.Fatalf("loadExecutionContext() error = %v, want %v", err, taskstore.ErrConcurrentModification)
 	}
 }
 
