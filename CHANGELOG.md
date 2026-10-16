@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.7.0](https://github.com/a2aproject/a2a-go/compare/v2.6.0...v2.7.0) (2026-10-16)
+
+
+### Features
+
+* reject requests with unsupported A2A-Version ([#457](https://github.com/a2aproject/a2a-go/issues/457)) ([4226e74](https://github.com/a2aproject/a2a-go/commit/4226e7459929be04a20a30d3d67276d0b2d7876a))
+* use application/a2a+json with Accept-based negotiation ([#465](https://github.com/a2aproject/a2a-go/issues/465)) ([a8caf47](https://github.com/a2aproject/a2a-go/commit/a8caf47aa4878b356d8673c4dcdbc544c2a1cfc3))
+
+
+### Bug Fixes
+
+* **a2a:** serialize task status timestamps in UTC ([#452](https://github.com/a2aproject/a2a-go/issues/452)) ([b657f33](https://github.com/a2aproject/a2a-go/commit/b657f339b2607a75b743ace00121addf7d83117a))
+* decode application/a2a+json error responses in the REST client ([#448](https://github.com/a2aproject/a2a-go/issues/448)) ([3e1aa7f](https://github.com/a2aproject/a2a-go/commit/3e1aa7fa38015722bf03dce19b025aee729177bf))
+* **grpc:** forward next_page_token in push config list responses ([#455](https://github.com/a2aproject/a2a-go/issues/455)) ([7210014](https://github.com/a2aproject/a2a-go/commit/721001455933970829ee631c2f19d6d423d9f43e))
+* reject trailing data after the JSON body ([#453](https://github.com/a2aproject/a2a-go/issues/453)) ([e85760e](https://github.com/a2aproject/a2a-go/commit/e85760e87ce007bfbd02e38374a4ce2fc2037fe3))
+* return plain error when streaming fails before the first event ([#463](https://github.com/a2aproject/a2a-go/issues/463)) ([cf62533](https://github.com/a2aproject/a2a-go/commit/cf625334b8590a1a9dc2e7a85bcafe268f9028ec))
+
 ## [2.6.0](https://github.com/a2aproject/a2a-go/compare/v2.5.0...v2.6.0) (2026-09-25)
 
 
