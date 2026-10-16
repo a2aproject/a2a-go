@@ -104,3 +104,35 @@ func TestErrorDetailsJSONCodec(t *testing.T) {
 		})
 	}
 }
+
+func TestTyped_MarshalJSON_NilValue(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    *Typed
+		wantJSON string
+	}{
+		{
+			name:     "NewTyped with nil value",
+			input:    NewTyped(ErrorInfoType, nil),
+			wantJSON: `{"@type":"type.googleapis.com/google.rpc.ErrorInfo"}`,
+		},
+		{
+			name:     "NewFromStruct with nil details",
+			input:    NewFromStruct(nil),
+			wantJSON: `{"@type":"type.googleapis.com/google.protobuf.Struct"}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotJSON, err := json.Marshal(tc.input)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v, want nil", err)
+			}
+			if string(gotJSON) != tc.wantJSON {
+				t.Fatalf("json.Marshal() = %s, want %s", gotJSON, tc.wantJSON)
+			}
+		})
+	}
+}
