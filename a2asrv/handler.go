@@ -104,6 +104,8 @@ var _ RequestHandler = (*defaultRequestHandler)(nil)
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
 // WithCapabilityChecks sets the provided capabilities for the request handler.
+//
+// Deprecated: Use [WithAgentCardEnforcement] instead.
 func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.capabilities = capabilities
@@ -111,11 +113,9 @@ func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOpt
 	}
 }
 
-// WithInputModeChecks sets the input modes for the request handler.
-// Skill input modes overwrite the default input modes, unless at least one skill
-// doesn't have input modes specified, in which case the default input modes
-// are appended to the list of input modes.
-func WithInputModeChecks(card *a2a.AgentCard) RequestHandlerOption {
+// WithAgentCardEnforcement makes the request handler validate incoming requests against
+// the provided [a2a.AgentCard] and reject the ones which do not conform to it.
+func WithAgentCardEnforcement(card *a2a.AgentCard) RequestHandlerOption {
 	if card == nil {
 		return func(ih *InterceptedHandler, h *defaultRequestHandler) {}
 	}
@@ -136,6 +136,9 @@ func WithInputModeChecks(card *a2a.AgentCard) RequestHandlerOption {
 
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.inputModes = inputModes
+
+		h.capabilities = &card.Capabilities
+		ih.capabilities = &card.Capabilities
 	}
 }
 
@@ -583,7 +586,7 @@ func parseMediaTypes(mediaTypes []string) []string {
 	for _, mediaType := range mediaTypes {
 		parsedMediaType, _, err := mime.ParseMediaType(mediaType)
 		if err != nil {
-			slog.Error("failed to parse media type", "error", err, "mediaType", mediaType)
+			log.Error(context.Background(), "failed to parse media type", err, "mediaType", mediaType)
 			continue
 		}
 		parsed = append(parsed, parsedMediaType)
