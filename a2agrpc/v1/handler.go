@@ -256,7 +256,7 @@ func (h *Handler) ListTaskPushNotificationConfigs(ctx context.Context, pbReq *a2
 
 	resp := &a2a.ListTaskPushConfigResponse{
 		Configs:       configs.Configs,
-		NextPageToken: "",
+		NextPageToken: configs.NextPageToken,
 	}
 
 	pbResp, err := pbconv.ToProtoListTaskPushConfigResponse(resp)

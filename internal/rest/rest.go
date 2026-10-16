@@ -21,13 +21,19 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+)
+
+// Content-Type header values.
+const (
+	ContentJSON    = "application/json"
+	ContentA2AJSON = "application/a2a+json"
 )
 
 // Query parameter names for the v1 HTTP+JSON binding.
@@ -40,6 +46,16 @@ const (
 	QueryStatusTimestampAfter = "statusTimestampAfter"
 	QueryIncludeArtifacts     = "includeArtifacts"
 )
+
+// timestampLayout is the timestamp pattern of the spec, YYYY-MM-DDTHH:mm:ss.sssZ.
+// It is the same pattern a2a uses for JSON timestamps.
+const timestampLayout = "2006-01-02T15:04:05.000Z"
+
+// FormatTimestamp formats t for a query parameter: in UTC, with exactly three
+// fractional digits, e.g. 2026-10-01T08:30:00.000Z.
+func FormatTimestamp(t time.Time) string {
+	return t.UTC().Format(timestampLayout)
+}
 
 // PathBuilder constructs REST paths for A2A endpoints, optionally rooted
 // under a version prefix. The zero value builds v1.0 paths (no prefix); the
@@ -271,17 +287,24 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 	return out
 }
 
+func isJSONErrorContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return mediaType == "application/json" || mediaType == "application/a2a+json"
+}
+
 // FromRESTError converts an HTTP error response in google.rpc.Status format to an a2a error.
 func FromRESTError(resp *http.Response) error {
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "application/json") {
+	if !isJSONErrorContentType(resp.Header.Get("Content-Type")) {
 		return a2a.ErrServerError
 	}
 
 	var body struct {
 		Error ErrorBodyJSON `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := utils.DecodeJSON(resp.Body, &body); err != nil {
 		return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
 	}
 

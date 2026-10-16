@@ -29,6 +29,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"github.com/google/uuid"
 )
@@ -125,7 +126,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}
 
 	var resp jsonrpc.ClientResponse
-	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+	if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

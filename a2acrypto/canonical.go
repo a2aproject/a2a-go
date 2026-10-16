@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // canonicalizeJSON returns the RFC 8785 (JCS) canonical form of an AgentCard's
@@ -33,6 +35,9 @@ func canonicalizeJSON(raw []byte) ([]byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&obj); err != nil {
+		return nil, err
+	}
+	if err := utils.ExpectEOF(dec); err != nil {
 		return nil, err
 	}
 	dropSignatures(obj)
