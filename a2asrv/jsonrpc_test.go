@@ -157,11 +157,13 @@ func TestJSONRPC_Validations(t *testing.T) {
 	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
 
 	testCases := []struct {
-		name    string
-		method  string
-		request []byte
-		wantErr error
-		want    any
+		name        string
+		method      string
+		request     []byte
+		wantErr     error
+		want        any
+		omitVersion bool
+		urlQuery    string
 	}{
 		{
 			name:    "success",
@@ -248,6 +250,21 @@ func TestJSONRPC_Validations(t *testing.T) {
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
+			name:        "no version header",
+			method:      "POST",
+			request:     mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			wantErr:     a2a.ErrVersionNotSupported,
+			omitVersion: true,
+		},
+		{
+			name:        "version query parameter",
+			method:      "POST",
+			request:     mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			want:        want,
+			omitVersion: true,
+			urlQuery:    "?A2A-Version=1.0",
+		},
+		{
 			name:    "trailing data after request",
 			method:  "POST",
 			request: append(mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}), []byte("TRAILING_GARBAGE")...),
@@ -276,9 +293,12 @@ func TestJSONRPC_Validations(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			req, err := http.NewRequestWithContext(ctx, tc.method, server.URL, bytes.NewBuffer(tc.request))
+			req, err := http.NewRequestWithContext(ctx, tc.method, server.URL+tc.urlQuery, bytes.NewBuffer(tc.request))
 			if err != nil {
 				t.Errorf("http.NewRequestWithContext() error = %v", err)
+			}
+			if !tc.omitVersion {
+				req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 			}
 			client := &http.Client{}
 			resp, err := client.Do(req)
@@ -375,6 +395,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 			req.Header.Set("Accept", sse.ContentEventStream)
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 			client := http.Client{}
 			resp, err := client.Do(req)
 			if err != nil {
@@ -432,7 +453,7 @@ func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
-
+	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("http.DefaultClient.Do() error = %v", err)

@@ -17,8 +17,11 @@ package a2asrv
 import (
 	"iter"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
 // ServiceParams holds the metadata associated with a request.
@@ -87,4 +90,17 @@ func (sp *ServiceParams) cloneRaw() map[string][]string {
 		res[k] = slices.Clone(v)
 	}
 	return res
+}
+
+// newHTTPServiceParams creates a new ServiceParams instance from the given HTTP request.
+// Clients MAY provide the A2A-Version as a request parameter instead of a header.
+func newHTTPServiceParams(req *http.Request) *ServiceParams {
+	params := NewServiceParams(req.Header)
+	if _, ok := params.Get(a2a.SvcParamVersion); ok {
+		return params
+	}
+	if version := req.URL.Query().Get(a2a.SvcParamVersion); version != "" {
+		return params.With(map[string][]string{a2a.SvcParamVersion: {version}})
+	}
+	return params
 }
