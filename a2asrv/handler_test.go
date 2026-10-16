@@ -780,8 +780,10 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	ctx := t.Context()
 
 	pushConfig := &a2a.PushConfig{URL: "http://localhost:1"}
+	// Localhost must be stored so dial-time FailOnError can fail the task; create-time
+	// SSRF defaults to reject private targets.
 	pushConfigStore := push.NewInMemoryStore()
-	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true})
+	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
 
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	input := &a2a.SendMessageRequest{
@@ -811,11 +813,32 @@ func TestRequestHandler_TaskExecutionFailOnPush(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_SendMessage_RejectsLocalhostPush(t *testing.T) {
+	ctx := t.Context()
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	input := &a2a.SendMessageRequest{
+		Message: newUserMessage(taskSeed, "work"),
+		Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "http://LOCALHOST/hook"}},
+	}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	executor := newEventReplayAgent(nil, nil)
+	handler := NewHandler(executor,
+		WithTaskStore(store),
+		WithPushNotifications(push.NewInMemoryStore(), push.NewHTTPPushSender(nil)),
+	)
+	_, err := handler.SendMessage(ctx, input)
+	if err == nil || !errors.Is(err, a2a.ErrInvalidParams) || !strings.Contains(err.Error(), "LOCALHOST") {
+		t.Fatalf("SendMessage() error = %v, want invalid params mentioning LOCALHOST", err)
+	}
+}
+
 func TestRequestHandler_TaskExecutionFailOnPushAfterFinalEvent(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	pushConfig := &a2a.PushConfig{URL: "http://localhost:1"}
-	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true})
+	// This case is the dial failure after a final event, so create-time
+	// localhost rejection is turned off for the sender.
+	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true, AllowPrivateNetworks: true})
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
 	input := &a2a.SendMessageRequest{
 		Message: newUserMessage(taskSeed, "work"),
@@ -1911,6 +1934,28 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 			wantErr: fmt.Errorf("failed to create push config: %w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+			},
+		},
+		{
+			name: "loopback url rejected",
+			req: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "http://127.0.0.1/webhook",
+			},
+			wantErr: fmt.Errorf("failed to create push config: %w: invalid push config endpoint URL: push notification target resolves to a blocked address range: 127.0.0.1", a2a.ErrInvalidParams),
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, push.NewHTTPPushSender(nil)),
+			},
+		},
+		{
+			name: "LOCALHOST rejected",
+			req: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "http://LOCALHOST/hook",
+			},
+			wantErr: fmt.Errorf("failed to create push config: %w: invalid push config endpoint URL: push notification target resolves to a blocked address range: LOCALHOST", a2a.ErrInvalidParams),
+			options: []RequestHandlerOption{
+				WithPushNotifications(ps, push.NewHTTPPushSender(nil)),
 			},
 		},
 		{

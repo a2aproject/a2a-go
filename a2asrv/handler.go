@@ -159,8 +159,21 @@ func WithConcurrencyConfig(config limiter.ConcurrencyConfig) RequestHandlerOptio
 	}
 }
 
+// validatePushConfig asks the sender to check a config when it implements
+// [push.ConfigValidator]. A sender that does not implement it is unchanged.
+func validatePushConfig(ctx context.Context, sender push.Sender, config *a2a.PushConfig) error {
+	validator, ok := sender.(push.ConfigValidator)
+	if !ok || validator == nil {
+		return nil
+	}
+	if err := validator.ValidateConfig(ctx, config); err != nil {
+		return fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
+	}
+	return nil
+}
+
 // WithPushNotifications adds support for push notifications. If dependencies are not provided
-// push-related methods will be returning a2a.ErrPushNotificationNotSupported,
+// push-related methods will be returning a2a.ErrPushNotificationNotSupported.
 func WithPushNotifications(store push.ConfigStore, sender push.Sender) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
@@ -473,6 +486,10 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 	// Authorize: only the task owner can create push configs for it.
 	if _, err := h.taskStore.Get(ctx, req.TaskID); err != nil {
+		return nil, fmt.Errorf("failed to create push config: %w", err)
+	}
+
+	if err := validatePushConfig(ctx, h.pushSender, req); err != nil {
 		return nil, fmt.Errorf("failed to create push config: %w", err)
 	}
 

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"syscall"
 	"time"
@@ -41,9 +42,12 @@ var tokenHeader = http.CanonicalHeaderKey("A2A-Notification-Token")
 
 // HTTPPushSender sends A2A events to a push notification endpoint over HTTP.
 type HTTPPushSender struct {
-	client      *http.Client
-	failOnError bool
+	client       *http.Client
+	failOnError  bool
+	allowPrivate bool
 }
+
+var _ ConfigValidator = (*HTTPPushSender)(nil)
 
 // HTTPSenderConfig allows to configure [HTTPPushSender].
 type HTTPSenderConfig struct {
@@ -85,8 +89,9 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 		client.Transport = ssrfGuardedTransport()
 	}
 	return &HTTPPushSender{
-		client:      client,
-		failOnError: config != nil && config.FailOnError,
+		client:       client,
+		failOnError:  config != nil && config.FailOnError,
+		allowPrivate: allowPrivate,
 	}
 }
 
@@ -127,13 +132,34 @@ func ssrfGuardedTransport() *http.Transport {
 	}
 }
 
+// Extra IPv4 ranges that net.IP.IsPrivate does not cover but must not be
+// reachable as push targets: RFC 6598 CGNAT / shared address space and
+// RFC 2544 benchmarking (often used for lab/interconnect and traffic
+// generators). Python's ipaddress.is_private treats these as non-global;
+// keep Go push SSRF aligned with that floor.
+var (
+	cgnatSharedNet   = mustCIDR("100.64.0.0/10")
+	benchmarkTestNet = mustCIDR("198.18.0.0/15")
+)
+
+func mustCIDR(cidr string) *net.IPNet {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		panic("push: invalid CIDR " + cidr + ": " + err.Error())
+	}
+	return network
+}
+
 // isBlockedIP reports whether ip is in a range a push notification must not
-// reach: loopback, RFC 1918 / RFC 4193 private, link-local, unspecified or
-// multicast. This covers cloud metadata endpoints (169.254.169.254) and
-// internal services (127.0.0.1, 10/8, 172.16/12, 192.168/16).
+// reach: loopback, RFC 1918 / RFC 4193 private, RFC 6598 CGNAT, RFC 2544
+// benchmarking, link-local, unspecified or multicast. This covers cloud
+// metadata endpoints (169.254.169.254) and internal services
+// (127.0.0.1, 10/8, 172.16/12, 192.168/16, 100.64/10).
 func isBlockedIP(ip net.IP) bool {
 	return ip.IsLoopback() ||
 		ip.IsPrivate() ||
+		cgnatSharedNet.Contains(ip) ||
+		benchmarkTestNet.Contains(ip) ||
 		ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() ||
 		ip.IsUnspecified() ||
@@ -154,12 +180,67 @@ func limitPushRedirects(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+func isHTTPPushScheme(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	// url.Parse lowercases the scheme, so HTTP and http are the same value.
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+// ValidateConfig checks a push config before it is stored.
+// Non-http(s) URLs are accepted so other senders can use the same config.
+// An http(s) URL with a loopback, private, or localhost host is rejected
+// unless AllowPrivateNetworks is set. LOCALHOST is the same host as localhost.
+func (s *HTTPPushSender) ValidateConfig(ctx context.Context, config *a2a.PushConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if config == nil {
+		return errors.New("push config cannot be nil")
+	}
+	if config.URL == "" {
+		return errors.New("push config endpoint cannot be empty")
+	}
+	u, err := url.ParseRequestURI(config.URL)
+	if err != nil {
+		return fmt.Errorf("invalid push config endpoint URL: %w", err)
+	}
+	if !isHTTPPushScheme(u) {
+		return nil
+	}
+	if s.allowPrivate {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("invalid push config endpoint URL: host is required")
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("invalid push config endpoint URL: %w: %s", errBlockedPushTarget, host)
+	}
+	if ip := net.ParseIP(host); ip != nil && isBlockedIP(ip) {
+		return fmt.Errorf("invalid push config endpoint URL: %w: %s", errBlockedPushTarget, ip)
+	}
+	return nil
+}
+
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
-// to the URL specified in the push configuration.
+// to the URL specified in the push configuration. Non-http(s) URLs are ignored.
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
 	jsonData, err := json.Marshal(a2a.StreamResponse{Event: event})
 	if err != nil {
 		return s.handleError(ctx, fmt.Errorf("failed to serialize event to JSON: %w", err))
+	}
+	if config == nil {
+		return s.handleError(ctx, errors.New("push config cannot be nil"))
+	}
+	u, err := url.ParseRequestURI(config.URL)
+	if err != nil {
+		return s.handleError(ctx, fmt.Errorf("failed to parse push notification URL: %w", err))
+	}
+	if !isHTTPPushScheme(u) {
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.URL, bytes.NewBuffer(jsonData))

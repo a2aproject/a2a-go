@@ -60,19 +60,20 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 			},
 		},
 		{
-			name:    "nil config",
-			config:  nil,
-			wantErr: fmt.Errorf("%w: push config cannot be nil", a2a.ErrInvalidParams),
+			name:   "topic scheme stored for non-http senders",
+			config: &a2a.PushConfig{URL: "topic://name"},
+			want: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "topic://name",
+			},
 		},
 		{
-			name:    "empty URL",
-			config:  &a2a.PushConfig{},
-			wantErr: fmt.Errorf("%w: push config endpoint cannot be empty", a2a.ErrInvalidParams),
-		},
-		{
-			name:    "invalid URL",
-			config:  &a2a.PushConfig{URL: "not a url"},
-			wantErr: fmt.Errorf("%w: invalid push config endpoint URL: parse \"not a url\": invalid URI for request", a2a.ErrInvalidParams),
+			name:   "file scheme stored",
+			config: &a2a.PushConfig{URL: "file:///etc/passwd"},
+			want: &a2a.PushConfig{
+				TaskID: taskID,
+				URL:    "file:///etc/passwd",
+			},
 		},
 	}
 
@@ -100,6 +101,7 @@ func TestInMemoryPushConfigStore_Save(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestInMemoryPushConfigStore_ModifiedConfig(t *testing.T) {
