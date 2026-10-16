@@ -357,20 +357,19 @@ func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error 
 }
 
 // checkProtocolVersion checks if the client's protocol version is compatible with the server's.
-// unset A2A-Version headers are treated as "0.3".
+// Unset or empty A2A-Version values are treated as "0.3".
 func checkProtocolVersion(callCtx *CallContext) error {
 	if callCtx.ProtocolVersion == "" {
 		return nil
 	}
-	clientVersion := a2a.ProtocolVersion("0.3")
-	if versions, ok := callCtx.ServiceParams().Get(a2a.SvcParamVersion); ok {
-		if len(versions) == 1 {
-			clientVersion = a2a.ProtocolVersion(versions[0])
-		} else if len(versions) != 0 {
-			return fmt.Errorf("%w: %d protocol versions specified", a2a.ErrInvalidRequest, len(versions))
-		}
+	versions, _ := callCtx.ServiceParams().Get(a2a.SvcParamVersion)
+	if len(versions) > 1 {
+		return fmt.Errorf("%w: %d protocol versions specified", a2a.ErrInvalidRequest, len(versions))
 	}
-
+	clientVersion := a2a.ProtocolVersion("0.3")
+	if len(versions) == 1 && versions[0] != "" {
+		clientVersion = a2a.ProtocolVersion(versions[0])
+	}
 	if clientVersion != callCtx.ProtocolVersion {
 		return fmt.Errorf("%w: requested %q, served %q", a2a.ErrVersionNotSupported, clientVersion, callCtx.ProtocolVersion)
 	}
