@@ -423,10 +423,11 @@ func TestFromRESTErrorEdgeCases(t *testing.T) {
 			wantError:    a2a.ErrServerError,
 		},
 		{
-			name:         "Invalid JSON",
+			name:         "Invalid JSON without status falls back to server error",
 			contentType:  "application/json",
 			responseBody: `not json`,
-			wantError:    a2a.ErrParseError,
+			wantError:    a2a.ErrServerError,
+			wantMessage:  "not json",
 		},
 		{
 			name:         "application/a2a+json is decoded",
@@ -485,6 +486,168 @@ func TestFromRESTErrorEdgeCases(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFromRESTErrorHTTPStatusFallback(t *testing.T) {
+	t.Parallel()
+
+	a2aBody := `{"error":{"code":404,"status":"NOT_FOUND","message":"no such task","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"TASK_NOT_FOUND","domain":"a2a-protocol.org"}]}}`
+
+	tests := []struct {
+		name         string
+		statusCode   int
+		contentType  string
+		responseBody string
+		wantError    error
+		wantMessage  string
+	}{
+		{
+			name:         "401 with OAuth error object",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "application/json",
+			responseBody: `{"error":"invalid_token"}`,
+			wantError:    a2a.ErrUnauthenticated,
+			wantMessage:  "invalid_token",
+		},
+		{
+			name:         "502 with JSON string",
+			statusCode:   http.StatusBadGateway,
+			contentType:  "application/json",
+			responseBody: `"Bad Gateway"`,
+			wantError:    a2a.ErrServerError,
+			wantMessage:  "Bad Gateway",
+		},
+		{
+			name:         "401 with HTML body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "text/html; charset=utf-8",
+			responseBody: `<html><body>Please sign in</body></html>`,
+			wantError:    a2a.ErrUnauthenticated,
+			wantMessage:  "Please sign in",
+		},
+		{
+			name:         "404 with text body",
+			statusCode:   http.StatusNotFound,
+			contentType:  "text/plain",
+			responseBody: "page not found",
+			wantError:    a2a.ErrMethodNotFound,
+			wantMessage:  "page not found",
+		},
+		{
+			name:         "403 with JSON array",
+			statusCode:   http.StatusForbidden,
+			contentType:  "application/json",
+			responseBody: `["forbidden"]`,
+			wantError:    a2a.ErrUnauthorized,
+			wantMessage:  "forbidden",
+		},
+		{
+			name:         "503 with null body",
+			statusCode:   http.StatusServiceUnavailable,
+			contentType:  "application/json",
+			responseBody: `null`,
+			wantError:    a2a.ErrServerError,
+		},
+		{
+			name:         "500 with JSON object without error field",
+			statusCode:   http.StatusInternalServerError,
+			contentType:  "application/json",
+			responseBody: `{"message":"boom"}`,
+			wantError:    a2a.ErrServerError,
+			wantMessage:  "boom",
+		},
+		{
+			name:         "502 with empty body",
+			statusCode:   http.StatusBadGateway,
+			contentType:  "",
+			responseBody: "",
+			wantError:    a2a.ErrServerError,
+			wantMessage:  "502",
+		},
+		{
+			name:         "valid A2A error body is still mapped by reason",
+			statusCode:   http.StatusNotFound,
+			contentType:  "application/json",
+			responseBody: a2aBody,
+			wantError:    a2a.ErrTaskNotFound,
+			wantMessage:  "no such task",
+		},
+		{
+			name:         "valid A2A error body with a2a+json content type is still mapped by reason",
+			statusCode:   http.StatusNotFound,
+			contentType:  "application/a2a+json",
+			responseBody: a2aBody,
+			wantError:    a2a.ErrTaskNotFound,
+			wantMessage:  "no such task",
+		},
+		{
+			name:         "valid A2A error body is not remapped by HTTP status",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "application/json",
+			responseBody: a2aBody,
+			wantError:    a2a.ErrTaskNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{
+				StatusCode: tt.statusCode,
+				Header:     http.Header{"Content-Type": []string{tt.contentType}},
+				Body:       io.NopCloser(bytes.NewBufferString(tt.responseBody)),
+			}
+
+			gotErr := FromRESTError(resp)
+
+			if !errors.Is(gotErr, tt.wantError) {
+				t.Fatalf("FromRESTError() error = %v, want %v", gotErr, tt.wantError)
+			}
+			if errors.Is(gotErr, a2a.ErrParseError) {
+				t.Fatalf("FromRESTError() error = %v, want no %v", gotErr, a2a.ErrParseError)
+			}
+			if tt.wantMessage != "" && !strings.Contains(gotErr.Error(), tt.wantMessage) {
+				t.Fatalf("FromRESTError() error message %q does not contain %q", gotErr.Error(), tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestFromRESTErrorTruncatesLongBody(t *testing.T) {
+	t.Parallel()
+
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"text/html"}},
+		Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", 100000))),
+	}
+
+	gotErr := FromRESTError(resp)
+
+	if !errors.Is(gotErr, a2a.ErrServerError) {
+		t.Fatalf("FromRESTError() error = %v, want %v", gotErr, a2a.ErrServerError)
+	}
+	if len(gotErr.Error()) > 5000 {
+		t.Fatalf("len(FromRESTError().Error()) = %d, want <= 5000", len(gotErr.Error()))
+	}
+}
+
+func TestFromRESTErrorLargeA2ABody(t *testing.T) {
+	t.Parallel()
+
+	body := makeStatusBody(t, 400, "INVALID_ARGUMENT", strings.Repeat("m", 20000), "INVALID_PARAMS")
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	gotErr := FromRESTError(resp)
+
+	if !errors.Is(gotErr, a2a.ErrInvalidParams) {
+		t.Fatalf("FromRESTError() error = %v, want %v", gotErr, a2a.ErrInvalidParams)
 	}
 }
 
