@@ -16,13 +16,16 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -295,20 +298,57 @@ func isJSONErrorContentType(contentType string) bool {
 	return mediaType == "application/json" || mediaType == "application/a2a+json"
 }
 
-// FromRESTError converts an HTTP error response in google.rpc.Status format to an a2a error.
+const (
+	// maxErrorBodyReadBytes limits how much of an HTTP error response body is read.
+	maxErrorBodyReadBytes = 1 << 20
+	// maxErrorBodyQuoteBytes limits how much of a non-A2A error body is quoted in the error message.
+	maxErrorBodyQuoteBytes = 4096
+)
+
+// FromRESTError converts an HTTP error response to an a2a error.
+// Bodies in google.rpc.Status format are mapped using their ErrorInfo reason. Any other body, for example
+// an auth, proxy or gateway error, is mapped using the HTTP status code and quoted in the error message.
 func FromRESTError(resp *http.Response) error {
-	if !isJSONErrorContentType(resp.Header.Get("Content-Type")) {
-		return a2a.ErrServerError
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyReadBytes))
+	if isJSONErrorContentType(resp.Header.Get("Content-Type")) {
+		var parsed struct {
+			Error *ErrorBodyJSON `json:"error"`
+		}
+		err := utils.DecodeJSON(bytes.NewReader(body), &parsed)
+		if err == nil && parsed.Error != nil {
+			return ConvertErrorBody(parsed.Error)
+		}
+		if errors.Is(err, utils.ErrTrailingData) {
+			return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
+		}
+	}
+	return fromHTTPStatus(resp.StatusCode, body, readErr)
+}
+
+func fromHTTPStatus(statusCode int, body []byte, readErr error) error {
+	var base error
+	switch statusCode {
+	case http.StatusUnauthorized:
+		base = a2a.ErrUnauthenticated
+	case http.StatusForbidden:
+		base = a2a.ErrUnauthorized
+	case http.StatusNotFound, http.StatusNotImplemented:
+		base = a2a.ErrMethodNotFound
+	default:
+		base = a2a.ErrServerError
 	}
 
-	var body struct {
-		Error ErrorBodyJSON `json:"error"`
+	msg := fmt.Sprintf("unexpected HTTP status %d", statusCode)
+	if len(body) > maxErrorBodyQuoteBytes {
+		body = append(body[:maxErrorBodyQuoteBytes:maxErrorBodyQuoteBytes], "..."...)
 	}
-	if err := utils.DecodeJSON(resp.Body, &body); err != nil {
-		return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
+	if text := strings.TrimSpace(string(body)); text != "" {
+		msg += ": " + text
 	}
-
-	return ConvertErrorBody(&body.Error)
+	if readErr != nil {
+		msg += fmt.Sprintf(" (failed to read response body: %v)", readErr)
+	}
+	return a2a.NewError(base, msg)
 }
 
 // streamResponse is the JSON shape of a REST SSE stream response.
