@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
-	"mime"
-	"slices"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -98,8 +96,6 @@ type defaultRequestHandler struct {
 	agentInactivityTimeout time.Duration
 
 	authenticatedCardProducer ExtendedAgentCardProducer
-	capabilities              *a2a.AgentCapabilities
-	inputModes                []string
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -109,41 +105,9 @@ type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
 // WithCapabilityChecks sets the provided capabilities for the request handler.
 //
-// Deprecated: Use [WithAgentCardEnforcement] instead.
+// Deprecated: Use [WithCallInterceptors] with [NewAgentCardEnforcer] instead.
 func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.capabilities = capabilities
-		ih.capabilities = capabilities
-	}
-}
-
-// WithAgentCardEnforcement makes the request handler validate incoming requests against
-// the provided [a2a.AgentCard] and reject the ones which do not conform to it.
-func WithAgentCardEnforcement(card *a2a.AgentCard) RequestHandlerOption {
-	if card == nil {
-		return func(ih *InterceptedHandler, h *defaultRequestHandler) {}
-	}
-
-	var inputModes []string
-	inheritsDefaults := len(card.Skills) == 0
-	for _, skill := range card.Skills {
-		if len(skill.InputModes) == 0 {
-			inheritsDefaults = true
-			continue
-		}
-		inputModes = append(inputModes, parseMediaTypes(skill.InputModes)...)
-	}
-
-	if inheritsDefaults {
-		inputModes = append(inputModes, parseMediaTypes(card.DefaultInputModes)...)
-	}
-
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.inputModes = inputModes
-
-		h.capabilities = &card.Capabilities
-		ih.capabilities = &card.Capabilities
-	}
+	return WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: *capabilities}))
 }
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
@@ -392,10 +356,6 @@ func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMe
 // SendStreamingMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		if h.capabilities != nil && !h.capabilities.Streaming {
-			yield(nil, a2a.ErrUnsupportedOperation)
-			return
-		}
 		subscription, err := h.handleSendMessage(ctx, req)
 		if err != nil {
 			yield(nil, err)
@@ -413,10 +373,6 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 // SubscribeToTask implements RequestHandler.
 func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		if h.capabilities != nil && !h.capabilities.Streaming {
-			yield(nil, a2a.ErrUnsupportedOperation)
-			return
-		}
 		if req == nil {
 			yield(nil, a2a.ErrInvalidParams)
 			return
@@ -448,7 +404,7 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.SendMessageRequest) (taskexec.Subscription, error) {
 	switch {
 	case req == nil:
-		return nil, fmt.Errorf("message send params is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("SendMessageRequest is required: %w", a2a.ErrInvalidParams)
 	case req.Message == nil:
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	case req.Message.ID == "":
@@ -457,9 +413,6 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 		return nil, fmt.Errorf("message parts is required: %w", a2a.ErrInvalidParams)
 	case req.Message.Role == "":
 		return nil, fmt.Errorf("message role is required: %w", a2a.ErrInvalidParams)
-	}
-	if err := validateMediaTypes(h, req); err != nil {
-		return nil, err
 	}
 	return h.execManager.Execute(ctx, req)
 }
@@ -535,9 +488,6 @@ func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a
 
 // GetExtendedAgentCard implements RequestHandler.
 func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-	if h.capabilities != nil && !h.capabilities.ExtendedAgentCard {
-		return nil, a2a.ErrUnsupportedOperation
-	}
 	if h.authenticatedCardProducer == nil {
 		return nil, a2a.ErrExtendedCardNotConfigured
 	}
@@ -566,50 +516,15 @@ func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (
 }
 
 func checkPushNotificationSupport(h *defaultRequestHandler, ctx context.Context) error {
-	// With capability checks, PushNotifications not supported
-	if h.capabilities != nil && !h.capabilities.PushNotifications {
-		return a2a.ErrPushNotificationNotSupported
+	if h.pushConfigStore != nil && h.pushSender != nil {
+		return nil
 	}
-	// With capability checks, PushNotifications supported, but not configured
-	if h.capabilities != nil && (h.pushConfigStore == nil || h.pushSender == nil) {
+	// The card advertises push notifications, but no store or sender was provided
+	// with [WithPushNotifications], which means the server is misconfigured.
+	if enabled, ok := ctx.Value(pushEnabledKey{}).(bool); ok && enabled {
 		log.Error(ctx, "push notifications are enabled but push config store or sender is not configured", a2a.ErrInternalError)
 		return a2a.ErrInternalError
 	}
-	// Without capability checks and PushNotifications are not configured
-	if h.pushConfigStore == nil || h.pushSender == nil {
-		return a2a.ErrPushNotificationNotSupported
-	}
-	return nil
-}
-
-func validateMediaTypes(h *defaultRequestHandler, req *a2a.SendMessageRequest) error {
-	if len(h.inputModes) == 0 {
-		return nil
-	}
-	for _, part := range req.Message.Parts {
-		if part.MediaType == "" {
-			continue
-		}
-		mediaType, _, err := mime.ParseMediaType(part.MediaType)
-		if err != nil {
-			return fmt.Errorf("failed to parse media type %q: %v: %w", part.MediaType, err, a2a.ErrInvalidParams)
-		}
-		if !slices.Contains(h.inputModes, mediaType) {
-			return fmt.Errorf("media type %q is not supported: %w", part.MediaType, a2a.ErrUnsupportedContentType)
-		}
-	}
-	return nil
-}
-
-func parseMediaTypes(mediaTypes []string) []string {
-	var parsed []string
-	for _, mediaType := range mediaTypes {
-		parsedMediaType, _, err := mime.ParseMediaType(mediaType)
-		if err != nil {
-			log.Error(context.Background(), "failed to parse media type", err, "mediaType", mediaType)
-			continue
-		}
-		parsed = append(parsed, parsedMediaType)
-	}
-	return parsed
+	// The card is not enforced and the push store or sender is missing.
+	return a2a.ErrPushNotificationNotSupported
 }

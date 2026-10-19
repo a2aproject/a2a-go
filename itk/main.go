@@ -493,8 +493,8 @@ func run() error {
 			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
 			Tags:        []string{"itk", "acts"},
 		}},
-		DefaultInputModes:  []string{"text", "application/x-protobuf"},
-		DefaultOutputModes: []string{"text"},
+		DefaultInputModes:  []string{"text/plain", "application/x-protobuf"},
+		DefaultOutputModes: []string{"text/plain"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
 				URL:             fmt.Sprintf("http://127.0.0.1:%d/jsonrpc", *httpPort),
@@ -550,7 +550,7 @@ func run() error {
 		a2asrv.WithTaskStore(taskStore),
 		// Makes the advertised card enforcing rather than advisory, so the
 		// reduced pass actually refuses what its card no longer offers.
-		a2asrv.WithAgentCardEnforcement(agentCard),
+		a2asrv.WithCallInterceptors(a2asrv.NewAgentCardEnforcer(agentCard)),
 		// The card advertises extendedAgentCard, and a capability is a promise:
 		// without a producer every binding answers the ACTS extended-card tests
 		// with ExtendedCardNotConfigured.
