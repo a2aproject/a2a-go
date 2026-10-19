@@ -1041,6 +1041,7 @@ func TestREST_NegotiateContentType(t *testing.T) {
 	tests := []struct {
 		name            string
 		path            string
+		contentType     string
 		accept          string
 		wantContentType string
 		wantStatus      int
@@ -1049,6 +1050,14 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			name:            "empty Accept header",
 			path:            "/tasks/existing-task",
 			accept:          "",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "empty content-type header",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			contentType:     "",
 			wantContentType: "application/json",
 			wantStatus:      http.StatusOK,
 		},
@@ -1085,6 +1094,22 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			path:            "/tasks/existing-task",
 			accept:          "*/*",
 			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "empty accept with content-type",
+			path:            "/tasks/existing-task",
+			accept:          "",
+			contentType:     "application/a2a+json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "*/* accept with content-type",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			contentType:     "application/a2a+json",
+			wantContentType: "application/a2a+json",
 			wantStatus:      http.StatusOK,
 		},
 		{
@@ -1127,6 +1152,9 @@ func TestREST_NegotiateContentType(t *testing.T) {
 			}
 			if tc.accept != "" {
 				req.Header.Set("Accept", tc.accept)
+			}
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
 			}
 			resp, err := server.Client().Do(req)
 			if err != nil {

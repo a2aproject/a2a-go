@@ -58,7 +58,8 @@ func NewFromStruct(details map[string]any) *Typed {
 
 // MarshalJSON implements json.Marshaler.
 func (w *Typed) MarshalJSON() ([]byte, error) {
-	typed := maps.Clone(w.Value)
+	typed := make(map[string]any, len(w.Value)+1)
+	maps.Copy(typed, w.Value)
 	typed["@type"] = w.TypeURL
 	return json.Marshal(typed)
 }
