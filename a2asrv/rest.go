@@ -101,15 +101,28 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 }
 
 func negotiateContentType(req *http.Request) string {
-	for _, accept := range req.Header.Values("Accept") {
+	requestIsA2AJSON := isA2AJSON(req.Header.Get("Content-Type"))
+	accepts := req.Header.Values("Accept")
+	if len(accepts) == 0 && requestIsA2AJSON {
+		return rest.ContentA2AJSON
+	}
+	for _, accept := range accepts {
 		for mediaRange := range strings.SplitSeq(accept, ",") {
 			mediaType, _, err := mime.ParseMediaType(mediaRange)
-			if err != nil || mediaType == "application/a2a+json" {
-				return "application/a2a+json"
+			if err != nil {
+				continue
+			}
+			if mediaType == rest.ContentA2AJSON || (mediaType == "*/*" && requestIsA2AJSON) {
+				return rest.ContentA2AJSON
 			}
 		}
 	}
-	return "application/json"
+	return rest.ContentJSON
+}
+
+func isA2AJSON(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == rest.ContentA2AJSON
 }
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
