@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
@@ -582,6 +583,46 @@ func TestFromRESTErrorHTTPStatusFallback(t *testing.T) {
 			wantMessage:  "no such task",
 		},
 		{
+			name:         "405 with text body",
+			statusCode:   http.StatusMethodNotAllowed,
+			contentType:  "text/plain",
+			responseBody: "Method Not Allowed",
+			wantError:    a2a.ErrMethodNotFound,
+			wantMessage:  "Method Not Allowed",
+		},
+		{
+			name:         "501 with text body",
+			statusCode:   http.StatusNotImplemented,
+			contentType:  "text/plain",
+			responseBody: "not implemented",
+			wantError:    a2a.ErrMethodNotFound,
+			wantMessage:  "not implemented",
+		},
+		{
+			name:         "401 with Google gateway status body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "application/json",
+			responseBody: `{"error":{"code":401,"status":"UNAUTHENTICATED","message":"Jwt is missing"}}`,
+			wantError:    a2a.ErrUnauthenticated,
+			wantMessage:  "Jwt is missing",
+		},
+		{
+			name:         "403 with Google gateway status body and non-A2A ErrorInfo",
+			statusCode:   http.StatusForbidden,
+			contentType:  "application/json",
+			responseBody: `{"error":{"code":403,"status":"PERMISSION_DENIED","message":"denied","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"IAM_PERMISSION_DENIED","domain":"googleapis.com"}]}}`,
+			wantError:    a2a.ErrUnauthorized,
+			wantMessage:  "denied",
+		},
+		{
+			name:         "500 with Google status body without ErrorInfo",
+			statusCode:   http.StatusInternalServerError,
+			contentType:  "application/json",
+			responseBody: `{"error":{"code":500,"status":"INTERNAL","message":"boom"}}`,
+			wantError:    a2a.ErrInternalError,
+			wantMessage:  "boom",
+		},
+		{
 			name:         "valid A2A error body is not remapped by HTTP status",
 			statusCode:   http.StatusUnauthorized,
 			contentType:  "application/json",
@@ -631,6 +672,25 @@ func TestFromRESTErrorTruncatesLongBody(t *testing.T) {
 	}
 	if len(gotErr.Error()) > 5000 {
 		t.Fatalf("len(FromRESTError().Error()) = %d, want <= 5000", len(gotErr.Error()))
+	}
+}
+
+func TestFromRESTErrorTruncatesOnRuneBoundary(t *testing.T) {
+	t.Parallel()
+
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
+		Body:       io.NopCloser(strings.NewReader("x" + strings.Repeat("é", 4096))),
+	}
+
+	gotErr := FromRESTError(resp)
+
+	if !utf8.ValidString(gotErr.Error()) {
+		t.Fatalf("FromRESTError() error = %q, want valid UTF-8", gotErr.Error())
+	}
+	if !strings.HasSuffix(gotErr.Error(), "é...") {
+		t.Fatalf("FromRESTError() error = %q, want suffix %q", gotErr.Error(), "é...")
 	}
 }
 

@@ -271,12 +271,17 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 		}
 	}
 
-	baseErr := a2a.ErrInternalError
+	var baseErr error
 	for _, mapping := range errorMappings {
 		if a2a.ErrorReason(mapping.err) == reason {
 			baseErr = mapping.err
 			break
 		}
+	}
+	// Google API gateways (ESPv2, API Gateway, IAP) return google.rpc.Status bodies without an A2A ErrorInfo,
+	// where code is the HTTP status code (https://google.aip.dev/193, https://cloud.google.com/apis/design/errors).
+	if baseErr == nil {
+		baseErr = errorFromHTTPStatus(body.Code, a2a.ErrInternalError)
 	}
 
 	out := a2a.NewError(baseErr, body.Message)
@@ -325,30 +330,35 @@ func FromRESTError(resp *http.Response) error {
 	return fromHTTPStatus(resp.StatusCode, body, readErr)
 }
 
-func fromHTTPStatus(statusCode int, body []byte, readErr error) error {
-	var base error
+func errorFromHTTPStatus(statusCode int, fallback error) error {
 	switch statusCode {
 	case http.StatusUnauthorized:
-		base = a2a.ErrUnauthenticated
+		return a2a.ErrUnauthenticated
 	case http.StatusForbidden:
-		base = a2a.ErrUnauthorized
-	case http.StatusNotFound, http.StatusNotImplemented:
-		base = a2a.ErrMethodNotFound
+		return a2a.ErrUnauthorized
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return a2a.ErrMethodNotFound
 	default:
-		base = a2a.ErrServerError
+		return fallback
 	}
+}
 
+func fromHTTPStatus(statusCode int, body []byte, readErr error) error {
 	msg := fmt.Sprintf("unexpected HTTP status %d", statusCode)
-	if len(body) > maxErrorBodyQuoteBytes {
-		body = append(body[:maxErrorBodyQuoteBytes:maxErrorBodyQuoteBytes], "..."...)
+	truncated := len(body) > maxErrorBodyQuoteBytes
+	if truncated {
+		body = body[:maxErrorBodyQuoteBytes]
 	}
-	if text := strings.TrimSpace(string(body)); text != "" {
+	if text := strings.TrimSpace(strings.ToValidUTF8(string(body), "")); text != "" {
 		msg += ": " + text
+		if truncated {
+			msg += "..."
+		}
 	}
 	if readErr != nil {
 		msg += fmt.Sprintf(" (failed to read response body: %v)", readErr)
 	}
-	return a2a.NewError(base, msg)
+	return a2a.NewError(errorFromHTTPStatus(statusCode, a2a.ErrServerError), msg)
 }
 
 // streamResponse is the JSON shape of a REST SSE stream response.
