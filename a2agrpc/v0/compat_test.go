@@ -47,6 +47,41 @@ func TestCompat_WithGRPCMetadata(t *testing.T) {
 	}
 }
 
+func TestCompat_WithGRPCMetadataPreservesCallerMetadata(t *testing.T) {
+	ctx := metadata.AppendToOutgoingContext(context.Background(),
+		"authorization", "Bearer token",
+		"a2a-version", "stale",
+	)
+	original, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		t.Fatal("expected metadata in outgoing context")
+	}
+
+	out := withGRPCMetadata(ctx, a2aclient.ServiceParams{
+		a2a.SvcParamVersion:    []string{"0.3"},
+		a2a.SvcParamExtensions: []string{"uri1"},
+	})
+	original["authorization"] = []string{"mutated"}
+
+	md, ok := metadata.FromOutgoingContext(out)
+	if !ok {
+		t.Fatal("expected metadata in outgoing context")
+	}
+	if got, want := md["authorization"], []string{"Bearer token"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("authorization = %v, want %v", got, want)
+	}
+	if got, want := md["a2a-version"], []string{"0.3"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("a2a-version = %v, want %v", got, want)
+	}
+	legacyKey := "x-" + strings.ToLower(a2a.SvcParamExtensions)
+	if got, want := md[legacyKey], []string{"uri1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("%s = %v, want %v", legacyKey, got, want)
+	}
+	if _, ok := md[strings.ToLower(a2a.SvcParamExtensions)]; ok {
+		t.Errorf("modern extensions key leaked into legacy metadata: %v", md)
+	}
+}
+
 func TestCompat_ToTrailer(t *testing.T) {
 	legacyKey := "x-" + strings.ToLower(a2a.SvcParamExtensions)
 
