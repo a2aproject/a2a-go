@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -44,6 +45,49 @@ func TestCompat_WithGRPCMetadata(t *testing.T) {
 	}
 	if !reflect.DeepEqual(md["other"], []string{"val"}) {
 		t.Errorf("expected other: %v, got %v", []string{"val"}, md["other"])
+	}
+}
+
+func TestCompat_WithGRPCMetadataCallerMetadata(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		callerMD []string
+		params   a2aclient.ServiceParams
+		want     metadata.MD
+	}{
+		{
+			name:     "caller metadata preserved",
+			callerMD: []string{"authorization", "Bearer token"},
+			params:   a2aclient.ServiceParams{a2a.SvcParamExtensions: {"uri1"}},
+			want: metadata.MD{
+				"authorization":    {"Bearer token"},
+				"x-a2a-extensions": {"uri1"},
+			},
+		},
+		{
+			name:     "service params override conflicting caller keys",
+			callerMD: []string{"a2a-version", "stale", "x-a2a-extensions", "stale"},
+			params:   a2aclient.ServiceParams{a2a.SvcParamVersion: {"0.3"}, a2a.SvcParamExtensions: {"uri1"}},
+			want: metadata.MD{
+				"a2a-version":      {"0.3"},
+				"x-a2a-extensions": {"uri1"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := metadata.AppendToOutgoingContext(context.Background(), tc.callerMD...)
+
+			got, _ := metadata.FromOutgoingContext(withGRPCMetadata(ctx, tc.params))
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("withGRPCMetadata() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 
