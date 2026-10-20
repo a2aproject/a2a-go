@@ -660,7 +660,7 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			handler := NewHandler(executor, WithCallInterceptors(NewAgentCardEnforcer(tt.card)))
+			handler := NewHandler(executor, withAgentCardEnforcer(t, tt.card))
 			for event, err := range handler.SendStreamingMessage(ctx, tt.input) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("SendStreamingMessage() error = %v, wantErr %v", err, tt.wantErr)
@@ -1141,14 +1141,14 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 		{
 			name: "extendedAgentCard supported but not configured",
 			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: true}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: true}}),
 			},
 			wantErr: a2a.ErrExtendedCardNotConfigured,
 		},
 		{
 			name: "extendedAgentCard not supported",
 			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: false}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: false}}),
 				WithExtendedAgentCard(card),
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
@@ -1684,8 +1684,7 @@ func TestRequestHandler_SubscribeToTask_NotFound(t *testing.T) {
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrTaskNotFound
 	executor := &mockAgentExecutor{}
-	interceptor := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}})
-	handler := NewHandler(executor, WithCallInterceptors(interceptor))
+	handler := NewHandler(executor, withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
@@ -1699,8 +1698,7 @@ func TestRequestHandler_SubscribeToTask_StreamingNotSupported(t *testing.T) {
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrUnsupportedOperation
 	executor := &mockAgentExecutor{}
-	interceptor := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: false}})
-	handler := NewHandler(executor, WithCallInterceptors(interceptor))
+	handler := NewHandler(executor, withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: false}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
@@ -1921,19 +1919,7 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 			wantErr: a2a.ErrPushNotificationNotSupported,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}})),
-			},
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req: &a2a.PushConfig{
-				TaskID: taskID,
-				ID:     "config-1",
-				URL:    "https://example.com/push",
-			},
-			wantErr: a2a.ErrInternalError,
-			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 		},
 		{
@@ -2029,17 +2015,9 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}})),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name:    "without capability checks and pushNotifications not configured",
@@ -2127,21 +2105,9 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 			}},
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{
-				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
-				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
-			}},
-			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}})),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name: "without capability checks and pushNotifications not configured",
@@ -2216,21 +2182,9 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 			},
 			withPushConfigs: true,
 			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.PushConfig{
-				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
-				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
-			},
-			options: []RequestHandlerOption{
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}})),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name: "without capability checks and pushNotifications not configured",
@@ -2272,6 +2226,44 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	}
 }
 
+func TestNewHandler_PushNotificationsEnforcement(t *testing.T) {
+	t.Parallel()
+	pushEnabled := &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}}
+	tests := []struct {
+		name      string
+		options   []RequestHandlerOption
+		wantPanic bool
+	}{
+		{
+			name:      "panics when push is advertised but not configured",
+			options:   []RequestHandlerOption{withAgentCardEnforcer(t, pushEnabled)},
+			wantPanic: true,
+		},
+		{
+			name: "accepts push advertised and configured",
+			options: []RequestHandlerOption{
+				withAgentCardEnforcer(t, pushEnabled),
+				WithPushNotifications(testutil.NewTestPushConfigStore(), testutil.NewTestPushSender(t)),
+			},
+		},
+		{
+			name:    "accepts push neither advertised nor configured",
+			options: []RequestHandlerOption{withAgentCardEnforcer(t, &a2a.AgentCard{})},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if gotPanic := recover() != nil; gotPanic != tt.wantPanic {
+					t.Fatalf("NewHandler() panicked = %v, want %v", gotPanic, tt.wantPanic)
+				}
+			}()
+			NewHandler(&mockAgentExecutor{}, tt.options...)
+		})
+	}
+}
+
 func TestRequestHandler_RequiredExtensions(t *testing.T) {
 	ctx := t.Context()
 	store := testutil.NewTestTaskStore()
@@ -2301,7 +2293,7 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			handler := NewHandler(
 				executor,
 				WithTaskStore(store),
-				WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Extensions: extensions}})),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Extensions: extensions}}),
 			)
 
 			params := NewServiceParams(map[string][]string{
@@ -2666,8 +2658,7 @@ func TestRequestHandler_SubscribeToTask_TerminalTask(t *testing.T) {
 	ctx := t.Context()
 	completed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 	ts := testutil.NewTestTaskStore().WithTasks(t, completed)
-	interceptor := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}})
-	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCallInterceptors(interceptor))
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: completed.ID}))
 
@@ -2680,8 +2671,7 @@ func TestRequestHandler_SubscribeToTask_InputRequiredTaskYieldsSnapshot(t *testi
 	ctx := t.Context()
 	parked := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 	ts := testutil.NewTestTaskStore().WithTasks(t, parked)
-	interceptor := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}})
-	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCallInterceptors(interceptor))
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	gotEvents, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: parked.ID}))
 	if err != nil {
@@ -2804,7 +2794,7 @@ func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
 			ctx := t.Context()
 			ts := testutil.NewTestTaskStore()
 			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
-			handler := NewHandler(executor, WithTaskStore(ts), WithCallInterceptors(NewAgentCardEnforcer(tt.card)))
+			handler := NewHandler(executor, WithTaskStore(ts), withAgentCardEnforcer(t, tt.card))
 
 			_, err := handler.SendMessage(ctx, tt.request)
 			if !errors.Is(err, tt.wantErr) {
@@ -2821,7 +2811,7 @@ func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
 			card := *tt.card
 			card.Capabilities.Streaming = true
 			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
-			handler := NewHandler(executor, WithTaskStore(ts), WithCallInterceptors(NewAgentCardEnforcer(&card)))
+			handler := NewHandler(executor, WithTaskStore(ts), withAgentCardEnforcer(t, &card))
 
 			_, err := collectEvents(handler.SendStreamingMessage(ctx, tt.request))
 			if !errors.Is(err, tt.wantErr) {
@@ -2829,4 +2819,13 @@ func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withAgentCardEnforcer(t *testing.T, card *a2a.AgentCard) RequestHandlerOption {
+	t.Helper()
+	enforcer, err := NewAgentCardEnforcer(card)
+	if err != nil {
+		t.Fatalf("NewAgentCardEnforcer() error = %v, wantErr nil", err)
+	}
+	return WithCallInterceptors(enforcer)
 }

@@ -29,7 +29,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // ErrAgentInactivityTimeout is the cancellation cause set on an agent's
@@ -107,7 +106,14 @@ type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 //
 // Deprecated: Use [WithCallInterceptors] with [NewAgentCardEnforcer] instead.
 func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
-	return WithCallInterceptors(NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: *capabilities}))
+	if capabilities == nil {
+		return func(ih *InterceptedHandler, h *defaultRequestHandler) {}
+	}
+	interceptor, err := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: *capabilities})
+	if err != nil {
+		panic(fmt.Errorf("failed to create agent card enforcer: %w", err))
+	}
+	return WithCallInterceptors(interceptor)
 }
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
@@ -212,6 +218,11 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 
 	for _, option := range options {
 		option(ih, h)
+	}
+	for _, interceptor := range ih.Interceptors {
+		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {
+			panic("push notifications are enforced and supported but push config store or sender are not configured")
+		}
 	}
 
 	materializer := h.materializer
@@ -419,7 +430,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 
 // GetTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 	// Authorize: only the task owner can read its push configs.
@@ -438,7 +449,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 
 // ListTaskPushConfigs implements RequestHandler.
 func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 	// Authorize: only the task owner can list its push configs.
@@ -457,7 +468,7 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 
 // CreateTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 
@@ -476,7 +487,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 // DeleteTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return err
 	}
 	// Authorize: only the task owner can delete its push configs.
@@ -515,16 +526,9 @@ func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (
 	return "", false
 }
 
-func checkPushNotificationSupport(h *defaultRequestHandler, ctx context.Context) error {
-	if h.pushConfigStore != nil && h.pushSender != nil {
-		return nil
+func checkPushNotificationConfigs(h *defaultRequestHandler) error {
+	if h.pushConfigStore == nil || h.pushSender == nil {
+		return a2a.ErrPushNotificationNotSupported
 	}
-	// The card advertises push notifications, but no store or sender was provided
-	// with [WithPushNotifications], which means the server is misconfigured.
-	if enabled, ok := ctx.Value(pushEnabledKey{}).(bool); ok && enabled {
-		log.Error(ctx, "push notifications are enabled but push config store or sender is not configured", a2a.ErrInternalError)
-		return a2a.ErrInternalError
-	}
-	// The card is not enforced and the push store or sender is missing.
-	return a2a.ErrPushNotificationNotSupported
+	return nil
 }

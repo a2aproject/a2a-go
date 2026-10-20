@@ -493,7 +493,7 @@ func run() error {
 			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
 			Tags:        []string{"itk", "acts"},
 		}},
-		DefaultInputModes:  []string{"text/plain", "application/x-protobuf"},
+		DefaultInputModes:  []string{"text/plain", "application/json", "application/x-protobuf"},
 		DefaultOutputModes: []string{"text/plain"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
@@ -542,6 +542,10 @@ func run() error {
 	// of the default SSRF guard that rejects loopback and private targets.
 	pushSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
 
+	enforcer, err := a2asrv.NewAgentCardEnforcer(agentCard)
+	if err != nil {
+		return fmt.Errorf("failed to create agent card enforcer: %w", err)
+	}
 	executor := &V10AgentExecutor{}
 	requestHandler := a2asrv.NewHandler(
 		executor,
@@ -550,7 +554,7 @@ func run() error {
 		a2asrv.WithTaskStore(taskStore),
 		// Makes the advertised card enforcing rather than advisory, so the
 		// reduced pass actually refuses what its card no longer offers.
-		a2asrv.WithCallInterceptors(a2asrv.NewAgentCardEnforcer(agentCard)),
+		a2asrv.WithCallInterceptors(enforcer),
 		// The card advertises extendedAgentCard, and a capability is a promise:
 		// without a producer every binding answers the ACTS extended-card tests
 		// with ExtendedCardNotConfigured.

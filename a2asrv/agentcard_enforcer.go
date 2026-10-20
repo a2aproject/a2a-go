@@ -30,8 +30,6 @@ type agentCardEnforcer struct {
 	inputModes   []string
 }
 
-type pushEnabledKey struct{}
-
 // NewAgentCardEnforcer creates a call interceptor that validates incoming requests against
 // the provided [a2a.AgentCard] and rejects the ones which do not conform to it.
 //
@@ -46,19 +44,22 @@ type pushEnabledKey struct{}
 // "application/octet-stream" for [a2a.Raw] and [a2a.URL]. Parts with media types not listed
 // in the input modes are rejected with [a2a.ErrUnsupportedContentType]. No validation is
 // performed if the card declares no input modes.
-func NewAgentCardEnforcer(card *a2a.AgentCard) CallInterceptor {
+func NewAgentCardEnforcer(card *a2a.AgentCard) (CallInterceptor, error) {
 	if card == nil {
-		return PassthroughCallInterceptor{}
+		return PassthroughCallInterceptor{}, nil
+	}
+	inputModes, err := inputModesFromCard(card)
+	if err != nil {
+		return nil, err
 	}
 	return &agentCardEnforcer{
 		capabilities: card.Capabilities,
-		inputModes:   inputModesFromCard(card),
-	}
+		inputModes:   inputModes,
+	}, nil
 }
 
 func (a *agentCardEnforcer) Before(ctx context.Context, callCtx *CallContext, req *Request) (context.Context, any, error) {
-	ctx, err := a.checkCapabilities(ctx, callCtx)
-	if err != nil {
+	if err := a.checkCapabilities(ctx, callCtx); err != nil {
 		return ctx, nil, err
 	}
 	if err := a.checkInputModes(callCtx, req); err != nil {
@@ -67,26 +68,25 @@ func (a *agentCardEnforcer) Before(ctx context.Context, callCtx *CallContext, re
 	return ctx, nil, nil
 }
 
-func (a *agentCardEnforcer) checkCapabilities(ctx context.Context, callCtx *CallContext) (context.Context, error) {
+func (a *agentCardEnforcer) checkCapabilities(ctx context.Context, callCtx *CallContext) error {
 	if err := a.checkRequiredExtensions(callCtx); err != nil {
-		return ctx, err
+		return err
 	}
 	switch callCtx.Method() {
 	case "SendStreamingMessage", "SubscribeToTask":
 		if !a.capabilities.Streaming {
-			return ctx, a2a.ErrUnsupportedOperation
+			return a2a.ErrUnsupportedOperation
 		}
 	case "GetTaskPushConfig", "ListTaskPushConfigs", "CreateTaskPushConfig", "DeleteTaskPushConfig":
 		if !a.capabilities.PushNotifications {
-			return ctx, a2a.ErrPushNotificationNotSupported
+			return a2a.ErrPushNotificationNotSupported
 		}
-		ctx = context.WithValue(ctx, pushEnabledKey{}, true)
 	case "GetExtendedAgentCard":
 		if !a.capabilities.ExtendedAgentCard {
-			return ctx, a2a.ErrUnsupportedOperation
+			return a2a.ErrUnsupportedOperation
 		}
 	}
-	return ctx, nil
+	return nil
 }
 
 func (a *agentCardEnforcer) checkRequiredExtensions(callCtx *CallContext) error {
@@ -112,7 +112,7 @@ func (a *agentCardEnforcer) checkInputModes(callCtx *CallContext, req *Request) 
 	switch callCtx.Method() {
 	case "SendMessage", "SendStreamingMessage":
 		if req == nil || req.Payload == nil {
-			return a2a.ErrInvalidParams
+			return nil
 		}
 		r, ok := req.Payload.(*a2a.SendMessageRequest)
 		if !ok || r == nil || r.Message == nil {
@@ -125,7 +125,7 @@ func (a *agentCardEnforcer) checkInputModes(callCtx *CallContext, req *Request) 
 	return nil
 }
 
-func inputModesFromCard(card *a2a.AgentCard) []string {
+func inputModesFromCard(card *a2a.AgentCard) ([]string, error) {
 	var inputModes []string
 	inheritsDefaults := len(card.Skills) == 0
 	for _, skill := range card.Skills {
@@ -133,25 +133,33 @@ func inputModesFromCard(card *a2a.AgentCard) []string {
 			inheritsDefaults = true
 			continue
 		}
-		inputModes = append(inputModes, parseMediaTypes(skill.InputModes)...)
+		parsed, err := parseMediaTypes(skill.InputModes)
+		if err != nil {
+			return nil, err
+		}
+		inputModes = append(inputModes, parsed...)
 	}
 
 	if inheritsDefaults {
-		inputModes = append(inputModes, parseMediaTypes(card.DefaultInputModes)...)
+		parsed, err := parseMediaTypes(card.DefaultInputModes)
+		if err != nil {
+			return nil, err
+		}
+		inputModes = append(inputModes, parsed...)
 	}
-	return inputModes
+	return inputModes, nil
 }
 
-func parseMediaTypes(mediaTypes []string) []string {
+func parseMediaTypes(mediaTypes []string) ([]string, error) {
 	var parsed []string
 	for _, mediaType := range mediaTypes {
 		parsedMediaType, _, err := mime.ParseMediaType(mediaType)
 		if err != nil {
-			panic(fmt.Errorf("invalid media type %q: %v", mediaType, err))
+			return nil, fmt.Errorf("failed to parse media type %q: %v: %w", mediaType, err, a2a.ErrInvalidParams)
 		}
 		parsed = append(parsed, parsedMediaType)
 	}
-	return parsed
+	return parsed, nil
 }
 
 func validateMediaTypes(inputModes []string, msg *a2a.Message) error {
