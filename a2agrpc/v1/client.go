@@ -264,12 +264,9 @@ func withGRPCMetadata(ctx context.Context, params a2aclient.ServiceParams) conte
 	if len(params) == 0 {
 		return ctx
 	}
-	// Keep metadata the caller already attached (for example an authorization
-	// header set by an interceptor). ServiceParams replace conflicting keys.
-	// Copy first: FromOutgoingContext returns the live map.
-	meta := metadata.MD{}
-	if existing, ok := metadata.FromOutgoingContext(ctx); ok {
-		meta = existing.Copy()
+	meta, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		meta = metadata.MD{}
 	}
 	for k, vals := range params {
 		meta[strings.ToLower(k)] = vals

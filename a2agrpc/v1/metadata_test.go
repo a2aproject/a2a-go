@@ -16,55 +16,68 @@ package a2agrpc
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/metadata"
 )
 
-func TestWithGRPCMetadataPreservesCallerMetadata(t *testing.T) {
-	ctx := metadata.AppendToOutgoingContext(context.Background(),
-		"authorization", "Bearer token",
-		"a2a-version", "stale",
-		"x-request-id", "req-1",
-	)
-	original, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		t.Fatal("expected metadata in outgoing context")
+func TestWithGRPCMetadata(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		callerMD []string
+		params   a2aclient.ServiceParams
+		want     metadata.MD
+	}{
+		{
+			name:   "no caller metadata",
+			params: a2aclient.ServiceParams{a2a.SvcParamVersion: {"1.0"}},
+			want:   metadata.MD{"a2a-version": {"1.0"}},
+		},
+		{
+			name:     "caller metadata preserved",
+			callerMD: []string{"authorization", "Bearer token", "x-request-id", "req-1"},
+			params:   a2aclient.ServiceParams{a2a.SvcParamVersion: {"1.0"}, "X-Tenant": {"acme"}},
+			want: metadata.MD{
+				"authorization": {"Bearer token"},
+				"x-request-id":  {"req-1"},
+				"a2a-version":   {"1.0"},
+				"x-tenant":      {"acme"},
+			},
+		},
+		{
+			name:     "service params override conflicting caller keys",
+			callerMD: []string{"authorization", "Bearer token", "a2a-version", "stale"},
+			params:   a2aclient.ServiceParams{a2a.SvcParamVersion: {"1.0"}},
+			want: metadata.MD{
+				"authorization": {"Bearer token"},
+				"a2a-version":   {"1.0"},
+			},
+		},
+		{
+			name:     "empty params keep caller metadata",
+			callerMD: []string{"authorization", "Bearer token"},
+			want:     metadata.MD{"authorization": {"Bearer token"}},
+		},
 	}
 
-	out := withGRPCMetadata(ctx, a2aclient.ServiceParams{
-		a2a.SvcParamVersion: []string{"1.0"},
-		"X-Tenant":          []string{"acme"},
-	})
-	// Mutating the caller's map must not change the outgoing call.
-	original["authorization"] = []string{"mutated"}
-	original["x-request-id"] = []string{"mutated"}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	md, ok := metadata.FromOutgoingContext(out)
-	if !ok {
-		t.Fatal("expected metadata in outgoing context")
-	}
-	if got, want := md["authorization"], []string{"Bearer token"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("authorization = %v, want %v", got, want)
-	}
-	if got, want := md["x-request-id"], []string{"req-1"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("x-request-id = %v, want %v", got, want)
-	}
-	if got, want := md["a2a-version"], []string{"1.0"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("a2a-version = %v, want %v", got, want)
-	}
-	if got, want := md["x-tenant"], []string{"acme"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("x-tenant = %v, want %v", got, want)
-	}
-}
+			ctx := context.Background()
+			if len(tc.callerMD) > 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, tc.callerMD...)
+			}
 
-func TestWithGRPCMetadataEmptyParamsKeepsContext(t *testing.T) {
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer token")
-	out := withGRPCMetadata(ctx, nil)
-	if out != ctx {
-		t.Fatal("empty service params should leave the context unchanged")
+			got, _ := metadata.FromOutgoingContext(withGRPCMetadata(ctx, tc.params))
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("withGRPCMetadata() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
