@@ -29,7 +29,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // ErrAgentInactivityTimeout is the cancellation cause set on an agent's
@@ -96,7 +95,6 @@ type defaultRequestHandler struct {
 	agentInactivityTimeout time.Duration
 
 	authenticatedCardProducer ExtendedAgentCardProducer
-	capabilities              *a2a.AgentCapabilities
 }
 
 var _ RequestHandler = (*defaultRequestHandler)(nil)
@@ -105,11 +103,17 @@ var _ RequestHandler = (*defaultRequestHandler)(nil)
 type RequestHandlerOption func(*InterceptedHandler, *defaultRequestHandler)
 
 // WithCapabilityChecks sets the provided capabilities for the request handler.
+//
+// Deprecated: Use [WithCallInterceptors] with [NewAgentCardEnforcer] instead.
 func WithCapabilityChecks(capabilities *a2a.AgentCapabilities) RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.capabilities = capabilities
-		ih.capabilities = capabilities
+	if capabilities == nil {
+		return func(ih *InterceptedHandler, h *defaultRequestHandler) {}
 	}
+	interceptor, err := NewAgentCardEnforcer(&a2a.AgentCard{Capabilities: *capabilities})
+	if err != nil {
+		panic(fmt.Errorf("failed to create agent card enforcer: %w", err))
+	}
+	return WithCallInterceptors(interceptor)
 }
 
 // WithLogger sets a custom logger. Request scoped parameters will be attached to this logger
@@ -214,6 +218,11 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 
 	for _, option := range options {
 		option(ih, h)
+	}
+	for _, interceptor := range ih.Interceptors {
+		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {
+			panic("push notifications are enforced and supported but push config store or sender are not configured")
+		}
 	}
 
 	materializer := h.materializer
@@ -358,10 +367,6 @@ func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMe
 // SendStreamingMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		if h.capabilities != nil && !h.capabilities.Streaming {
-			yield(nil, a2a.ErrUnsupportedOperation)
-			return
-		}
 		subscription, err := h.handleSendMessage(ctx, req)
 		if err != nil {
 			yield(nil, err)
@@ -379,10 +384,6 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 // SubscribeToTask implements RequestHandler.
 func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		if h.capabilities != nil && !h.capabilities.Streaming {
-			yield(nil, a2a.ErrUnsupportedOperation)
-			return
-		}
 		if req == nil {
 			yield(nil, a2a.ErrInvalidParams)
 			return
@@ -414,7 +415,7 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.SendMessageRequest) (taskexec.Subscription, error) {
 	switch {
 	case req == nil:
-		return nil, fmt.Errorf("message send params is required: %w", a2a.ErrInvalidParams)
+		return nil, fmt.Errorf("SendMessageRequest is required: %w", a2a.ErrInvalidParams)
 	case req.Message == nil:
 		return nil, fmt.Errorf("message is required: %w", a2a.ErrInvalidParams)
 	case req.Message.ID == "":
@@ -429,7 +430,7 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 
 // GetTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 	// Authorize: only the task owner can read its push configs.
@@ -448,7 +449,7 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 
 // ListTaskPushConfigs implements RequestHandler.
 func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 	// Authorize: only the task owner can list its push configs.
@@ -467,7 +468,7 @@ func (h *defaultRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2
 
 // CreateTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return nil, err
 	}
 
@@ -486,7 +487,7 @@ func (h *defaultRequestHandler) CreateTaskPushConfig(ctx context.Context, req *a
 
 // DeleteTaskPushConfig implements RequestHandler.
 func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	if err := checkPushNotificationSupport(h, ctx); err != nil {
+	if err := checkPushNotificationConfigs(h); err != nil {
 		return err
 	}
 	// Authorize: only the task owner can delete its push configs.
@@ -498,9 +499,6 @@ func (h *defaultRequestHandler) DeleteTaskPushConfig(ctx context.Context, req *a
 
 // GetExtendedAgentCard implements RequestHandler.
 func (h *defaultRequestHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
-	if h.capabilities != nil && !h.capabilities.ExtendedAgentCard {
-		return nil, a2a.ErrUnsupportedOperation
-	}
 	if h.authenticatedCardProducer == nil {
 		return nil, a2a.ErrExtendedCardNotConfigured
 	}
@@ -528,17 +526,7 @@ func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (
 	return "", false
 }
 
-func checkPushNotificationSupport(h *defaultRequestHandler, ctx context.Context) error {
-	// With capability checks, PushNotifications not supported
-	if h.capabilities != nil && !h.capabilities.PushNotifications {
-		return a2a.ErrPushNotificationNotSupported
-	}
-	// With capability checks, PushNotifications supported, but not configured
-	if h.capabilities != nil && (h.pushConfigStore == nil || h.pushSender == nil) {
-		log.Error(ctx, "push notifications are enabled but push config store or sender is not configured", a2a.ErrInternalError)
-		return a2a.ErrInternalError
-	}
-	// Without capability checks and PushNotifications are not configured
+func checkPushNotificationConfigs(h *defaultRequestHandler) error {
 	if h.pushConfigStore == nil || h.pushSender == nil {
 		return a2a.ErrPushNotificationNotSupported
 	}

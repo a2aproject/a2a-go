@@ -37,8 +37,6 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
-
-	capabilities *a2a.AgentCapabilities
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -90,10 +88,6 @@ func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessa
 func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SendStreamingMessage", req.Tenant)
-		if err := checkRequiredExtensions(h, callCtx); err != nil {
-			yield(nil, err)
-			return
-		}
 		if err := checkProtocolVersion(callCtx); err != nil {
 			yield(nil, err)
 			return
@@ -135,10 +129,6 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SubscribeToTask", req.Tenant)
-		if err := checkRequiredExtensions(h, callCtx); err != nil {
-			yield(nil, err)
-			return
-		}
 		if err := checkProtocolVersion(callCtx); err != nil {
 			yield(nil, err)
 			return
@@ -191,9 +181,6 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig", req.Tenant)
 	ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
-	if err := checkRequiredExtensions(h, callCtx); err != nil {
-		return err
-	}
 	if err := checkProtocolVersion(callCtx); err != nil {
 		return err
 	}
@@ -320,10 +307,6 @@ func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) (Resp, error),
 ) (Resp, error) {
-	if err := checkRequiredExtensions(h, callCtx); err != nil {
-		var zero Resp
-		return zero, err
-	}
 	if err := checkProtocolVersion(callCtx); err != nil {
 		var zero Resp
 		return zero, err
@@ -338,22 +321,6 @@ func doCall[Req any, Resp any](
 	}
 	response, err := handlerCall(ctx, res.reqOverride)
 	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
-}
-
-func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error {
-	if h.capabilities == nil || len(h.capabilities.Extensions) == 0 {
-		return nil
-	}
-	requestedURIs := callCtx.Extensions().RequestedURIs()
-	for _, ext := range h.capabilities.Extensions {
-		if ext.Required {
-			found := slices.Contains(requestedURIs, ext.URI)
-			if !found {
-				return a2a.ErrExtensionSupportRequired
-			}
-		}
-	}
-	return nil
 }
 
 // checkProtocolVersion checks if the client's protocol version is compatible with the server's.
