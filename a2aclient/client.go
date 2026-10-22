@@ -267,7 +267,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.Sen
 
 func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method string, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
 	serviceParams := serviceParamsCloneFrom(ctx)
-	serviceParams[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
+	serviceParams.set(a2a.SvcParamVersion, string(c.protocolVersion))
 	req := Request{
 		Method:        method,
 		BaseURL:       c.endpoint.URL,
