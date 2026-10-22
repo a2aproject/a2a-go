@@ -31,7 +31,7 @@
 
 ## 🚀 Getting Started
 
-Requires Go `1.25.0` or newer:
+Requires Go `1.26.0` or newer, as specified in `go.mod`:
 
 ```bash
 go get github.com/a2aproject/a2a-go/v2
