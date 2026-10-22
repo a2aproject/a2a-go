@@ -1,0 +1,500 @@
+// Copyright 2026 The A2A Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package a2aacp
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/log"
+)
+
+// turn is one ACP prompt. It outlives an Execute call when the task pauses in
+// input-required, and ends when the agent responds to the prompt.
+type turn struct {
+	taskID    a2a.TaskID
+	sessionID string
+	agent     *agent
+	events    *queue[turnEvent]
+
+	// Accessed only by the goroutine running Execute.
+	text  textStream
+	tools map[string]*toolCall
+
+	mu       sync.Mutex
+	pending  *pendingQuestion
+	canceled bool
+	ended    bool
+}
+
+type turnEvent struct {
+	update   *sessionUpdate
+	question *incomingQuestion
+	result   *promptResult
+}
+
+// incomingQuestion is a permission request or a form elicitation from the agent.
+type incomingQuestion struct {
+	rpcID       json.RawMessage
+	permission  *requestPermissionRequest
+	elicitation *createElicitationRequest
+}
+
+// cancel responds to the request with the cancelled outcome.
+func (in *incomingQuestion) cancel(ag *agent) {
+	var resp any = requestPermissionResponse{Outcome: permissionOutcome{Outcome: "cancelled"}}
+	if in.elicitation != nil {
+		resp = createElicitationResponse{Action: elicitationCancel}
+	}
+	if err := ag.conn.respond(in.rpcID, resp); err != nil {
+		log.Warn(context.Background(), "failed to cancel acp request", "cause", err)
+	}
+}
+
+type promptResult struct {
+	stopReason stopReason
+	err        error
+}
+
+func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
+	return &turn{
+		taskID:    taskID,
+		sessionID: sessionID,
+		agent:     ag,
+		events:    newQueue[turnEvent](),
+		text:      textStream{name: "response"},
+		tools:     map[string]*toolCall{},
+	}
+}
+
+func (t *turn) pendingQuestion() *pendingQuestion {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.pending
+}
+
+// setPending records p as waiting for the caller and calls expire if nobody
+// answers within timeout. It returns false if the turn was canceled or ended.
+func (t *turn) setPending(p *pendingQuestion, timeout time.Duration, expire func()) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.canceled || t.ended {
+		return false
+	}
+	t.pending = p
+	if timeout > 0 {
+		p.timer = time.AfterFunc(timeout, expire)
+	}
+	return true
+}
+
+// takePending clears p if it is still pending, so that it is answered once.
+func (t *turn) takePending(p *pendingQuestion) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending != p {
+		return false
+	}
+	t.clearPendingLocked()
+	return true
+}
+
+func (t *turn) clearPendingLocked() *pendingQuestion {
+	p := t.pending
+	if p != nil && p.timer != nil {
+		p.timer.Stop()
+	}
+	t.pending = nil
+	return p
+}
+
+// cancel marks the turn canceled and returns the pending question. It returns
+// false if the turn was already canceled.
+func (t *turn) cancel() (*pendingQuestion, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.canceled {
+		return nil, false
+	}
+	t.canceled = true
+	return t.clearPendingLocked(), true
+}
+
+// end is called when the agent responded to the prompt: questions of the
+// turn can no longer be answered.
+func (t *turn) end() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ended = true
+	t.clearPendingLocked()
+}
+
+func (t *turn) isCanceled() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.canceled
+}
+
+func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
+	if r.err != nil {
+		return failed(info, fmt.Sprintf("acp agent error: %v", r.err))
+	}
+	switch r.stopReason {
+	case stopEndTurn:
+		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCompleted, nil)
+	case stopCancelled:
+		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
+	case stopMaxTokens:
+		return failed(info, "the agent reached its token limit")
+	case stopMaxTurnRequests:
+		return failed(info, "the agent reached its request limit for the turn")
+	case stopRefusal:
+		return failed(info, "the agent refused to continue")
+	default:
+		return failed(info, fmt.Sprintf("the agent stopped: %s", r.stopReason))
+	}
+}
+
+func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *sessionUpdate) []a2a.Event {
+	switch u.SessionUpdate {
+	case updateAgentMessageChunk:
+		var block contentBlock
+		if err := json.Unmarshal(u.Content, &block); err != nil {
+			return nil
+		}
+		return t.onContent(info, u.MessageID, block)
+
+	case updateToolCall, updateToolCallUpdate:
+		tc := t.mergeTool(u.toolCall)
+		if u.Status == "" || u.Status == tc.Status {
+			return nil
+		}
+		tc.Status = u.Status
+		return t.onToolStatus(info, tc)
+	}
+	return nil
+}
+
+// mergeTool applies the fields set in patch to the known state of the tool
+// call, except the status. Agents send partial tool calls in updates and in
+// permission requests, for example an empty input already reported earlier.
+func (t *turn) mergeTool(patch toolCall) *toolCall {
+	tc := t.tools[patch.ToolCallID]
+	if tc == nil {
+		tc = &toolCall{ToolCallID: patch.ToolCallID}
+		t.tools[patch.ToolCallID] = tc
+	}
+	if patch.Title != "" {
+		tc.Title = patch.Title
+	}
+	if patch.Kind != "" {
+		tc.Kind = patch.Kind
+	}
+	if m, ok := patch.RawInput.(map[string]any); patch.RawInput != nil && (!ok || len(m) > 0) {
+		tc.RawInput = patch.RawInput
+	}
+	return tc
+}
+
+func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block contentBlock) []a2a.Event {
+	switch block.Type {
+	case "text":
+		if evt := t.text.write(info, messageID, block.Text); evt != nil {
+			return []a2a.Event{evt}
+		}
+	case "image", "audio":
+		data, err := base64.StdEncoding.DecodeString(block.Data)
+		if err != nil {
+			return nil
+		}
+		part := a2a.NewRawPart(data)
+		part.MediaType = block.MimeType
+		return []a2a.Event{a2a.NewArtifactEvent(info, part)}
+	case "resource_link":
+		part := a2a.NewFileURLPart(a2a.URL(block.URI), block.MimeType)
+		part.Filename = block.Name
+		return []a2a.Event{a2a.NewArtifactEvent(info, part)}
+	}
+	return nil
+}
+
+func (t *turn) onToolStatus(info a2a.TaskInfoProvider, tc *toolCall) []a2a.Event {
+	var verb string
+	switch tc.Status {
+	case toolStatusInProgress:
+		verb = "Running"
+	case toolStatusCompleted:
+		verb = "Finished"
+	case toolStatusFailed:
+		verb = "Failed"
+	default:
+		return nil
+	}
+	t.text.breakBlock()
+	data := map[string]any{"id": tc.ToolCallID, "title": tc.Title, "kind": tc.Kind, "status": tc.Status}
+	if tc.RawInput != nil {
+		data["input"] = tc.RawInput
+	}
+	msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, info,
+		a2a.NewTextPart(fmt.Sprintf("%s %s", verb, tc.Title)),
+		a2a.NewDataPart(map[string]any{"toolCall": data}),
+	)
+	return []a2a.Event{a2a.NewStatusUpdateEvent(info, a2a.TaskStateWorking, msg)}
+}
+
+// pendingQuestion is an ACP request translated to a question for the caller.
+type pendingQuestion struct {
+	in        *incomingQuestion
+	q         question
+	optionIDs map[string]string // permission option ID -> ACP option ID
+	timer     *time.Timer
+}
+
+var optionIDByKind = map[string]string{
+	permissionAllowOnce:    optionOnce,
+	permissionAllowAlways:  optionAlways,
+	permissionRejectOnce:   optionReject,
+	permissionRejectAlways: optionRejectAlways,
+}
+
+func (t *turn) newPending(in *incomingQuestion) *pendingQuestion {
+	p := &pendingQuestion{in: in, optionIDs: map[string]string{}}
+	if el := in.elicitation; el != nil {
+		p.q = question{
+			id:      "elicitation-" + strings.Trim(string(in.rpcID), `"`),
+			kind:    kindForm,
+			title:   el.Message,
+			schema:  el.RequestedSchema,
+			options: formOptions,
+		}
+		if len(formFields(el.RequestedSchema)) == 0 {
+			p.q.options = append([]option{{id: elicitationAccept, label: "Accept"}}, formOptions...)
+		}
+		return p
+	}
+
+	tc := t.mergeTool(in.permission.ToolCall)
+	title := tc.Title
+	if title == "" {
+		title = tc.Kind
+	}
+	p.q = question{id: tc.ToolCallID, kind: kindPermission, tool: tc.Kind, title: title, input: tc.RawInput}
+	for _, o := range in.permission.Options {
+		id, ok := optionIDByKind[o.Kind]
+		if _, taken := p.optionIDs[id]; !ok || taken {
+			id = o.OptionID
+		}
+		p.optionIDs[id] = o.OptionID
+		p.q.options = append(p.q.options, option{id: id, label: o.Name})
+	}
+	return p
+}
+
+func (p *pendingQuestion) reply(ag *agent, a answer) error {
+	if p.q.kind == kindForm {
+		return ag.conn.respond(p.in.rpcID, createElicitationResponse{Action: a.option, Content: a.content})
+	}
+	acpID, ok := p.optionIDs[a.option]
+	if !ok {
+		return fmt.Errorf("option %q was not offered", a.option)
+	}
+	return ag.conn.respond(p.in.rpcID, requestPermissionResponse{Outcome: permissionOutcome{Outcome: "selected", OptionID: acpID}})
+}
+
+// reject declines a form, or rejects a permission request if the agent offers
+// a way to, and cancels it otherwise.
+func (p *pendingQuestion) reject(ag *agent) {
+	a := answer{option: elicitationDecline}
+	if p.q.kind == kindPermission {
+		a.option = optionReject
+		if _, ok := p.q.option(optionReject); !ok {
+			a.option = optionRejectAlways
+		}
+		if _, ok := p.q.option(a.option); !ok {
+			p.in.cancel(ag)
+			return
+		}
+	}
+	if err := p.reply(ag, a); err != nil {
+		log.Warn(context.Background(), "failed to reject acp request", "cause", err)
+	}
+}
+
+// textStream turns agent message chunks into one artifact: the first chunk
+// creates it, later chunks append to it. Separate agent messages and text
+// around tool calls are separated by a blank line.
+type textStream struct {
+	name          string
+	artifactID    a2a.ArtifactID
+	lastMessageID string
+	needsBreak    bool
+}
+
+func (s *textStream) write(info a2a.TaskInfoProvider, messageID, text string) *a2a.TaskArtifactUpdateEvent {
+	if text == "" {
+		return nil
+	}
+	if messageID != s.lastMessageID {
+		s.breakBlock()
+		s.lastMessageID = messageID
+	}
+	if s.artifactID == "" {
+		s.needsBreak = false
+		evt := a2a.NewArtifactEvent(info, a2a.NewTextPart(text))
+		evt.Artifact.Name = s.name
+		s.artifactID = evt.Artifact.ID
+		return evt
+	}
+	if s.needsBreak {
+		text = "\n\n" + text
+		s.needsBreak = false
+	}
+	evt := a2a.NewArtifactUpdateEvent(info, s.artifactID, a2a.NewTextPart(text))
+	evt.Append = true
+	return evt
+}
+
+func (s *textStream) breakBlock() {
+	if s.artifactID != "" {
+		s.needsBreak = true
+	}
+}
+
+func toPrompt(msg *a2a.Message, caps promptCapabilities) ([]contentBlock, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("no message to send to the agent")
+	}
+	var out []contentBlock
+	for i, p := range msg.Parts {
+		switch c := p.Content.(type) {
+		case a2a.Text:
+			out = append(out, contentBlock{Type: "text", Text: string(c)})
+		case a2a.Data:
+			b, err := json.Marshal(c.Value)
+			if err != nil {
+				return nil, fmt.Errorf("encoding data part: %w", err)
+			}
+			out = append(out, contentBlock{Type: "text", Text: string(b)})
+		case a2a.URL:
+			name := p.Filename
+			if name == "" {
+				name = string(c)
+			}
+			out = append(out, contentBlock{Type: "resource_link", URI: string(c), Name: name, MimeType: p.MediaType})
+		case a2a.Raw:
+			block, err := rawBlock(i, p, c, caps)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, block)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("the message has no content the agent accepts")
+	}
+	return out, nil
+}
+
+func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps promptCapabilities) (contentBlock, error) {
+	mime := p.MediaType
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	switch {
+	case strings.HasPrefix(mime, "image/") && caps.Image:
+		return contentBlock{Type: "image", Data: encoded, MimeType: mime}, nil
+	case strings.HasPrefix(mime, "audio/") && caps.Audio:
+		return contentBlock{Type: "audio", Data: encoded, MimeType: mime}, nil
+	case caps.EmbeddedContext:
+		name := p.Filename
+		if name == "" {
+			name = fmt.Sprintf("part-%d", i)
+		}
+		res := &embeddedResource{URI: "attachment:" + name, MimeType: mime}
+		if strings.HasPrefix(mime, "text/") {
+			res.Text = string(data)
+		} else {
+			res.Blob = encoded
+		}
+		return contentBlock{Type: "resource", Resource: res}, nil
+	}
+	return contentBlock{}, fmt.Errorf("the agent does not accept %s attachments", mime)
+}
+
+// queue is an unbounded FIFO, so that the connection's read goroutine never
+// blocks on a turn nobody is consuming, for example while it waits for input.
+type queue[T any] struct {
+	mu     sync.Mutex
+	items  []T
+	signal chan struct{}
+}
+
+func newQueue[T any]() *queue[T] {
+	return &queue[T]{signal: make(chan struct{}, 1)}
+}
+
+func (q *queue[T]) push(v T) {
+	q.mu.Lock()
+	q.items = append(q.items, v)
+	q.mu.Unlock()
+	select {
+	case q.signal <- struct{}{}:
+	default:
+	}
+}
+
+func (q *queue[T]) pop(ctx context.Context) (T, error) {
+	for {
+		q.mu.Lock()
+		if len(q.items) > 0 {
+			v := q.items[0]
+			q.items = q.items[1:]
+			q.mu.Unlock()
+			return v, nil
+		}
+		q.mu.Unlock()
+		select {
+		case <-q.signal:
+		case <-ctx.Done():
+			var zero T
+			return zero, ctx.Err()
+		}
+	}
+}
+
+func (q *queue[T]) removeIf(pred func(T) bool) []T {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	var removed, kept []T
+	for _, v := range q.items {
+		if pred(v) {
+			removed = append(removed, v)
+		} else {
+			kept = append(kept, v)
+		}
+	}
+	q.items = kept
+	return removed
+}
