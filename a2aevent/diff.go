@@ -37,14 +37,18 @@ func Recover(prev *a2a.Task, curr *a2a.Task) []a2a.Event {
 		}
 		prevArtifact := prev.Artifacts[prevI]
 		metaDiff := diffMetadata(prevArtifact.Metadata, artifact.Metadata)
-		if partDiff, ok := diffParts(prevArtifact.Parts, artifact.Parts); ok {
+		partDiff, partsChanged := diffParts(prevArtifact.Parts, artifact.Parts)
+		canAppend := sameArtifactHeader(prevArtifact, artifact) && !hasRemovedKeys(prevArtifact.Metadata, artifact.Metadata)
+		if partsChanged && partDiff.append && canAppend {
 			event := a2a.NewArtifactUpdateEvent(curr, artifact.ID, partDiff.parts...)
-			event.Append = partDiff.append
 			event.Artifact.Metadata = metaDiff
 			events = append(events, event)
-		} else if len(metaDiff) > 0 {
-			event := a2a.NewArtifactUpdateEvent(curr, artifact.ID, artifact.Parts...)
-			event.Artifact.Metadata = metaDiff
+			continue
+		}
+		if partsChanged || len(metaDiff) > 0 || !canAppend {
+			// A non-append update replaces the whole artifact, so it has to carry all of it.
+			event := a2a.NewArtifactEvent(curr)
+			event.Artifact = artifact
 			events = append(events, event)
 		}
 	}
@@ -71,6 +75,21 @@ func diffMetadata(prev map[string]any, curr map[string]any) map[string]any {
 		return nil
 	}
 	return diff
+}
+
+func hasRemovedKeys(prev map[string]any, curr map[string]any) bool {
+	for k := range prev {
+		if _, ok := curr[k]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+func sameArtifactHeader(prev *a2a.Artifact, curr *a2a.Artifact) bool {
+	return prev.Name == curr.Name &&
+		prev.Description == curr.Description &&
+		slices.Equal(prev.Extensions, curr.Extensions)
 }
 
 func diffParts(prev []*a2a.Part, curr []*a2a.Part) (*partsDiff, bool) {
