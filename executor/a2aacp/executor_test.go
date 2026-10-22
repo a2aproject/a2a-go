@@ -24,6 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/acp"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -34,7 +35,7 @@ var (
 	canceled  = eventSummary{Kind: "status", State: a2a.TaskStateCanceled}
 )
 
-var rmToolCall = toolCall{ToolCallID: "t1", Title: "bash", Kind: "execute", RawInput: map[string]any{"command": "rm x.txt"}}
+var rmToolCall = acp.ToolCall{ToolCallID: "t1", Title: "bash", Kind: "execute", RawInput: map[string]any{"command": "rm x.txt"}}
 
 func rmInputRequired(preamble string) eventSummary {
 	return eventSummary{
@@ -74,12 +75,12 @@ func TestExecutor_StreamsTurn(t *testing.T) {
 		s.text("m1", "Hello")
 		s.text("m1", " world")
 		s.update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "hmm"}})
-		s.update(map[string]any{"sessionUpdate": updateToolCall, "toolCallId": "t1", "title": "Read file", "kind": "read", "status": "pending"})
-		s.tool("t1", toolStatusInProgress)
-		s.tool("t1", toolStatusInProgress)
-		s.tool("t1", toolStatusCompleted)
+		s.update(map[string]any{"sessionUpdate": acp.UpdateToolCall, "toolCallId": "t1", "title": "Read file", "kind": "read", "status": "pending"})
+		s.tool("t1", acp.ToolStatusInProgress)
+		s.tool("t1", acp.ToolStatusInProgress)
+		s.tool("t1", acp.ToolStatusCompleted)
 		s.text("m2", "Done")
-		s.end(stopEndTurn)
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 
@@ -90,8 +91,8 @@ func TestExecutor_StreamsTurn(t *testing.T) {
 		working,
 		{Kind: "artifact", Text: "Hello"},
 		{Kind: "artifact", Text: " world", Append: true},
-		toolProgress("Running Read file", toolStatusInProgress),
-		toolProgress("Finished Read file", toolStatusCompleted),
+		toolProgress("Running Read file", acp.ToolStatusInProgress),
+		toolProgress("Finished Read file", acp.ToolStatusCompleted),
 		{Kind: "artifact", Text: "\n\nDone", Append: true},
 		completed,
 	}
@@ -103,14 +104,14 @@ func TestExecutor_StreamsTurn(t *testing.T) {
 func TestExecutor_StopReasons(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		reason stopReason
+		reason acp.StopReason
 		want   eventSummary
 	}{
-		{reason: stopEndTurn, want: completed},
-		{reason: stopCancelled, want: canceled},
-		{reason: stopRefusal, want: failedWith("the agent refused to continue")},
-		{reason: stopMaxTokens, want: failedWith("the agent reached its token limit")},
-		{reason: stopMaxTurnRequests, want: failedWith("the agent reached its request limit for the turn")},
+		{reason: acp.StopEndTurn, want: completed},
+		{reason: acp.StopCancelled, want: canceled},
+		{reason: acp.StopRefusal, want: failedWith("the agent refused to continue")},
+		{reason: acp.StopMaxTokens, want: failedWith("the agent reached its token limit")},
+		{reason: acp.StopMaxTurnRequests, want: failedWith("the agent reached its request limit for the turn")},
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.reason), func(t *testing.T) {
@@ -144,10 +145,10 @@ func TestExecutor_PermissionAnsweredByCaller(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			outcomes := make(chan permissionOutcome, 1)
+			outcomes := make(chan acp.PermissionOutcome, 1)
 			h := &fakeHarness{onPrompt: func(s *promptScript) {
 				outcomes <- s.askPermission(rmToolCall)
-				s.end(stopEndTurn)
+				s.end(acp.StopEndTurn)
 			}}
 			e := newTestExecutor(t, h, Config{})
 			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
@@ -161,7 +162,7 @@ func TestExecutor_PermissionAnsweredByCaller(t *testing.T) {
 			if diff := cmp.Diff([]eventSummary{working, completed}, got); diff != "" {
 				t.Fatalf("Executor.Execute() answer wrong result (-want +got) diff = %s", diff)
 			}
-			if diff := cmp.Diff(permissionOutcome{Outcome: "selected", OptionID: tc.want}, <-outcomes); diff != "" {
+			if diff := cmp.Diff(acp.PermissionOutcome{Outcome: "selected", OptionID: tc.want}, <-outcomes); diff != "" {
 				t.Fatalf("permission outcome wrong result (-want +got) diff = %s", diff)
 			}
 		})
@@ -172,11 +173,11 @@ func TestExecutor_PermissionUsesReportedToolInput(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
 		s.update(map[string]any{
-			"sessionUpdate": updateToolCall, "toolCallId": "t1", "title": "bash", "kind": "execute",
+			"sessionUpdate": acp.UpdateToolCall, "toolCallId": "t1", "title": "bash", "kind": "execute",
 			"status": "pending", "rawInput": map[string]any{"command": "rm x.txt"},
 		})
-		s.askPermission(toolCall{ToolCallID: "t1", Title: "bash", Kind: "execute", RawInput: map[string]any{}})
-		s.end(stopEndTurn)
+		s.askPermission(acp.ToolCall{ToolCallID: "t1", Title: "bash", Kind: "execute", RawInput: map[string]any{}})
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
@@ -191,10 +192,10 @@ func TestExecutor_PermissionUsesReportedToolInput(t *testing.T) {
 
 func TestExecutor_PermissionReaskedOnUnclearReply(t *testing.T) {
 	t.Parallel()
-	outcomes := make(chan permissionOutcome, 1)
+	outcomes := make(chan acp.PermissionOutcome, 1)
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
 		outcomes <- s.askPermission(rmToolCall)
-		s.end(stopEndTurn)
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
@@ -227,10 +228,10 @@ func TestExecutor_PermissionAnsweredByToolRules(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			outcomes := make(chan permissionOutcome, 1)
+			outcomes := make(chan acp.PermissionOutcome, 1)
 			h := &fakeHarness{onPrompt: func(s *promptScript) {
 				outcomes <- s.askPermission(rmToolCall)
-				s.end(stopEndTurn)
+				s.end(acp.StopEndTurn)
 			}}
 			e := newTestExecutor(t, h, tc.cfg)
 
@@ -248,14 +249,14 @@ func TestExecutor_PermissionAnsweredByToolRules(t *testing.T) {
 
 func TestExecutor_CancelWhileInputRequired(t *testing.T) {
 	t.Parallel()
-	outcomes := make(chan permissionOutcome, 1)
+	outcomes := make(chan acp.PermissionOutcome, 1)
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
 		if s.promptText() == "next" {
-			s.end(stopEndTurn)
+			s.end(acp.StopEndTurn)
 			return
 		}
 		outcomes <- s.askPermission(rmToolCall)
-		s.end(stopCancelled)
+		s.end(acp.StopCancelled)
 	}}
 	e := newTestExecutor(t, h, Config{})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
@@ -266,7 +267,7 @@ func TestExecutor_CancelWhileInputRequired(t *testing.T) {
 	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
 		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
 	}
-	if diff := cmp.Diff(permissionOutcome{Outcome: "cancelled"}, <-outcomes); diff != "" {
+	if diff := cmp.Diff(acp.PermissionOutcome{Outcome: "cancelled"}, <-outcomes); diff != "" {
 		t.Fatalf("permission outcome wrong result (-want +got) diff = %s", diff)
 	}
 	_, _, gotCanceled, _ := h.agent(0).snapshot()
@@ -288,7 +289,7 @@ func TestExecutor_CancelWhileWorking(t *testing.T) {
 			_, _, canceled, _ := s.agent.snapshot()
 			return len(canceled) > 0
 		})
-		s.end(stopCancelled)
+		s.end(acp.StopCancelled)
 	}
 	e := newTestExecutor(t, h, Config{})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("hi"))
@@ -314,7 +315,7 @@ func TestExecutor_CancelWhileWorking(t *testing.T) {
 
 func TestExecutor_ContextsMapToSessions(t *testing.T) {
 	t.Parallel()
-	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(stopEndTurn) }}
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
 	e := newTestExecutor(t, h, Config{})
 
 	run(t, execute(e, newExecCtx("ctx-a", a2a.NewTextPart("one"))))
@@ -341,7 +342,7 @@ func TestExecutor_QueuesTurnsInContext(t *testing.T) {
 		if s.promptText() == "first" {
 			<-release
 		}
-		s.end(stopEndTurn)
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 
@@ -374,7 +375,7 @@ func agentExited(e *Executor) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	select {
-	case <-e.agent.conn.Done():
+	case <-e.agent.client.Done():
 		return true
 	default:
 		return false
@@ -395,7 +396,7 @@ func TestExecutor_RestartsAgent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := &fakeHarness{caps: agentCapabilities{LoadSession: tc.loadSession}, onPrompt: func(s *promptScript) { s.end(stopEndTurn) }}
+			h := &fakeHarness{caps: acp.AgentCapabilities{LoadSession: tc.loadSession}, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
 			e := newTestExecutor(t, h, Config{})
 			run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("one"))))
 			h.agent(0).crash()
@@ -447,35 +448,35 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		caps       promptCapabilities
+		caps       acp.PromptCapabilities
 		parts      []*a2a.Part
-		wantPrompt []contentBlock
+		wantPrompt []acp.ContentBlock
 		wantEvents []eventSummary
 	}{
 		{
 			name:       "text and data",
 			parts:      []*a2a.Part{a2a.NewTextPart("hi"), a2a.NewDataPart(map[string]any{"a": 1})},
-			wantPrompt: []contentBlock{{Type: "text", Text: "hi"}, {Type: "text", Text: `{"a":1}`}},
+			wantPrompt: []acp.ContentBlock{{Type: "text", Text: "hi"}, {Type: "text", Text: `{"a":1}`}},
 			wantEvents: []eventSummary{submitted, working, completed},
 		},
 		{
 			name:       "image",
-			caps:       promptCapabilities{Image: true},
+			caps:       acp.PromptCapabilities{Image: true},
 			parts:      []*a2a.Part{png},
-			wantPrompt: []contentBlock{{Type: "image", Data: "cG5n", MimeType: "image/png"}},
+			wantPrompt: []acp.ContentBlock{{Type: "image", Data: "cG5n", MimeType: "image/png"}},
 			wantEvents: []eventSummary{submitted, working, completed},
 		},
 		{
 			name:       "url",
 			parts:      []*a2a.Part{link},
-			wantPrompt: []contentBlock{{Type: "resource_link", URI: "https://example.com/a.txt", Name: "https://example.com/a.txt", MimeType: "text/plain"}},
+			wantPrompt: []acp.ContentBlock{{Type: "resource_link", URI: "https://example.com/a.txt", Name: "https://example.com/a.txt", MimeType: "text/plain"}},
 			wantEvents: []eventSummary{submitted, working, completed},
 		},
 		{
 			name:  "embedded file",
-			caps:  promptCapabilities{EmbeddedContext: true},
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
 			parts: []*a2a.Part{pdf},
-			wantPrompt: []contentBlock{{Type: "resource", Resource: &embeddedResource{
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
 				URI: "attachment:doc.pdf", MimeType: "application/pdf", Blob: "JVBERg==",
 			}}},
 			wantEvents: []eventSummary{submitted, working, completed},
@@ -489,7 +490,7 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := &fakeHarness{caps: agentCapabilities{PromptCapabilities: tc.caps}, onPrompt: func(s *promptScript) { s.end(stopEndTurn) }}
+			h := &fakeHarness{caps: acp.AgentCapabilities{PromptCapabilities: tc.caps}, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
 			e := newTestExecutor(t, h, Config{})
 
 			got := run(t, execute(e, newExecCtx("ctx", tc.parts...)))
@@ -498,7 +499,7 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 			}
 			_, _, _, prompts := h.agent(0).snapshot()
-			var gotPrompt []contentBlock
+			var gotPrompt []acp.ContentBlock
 			if len(prompts) > 0 {
 				gotPrompt = prompts[0].Prompt
 			}
@@ -513,16 +514,16 @@ func TestExecutor_RejectsUnsupportedAgentRequests(t *testing.T) {
 	t.Parallel()
 	errs := make(chan error, 1)
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
-		errs <- s.agent.conn.call(context.Background(), "fs/read_text_file", map[string]any{"sessionId": s.req.SessionID, "path": "/etc/passwd"}, nil)
-		s.end(stopEndTurn)
+		errs <- s.agent.conn.Call(context.Background(), "fs/read_text_file", map[string]any{"sessionId": s.req.SessionID, "path": "/etc/passwd"}, nil)
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 
 	run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
 
-	var rpcErr *rpcError
-	if err := <-errs; !errors.As(err, &rpcErr) || rpcErr.Code != codeMethodNotFound {
-		t.Fatalf("fs/read_text_file error = %v, want code %d", err, codeMethodNotFound)
+	var rpcErr *acp.Error
+	if err := <-errs; !errors.As(err, &rpcErr) || rpcErr.Code != acp.CodeMethodNotFound {
+		t.Fatalf("fs/read_text_file error = %v, want code %d", err, acp.CodeMethodNotFound)
 	}
 }
 
@@ -598,40 +599,40 @@ func TestExecutor_FormElicitation(t *testing.T) {
 		name   string
 		schema map[string]any
 		answer *a2a.Part
-		want   createElicitationResponse
+		want   acp.CreateElicitationResponse
 	}{
 		{
 			name:   "single field text",
 			schema: nameSchema,
 			answer: a2a.NewTextPart("Anna"),
-			want:   createElicitationResponse{Action: elicitationAccept, Content: map[string]any{"name": "Anna"}},
+			want:   acp.CreateElicitationResponse{Action: acp.ElicitationAccept, Content: map[string]any{"name": "Anna"}},
 		},
 		{
 			name:   "json text",
 			schema: profileSchema,
 			answer: a2a.NewTextPart(`{"name": "Anna", "count": "3", "color": "red"}`),
-			want:   createElicitationResponse{Action: elicitationAccept, Content: map[string]any{"name": "Anna", "count": 3.0, "color": "red"}},
+			want:   acp.CreateElicitationResponse{Action: acp.ElicitationAccept, Content: map[string]any{"name": "Anna", "count": 3.0, "color": "red"}},
 		},
 		{
 			name:   "hitl data",
 			schema: profileSchema,
 			answer: a2a.NewDataPart(map[string]any{hitlDataKey: map[string]any{"id": "elicitation-1", "answer": map[string]any{"name": "Bo"}}}),
-			want:   createElicitationResponse{Action: elicitationAccept, Content: map[string]any{"name": "Bo"}},
+			want:   acp.CreateElicitationResponse{Action: acp.ElicitationAccept, Content: map[string]any{"name": "Bo"}},
 		},
 		{
 			name:   "decline",
 			schema: profileSchema,
 			answer: a2a.NewTextPart("Decline"),
-			want:   createElicitationResponse{Action: elicitationDecline},
+			want:   acp.CreateElicitationResponse{Action: acp.ElicitationDecline},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			responses := make(chan createElicitationResponse, 1)
+			responses := make(chan acp.CreateElicitationResponse, 1)
 			h := &fakeHarness{onPrompt: func(s *promptScript) {
 				responses <- s.elicit("Tell me about you", tc.schema)
-				s.end(stopEndTurn)
+				s.end(acp.StopEndTurn)
 			}}
 			e := newTestExecutor(t, h, Config{})
 			execCtx := newExecCtx("ctx", a2a.NewTextPart("hi"))
@@ -654,10 +655,10 @@ func TestExecutor_FormElicitation(t *testing.T) {
 
 func TestExecutor_FormElicitationReaskedOnInvalidReply(t *testing.T) {
 	t.Parallel()
-	responses := make(chan createElicitationResponse, 1)
+	responses := make(chan acp.CreateElicitationResponse, 1)
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
 		responses <- s.elicit("Tell me about you", profileSchema)
-		s.end(stopEndTurn)
+		s.end(acp.StopEndTurn)
 	}}
 	e := newTestExecutor(t, h, Config{})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("hi"))
@@ -680,23 +681,25 @@ func TestExecutor_FormElicitationReaskedOnInvalidReply(t *testing.T) {
 	}
 
 	run(t, execute(e, followUp(execCtx, a2a.NewTextPart(`{"name": "Anna"}`))))
-	if diff := cmp.Diff(createElicitationResponse{Action: elicitationAccept, Content: map[string]any{"name": "Anna"}}, <-responses); diff != "" {
+	if diff := cmp.Diff(acp.CreateElicitationResponse{Action: acp.ElicitationAccept, Content: map[string]any{"name": "Anna"}}, <-responses); diff != "" {
 		t.Fatalf("elicitation response wrong result (-want +got) diff = %s", diff)
 	}
 }
 
 func TestExecutor_QuestionTimeout(t *testing.T) {
 	t.Parallel()
-	outcomes := make(chan permissionOutcome, 1)
+	outcomes := make(chan acp.PermissionOutcome, 1)
+	scriptDone := make(chan struct{})
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		defer close(scriptDone)
 		outcomes <- s.askPermission(rmToolCall)
-		s.end(stopCancelled)
+		s.end(acp.StopCancelled)
 	}}
 	e := newTestExecutor(t, h, Config{QuestionTimeout: 10 * time.Millisecond})
 	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
 	run(t, execute(e, execCtx))
 
-	if diff := cmp.Diff(permissionOutcome{Outcome: "selected", OptionID: "opt-reject"}, <-outcomes); diff != "" {
+	if diff := cmp.Diff(acp.PermissionOutcome{Outcome: "selected", OptionID: "opt-reject"}, <-outcomes); diff != "" {
 		t.Fatalf("permission outcome wrong result (-want +got) diff = %s", diff)
 	}
 	waitFor(t, func() bool { _, _, canceled, _ := h.agent(0).snapshot(); return len(canceled) == 1 })
@@ -705,6 +708,7 @@ func TestExecutor_QuestionTimeout(t *testing.T) {
 	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone)}, got); diff != "" {
 		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 	}
+	<-scriptDone
 }
 
 func TestExecutor_AgentExitWhileInputRequired(t *testing.T) {
@@ -735,13 +739,13 @@ func withConfig(execCtx *a2asrv.ExecutorContext, settings map[string]any) *a2asr
 
 func TestExecutor_SessionConfig(t *testing.T) {
 	t.Parallel()
-	configOptions := sessionState{ConfigOptions: []sessionConfigOption{
+	configOptions := acp.SessionState{ConfigOptions: []acp.SessionConfigOption{
 		{ID: "model", Name: "Model", Type: "select"},
 		{ID: "fast", Name: "Fast", Type: "boolean"},
 	}}
 	tests := []struct {
 		name         string
-		state        sessionState
+		state        acp.SessionState
 		cfg          map[string]any
 		messages     []map[string]any
 		wantSettings []string
@@ -770,7 +774,7 @@ func TestExecutor_SessionConfig(t *testing.T) {
 		},
 		{
 			name:         "modes and models",
-			state:        sessionState{Modes: &struct{}{}, Models: &struct{}{}},
+			state:        acp.SessionState{Modes: &struct{}{}, Models: &struct{}{}},
 			messages:     []map[string]any{{"mode": "plan", "model": "m1"}},
 			wantSettings: []string{"session/set_mode plan", "session/set_model m1"},
 			wantLast:     completed,
@@ -785,7 +789,7 @@ func TestExecutor_SessionConfig(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			h := &fakeHarness{state: tc.state, onPrompt: func(s *promptScript) { s.end(stopEndTurn) }}
+			h := &fakeHarness{state: tc.state, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
 			e := newTestExecutor(t, h, Config{SessionConfig: tc.cfg})
 
 			var got []eventSummary
@@ -812,7 +816,7 @@ func (s staticMCPServers) MCPServers(context.Context, *a2asrv.ExecutorContext) (
 func TestExecutor_MCPServers(t *testing.T) {
 	t.Parallel()
 	servers := staticMCPServers{json.RawMessage(`{"type":"http","name":"api","url":"https://example.com/mcp","headers":[]}`)}
-	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(stopEndTurn) }}
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
 	e := newTestExecutor(t, h, Config{MCPServers: servers})
 
 	run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))

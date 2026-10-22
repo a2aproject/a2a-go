@@ -14,7 +14,7 @@
 
 //go:build unix
 
-package a2aacp
+package subprocess
 
 import (
 	"errors"
@@ -22,7 +22,7 @@ import (
 	"syscall"
 )
 
-// configureProcessGroup puts the agent in its own process group: agents are
+// configureProcessGroup puts the process in its own process group: agents are
 // often wrapper scripts (npx) and spawn MCP servers which would otherwise
 // outlive them.
 func configureProcessGroup(c *exec.Cmd) {

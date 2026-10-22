@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/acp"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -37,7 +38,7 @@ type turn struct {
 
 	// Accessed only by the goroutine running Execute.
 	text  textStream
-	tools map[string]*toolCall
+	tools map[string]*acp.ToolCall
 
 	mu       sync.Mutex
 	pending  *pendingQuestion
@@ -46,7 +47,7 @@ type turn struct {
 }
 
 type turnEvent struct {
-	update   *sessionUpdate
+	update   *acp.SessionUpdate
 	question *incomingQuestion
 	result   *promptResult
 }
@@ -54,24 +55,26 @@ type turnEvent struct {
 // incomingQuestion is a permission request or a form elicitation from the agent.
 type incomingQuestion struct {
 	rpcID       json.RawMessage
-	permission  *requestPermissionRequest
-	elicitation *createElicitationRequest
+	permission  *acp.RequestPermissionRequest
+	elicitation *acp.CreateElicitationRequest
 }
 
 // cancel responds to the request with the cancelled outcome.
 func (in *incomingQuestion) cancel(ag *agent) {
-	var resp any = requestPermissionResponse{Outcome: permissionOutcome{Outcome: "cancelled"}}
+	var err error
 	if in.elicitation != nil {
-		resp = createElicitationResponse{Action: elicitationCancel}
+		err = ag.client.RespondElicitation(in.rpcID, acp.CreateElicitationResponse{Action: acp.ElicitationCancel})
+	} else {
+		err = ag.client.RespondPermission(in.rpcID, acp.PermissionOutcome{Outcome: acp.OutcomeCancelled})
 	}
-	if err := ag.conn.respond(in.rpcID, resp); err != nil {
+	if err != nil {
 		log.Warn(context.Background(), "failed to cancel acp request", "cause", err)
 	}
 }
 
 type promptResult struct {
-	stopReason stopReason
-	err        error
+	reason acp.StopReason
+	err    error
 }
 
 func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
@@ -81,7 +84,7 @@ func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
 		agent:     ag,
 		events:    newQueue[turnEvent](),
 		text:      textStream{name: "response"},
-		tools:     map[string]*toolCall{},
+		tools:     map[string]*acp.ToolCall{},
 	}
 }
 
@@ -160,33 +163,33 @@ func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
 	if r.err != nil {
 		return failed(info, fmt.Sprintf("acp agent error: %v", r.err))
 	}
-	switch r.stopReason {
-	case stopEndTurn:
+	switch r.reason {
+	case acp.StopEndTurn:
 		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCompleted, nil)
-	case stopCancelled:
+	case acp.StopCancelled:
 		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
-	case stopMaxTokens:
+	case acp.StopMaxTokens:
 		return failed(info, "the agent reached its token limit")
-	case stopMaxTurnRequests:
+	case acp.StopMaxTurnRequests:
 		return failed(info, "the agent reached its request limit for the turn")
-	case stopRefusal:
+	case acp.StopRefusal:
 		return failed(info, "the agent refused to continue")
 	default:
-		return failed(info, fmt.Sprintf("the agent stopped: %s", r.stopReason))
+		return failed(info, fmt.Sprintf("the agent stopped: %s", r.reason))
 	}
 }
 
-func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *sessionUpdate) []a2a.Event {
+func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *acp.SessionUpdate) []a2a.Event {
 	switch u.SessionUpdate {
-	case updateAgentMessageChunk:
-		var block contentBlock
+	case acp.UpdateAgentMessageChunk:
+		var block acp.ContentBlock
 		if err := json.Unmarshal(u.Content, &block); err != nil {
 			return nil
 		}
 		return t.onContent(info, u.MessageID, block)
 
-	case updateToolCall, updateToolCallUpdate:
-		tc := t.mergeTool(u.toolCall)
+	case acp.UpdateToolCall, acp.UpdateToolCallUpdate:
+		tc := t.mergeTool(u.ToolCall)
 		if u.Status == "" || u.Status == tc.Status {
 			return nil
 		}
@@ -199,10 +202,10 @@ func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *sessionUpdate) []a2a.Event
 // mergeTool applies the fields set in patch to the known state of the tool
 // call, except the status. Agents send partial tool calls in updates and in
 // permission requests, for example an empty input already reported earlier.
-func (t *turn) mergeTool(patch toolCall) *toolCall {
+func (t *turn) mergeTool(patch acp.ToolCall) *acp.ToolCall {
 	tc := t.tools[patch.ToolCallID]
 	if tc == nil {
-		tc = &toolCall{ToolCallID: patch.ToolCallID}
+		tc = &acp.ToolCall{ToolCallID: patch.ToolCallID}
 		t.tools[patch.ToolCallID] = tc
 	}
 	if patch.Title != "" {
@@ -217,7 +220,7 @@ func (t *turn) mergeTool(patch toolCall) *toolCall {
 	return tc
 }
 
-func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block contentBlock) []a2a.Event {
+func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block acp.ContentBlock) []a2a.Event {
 	switch block.Type {
 	case "text":
 		if evt := t.text.write(info, messageID, block.Text); evt != nil {
@@ -239,14 +242,14 @@ func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block cont
 	return nil
 }
 
-func (t *turn) onToolStatus(info a2a.TaskInfoProvider, tc *toolCall) []a2a.Event {
+func (t *turn) onToolStatus(info a2a.TaskInfoProvider, tc *acp.ToolCall) []a2a.Event {
 	var verb string
 	switch tc.Status {
-	case toolStatusInProgress:
+	case acp.ToolStatusInProgress:
 		verb = "Running"
-	case toolStatusCompleted:
+	case acp.ToolStatusCompleted:
 		verb = "Finished"
-	case toolStatusFailed:
+	case acp.ToolStatusFailed:
 		verb = "Failed"
 	default:
 		return nil
@@ -272,10 +275,10 @@ type pendingQuestion struct {
 }
 
 var optionIDByKind = map[string]string{
-	permissionAllowOnce:    optionOnce,
-	permissionAllowAlways:  optionAlways,
-	permissionRejectOnce:   optionReject,
-	permissionRejectAlways: optionRejectAlways,
+	acp.PermissionAllowOnce:    optionOnce,
+	acp.PermissionAllowAlways:  optionAlways,
+	acp.PermissionRejectOnce:   optionReject,
+	acp.PermissionRejectAlways: optionRejectAlways,
 }
 
 func (t *turn) newPending(in *incomingQuestion) *pendingQuestion {
@@ -289,7 +292,7 @@ func (t *turn) newPending(in *incomingQuestion) *pendingQuestion {
 			options: formOptions,
 		}
 		if len(formFields(el.RequestedSchema)) == 0 {
-			p.q.options = append([]option{{id: elicitationAccept, label: "Accept"}}, formOptions...)
+			p.q.options = append([]option{{id: acp.ElicitationAccept, label: "Accept"}}, formOptions...)
 		}
 		return p
 	}
@@ -313,19 +316,19 @@ func (t *turn) newPending(in *incomingQuestion) *pendingQuestion {
 
 func (p *pendingQuestion) reply(ag *agent, a answer) error {
 	if p.q.kind == kindForm {
-		return ag.conn.respond(p.in.rpcID, createElicitationResponse{Action: a.option, Content: a.content})
+		return ag.client.RespondElicitation(p.in.rpcID, acp.CreateElicitationResponse{Action: a.option, Content: a.content})
 	}
 	acpID, ok := p.optionIDs[a.option]
 	if !ok {
 		return fmt.Errorf("option %q was not offered", a.option)
 	}
-	return ag.conn.respond(p.in.rpcID, requestPermissionResponse{Outcome: permissionOutcome{Outcome: "selected", OptionID: acpID}})
+	return ag.client.RespondPermission(p.in.rpcID, acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: acpID})
 }
 
 // reject declines a form, or rejects a permission request if the agent offers
 // a way to, and cancels it otherwise.
 func (p *pendingQuestion) reject(ag *agent) {
-	a := answer{option: elicitationDecline}
+	a := answer{option: acp.ElicitationDecline}
 	if p.q.kind == kindPermission {
 		a.option = optionReject
 		if _, ok := p.q.option(optionReject); !ok {
@@ -381,27 +384,27 @@ func (s *textStream) breakBlock() {
 	}
 }
 
-func toPrompt(msg *a2a.Message, caps promptCapabilities) ([]contentBlock, error) {
+func toPrompt(msg *a2a.Message, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("no message to send to the agent")
 	}
-	var out []contentBlock
+	var out []acp.ContentBlock
 	for i, p := range msg.Parts {
 		switch c := p.Content.(type) {
 		case a2a.Text:
-			out = append(out, contentBlock{Type: "text", Text: string(c)})
+			out = append(out, acp.ContentBlock{Type: "text", Text: string(c)})
 		case a2a.Data:
 			b, err := json.Marshal(c.Value)
 			if err != nil {
 				return nil, fmt.Errorf("encoding data part: %w", err)
 			}
-			out = append(out, contentBlock{Type: "text", Text: string(b)})
+			out = append(out, acp.ContentBlock{Type: "text", Text: string(b)})
 		case a2a.URL:
 			name := p.Filename
 			if name == "" {
 				name = string(c)
 			}
-			out = append(out, contentBlock{Type: "resource_link", URI: string(c), Name: name, MimeType: p.MediaType})
+			out = append(out, acp.ContentBlock{Type: "resource_link", URI: string(c), Name: name, MimeType: p.MediaType})
 		case a2a.Raw:
 			block, err := rawBlock(i, p, c, caps)
 			if err != nil {
@@ -416,7 +419,7 @@ func toPrompt(msg *a2a.Message, caps promptCapabilities) ([]contentBlock, error)
 	return out, nil
 }
 
-func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps promptCapabilities) (contentBlock, error) {
+func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps acp.PromptCapabilities) (acp.ContentBlock, error) {
 	mime := p.MediaType
 	if mime == "" {
 		mime = "application/octet-stream"
@@ -424,23 +427,23 @@ func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps promptCapabilities) (conten
 	encoded := base64.StdEncoding.EncodeToString(data)
 	switch {
 	case strings.HasPrefix(mime, "image/") && caps.Image:
-		return contentBlock{Type: "image", Data: encoded, MimeType: mime}, nil
+		return acp.ContentBlock{Type: "image", Data: encoded, MimeType: mime}, nil
 	case strings.HasPrefix(mime, "audio/") && caps.Audio:
-		return contentBlock{Type: "audio", Data: encoded, MimeType: mime}, nil
+		return acp.ContentBlock{Type: "audio", Data: encoded, MimeType: mime}, nil
 	case caps.EmbeddedContext:
 		name := p.Filename
 		if name == "" {
 			name = fmt.Sprintf("part-%d", i)
 		}
-		res := &embeddedResource{URI: "attachment:" + name, MimeType: mime}
+		res := &acp.EmbeddedResource{URI: "attachment:" + name, MimeType: mime}
 		if strings.HasPrefix(mime, "text/") {
 			res.Text = string(data)
 		} else {
 			res.Blob = encoded
 		}
-		return contentBlock{Type: "resource", Resource: res}, nil
+		return acp.ContentBlock{Type: "resource", Resource: res}, nil
 	}
-	return contentBlock{}, fmt.Errorf("the agent does not accept %s attachments", mime)
+	return acp.ContentBlock{}, fmt.Errorf("the agent does not accept %s attachments", mime)
 }
 
 // queue is an unbounded FIFO, so that the connection's read goroutine never

@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/acp"
 )
 
 type questionKind string
@@ -78,7 +79,7 @@ type answer struct {
 	content map[string]any
 }
 
-var formOptions = []option{{id: elicitationDecline, label: "Decline"}, {id: elicitationCancel, label: "Cancel"}}
+var formOptions = []option{{id: acp.ElicitationDecline, label: "Decline"}, {id: acp.ElicitationCancel, label: "Cancel"}}
 
 func (q question) option(id string) (option, bool) {
 	for _, o := range q.options {
@@ -355,11 +356,11 @@ func permissionAnswerFromText(q question, text string) (answer, error) {
 func formAnswerFromText(q question, text string) (answer, error) {
 	fields := formFields(q.schema)
 	switch reply := normalize(text); reply {
-	case elicitationDecline, elicitationCancel:
+	case acp.ElicitationDecline, acp.ElicitationCancel:
 		return answer{option: reply}, nil
 	case "accept", "yes", "ok":
 		if len(fields) == 0 {
-			return answer{option: elicitationAccept}, nil
+			return answer{option: acp.ElicitationAccept}, nil
 		}
 	}
 	if strings.HasPrefix(strings.TrimSpace(text), "{") {
@@ -393,7 +394,7 @@ func acceptForm(q question, values map[string]any) (answer, error) {
 		}
 		content[f.name] = cv
 	}
-	return answer{option: elicitationAccept, content: content}, nil
+	return answer{option: acp.ElicitationAccept, content: content}, nil
 }
 
 func convertField(f formField, v any) (any, error) {

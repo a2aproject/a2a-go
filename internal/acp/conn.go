@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package a2aacp
+// Package acp implements the client side of the Agent Client Protocol
+// (https://agentclientprotocol.com) over stdio: the protocol types the a2aacp
+// executor uses, a JSON-RPC 2.0 connection and a typed client.
+package acp
 
 import (
 	"context"
@@ -26,41 +29,45 @@ import (
 	"time"
 )
 
+// JSON-RPC error codes.
 const (
-	codeMethodNotFound = -32601
-	codeInvalidParams  = -32602
+	CodeMethodNotFound = -32601
+	CodeInvalidParams  = -32602
 )
 
-// errAgentExited is reported for calls that were in flight when the agent closed its output.
-var errAgentExited = errors.New("acp agent exited")
+// ErrAgentExited is reported for calls in flight when the peer closes its output or the connection is closed.
+var ErrAgentExited = errors.New("acp agent exited")
 
-type rpcError struct {
+// Error is a JSON-RPC error response.
+type Error struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-func (e *rpcError) Error() string {
+func (e *Error) Error() string {
 	if len(e.Data) > 0 {
 		return fmt.Sprintf("%s (code %d): %s", e.Message, e.Code, e.Data)
 	}
 	return fmt.Sprintf("%s (code %d)", e.Message, e.Code)
 }
 
-type rpcMessage struct {
+// Message is a JSON-RPC request, notification or response. Requests and
+// notifications have a Method; notifications have no ID.
+type Message struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
 	Params json.RawMessage `json:"params,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
-	Error  *rpcError       `json:"error,omitempty"`
+	Error  *Error          `json:"error,omitempty"`
 }
 
-// conn is a JSON-RPC 2.0 connection over newline-delimited JSON, the ACP stdio transport.
+// Conn is a JSON-RPC 2.0 connection over newline-delimited JSON, the ACP stdio transport.
 // Requests and notifications from the peer are passed to handle on the read goroutine,
 // in order, so handle must not block.
-type conn struct {
+type Conn struct {
 	rwc    io.ReadWriteCloser
-	handle func(*rpcMessage)
+	handle func(*Message)
 
 	wmu sync.Mutex
 	enc *json.Encoder
@@ -68,32 +75,33 @@ type conn struct {
 	nextID atomic.Int64
 
 	mu      sync.Mutex
-	pending map[int64]chan *rpcMessage
+	pending map[int64]chan *Message
 	err     error
 	done    chan struct{}
 }
 
-func newConn(rwc io.ReadWriteCloser, handle func(*rpcMessage)) *conn {
-	c := &conn{
+// NewConn creates a connection over rwc. Call [Conn.Start] to begin reading.
+func NewConn(rwc io.ReadWriteCloser, handle func(*Message)) *Conn {
+	c := &Conn{
 		rwc:     rwc,
 		handle:  handle,
 		enc:     json.NewEncoder(rwc),
-		pending: map[int64]chan *rpcMessage{},
+		pending: map[int64]chan *Message{},
 		done:    make(chan struct{}),
 	}
 	return c
 }
 
-// start begins reading messages from the peer.
-func (c *conn) start() { go c.read() }
+// Start begins reading messages from the peer.
+func (c *Conn) Start() { go c.read() }
 
-func (c *conn) read() {
+func (c *Conn) read() {
 	dec := json.NewDecoder(c.rwc)
 	for {
-		var m rpcMessage
+		var m Message
 		if err := dec.Decode(&m); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
-				err = errAgentExited
+				err = ErrAgentExited
 			}
 			c.fail(err)
 			return
@@ -116,7 +124,7 @@ func (c *conn) read() {
 	}
 }
 
-func (c *conn) fail(err error) {
+func (c *Conn) fail(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.err != nil {
@@ -127,23 +135,25 @@ func (c *conn) fail(err error) {
 }
 
 // Done is closed when the connection stops reading.
-func (c *conn) Done() <-chan struct{} { return c.done }
+func (c *Conn) Done() <-chan struct{} { return c.done }
 
 // Err returns the reason the connection stopped reading.
-func (c *conn) Err() error {
+func (c *Conn) Err() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.err
 }
 
-func (c *conn) Close() error {
-	c.fail(errAgentExited)
+// Close fails calls in flight and closes the underlying stream.
+func (c *Conn) Close() error {
+	c.fail(ErrAgentExited)
 	return c.rwc.Close()
 }
 
-func (c *conn) call(ctx context.Context, method string, params, result any) error {
+// Call sends a request and decodes the result of its response into result, if it is not nil.
+func (c *Conn) Call(ctx context.Context, method string, params, result any) error {
 	id := c.nextID.Add(1)
-	ch := make(chan *rpcMessage, 1)
+	ch := make(chan *Message, 1)
 	c.mu.Lock()
 	if c.err != nil {
 		c.mu.Unlock()
@@ -190,7 +200,7 @@ func (c *conn) call(ctx context.Context, method string, params, result any) erro
 
 // writeErr explains a failed write. It usually means the agent exited, and the
 // reader soon learns why, for example from the agent's last output.
-func (c *conn) writeErr(ctx context.Context, err error) error {
+func (c *Conn) writeErr(ctx context.Context, err error) error {
 	select {
 	case <-c.done:
 		return c.Err()
@@ -203,7 +213,8 @@ func (c *conn) writeErr(ctx context.Context, err error) error {
 
 const writeErrGrace = 3 * time.Second
 
-func (c *conn) notify(method string, params any) error {
+// Notify sends a notification.
+func (c *Conn) Notify(method string, params any) error {
 	return c.write(struct {
 		JSONRPC string `json:"jsonrpc"`
 		Method  string `json:"method"`
@@ -211,7 +222,8 @@ func (c *conn) notify(method string, params any) error {
 	}{"2.0", method, params})
 }
 
-func (c *conn) respond(id json.RawMessage, result any) error {
+// Respond sends the result of a request from the peer.
+func (c *Conn) Respond(id json.RawMessage, result any) error {
 	return c.write(struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
@@ -219,15 +231,16 @@ func (c *conn) respond(id json.RawMessage, result any) error {
 	}{"2.0", id, result})
 }
 
-func (c *conn) respondError(id json.RawMessage, rpcErr *rpcError) error {
+// RespondError sends an error response to a request from the peer.
+func (c *Conn) RespondError(id json.RawMessage, rpcErr *Error) error {
 	return c.write(struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
-		Error   *rpcError       `json:"error"`
+		Error   *Error          `json:"error"`
 	}{"2.0", id, rpcErr})
 }
 
-func (c *conn) write(v any) error {
+func (c *Conn) write(v any) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	return c.enc.Encode(v)

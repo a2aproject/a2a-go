@@ -5,8 +5,19 @@
 
 `a2aacp.Executor` implements `a2asrv.AgentExecutor` on top of an agent speaking the
 [Agent Client Protocol](https://agentclientprotocol.com) v1 over stdio (`opencode acp`,
-`claude-agent-acp`, `codex-acp`, `gemini --experimental-acp`). The ACP client is hand-rolled
-(`jsonrpc.go`, `schema.go`) and covers only what the executor uses.
+`claude-agent-acp`, `codex-acp`, `gemini --experimental-acp`).
+
+## Layout
+
+| Package | Contents |
+| :--- | :--- |
+| `executor/a2aacp` | the executor: turns, questions, session settings, profiles, `SessionStore` default |
+| `internal/acp` | hand-rolled ACP client: protocol types (`schema.go`), JSON-RPC 2.0 over NDJSON (`Conn`), typed `Client` with a `Handler` for agent→client requests |
+| `internal/subprocess` | starts a child process and exposes its stdio as an `io.ReadWriteCloser` |
+
+`internal/acp` covers only what the executor uses. `Client` answers unsupported agent requests
+("method not found") and malformed ones ("invalid params") itself; `executor.agentHandler`
+routes the rest to turns.
 
 The exported API is `Executor`, `NewExecutor`, `Config` and two interfaces: `SessionStore`
 (context → session persistence) and `MCPServerProvider` (MCP servers per context, as raw ACP
@@ -77,17 +88,24 @@ object, a JSON object as text, a bare value when the form has one field, or decl
 Values are checked against `required`, `enum` / `oneOf` and converted to the field type; an
 invalid reply re-asks with the reason.
 
-## Local process
+## Local process (`internal/subprocess`)
 
-`localStart` owns the stdout pipe (`os.Pipe`) instead of using `StdoutPipe`, because `Cmd.Wait`
+`subprocess.Start` owns the stdout pipe (`os.Pipe`) instead of using `StdoutPipe`, because `Cmd.Wait`
 closes the latter when the process exits and could drop the agent's last messages. Stdout is
-closed `outputGrace` after exit in case a child inherited it. A failed write waits briefly for
-the reader to report why the agent stopped (`conn.writeErr`).
+closed `outputGrace` after exit in case a child inherited it; reads then report `io.EOF`. A failed
+write waits briefly for the reader to report why the agent stopped (`acp.Conn.writeErr`).
+
+The agent's exit is visible on `Client.Done` before the prompt goroutine ends the turn, so
+`Executor.answer` checks `agent.exited()` and reports the question as gone instead of a write
+error.
 
 ## Testing
 
-- Unit tests run against an in-process fake agent over `io.Pipe` (`fake_agent_test.go`); each
-  `session/prompt` runs a test-provided script in its own goroutine.
+- Executor tests run against an in-process fake agent over `io.Pipe` (`fake_agent_test.go`,
+  agent side is an `acp.Conn`); each `session/prompt` runs a test-provided script in its own
+  goroutine. Scripts that outlive the test's last `Execute` must be awaited, or they write to a
+  closed pipe.
+- `internal/acp` and `internal/subprocess` have their own tests (pipes, and `sh`/`cat`/`sleep`).
 - `tools/acp_smoke.sh [profile]` (or `ACP_CMD="cloudcode acp"`) runs a scripted conversation
   against a real agent through `a2asrv` + `a2aclient`. It sets `OPENCODE_PERMISSION` /
   `CLOUDCODE_PERMISSION` so opencode-based agents ask before running bash.

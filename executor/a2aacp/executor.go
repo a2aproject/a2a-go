@@ -52,6 +52,8 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/acp"
+	"github.com/a2aproject/a2a-go/v2/internal/subprocess"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -89,6 +91,9 @@ type Config struct {
 	// start overrides how the agent is started, for tests.
 	start startFunc
 }
+
+// startFunc starts an ACP agent and returns its stdio stream.
+type startFunc func(ctx context.Context) (io.ReadWriteCloser, error)
 
 // MCPServerProvider decides which MCP servers the agent connects to in the
 // session of an A2A context.
@@ -129,8 +134,8 @@ const errQuestionGone = "the question is no longer pending: it timed out or the 
 
 // agent is one running ACP agent process.
 type agent struct {
-	conn *conn
-	caps agentCapabilities
+	client *acp.Client
+	caps   acp.AgentCapabilities
 
 	mu       sync.Mutex
 	sessions map[string]*sessionInfo // sessions created or loaded by this process
@@ -142,26 +147,37 @@ type sessionInfo struct {
 	models  bool
 }
 
+// exited reports whether the agent process's output ended. Its turns end
+// shortly after, once the pending prompt calls observe it.
+func (a *agent) exited() bool {
+	select {
+	case <-a.client.Done():
+		return true
+	default:
+		return false
+	}
+}
+
 func (a *agent) hasSession(sessionID string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.sessions[sessionID] != nil
 }
 
-func (a *agent) addSession(sessionID string, st sessionState) {
+func (a *agent) addSession(sessionID string, st acp.SessionState) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sessions[sessionID] = &sessionInfo{modes: st.Modes != nil, models: st.Models != nil}
 	a.setOptionsLocked(sessionID, st.ConfigOptions)
 }
 
-func (a *agent) setOptions(sessionID string, opts []sessionConfigOption) {
+func (a *agent) setOptions(sessionID string, opts []acp.SessionConfigOption) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.setOptionsLocked(sessionID, opts)
 }
 
-func (a *agent) setOptionsLocked(sessionID string, opts []sessionConfigOption) {
+func (a *agent) setOptionsLocked(sessionID string, opts []acp.SessionConfigOption) {
 	info := a.sessions[sessionID]
 	if info == nil || opts == nil {
 		return
@@ -182,13 +198,13 @@ func (a *agent) configMethod(sessionID, configID string) (string, string, bool) 
 		return "", "", false
 	}
 	if typ, ok := info.options[configID]; ok {
-		return methodSetConfigOption, typ, true
+		return acp.MethodSetConfigOption, typ, true
 	}
 	switch {
 	case configID == "mode" && info.modes:
-		return methodSetMode, "", true
+		return acp.MethodSetMode, "", true
 	case configID == "model" && info.models:
-		return methodSetModel, "", true
+		return acp.MethodSetModel, "", true
 	}
 	return "", "", false
 }
@@ -227,7 +243,8 @@ func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 		if err != nil {
 			return nil, err
 		}
-		start = localStart(argv, cfg.Dir, cfg.Env, cfg.Stderr)
+		cmd := subprocess.Command{Argv: argv, Dir: cfg.Dir, Env: cfg.Env, Stderr: cfg.Stderr}
+		start = func(ctx context.Context) (io.ReadWriteCloser, error) { return subprocess.Start(ctx, cmd) }
 	}
 	e := &Executor{
 		cfg:    cfg,
@@ -255,7 +272,7 @@ func (e *Executor) Close() error {
 	if ag == nil {
 		return nil
 	}
-	return ag.conn.Close()
+	return ag.client.Close()
 }
 
 // ensureAgent returns the running agent, starting a new one if there is none
@@ -271,9 +288,9 @@ func (e *Executor) ensureAgent(ctx context.Context) (*agent, error) {
 	}
 	if ag != nil {
 		select {
-		case <-ag.conn.Done():
-			log.Warn(ctx, "acp agent exited, restarting", "cause", ag.conn.Err())
-			if err := ag.conn.Close(); err != nil {
+		case <-ag.client.Done():
+			log.Warn(ctx, "acp agent exited, restarting", "cause", ag.client.Err())
+			if err := ag.client.Close(); err != nil {
 				log.Warn(ctx, "failed to stop acp agent", "cause", err)
 			}
 		default:
@@ -286,19 +303,18 @@ func (e *Executor) ensureAgent(ctx context.Context) (*agent, error) {
 		return nil, err
 	}
 	ag = &agent{sessions: map[string]*sessionInfo{}}
-	ag.conn = newConn(rwc, func(m *rpcMessage) { e.handle(ag, m) })
-	ag.conn.start()
+	ag.client = acp.NewClient(rwc, &agentHandler{e: e, ag: ag})
+	ag.client.Start()
 
-	var resp initializeResponse
-	err = ag.conn.call(ctx, methodInitialize, initializeRequest{
-		ProtocolVersion: protocolVersion,
-		ClientInfo:      &implementation{Name: "a2a-go", Version: "2"},
-	}, &resp)
-	if err == nil && resp.ProtocolVersion != protocolVersion {
-		err = fmt.Errorf("unsupported acp protocol version %d, want %d", resp.ProtocolVersion, protocolVersion)
+	resp, err := ag.client.Initialize(ctx, acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersion,
+		ClientInfo:      &acp.Implementation{Name: "a2a-go", Version: "2"},
+	})
+	if err == nil && resp.ProtocolVersion != acp.ProtocolVersion {
+		err = fmt.Errorf("unsupported acp protocol version %d, want %d", resp.ProtocolVersion, acp.ProtocolVersion)
 	}
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("initializing acp agent: %w", err), ag.conn.Close())
+		return nil, errors.Join(fmt.Errorf("initializing acp agent: %w", err), ag.client.Close())
 	}
 	ag.caps = resp.AgentCapabilities
 
@@ -308,75 +324,46 @@ func (e *Executor) ensureAgent(ctx context.Context) (*agent, error) {
 	return ag, nil
 }
 
-// handle processes requests and notifications from the agent. It runs on the
-// read goroutine of the connection and must not block.
-func (e *Executor) handle(ag *agent, m *rpcMessage) {
-	ctx := context.Background()
-	in := &incomingQuestion{rpcID: m.ID}
-	var sessionID string
-	switch m.Method {
-	case methodSessionUpdate:
-		var n sessionNotification
-		if err := json.Unmarshal(m.Params, &n); err != nil {
-			log.Warn(ctx, "malformed acp session update", "cause", err)
-			return
-		}
-		if n.Update.SessionUpdate == updateConfigOption {
-			ag.setOptions(n.SessionID, n.Update.ConfigOptions)
-		}
-		if t := e.route(ag, n.SessionID); t != nil {
-			t.events.push(turnEvent{update: &n.Update})
-		}
-		return
+// agentHandler routes what an agent process sends to the turn of its session.
+// It runs on the read goroutine of the connection and must not block.
+type agentHandler struct {
+	e  *Executor
+	ag *agent
+}
 
-	case methodRequestPermission:
-		in.permission = &requestPermissionRequest{}
-		if !decodeRequest(ag, m, in.permission) {
-			return
-		}
-		sessionID = in.permission.SessionID
+var _ acp.Handler = (*agentHandler)(nil)
 
-	case methodElicitationCreate:
-		in.elicitation = &createElicitationRequest{}
-		if !decodeRequest(ag, m, in.elicitation) {
-			return
-		}
-		if in.elicitation.Mode != "form" {
-			respondError(ag, m.ID, &rpcError{Code: codeInvalidParams, Message: "only form elicitation is supported"})
-			return
-		}
-		sessionID = in.elicitation.SessionID
+func (h *agentHandler) SessionUpdate(n *acp.SessionNotification) {
+	if n.Update.SessionUpdate == acp.UpdateConfigOption {
+		h.ag.setOptions(n.SessionID, n.Update.ConfigOptions)
+	}
+	if t := h.e.route(h.ag, n.SessionID); t != nil {
+		t.events.push(turnEvent{update: &n.Update})
+	}
+}
 
-	default:
-		if len(m.ID) > 0 {
-			respondError(ag, m.ID, &rpcError{Code: codeMethodNotFound, Message: "method not supported by client: " + m.Method})
+func (h *agentHandler) RequestPermission(id json.RawMessage, req *acp.RequestPermissionRequest) {
+	h.ask(req.SessionID, &incomingQuestion{rpcID: id, permission: req})
+}
+
+func (h *agentHandler) CreateElicitation(id json.RawMessage, req *acp.CreateElicitationRequest) {
+	if req.Mode != "form" {
+		rpcErr := &acp.Error{Code: acp.CodeInvalidParams, Message: "only form elicitation is supported"}
+		if err := h.ag.client.RespondError(id, rpcErr); err != nil {
+			log.Warn(context.Background(), "failed to respond to acp agent", "cause", err)
 		}
 		return
 	}
+	h.ask(req.SessionID, &incomingQuestion{rpcID: id, elicitation: req})
+}
 
-	t := e.route(ag, sessionID)
+func (h *agentHandler) ask(sessionID string, in *incomingQuestion) {
+	t := h.e.route(h.ag, sessionID)
 	if t == nil || t.isCanceled() {
-		in.cancel(ag)
+		in.cancel(h.ag)
 		return
 	}
 	t.events.push(turnEvent{question: in})
-}
-
-func decodeRequest(ag *agent, m *rpcMessage, v any) bool {
-	if len(m.ID) == 0 {
-		return false
-	}
-	if err := json.Unmarshal(m.Params, v); err != nil {
-		respondError(ag, m.ID, &rpcError{Code: codeInvalidParams, Message: err.Error()})
-		return false
-	}
-	return true
-}
-
-func respondError(ag *agent, id json.RawMessage, rpcErr *rpcError) {
-	if err := ag.conn.respondError(id, rpcErr); err != nil {
-		log.Warn(context.Background(), "failed to respond to acp agent", "cause", err)
-	}
 }
 
 func (e *Executor) route(ag *agent, sessionID string) *turn {
@@ -452,13 +439,17 @@ func (e *Executor) answer(execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQu
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, inputRequiredMessage(execCtx, p.q, preamble)), nil)
 		return false
 	}
-	if !t.takePending(p) {
+	if t.agent.exited() || !t.takePending(p) {
 		yield(failed(execCtx, errQuestionGone), nil)
 		return false
 	}
 	if err := p.reply(t.agent, ans); err != nil {
 		e.cancelTurn(t)
-		yield(failed(execCtx, fmt.Sprintf("forwarding answer to acp agent: %v", err)), nil)
+		msg := fmt.Sprintf("forwarding answer to acp agent: %v", err)
+		if t.agent.exited() {
+			msg = errQuestionGone
+		}
+		yield(failed(execCtx, msg), nil)
 		return false
 	}
 	return true
@@ -509,10 +500,13 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	e.mu.Unlock()
 
 	go func() {
-		var resp promptResponse
-		err := ag.conn.call(context.WithoutCancel(ctx), methodSessionPrompt, promptRequest{SessionID: sessionID, Prompt: prompt}, &resp)
+		resp, err := ag.client.Prompt(context.WithoutCancel(ctx), acp.PromptRequest{SessionID: sessionID, Prompt: prompt})
+		result := &promptResult{err: err}
+		if err == nil {
+			result.reason = resp.StopReason
+		}
 		t.end()
-		t.events.push(turnEvent{result: &promptResult{stopReason: resp.StopReason, err: err}})
+		t.events.push(turnEvent{result: result})
 		e.mu.Lock()
 		if e.routes[sessionID] == t {
 			delete(e.routes, sessionID)
@@ -543,20 +537,19 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 		return "", false, err
 	}
 	if ok && ag.caps.LoadSession {
-		var resp sessionState
-		err := ag.conn.call(ctx, methodSessionLoad, loadSessionRequest{SessionID: id, Cwd: e.cfg.Dir, MCPServers: servers}, &resp)
+		resp, err := ag.client.LoadSession(ctx, acp.LoadSessionRequest{SessionID: id, Cwd: e.cfg.Dir, MCPServers: servers})
 		if err == nil {
-			ag.addSession(id, resp)
+			ag.addSession(id, *resp)
 			return id, true, nil
 		}
 		log.Warn(ctx, "failed to load acp session, starting a new one", "session", id, "cause", err)
 	}
 
-	var resp newSessionResponse
-	if err := ag.conn.call(ctx, methodSessionNew, newSessionRequest{Cwd: e.cfg.Dir, MCPServers: servers}, &resp); err != nil {
+	resp, err := ag.client.NewSession(ctx, acp.NewSessionRequest{Cwd: e.cfg.Dir, MCPServers: servers})
+	if err != nil {
 		return "", false, fmt.Errorf("creating acp session: %w", err)
 	}
-	ag.addSession(resp.SessionID, resp.sessionState)
+	ag.addSession(resp.SessionID, resp.SessionState)
 	if err := e.cfg.Sessions.Put(ctx, execCtx.ContextID, resp.SessionID); err != nil {
 		return "", false, err
 	}
@@ -592,25 +585,25 @@ func configure(ctx context.Context, ag *agent, sessionID string, settings map[st
 		}
 		var err error
 		switch method {
-		case methodSetConfigOption:
-			req := setConfigOptionRequest{SessionID: sessionID, ConfigID: id, Value: value}
+		case acp.MethodSetConfigOption:
+			req := acp.SetConfigOptionRequest{SessionID: sessionID, ConfigID: id, Value: value}
 			if typ == "boolean" {
 				req.Type = typ
 			}
-			var resp setConfigOptionResponse
-			if err = ag.conn.call(ctx, method, req, &resp); err == nil {
+			var resp *acp.SetConfigOptionResponse
+			if resp, err = ag.client.SetConfigOption(ctx, req); err == nil {
 				ag.setOptions(sessionID, resp.ConfigOptions)
 			}
-		case methodSetMode, methodSetModel:
+		case acp.MethodSetMode, acp.MethodSetModel:
 			s, isText := value.(string)
 			if !isText {
 				return fmt.Errorf("the session setting %q must be a string", id)
 			}
-			var req any = setModeRequest{SessionID: sessionID, ModeID: s}
-			if method == methodSetModel {
-				req = setModelRequest{SessionID: sessionID, ModelID: s}
+			if method == acp.MethodSetMode {
+				err = ag.client.SetMode(ctx, acp.SetModeRequest{SessionID: sessionID, ModeID: s})
+			} else {
+				err = ag.client.SetModel(ctx, acp.SetModelRequest{SessionID: sessionID, ModelID: s})
 			}
-			err = ag.conn.call(ctx, method, req, nil)
 		}
 		if err != nil {
 			return fmt.Errorf("setting %q: %w", id, err)
@@ -716,7 +709,7 @@ func (e *Executor) cancelTurn(t *turn) {
 	if !ok {
 		return
 	}
-	if err := t.agent.conn.notify(methodSessionCancel, cancelNotification{SessionID: t.sessionID}); err != nil {
+	if err := t.agent.client.Cancel(t.sessionID); err != nil {
 		log.Warn(context.Background(), "failed to cancel acp turn", "session", t.sessionID, "cause", err)
 	}
 	if p != nil {

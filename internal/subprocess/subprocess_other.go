@@ -14,7 +14,7 @@
 
 //go:build !unix
 
-package a2aacp
+package subprocess
 
 import (
 	"errors"

@@ -26,6 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/acp"
 )
 
 const testTimeout = 5 * time.Second
@@ -34,8 +35,8 @@ const testTimeout = 5 * time.Second
 // session/prompt runs onPrompt in its own goroutine.
 type fakeHarness struct {
 	t        *testing.T
-	caps     agentCapabilities
-	state    sessionState
+	caps     acp.AgentCapabilities
+	state    acp.SessionState
 	onPrompt func(*promptScript)
 
 	mu     sync.Mutex
@@ -44,13 +45,13 @@ type fakeHarness struct {
 
 type fakeAgent struct {
 	h    *fakeHarness
-	conn *conn
+	conn *acp.Conn
 
 	mu         sync.Mutex
 	nextID     int
 	created    []string
 	loaded     []string
-	prompts    []promptRequest
+	prompts    []acp.PromptRequest
 	canceled   []string
 	settings   []string
 	mcpServers []json.RawMessage
@@ -61,8 +62,8 @@ func (h *fakeHarness) start(context.Context) (io.ReadWriteCloser, error) {
 	clientR, agentW := io.Pipe()
 	agentR, clientW := io.Pipe()
 	f := &fakeAgent{h: h}
-	f.conn = newConn(pipeRWC{r: agentR, w: agentW}, f.handle)
-	f.conn.start()
+	f.conn = acp.NewConn(pipeRWC{r: agentR, w: agentW}, f.handle)
+	f.conn.Start()
 	h.mu.Lock()
 	h.agents = append(h.agents, f)
 	h.mu.Unlock()
@@ -95,48 +96,48 @@ func (p pipeRWC) Close() error {
 	return p.r.Close()
 }
 
-func (f *fakeAgent) handle(m *rpcMessage) {
+func (f *fakeAgent) handle(m *acp.Message) {
 	t := f.h.t
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var result any
 	switch m.Method {
-	case methodInitialize:
-		result = initializeResponse{ProtocolVersion: protocolVersion, AgentCapabilities: f.h.caps}
-	case methodSessionNew:
-		var req newSessionRequest
+	case acp.MethodInitialize:
+		result = acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersion, AgentCapabilities: f.h.caps}
+	case acp.MethodSessionNew:
+		var req acp.NewSessionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.mcpServers = req.MCPServers
 		f.nextID++
 		id := fmt.Sprintf("sess-%d", f.nextID)
 		f.created = append(f.created, id)
-		result = newSessionResponse{SessionID: id, sessionState: f.h.state}
-	case methodSessionLoad:
-		var req loadSessionRequest
+		result = acp.NewSessionResponse{SessionID: id, SessionState: f.h.state}
+	case acp.MethodSessionLoad:
+		var req acp.LoadSessionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.loaded = append(f.loaded, req.SessionID)
 		result = f.h.state
-	case methodSetConfigOption:
-		var req setConfigOptionRequest
+	case acp.MethodSetConfigOption:
+		var req acp.SetConfigOptionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.settings = append(f.settings, fmt.Sprintf("%s %s=%v %s", m.Method, req.ConfigID, req.Value, req.Type))
-		result = setConfigOptionResponse{ConfigOptions: f.h.state.ConfigOptions}
-	case methodSetMode:
-		var req setModeRequest
+		result = acp.SetConfigOptionResponse{ConfigOptions: f.h.state.ConfigOptions}
+	case acp.MethodSetMode:
+		var req acp.SetModeRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.settings = append(f.settings, fmt.Sprintf("%s %s", m.Method, req.ModeID))
-	case methodSetModel:
-		var req setModelRequest
+	case acp.MethodSetModel:
+		var req acp.SetModelRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.settings = append(f.settings, fmt.Sprintf("%s %s", m.Method, req.ModelID))
-	case methodSessionPrompt:
-		var req promptRequest
+	case acp.MethodSessionPrompt:
+		var req acp.PromptRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.prompts = append(f.prompts, req)
 		go f.h.onPrompt(&promptScript{t: t, agent: f, id: m.ID, req: req})
 		return
-	case methodSessionCancel:
-		var n cancelNotification
+	case acp.MethodSessionCancel:
+		var n acp.CancelNotification
 		mustUnmarshal(t, m.Params, &n)
 		f.canceled = append(f.canceled, n.SessionID)
 		return
@@ -144,12 +145,12 @@ func (f *fakeAgent) handle(m *rpcMessage) {
 		t.Errorf("fake agent got unexpected method %q", m.Method)
 		return
 	}
-	if err := f.conn.respond(m.ID, result); err != nil {
+	if err := f.conn.Respond(m.ID, result); err != nil {
 		t.Errorf("fake agent respond() error = %v", err)
 	}
 }
 
-func (f *fakeAgent) snapshot() (created, loaded, canceled []string, prompts []promptRequest) {
+func (f *fakeAgent) snapshot() (created, loaded, canceled []string, prompts []acp.PromptRequest) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.created, f.loaded, f.canceled, f.prompts
@@ -188,7 +189,7 @@ type promptScript struct {
 	t     *testing.T
 	agent *fakeAgent
 	id    json.RawMessage
-	req   promptRequest
+	req   acp.PromptRequest
 }
 
 func (s *promptScript) promptText() string {
@@ -200,7 +201,7 @@ func (s *promptScript) promptText() string {
 }
 
 func (s *promptScript) update(u map[string]any) {
-	err := s.agent.conn.notify(methodSessionUpdate, map[string]any{"sessionId": s.req.SessionID, "update": u})
+	err := s.agent.conn.Notify(acp.MethodSessionUpdate, map[string]any{"sessionId": s.req.SessionID, "update": u})
 	if err != nil {
 		s.t.Errorf("fake agent notify() error = %v", err)
 	}
@@ -208,7 +209,7 @@ func (s *promptScript) update(u map[string]any) {
 
 func (s *promptScript) text(messageID, text string) {
 	s.update(map[string]any{
-		"sessionUpdate": updateAgentMessageChunk,
+		"sessionUpdate": acp.UpdateAgentMessageChunk,
 		"messageId":     messageID,
 		"content":       map[string]any{"type": "text", "text": text},
 	})
@@ -216,38 +217,38 @@ func (s *promptScript) text(messageID, text string) {
 
 func (s *promptScript) tool(id, status string) {
 	s.update(map[string]any{
-		"sessionUpdate": updateToolCallUpdate,
+		"sessionUpdate": acp.UpdateToolCallUpdate,
 		"toolCallId":    id,
 		"status":        status,
 	})
 }
 
-var testPermissionOptions = []permissionOption{
-	{OptionID: "opt-allow", Name: "Allow", Kind: permissionAllowOnce},
-	{OptionID: "opt-always", Name: "Always Allow", Kind: permissionAllowAlways},
-	{OptionID: "opt-reject", Name: "Reject", Kind: permissionRejectOnce},
+var testPermissionOptions = []acp.PermissionOption{
+	{OptionID: "opt-allow", Name: "Allow", Kind: acp.PermissionAllowOnce},
+	{OptionID: "opt-always", Name: "Always Allow", Kind: acp.PermissionAllowAlways},
+	{OptionID: "opt-reject", Name: "Reject", Kind: acp.PermissionRejectOnce},
 }
 
-func (s *promptScript) askPermission(tc toolCall) permissionOutcome {
-	var resp requestPermissionResponse
-	req := requestPermissionRequest{SessionID: s.req.SessionID, ToolCall: tc, Options: testPermissionOptions}
-	if err := s.agent.conn.call(context.Background(), methodRequestPermission, req, &resp); err != nil && !s.agent.isCrashed() {
+func (s *promptScript) askPermission(tc acp.ToolCall) acp.PermissionOutcome {
+	var resp acp.RequestPermissionResponse
+	req := acp.RequestPermissionRequest{SessionID: s.req.SessionID, ToolCall: tc, Options: testPermissionOptions}
+	if err := s.agent.conn.Call(context.Background(), acp.MethodRequestPermission, req, &resp); err != nil && !s.agent.isCrashed() {
 		s.t.Errorf("fake agent request_permission error = %v", err)
 	}
 	return resp.Outcome
 }
 
-func (s *promptScript) elicit(message string, schema map[string]any) createElicitationResponse {
-	var resp createElicitationResponse
-	req := createElicitationRequest{Mode: "form", SessionID: s.req.SessionID, Message: message, RequestedSchema: schema}
-	if err := s.agent.conn.call(context.Background(), methodElicitationCreate, req, &resp); err != nil {
+func (s *promptScript) elicit(message string, schema map[string]any) acp.CreateElicitationResponse {
+	var resp acp.CreateElicitationResponse
+	req := acp.CreateElicitationRequest{Mode: "form", SessionID: s.req.SessionID, Message: message, RequestedSchema: schema}
+	if err := s.agent.conn.Call(context.Background(), acp.MethodElicitationCreate, req, &resp); err != nil {
 		s.t.Errorf("fake agent elicitation/create error = %v", err)
 	}
 	return resp
 }
 
-func (s *promptScript) end(reason stopReason) {
-	if err := s.agent.conn.respond(s.id, promptResponse{StopReason: reason}); err != nil {
+func (s *promptScript) end(reason acp.StopReason) {
+	if err := s.agent.conn.Respond(s.id, acp.PromptResponse{StopReason: reason}); err != nil {
 		s.t.Errorf("fake agent respond() error = %v", err)
 	}
 }
