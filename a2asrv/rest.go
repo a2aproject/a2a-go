@@ -49,7 +49,6 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 
 	mux := http.NewServeMux()
 
-	// TODO: handle tenant
 	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage)
 	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage)
 	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks)
