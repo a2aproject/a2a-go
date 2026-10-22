@@ -38,6 +38,53 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestREST_SubscribeHead(t *testing.T) {
+	t.Parallel()
+	for _, tenant := range []string{"", "my-tenant"} {
+		t.Run(tenant, func(t *testing.T) {
+			t.Parallel()
+			subscribed := false
+			mock := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					subscribed = true
+					return func(yield func(a2a.Event, error) bool) {}
+				},
+			}
+			handler := NewRESTHandler(mock)
+			prefix := ""
+			if tenant != "" {
+				handler = NewTenantRESTHandler("/{*}", mock)
+				prefix = "/" + tenant
+			}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodHead, prefix+"/tasks/test-id:subscribe", nil)
+			handler.ServeHTTP(recorder, request)
+			if subscribed {
+				t.Fatal("SubscribeToTask() called for HEAD, want no subscription")
+			}
+			if got := recorder.Code; got != http.StatusMethodNotAllowed {
+				t.Fatalf("HEAD status = %d, want %d", got, http.StatusMethodNotAllowed)
+			}
+			if got := recorder.Header().Get("Allow"); got != "GET, POST" {
+				t.Fatalf("HEAD Allow = %q, want GET, POST", got)
+			}
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				subscribed = false
+				recorder = httptest.NewRecorder()
+				handler.ServeHTTP(recorder, httptest.NewRequest(method, prefix+"/tasks/test-id:subscribe", nil))
+				if !subscribed || recorder.Code != http.StatusOK {
+					t.Fatalf("%s subscription = %v, status = %d, want true and 200", method, subscribed, recorder.Code)
+				}
+			}
+			recorder = httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodHead, prefix+"/tasks/test-id", nil))
+			if got := recorder.Code; got != http.StatusOK {
+				t.Fatalf("HEAD task status = %d, want %d", got, http.StatusOK)
+			}
+		})
+	}
+}
+
 func TestREST_RequestRouting(t *testing.T) {
 	testCases := []struct {
 		method string
