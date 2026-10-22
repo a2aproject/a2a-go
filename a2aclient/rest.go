@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -102,7 +103,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	} else {
 		u = u.JoinPath(rel.Path)
 	}
-	u.RawQuery = rel.RawQuery
+	query := u.Query()
+	maps.Copy(query, rel.Query())
+	u.RawQuery = query.Encode()
 	fullURL := u.String()
 	httpReq, err := http.NewRequestWithContext(ctx, req.method, fullURL, bodyReader)
 	if err != nil {
