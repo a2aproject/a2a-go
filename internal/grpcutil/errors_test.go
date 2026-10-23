@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -435,5 +436,85 @@ func TestFromGRPCErrorEdgeCases(t *testing.T) {
 				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
 			}
 		})
+	}
+}
+
+// TestFromGRPCErrorCodeOnlyFallback is a regression test for gRPC code-only fallback: when a
+// gRPC status carries no ErrorInfo reason, matching by code alone is
+// ambiguous for codes shared by several a2a errors. A single mapping for the
+// code is used; ambiguous codes fall back to the conservative ErrInternalError.
+func TestFromGRPCErrorCodeOnlyFallback(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{
+			name: "single-candidate NotFound maps to ErrTaskNotFound",
+			err:  status.Error(codes.NotFound, "not found"),
+			want: a2a.ErrTaskNotFound,
+		},
+		{
+			name: "single-candidate Unimplemented maps to ErrMethodNotFound",
+			err:  status.Error(codes.Unimplemented, "unimplemented"),
+			want: a2a.ErrMethodNotFound,
+		},
+		{
+			name: "single-candidate Canceled maps to context.Canceled",
+			err:  status.Error(codes.Canceled, "canceled"),
+			want: context.Canceled,
+		},
+		{
+			name: "ambiguous FailedPrecondition falls back to ErrInternalError",
+			err:  status.Error(codes.FailedPrecondition, "failed precondition"),
+			want: a2a.ErrInternalError,
+		},
+		{
+			name: "ambiguous InvalidArgument falls back to ErrInternalError",
+			err:  status.Error(codes.InvalidArgument, "invalid argument"),
+			want: a2a.ErrInternalError,
+		},
+		{
+			name: "ambiguous Internal falls back to ErrInternalError",
+			err:  status.Error(codes.Internal, "internal"),
+			want: a2a.ErrInternalError,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := FromGRPCError(tc.err)
+			var a2aErr *a2a.Error
+			if !errors.As(got, &a2aErr) {
+				t.Fatalf("FromGRPCError() = %T, want *a2a.Error", got)
+			}
+			if !errors.Is(a2aErr.Err, tc.want) {
+				t.Errorf("FromGRPCError() base error = %v, want %v", a2aErr.Err, tc.want)
+			}
+		})
+	}
+}
+
+// TestFromGRPCErrorReasonPriority verifies that a matching ErrorInfo reason
+// takes priority over the code-only fallback, even for ambiguous codes.
+func TestFromGRPCErrorReasonPriority(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.FailedPrecondition, "unsupported operation")
+	st, err := st.WithDetails(&errdetails.ErrorInfo{Reason: a2a.ErrorReason(a2a.ErrUnsupportedOperation), Domain: a2a.ProtocolDomain})
+	if err != nil {
+		t.Fatalf("WithDetails() error = %v", err)
+	}
+
+	got := FromGRPCError(st.Err())
+	var a2aErr *a2a.Error
+	if !errors.As(got, &a2aErr) {
+		t.Fatalf("FromGRPCError() = %T, want *a2a.Error", got)
+	}
+	if !errors.Is(a2aErr.Err, a2a.ErrUnsupportedOperation) {
+		t.Errorf("FromGRPCError() base error = %v, want ErrUnsupportedOperation", a2aErr.Err)
 	}
 }
