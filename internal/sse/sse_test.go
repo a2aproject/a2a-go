@@ -16,11 +16,15 @@ package sse
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSSE_Success(t *testing.T) {
@@ -219,5 +223,61 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	}
 	if eventCount != 1 {
 		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
+}
+
+func TestParseDataStreamLineEndings(t *testing.T) {
+	t.Parallel()
+	for _, ending := range []string{"\n", "\r\n", "\r"} {
+		for _, fragmented := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%q/fragmented=%v", ending, fragmented), func(t *testing.T) {
+				t.Parallel()
+				payload := strings.ReplaceAll("data: first\ndata: second\n\ndata: third\n\n", "\n", ending)
+				var reader io.Reader = strings.NewReader(payload)
+				if fragmented {
+					reader = iotest.OneByteReader(reader)
+				}
+				var got []string
+				for data, err := range ParseDataStream(reader) {
+					if err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, string(data))
+				}
+				if diff := cmp.Diff([]string{"first\nsecond", "third"}, got); diff != "" {
+					t.Fatalf("ParseDataStream() wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
+func TestParseDataStreamHTTPWithCarriageReturns(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if _, err := io.WriteString(w, "data: first\r\rdata: second\r\r"); err != nil {
+			t.Errorf("io.WriteString() error = %v, want nil", err)
+		}
+	}))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := response.Body.Close(); err != nil {
+			t.Errorf("response.Body.Close() error = %v, want nil", err)
+		}
+	})
+	var got []string
+	for data, err := range ParseDataStream(response.Body) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, string(data))
+	}
+	if diff := cmp.Diff([]string{"first", "second"}, got); diff != "" {
+		t.Fatalf("ParseDataStream() wrong result (-want +got) diff = %s", diff)
 	}
 }

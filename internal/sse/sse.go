@@ -97,6 +97,7 @@ func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 		scanner := bufio.NewScanner(body)
 		buf := make([]byte, 0, bufio.MaxScanTokenSize)
 		scanner.Buffer(buf, MaxSSETokenSize)
+		scanner.Split(splitEventLines())
 		prefixBytes := []byte(sseDataPrefix)
 
 		var event bytes.Buffer
@@ -134,5 +135,29 @@ func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 			return
 		}
 		flush()
+	}
+}
+
+// splitEventLines recognizes the SSE line endings LF, CRLF, and CR. A CR ends
+// the line immediately; an optional LF is skipped on the next scan, even when
+// it arrives in a separate read. This avoids delaying CR-only streams.
+func splitEventLines() bufio.SplitFunc {
+	skipLF := false
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if skipLF && len(data) > 0 {
+			skipLF = false
+			if data[0] == '\n' {
+				advance = 1
+				data = data[1:]
+			}
+		}
+		if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+			skipLF = data[i] == '\r'
+			return advance + i + 1, data[:i], nil
+		}
+		if atEOF && len(data) > 0 {
+			return advance + len(data), data, nil
+		}
+		return advance, nil, nil
 	}
 }
