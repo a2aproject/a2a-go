@@ -306,7 +306,7 @@ func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2acli
 func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   t.paths.GetPushConfig(url.PathEscape(url.PathEscape(string(req.TaskID))), url.PathEscape(req.ID)),
+		path:   t.paths.GetPushConfig(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID)),
 		params: params,
 	})
 	if err != nil {
@@ -358,7 +358,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 func (t *restCompatTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
 	_, err := t.doRequest(ctx, &compatRestReq{
 		method: "DELETE",
-		path:   t.paths.DeletePushConfig(url.PathEscape(url.PathEscape(string(req.TaskID))), url.PathEscape(req.ID)),
+		path:   t.paths.DeletePushConfig(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID)),
 		params: params,
 	})
 	return err
