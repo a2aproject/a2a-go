@@ -14,6 +14,6 @@
 
 // Package a2aplugin provides a plugin framework for the A2A Go SDK, as
 // proposed in go/a2a-plugins. A plugin implements one or more hook interfaces
-// ([ServerPlugin], [ClientPlugin]) and is dispatched by a [Manager] built with
+// ([a2asrv.ServerPlugin], [a2aclient.ClientPlugin]) and is dispatched by a [Manager] built with
 // [Sequential]. A process-wide default manager can be installed with [SetGlobal].
 package a2aplugin

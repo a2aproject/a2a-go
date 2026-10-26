@@ -18,7 +18,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 func TestPassthroughSatisfiesCompletePlugin(t *testing.T) {
@@ -34,7 +36,7 @@ func TestPassthroughHooksAreNoOps(t *testing.T) {
 	ctx := context.WithValue(t.Context(), ctxKey{}, "marker")
 	p := a2aplugin.Passthrough{}
 
-	beforeHandlerCtx, err := p.BeforeHandlerRun(ctx, &a2aplugin.ServerRequest{Method: "SendMessage"})
+	beforeHandlerCtx, err := p.BeforeHandlerRun(ctx, &a2asrv.ServerRequest{Method: "SendMessage"})
 	if err != nil {
 		t.Errorf("Passthrough.BeforeHandlerRun() error = %v, want nil", err)
 	}
@@ -42,7 +44,7 @@ func TestPassthroughHooksAreNoOps(t *testing.T) {
 		t.Errorf("Passthrough.BeforeHandlerRun() returned a different context, want the input context unchanged")
 	}
 
-	afterHandlerCtx, err := p.AfterHandlerRun(ctx, &a2aplugin.ServerResponse{Method: "SendMessage", IsFinal: true})
+	afterHandlerCtx, err := p.AfterHandlerRun(ctx, &a2asrv.ServerResponse{Method: "SendMessage", IsFinal: true})
 	if err != nil {
 		t.Errorf("Passthrough.AfterHandlerRun() error = %v, want nil", err)
 	}
@@ -50,7 +52,7 @@ func TestPassthroughHooksAreNoOps(t *testing.T) {
 		t.Errorf("Passthrough.AfterHandlerRun() returned a different context, want the input context unchanged")
 	}
 
-	beforeClientCtx, err := p.BeforeClientRequest(ctx, &a2aplugin.ClientRequest{Method: "SendMessage"})
+	beforeClientCtx, err := p.BeforeClientRequest(ctx, &a2aclient.ClientRequest{Method: "SendMessage"})
 	if err != nil {
 		t.Errorf("Passthrough.BeforeClientRequest() error = %v, want nil", err)
 	}
@@ -58,7 +60,7 @@ func TestPassthroughHooksAreNoOps(t *testing.T) {
 		t.Errorf("Passthrough.BeforeClientRequest() returned a different context, want the input context unchanged")
 	}
 
-	afterClientCtx, err := p.AfterClientRequest(ctx, &a2aplugin.ClientResponse{Method: "SendMessage", IsFinal: true})
+	afterClientCtx, err := p.AfterClientRequest(ctx, &a2aclient.ClientResponse{Method: "SendMessage", IsFinal: true})
 	if err != nil {
 		t.Errorf("Passthrough.AfterClientRequest() error = %v, want nil", err)
 	}

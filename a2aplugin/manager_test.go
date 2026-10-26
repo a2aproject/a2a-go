@@ -22,7 +22,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 // recordingPlugin records every hook invocation it receives in a shared log
@@ -44,12 +47,12 @@ func newRecordingPlugin(name string, log *[]string) *recordingPlugin {
 
 func (p *recordingPlugin) Name() string { return p.name }
 
-func (p *recordingPlugin) BeforeHandlerRun(ctx context.Context, _ *a2aplugin.ServerRequest) (context.Context, error) {
+func (p *recordingPlugin) BeforeHandlerRun(ctx context.Context, _ *a2asrv.ServerRequest) (context.Context, error) {
 	*p.log = append(*p.log, p.name+":before-handler")
 	return ctx, p.beforeServerErr
 }
 
-func (p *recordingPlugin) AfterHandlerRun(ctx context.Context, resp *a2aplugin.ServerResponse) (context.Context, error) {
+func (p *recordingPlugin) AfterHandlerRun(ctx context.Context, resp *a2asrv.ServerResponse) (context.Context, error) {
 	entry := p.name + ":after-handler"
 	if resp.Err != nil {
 		entry += "(err=" + resp.Err.Error() + ")"
@@ -58,12 +61,12 @@ func (p *recordingPlugin) AfterHandlerRun(ctx context.Context, resp *a2aplugin.S
 	return ctx, p.afterServerErr
 }
 
-func (p *recordingPlugin) BeforeClientRequest(ctx context.Context, _ *a2aplugin.ClientRequest) (context.Context, error) {
+func (p *recordingPlugin) BeforeClientRequest(ctx context.Context, _ *a2aclient.ClientRequest) (context.Context, error) {
 	*p.log = append(*p.log, p.name+":before-client")
 	return ctx, p.beforeClientErr
 }
 
-func (p *recordingPlugin) AfterClientRequest(ctx context.Context, resp *a2aplugin.ClientResponse) (context.Context, error) {
+func (p *recordingPlugin) AfterClientRequest(ctx context.Context, resp *a2aclient.ClientResponse) (context.Context, error) {
 	entry := p.name + ":after-client"
 	if resp.Err != nil {
 		entry += "(err=" + resp.Err.Error() + ")"
@@ -72,7 +75,7 @@ func (p *recordingPlugin) AfterClientRequest(ctx context.Context, resp *a2aplugi
 	return ctx, p.afterClientErr
 }
 
-// serverOnlyPlugin satisfies [a2aplugin.ServerPlugin] but not ClientPlugin.
+// serverOnlyPlugin satisfies [a2asrv.ServerPlugin] but not ClientPlugin.
 type serverOnlyPlugin struct {
 	a2aplugin.Passthrough
 	name string
@@ -80,7 +83,7 @@ type serverOnlyPlugin struct {
 
 func (p serverOnlyPlugin) Name() string { return p.name }
 
-func (p serverOnlyPlugin) BeforeClientRequest(context.Context, *a2aplugin.ClientRequest) (context.Context, error) {
+func (p serverOnlyPlugin) BeforeClientRequest(context.Context, *a2aclient.ClientRequest) (context.Context, error) {
 	panic("serverOnlyPlugin should not be treated as a ClientPlugin by Sequential")
 }
 
@@ -90,11 +93,11 @@ type bareServerPlugin struct{ name string }
 
 func (p bareServerPlugin) Name() string { return p.name }
 
-func (p bareServerPlugin) BeforeHandlerRun(ctx context.Context, _ *a2aplugin.ServerRequest) (context.Context, error) {
+func (p bareServerPlugin) BeforeHandlerRun(ctx context.Context, _ *a2asrv.ServerRequest) (context.Context, error) {
 	return ctx, nil
 }
 
-func (p bareServerPlugin) AfterHandlerRun(ctx context.Context, _ *a2aplugin.ServerResponse) (context.Context, error) {
+func (p bareServerPlugin) AfterHandlerRun(ctx context.Context, _ *a2asrv.ServerResponse) (context.Context, error) {
 	return ctx, nil
 }
 
@@ -103,11 +106,11 @@ type bareClientPlugin struct{ name string }
 
 func (p bareClientPlugin) Name() string { return p.name }
 
-func (p bareClientPlugin) BeforeClientRequest(ctx context.Context, _ *a2aplugin.ClientRequest) (context.Context, error) {
+func (p bareClientPlugin) BeforeClientRequest(ctx context.Context, _ *a2aclient.ClientRequest) (context.Context, error) {
 	return ctx, nil
 }
 
-func (p bareClientPlugin) AfterClientRequest(ctx context.Context, _ *a2aplugin.ClientResponse) (context.Context, error) {
+func (p bareClientPlugin) AfterClientRequest(ctx context.Context, _ *a2aclient.ClientResponse) (context.Context, error) {
 	return ctx, nil
 }
 
@@ -203,7 +206,7 @@ func TestSequentialBeforeHandlerRunOrder(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b, c)
 
-	ctx, err := m.BeforeHandlerRun(t.Context(), &a2aplugin.ServerRequest{Method: "SendMessage"})
+	ctx, err := m.BeforeHandlerRun(t.Context(), &a2asrv.ServerRequest{Method: "SendMessage"})
 	if err != nil {
 		t.Fatalf("BeforeHandlerRun() error = %v, want nil", err)
 	}
@@ -227,7 +230,7 @@ func TestSequentialAfterHandlerRunReverseOrder(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b, c)
 
-	if _, err := m.AfterHandlerRun(t.Context(), &a2aplugin.ServerResponse{Method: "SendMessage", IsFinal: true}); err != nil {
+	if _, err := m.AfterHandlerRun(t.Context(), &a2asrv.ServerResponse{Method: "SendMessage", IsFinal: true}); err != nil {
 		t.Fatalf("AfterHandlerRun() error = %v, want nil", err)
 	}
 
@@ -248,7 +251,7 @@ func TestSequentialBeforeHandlerRunUnwindsOnError(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b, c)
 
-	_, err := m.BeforeHandlerRun(t.Context(), &a2aplugin.ServerRequest{Method: "SendMessage"})
+	_, err := m.BeforeHandlerRun(t.Context(), &a2asrv.ServerRequest{Method: "SendMessage"})
 	if err == nil || err.Error() != "rejected by b" {
 		t.Fatalf("BeforeHandlerRun() error = %v, want %q", err, "rejected by b")
 	}
@@ -274,7 +277,7 @@ func TestSequentialAfterHandlerRunSwallowsErrors(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b)
 
-	if _, err := m.AfterHandlerRun(t.Context(), &a2aplugin.ServerResponse{Method: "SendMessage", IsFinal: true}); err != nil {
+	if _, err := m.AfterHandlerRun(t.Context(), &a2asrv.ServerResponse{Method: "SendMessage", IsFinal: true}); err != nil {
 		t.Fatalf("AfterHandlerRun() error = %v, want nil (errors are logged and swallowed)", err)
 	}
 
@@ -294,7 +297,7 @@ func TestSequentialBeforeHandlerRunPropagatesContext(t *testing.T) {
 	b := &ctxMutatingPlugin{name: "b", key: key, want: "a-wrote", value: "b-wrote"}
 
 	m := a2aplugin.Sequential(a, b)
-	ctx, err := m.BeforeHandlerRun(t.Context(), &a2aplugin.ServerRequest{Method: "SendMessage"})
+	ctx, err := m.BeforeHandlerRun(t.Context(), &a2asrv.ServerRequest{Method: "SendMessage"})
 	if err != nil {
 		t.Fatalf("BeforeHandlerRun() error = %v, want nil", err)
 	}
@@ -313,7 +316,7 @@ type ctxMutatingPlugin struct {
 
 func (p *ctxMutatingPlugin) Name() string { return p.name }
 
-func (p *ctxMutatingPlugin) BeforeHandlerRun(ctx context.Context, _ *a2aplugin.ServerRequest) (context.Context, error) {
+func (p *ctxMutatingPlugin) BeforeHandlerRun(ctx context.Context, _ *a2asrv.ServerRequest) (context.Context, error) {
 	if p.want != "" {
 		got, _ := ctx.Value(p.key).(string)
 		if got != p.want {
@@ -334,7 +337,7 @@ func TestSequentialBeforeClientRequestOrderAndUnwind(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b, c)
 
-	_, err := m.BeforeClientRequest(t.Context(), &a2aplugin.ClientRequest{Method: "SendMessage"})
+	_, err := m.BeforeClientRequest(t.Context(), &a2aclient.ClientRequest{Method: "SendMessage"})
 	if err == nil || err.Error() != "rejected by b" {
 		t.Fatalf("BeforeClientRequest() error = %v, want %q", err, "rejected by b")
 	}
@@ -359,7 +362,7 @@ func TestSequentialAfterClientRequestReverseOrder(t *testing.T) {
 
 	m := a2aplugin.Sequential(a, b, c)
 
-	if _, err := m.AfterClientRequest(t.Context(), &a2aplugin.ClientResponse{Method: "SendMessage", IsFinal: true}); err != nil {
+	if _, err := m.AfterClientRequest(t.Context(), &a2aclient.ClientResponse{Method: "SendMessage", IsFinal: true}); err != nil {
 		t.Fatalf("AfterClientRequest() error = %v, want nil", err)
 	}
 
@@ -394,7 +397,7 @@ func TestSequentialServerHookSkipsClientOnlyPlugins(t *testing.T) {
 	server := newRecordingPlugin("server", &log)
 	m := a2aplugin.Sequential(bareClientPlugin{name: "client-only"}, server)
 
-	if _, err := m.BeforeHandlerRun(t.Context(), &a2aplugin.ServerRequest{Method: "GetTask"}); err != nil {
+	if _, err := m.BeforeHandlerRun(t.Context(), &a2asrv.ServerRequest{Method: "GetTask"}); err != nil {
 		t.Fatalf("BeforeHandlerRun() error = %v, want nil", err)
 	}
 
@@ -402,4 +405,90 @@ func TestSequentialServerHookSkipsClientOnlyPlugins(t *testing.T) {
 	if diff := cmp.Diff(want, log); diff != "" {
 		t.Errorf("BeforeHandlerRun() wrong invocation log (-want +got) diff = %s", diff)
 	}
+}
+
+func TestSequentialWithRequestHandlerUnwindsOnRejection(t *testing.T) {
+	t.Parallel()
+
+	var log []string
+	a := newRecordingPlugin("a", &log)
+	b := newRecordingPlugin("b", &log)
+	b.beforeServerErr = errors.New("rejected by b")
+	handler := a2asrv.NewHandler(nil, a2asrv.WithPlugins(a2aplugin.Sequential(a, b)))
+
+	if _, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "x"}); !errors.Is(err, b.beforeServerErr) {
+		t.Fatalf("GetTask() error = %v, want %v", err, b.beforeServerErr)
+	}
+
+	want := []string{"a:before-handler", "b:before-handler", "a:after-handler(err=rejected by b)"}
+	if diff := cmp.Diff(want, log); diff != "" {
+		t.Fatalf("GetTask() wrong plugin log (-want +got) diff = %s", diff)
+	}
+}
+
+func TestGlobalDefaultsToEmptyManager(t *testing.T) {
+	m := a2aplugin.Global()
+	if m == nil {
+		t.Fatalf("Global() = nil, want a non-nil empty manager")
+	}
+	if m.HasServerHooks() {
+		t.Errorf("Global().HasServerHooks() = true, want false (empty default)")
+	}
+	if m.HasClientHooks() {
+		t.Errorf("Global().HasClientHooks() = true, want false (empty default)")
+	}
+}
+
+func TestSetGlobalInstallsManager(t *testing.T) {
+	t.Cleanup(func() { a2aplugin.SetGlobal(a2aplugin.Sequential()) })
+
+	installed := a2aplugin.Sequential(bareServerPlugin{name: "s"})
+	a2aplugin.SetGlobal(installed)
+
+	got := a2aplugin.Global()
+	if !got.HasServerHooks() {
+		t.Errorf("Global().HasServerHooks() = false, want true after SetGlobal with a server plugin")
+	}
+}
+
+func TestSetGlobalReplacesPreviousManager(t *testing.T) {
+	t.Cleanup(func() { a2aplugin.SetGlobal(a2aplugin.Sequential()) })
+
+	a2aplugin.SetGlobal(a2aplugin.Sequential(bareServerPlugin{name: "s"}))
+	a2aplugin.SetGlobal(a2aplugin.Sequential(bareClientPlugin{name: "c"}))
+
+	got := a2aplugin.Global()
+	if got.HasServerHooks() {
+		t.Errorf("Global().HasServerHooks() = true, want false after replacement with a client-only manager")
+	}
+	if !got.HasClientHooks() {
+		t.Errorf("Global().HasClientHooks() = false, want true after replacement with a client-only manager")
+	}
+}
+
+func TestNewHandlerUsesGlobalManager(t *testing.T) {
+	t.Cleanup(func() { a2aplugin.SetGlobal(a2aplugin.Sequential()) })
+
+	var log []string
+	a2aplugin.SetGlobal(a2aplugin.Sequential(newRecordingPlugin("global", &log)))
+	handler := a2asrv.NewHandler(nil)
+
+	_, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "missing"})
+	if err == nil {
+		t.Fatalf("GetTask() error = nil, want task not found")
+	}
+
+	want := []string{"global:before-handler", "global:after-handler(err=" + err.Error() + ")"}
+	if diff := cmp.Diff(want, log); diff != "" {
+		t.Fatalf("GetTask() wrong plugin log (-want +got) diff = %s", diff)
+	}
+}
+
+func TestSetGlobalPanicsOnNil(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Errorf("SetGlobal(nil) did not panic, want panic")
+		}
+	}()
+	a2aplugin.SetGlobal(nil)
 }

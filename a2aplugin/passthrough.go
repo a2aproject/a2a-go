@@ -14,7 +14,12 @@
 
 package a2aplugin
 
-import "context"
+import (
+	"context"
+
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+)
 
 // Passthrough can be embedded by plugins that only need a subset of hooks.
 // It provides a no-op implementation of [CompletePlugin]; embedders override
@@ -26,22 +31,22 @@ var _ CompletePlugin = Passthrough{}
 // Name implements [Plugin]. Embedders should override it with a stable identifier.
 func (Passthrough) Name() string { return "unnamed" }
 
-// BeforeHandlerRun implements [ServerPlugin] as a no-op.
-func (Passthrough) BeforeHandlerRun(ctx context.Context, _ *ServerRequest) (context.Context, error) {
+// BeforeHandlerRun implements [a2asrv.ServerPlugin] as a no-op.
+func (Passthrough) BeforeHandlerRun(ctx context.Context, _ *a2asrv.ServerRequest) (context.Context, error) {
 	return ctx, nil
 }
 
-// AfterHandlerRun implements [ServerPlugin] as a no-op.
-func (Passthrough) AfterHandlerRun(ctx context.Context, _ *ServerResponse) (context.Context, error) {
+// AfterHandlerRun implements [a2asrv.ServerPlugin] as a no-op.
+func (Passthrough) AfterHandlerRun(ctx context.Context, _ *a2asrv.ServerResponse) (context.Context, error) {
 	return ctx, nil
 }
 
-// BeforeClientRequest implements [ClientPlugin] as a no-op.
-func (Passthrough) BeforeClientRequest(ctx context.Context, _ *ClientRequest) (context.Context, error) {
+// BeforeClientRequest implements [a2aclient.ClientPlugin] as a no-op.
+func (Passthrough) BeforeClientRequest(ctx context.Context, _ *a2aclient.ClientRequest) (context.Context, error) {
 	return ctx, nil
 }
 
-// AfterClientRequest implements [ClientPlugin] as a no-op.
-func (Passthrough) AfterClientRequest(ctx context.Context, _ *ClientResponse) (context.Context, error) {
+// AfterClientRequest implements [a2aclient.ClientPlugin] as a no-op.
+func (Passthrough) AfterClientRequest(ctx context.Context, _ *a2aclient.ClientResponse) (context.Context, error) {
 	return ctx, nil
 }
