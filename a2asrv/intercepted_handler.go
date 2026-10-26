@@ -37,6 +37,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+	// Plugins is invoked around every call, outside the Interceptors chain.
+	Plugins ServerPlugin
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -103,25 +105,7 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-		for event, err := range h.Handler.SendStreamingMessage(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		doStream(ctx, callCtx, h, req, yield, h.Handler.SendStreamingMessage)
 	}
 }
 
@@ -134,24 +118,46 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			return
 		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
+		doStream(ctx, callCtx, h, req, yield, h.Handler.SubscribeToTask)
+	}
+}
+
+// doStream runs the before-interceptors chain and streams events through the
+// after-interceptors chain, firing plugin hooks per event and once at the end.
+func doStream[Req any](
+	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
+	yield func(a2a.Event, error) bool,
+	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error],
+) {
+	hook, hookErr := beginPluginCall(ctx, h, callCtx, req)
+	if hookErr != nil {
+		yield(nil, hookErr)
+		return
+	}
+	if hook.active {
+		ctx = hook.ctx
+		var finalErr error
+		defer func() { hook.finish(nil, finalErr) }()
+		yield = hook.wrapStreamYield(yield, &finalErr)
+	}
+
+	ctx, res := interceptBefore[Req, a2a.SendMessageResult](ctx, h, callCtx, req)
+	if res.earlyErr != nil {
+		yield(nil, res.earlyErr)
+		return
+	}
+	if res.earlyResponse != nil {
+		yield(*res.earlyResponse, nil)
+		return
+	}
+	for event, err := range handlerCall(ctx, res.reqOverride) {
+		interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
+		if errOverride != nil {
+			yield(nil, errOverride)
 			return
 		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
+		if !yield(interceptedEvent, nil) {
 			return
-		}
-		for event, err := range h.Handler.SubscribeToTask(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
 		}
 	}
 }
@@ -178,23 +184,33 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 // DeleteTaskPushConfig implements RequestHandler.
-func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
+func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) (err error) {
 	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig", req.Tenant)
 	ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
-	if err := checkProtocolVersion(callCtx); err != nil {
-		return err
+	if err = checkProtocolVersion(callCtx); err != nil {
+		return
+	}
+	hook, hookErr := beginPluginCall(ctx, h, callCtx, req)
+	if hookErr != nil {
+		err = hookErr
+		return
+	}
+	if hook.active {
+		ctx = hook.ctx
+		defer func() { hook.finish(nil, err) }()
 	}
 	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
-		return res.earlyErr
+		err = res.earlyErr
+		return
 	}
 	if res.earlyResponse != nil {
-		return nil
+		return
 	}
-	err := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
+	callErr := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
 	var emptyResponse struct{}
-	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
-	return errOverride
+	_, err = interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, callErr)
+	return
 }
 
 // GetExtendedAgentCard implements RequestHandler.
@@ -306,21 +322,37 @@ func attachMethodCallContext(ctx context.Context, method string, tenant string) 
 func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) (Resp, error),
-) (Resp, error) {
-	if err := checkProtocolVersion(callCtx); err != nil {
-		var zero Resp
-		return zero, err
+) (resp Resp, err error) {
+	if err = checkProtocolVersion(callCtx); err != nil {
+		return
+	}
+	hook, hookErr := beginPluginCall(ctx, h, callCtx, req)
+	if hookErr != nil {
+		err = hookErr
+		return
+	}
+	if hook.active {
+		ctx = hook.ctx
+		defer func() {
+			var payload any
+			if err == nil {
+				payload = resp
+			}
+			hook.finish(payload, err)
+		}()
 	}
 	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
-		var zero Resp
-		return zero, res.earlyErr
+		err = res.earlyErr
+		return
 	}
 	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
+		resp = *res.earlyResponse
+		return
 	}
-	response, err := handlerCall(ctx, res.reqOverride)
-	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+	response, callErr := handlerCall(ctx, res.reqOverride)
+	resp, err = interceptAfter(ctx, h.Interceptors, callCtx, response, callErr)
+	return
 }
 
 // checkProtocolVersion checks if the client's protocol version is compatible with the server's.

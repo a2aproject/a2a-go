@@ -214,7 +214,7 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{agentExecutor: executor}
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugins: globalServerPlugin()}
 
 	for _, option := range options {
 		option(ih, h)
