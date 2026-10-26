@@ -81,6 +81,10 @@ type Config struct {
 	// stopped, which fails all its turns. Zero waits for the agent forever,
 	// and the context of the turn accepts no new turns meanwhile.
 	CancelTimeout time.Duration
+	// BusyContext decides what happens to a new task in a context which has a
+	// turn in progress. Defaults to [BusyQueue]. A reply which interrupts a
+	// question (see [ReplyInterrupt]) always waits for its canceled turn.
+	BusyContext BusyPolicy
 
 	// AllowTools and DenyTools answer permission requests without asking the
 	// caller. They hold glob patterns matched against the ACP tool kind: read,
@@ -156,11 +160,12 @@ type Executor struct {
 	mu       sync.Mutex
 	agent    *agent
 	closed   bool
-	routes   map[string]*turn     // ACP session ID -> turn in progress
-	turns    map[a2a.TaskID]*turn // task ID -> turn in progress
-	locks    map[string]*ctxLock  // A2A context ID -> turn lock
-	startErr error                // the last failed start
-	retryAt  time.Time            // when a start may be tried again after startErr
+	routes   map[string]*turn                       // ACP session ID -> turn in progress
+	turns    map[a2a.TaskID]*turn                   // task ID -> turn in progress
+	waiting  map[a2a.TaskID]context.CancelCauseFunc // task ID -> turn being started
+	locks    map[string]*ctxLock                    // A2A context ID -> turn lock
+	startErr error                                  // the last failed start
+	retryAt  time.Time                              // when a start may be tried again after startErr
 	backoff  time.Duration
 }
 
@@ -173,11 +178,24 @@ var errClosed = errors.New("acp executor is closed")
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
 const errQuestionGone = "the question is no longer pending: it timed out or the agent restarted. Send a new message to continue"
 
+// errTaskCanceled interrupts starting a turn whose task was canceled.
+var errTaskCanceled = errors.New("the task was canceled")
+
 // ctxLock serializes turns of one A2A context. refs counts holders and
 // waiters, so that the lock can be dropped when nobody uses it.
 type ctxLock struct {
-	ch   chan struct{}
-	refs int
+	ch     chan struct{}
+	refs   int
+	holder a2a.TaskID // guarded by Executor.mu
+}
+
+type busyError struct{ holder a2a.TaskID }
+
+func (e *busyError) Error() string {
+	if e.holder == "" {
+		return "the context is busy with another task, send the message after it finishes"
+	}
+	return fmt.Sprintf("the context is busy with task %s, send the message after it finishes", e.holder)
 }
 
 // NewExecutor starts the agent and negotiates the protocol version. Call
@@ -214,12 +232,13 @@ func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 		start = func(ctx context.Context) (io.ReadWriteCloser, error) { return StartProcess(ctx, p) }
 	}
 	e := &Executor{
-		cfg:    cfg,
-		start:  start,
-		rules:  toolRules{allow: cfg.AllowTools, deny: cfg.DenyTools},
-		routes: map[string]*turn{},
-		turns:  map[a2a.TaskID]*turn{},
-		locks:  map[string]*ctxLock{},
+		cfg:     cfg,
+		start:   start,
+		rules:   toolRules{allow: cfg.AllowTools, deny: cfg.DenyTools},
+		routes:  map[string]*turn{},
+		turns:   map[a2a.TaskID]*turn{},
+		waiting: map[a2a.TaskID]context.CancelCauseFunc{},
+		locks:   map[string]*ctxLock{},
 	}
 	if _, err := e.ensureAgent(ctx); err != nil {
 		return nil, err
@@ -303,8 +322,10 @@ func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 			return
 		default:
 			var err error
-			if t, err = e.startTurn(ctx, execCtx); err != nil {
-				yield(failed(execCtx, err.Error()), nil)
+			if t, err = e.startTurn(ctx, execCtx, e.cfg.BusyContext); err != nil {
+				if !errors.Is(err, errTaskCanceled) {
+					yield(failed(execCtx, err.Error()), nil)
+				}
 				return
 			}
 		}
@@ -322,7 +343,11 @@ func (e *Executor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) 
 	return func(yield func(a2a.Event, error) bool) {
 		e.mu.Lock()
 		t := e.turns[execCtx.TaskID]
+		stopWaiting := e.waiting[execCtx.TaskID]
 		e.mu.Unlock()
+		if stopWaiting != nil {
+			stopWaiting(errTaskCanceled)
+		}
 		if t != nil {
 			e.cancelTurn(t)
 		}
@@ -374,18 +399,37 @@ func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContex
 		e.questionDone(ctx, t, p, QuestionInterrupted)
 	}
 	e.cancelTurn(t)
-	next, err := e.startTurn(ctx, execCtx)
+	next, err := e.startTurn(ctx, execCtx, BusyQueue)
 	if err != nil {
-		yield(failed(execCtx, err.Error()), nil)
+		if !errors.Is(err, errTaskCanceled) {
+			yield(failed(execCtx, err.Error()), nil)
+		}
 		return nil, false
 	}
 	return next, true
 }
 
-// startTurn waits for the previous turn in the context to finish and sends
-// the message as a new prompt.
-func (e *Executor) startTurn(ctx context.Context, execCtx *a2asrv.ExecutorContext) (*turn, error) {
-	unlock, err := e.lockContext(ctx, execCtx.ContextID)
+// startTurn waits for the previous turn in the context to finish, or fails
+// with [busyError] if policy is [BusyReject], and sends the message as a new
+// prompt. Until the turn is registered, [Executor.Cancel] stops it with
+// errTaskCanceled.
+func (e *Executor) startTurn(ctx context.Context, execCtx *a2asrv.ExecutorContext, policy BusyPolicy) (*turn, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	e.mu.Lock()
+	e.waiting[execCtx.TaskID] = cancel
+	e.mu.Unlock()
+	defer e.stopWaiting(execCtx.TaskID)
+
+	t, err := e.lockAndPrompt(ctx, execCtx, policy)
+	if err != nil && errors.Is(context.Cause(ctx), errTaskCanceled) {
+		return nil, errTaskCanceled
+	}
+	return t, err
+}
+
+func (e *Executor) lockAndPrompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, policy BusyPolicy) (*turn, error) {
+	unlock, err := e.lockContext(ctx, execCtx.ContextID, execCtx.TaskID, policy == BusyQueue)
 	if err != nil {
 		return nil, err
 	}
@@ -395,6 +439,18 @@ func (e *Executor) startTurn(ctx context.Context, execCtx *a2asrv.ExecutorContex
 		return nil, err
 	}
 	return t, nil
+}
+
+func (e *Executor) stopWaiting(taskID a2a.TaskID) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.waiting, taskID)
+}
+
+func (e *Executor) isWaiting(taskID a2a.TaskID) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.waiting[taskID] != nil
 }
 
 // prompt sends the message as a prompt and returns its turn. done is called
@@ -412,7 +468,7 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := toPrompt(parts, ag.caps.PromptCapabilities)
+	prompt, err := toPrompt(ctx, parts, ag.caps.PromptCapabilities)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +491,11 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 
 	t := newTurn(execCtx.TaskID, sessionID, ag)
 	e.mu.Lock()
+	if err := context.Cause(ctx); err != nil {
+		e.mu.Unlock()
+		return nil, err
+	}
+	delete(e.waiting, execCtx.TaskID)
 	e.routes[sessionID] = t
 	e.turns[execCtx.TaskID] = t
 	e.mu.Unlock()
@@ -570,7 +631,9 @@ func configure(ctx context.Context, ag *agent, sessionID string, settings map[st
 	return nil
 }
 
-func (e *Executor) lockContext(ctx context.Context, contextID string) (func(), error) {
+// lockContext takes the turn lock of the context for the task. If wait is
+// false and the lock is held, it fails with [busyError].
+func (e *Executor) lockContext(ctx context.Context, contextID string, taskID a2a.TaskID, wait bool) (func(), error) {
 	e.mu.Lock()
 	l := e.locks[contextID]
 	if l == nil {
@@ -588,18 +651,39 @@ func (e *Executor) lockContext(ctx context.Context, contextID string) (func(), e
 			delete(e.locks, contextID)
 		}
 	}
-	select {
-	case l.ch <- struct{}{}:
+	acquired := func() (func(), error) {
+		e.mu.Lock()
+		l.holder = taskID
+		e.mu.Unlock()
 		var once sync.Once
 		return func() {
 			once.Do(func() {
+				e.mu.Lock()
+				l.holder = ""
+				e.mu.Unlock()
 				<-l.ch
 				release()
 			})
 		}, nil
+	}
+	if !wait {
+		select {
+		case l.ch <- struct{}{}:
+			return acquired()
+		default:
+			e.mu.Lock()
+			err := &busyError{holder: l.holder}
+			e.mu.Unlock()
+			release()
+			return nil, err
+		}
+	}
+	select {
+	case l.ch <- struct{}{}:
+		return acquired()
 	case <-ctx.Done():
 		release()
-		return nil, ctx.Err()
+		return nil, context.Cause(ctx)
 	}
 }
 
@@ -615,7 +699,7 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 
 		switch {
 		case ev.update != nil:
-			for _, out := range t.onUpdate(execCtx, ev.update) {
+			for _, out := range t.onUpdate(ctx, execCtx, ev.update) {
 				if !yield(out, nil) {
 					e.cancelTurn(t)
 					return

@@ -48,6 +48,18 @@ func InterruptUnrecognized(_ context.Context, _ *a2asrv.ExecutorContext, _ hitl.
 	return ReplyAskAgain
 }
 
+// BusyPolicy is what happens to a new task in a context which already has a
+// turn in progress, including one waiting for an answer. See [Config.BusyContext].
+type BusyPolicy int
+
+const (
+	// BusyQueue keeps the task submitted until the turns before it end. A
+	// queued task can be canceled.
+	BusyQueue BusyPolicy = iota
+	// BusyReject fails the task.
+	BusyReject
+)
+
 // QuestionOutcome is why a question stopped being pending. See [Config.OnQuestionDone].
 type QuestionOutcome string
 

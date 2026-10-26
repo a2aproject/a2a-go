@@ -25,6 +25,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // turn is one ACP prompt. It outlives an Execute call when the task pauses in
@@ -170,14 +171,15 @@ func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
 	}
 }
 
-func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *acp.SessionUpdate) []a2a.Event {
+func (t *turn) onUpdate(ctx context.Context, info a2a.TaskInfoProvider, u *acp.SessionUpdate) []a2a.Event {
 	switch u.SessionUpdate {
 	case acp.UpdateAgentMessageChunk:
 		var block acp.ContentBlock
 		if err := json.Unmarshal(u.Content, &block); err != nil {
+			log.Warn(ctx, "dropped malformed acp message chunk", "session", t.sessionID, "cause", err)
 			return nil
 		}
-		return t.onContent(info, u.MessageID, block)
+		return t.onContent(ctx, info, u.MessageID, block)
 
 	case acp.UpdateToolCall, acp.UpdateToolCallUpdate:
 		tc := t.mergeTool(u.ToolCall)
@@ -186,7 +188,11 @@ func (t *turn) onUpdate(info a2a.TaskInfoProvider, u *acp.SessionUpdate) []a2a.E
 		}
 		tc.Status = u.Status
 		return t.onToolStatus(info, tc)
+
+	case acp.UpdateConfigOption:
+		return nil
 	}
+	log.Debug(ctx, "dropped acp session update", "session", t.sessionID, "type", u.SessionUpdate)
 	return nil
 }
 
@@ -211,7 +217,7 @@ func (t *turn) mergeTool(patch acp.ToolCall) *acp.ToolCall {
 	return tc
 }
 
-func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block acp.ContentBlock) []a2a.Event {
+func (t *turn) onContent(ctx context.Context, info a2a.TaskInfoProvider, messageID string, block acp.ContentBlock) []a2a.Event {
 	switch block.Type {
 	case "text":
 		if evt := t.text.write(info, messageID, block.Text); evt != nil {
@@ -220,6 +226,7 @@ func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block acp.
 	case "image", "audio":
 		data, err := base64.StdEncoding.DecodeString(block.Data)
 		if err != nil {
+			log.Warn(ctx, "dropped acp content with malformed data", "session", t.sessionID, "type", block.Type, "cause", err)
 			return nil
 		}
 		part := a2a.NewRawPart(data)
@@ -229,6 +236,8 @@ func (t *turn) onContent(info a2a.TaskInfoProvider, messageID string, block acp.
 		part := a2a.NewFileURLPart(a2a.URL(block.URI), block.MimeType)
 		part.Filename = block.Name
 		return []a2a.Event{a2a.NewArtifactEvent(info, part)}
+	default:
+		log.Debug(ctx, "dropped acp content", "session", t.sessionID, "type", block.Type)
 	}
 	return nil
 }
@@ -297,7 +306,7 @@ func (s *textStream) breakBlock() {
 	}
 }
 
-func toPrompt(parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
+func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
 	var out []acp.ContentBlock
 	for i, p := range parts {
 		switch c := p.Content.(type) {
@@ -321,6 +330,8 @@ func toPrompt(parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBloc
 				return nil, err
 			}
 			out = append(out, block)
+		default:
+			log.Warn(ctx, "dropped prompt part the agent can't receive", "index", i, "type", fmt.Sprintf("%T", c))
 		}
 	}
 	if len(out) == 0 {

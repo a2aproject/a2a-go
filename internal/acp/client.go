@@ -162,9 +162,12 @@ func (c *Client) dispatch(m *Message) {
 		}
 
 	default:
-		if len(m.ID) > 0 {
-			c.respondError(m.ID, &Error{Code: CodeMethodNotFound, Message: "method not supported by client: " + m.Method})
+		if len(m.ID) == 0 {
+			log.Debug(ctx, "dropped unsupported acp notification", "method", m.Method)
+			return
 		}
+		log.Debug(ctx, "rejected unsupported acp request", "method", m.Method)
+		c.respondError(m.ID, &Error{Code: CodeMethodNotFound, Message: "method not supported by client: " + m.Method})
 	}
 }
 
@@ -172,9 +175,11 @@ func (c *Client) dispatch(m *Message) {
 // with a request method are ignored, since there is nobody to answer.
 func (c *Client) decode(m *Message, v any) bool {
 	if len(m.ID) == 0 {
+		log.Warn(context.Background(), "dropped acp request without id", "method", m.Method)
 		return false
 	}
 	if err := json.Unmarshal(m.Params, v); err != nil {
+		log.Warn(context.Background(), "rejected malformed acp request", "method", m.Method, "cause", err)
 		c.respondError(m.ID, &Error{Code: CodeInvalidParams, Message: err.Error()})
 		return false
 	}

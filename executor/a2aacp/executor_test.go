@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -418,6 +419,72 @@ func TestExecutor_QueuesTurnsInContext(t *testing.T) {
 	}
 	if diff := cmp.Diff([]string{"first", "second"}, gotText); diff != "" {
 		t.Fatalf("session/prompt wrong order (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_RejectsTurnInBusyContext(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "first" {
+			<-release
+		}
+		s.end(acp.StopEndTurn)
+	}}
+	e := newTestExecutor(t, h, Config{BusyContext: BusyReject})
+
+	first := newExecCtx("ctx", a2a.NewTextPart("first"))
+	results := make(chan []eventSummary, 1)
+	go func() { results <- run(t, execute(e, first)) }()
+	waitFor(t, func() bool { _, _, _, p := h.agent(0).snapshot(); return len(p) == 1 })
+
+	got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("second"))))
+
+	want := []eventSummary{submitted, failedWith(fmt.Sprintf("the context is busy with task %s, send the message after it finishes", first.TaskID))}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	close(release)
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, <-results); diff != "" {
+		t.Fatalf("Executor.Execute() first turn wrong result (-want +got) diff = %s", diff)
+	}
+	got = run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("third"))))
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() after first turn wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_CancelQueuedTurn(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "first" {
+			<-release
+		}
+		s.end(acp.StopEndTurn)
+	}}
+	e := newTestExecutor(t, h, Config{})
+
+	firstResult := make(chan []eventSummary, 1)
+	go func() { firstResult <- run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("first")))) }()
+	waitFor(t, func() bool { _, _, _, p := h.agent(0).snapshot(); return len(p) == 1 })
+	queued := newExecCtx("ctx", a2a.NewTextPart("second"))
+	queuedResult := make(chan []eventSummary, 1)
+	go func() { queuedResult <- run(t, execute(e, queued)) }()
+	waitFor(t, func() bool { return e.isWaiting(queued.TaskID) })
+
+	got := run(t, cancelTask(e, queued))
+
+	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
+		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]eventSummary{submitted}, <-queuedResult); diff != "" {
+		t.Fatalf("Executor.Execute() queued turn wrong result (-want +got) diff = %s", diff)
+	}
+	close(release)
+	<-firstResult
+	if _, _, _, p := h.agent(0).snapshot(); len(p) != 1 {
+		t.Fatalf("session/prompt count = %d, want 1", len(p))
 	}
 }
 

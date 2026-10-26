@@ -27,6 +27,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // JSON-RPC error codes.
@@ -112,15 +114,18 @@ func (c *Conn) read() {
 		}
 		var id int64
 		if err := json.Unmarshal(m.ID, &id); err != nil {
+			log.Warn(context.Background(), "dropped acp response with unknown id", "id", string(m.ID), "cause", err)
 			continue
 		}
 		c.mu.Lock()
 		ch := c.pending[id]
 		delete(c.pending, id)
 		c.mu.Unlock()
-		if ch != nil {
-			ch <- &m
+		if ch == nil {
+			log.Debug(context.Background(), "dropped acp response nobody waits for", "id", id)
+			continue
 		}
+		ch <- &m
 	}
 }
 
