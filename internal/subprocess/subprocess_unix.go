@@ -30,7 +30,17 @@ func configureProcessGroup(c *exec.Cmd) {
 }
 
 func terminateProcessGroup(c *exec.Cmd) error {
-	err := syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
+	return signalProcessGroup(c, syscall.SIGTERM)
+}
+
+func killProcessGroup(c *exec.Cmd) error {
+	return signalProcessGroup(c, syscall.SIGKILL)
+}
+
+// signalProcessGroup signals every process in the group of c. The group
+// outlives the process of c while any of its children run.
+func signalProcessGroup(c *exec.Cmd, sig syscall.Signal) error {
+	err := syscall.Kill(-c.Process.Pid, sig)
 	if errors.Is(err, syscall.ESRCH) {
 		return nil
 	}

@@ -180,22 +180,33 @@ func (c *Conn) Call(ctx context.Context, method string, params, result any) erro
 
 	select {
 	case m := <-ch:
-		if m.Error != nil {
-			return m.Error
-		}
-		if result == nil || len(m.Result) == 0 {
-			return nil
-		}
-		if err := json.Unmarshal(m.Result, result); err != nil {
-			return fmt.Errorf("decoding %s result: %w", method, err)
-		}
-		return nil
+		return decodeResult(method, m, result)
 	case <-c.done:
-		return c.Err()
+		// The reader delivers a response before it stops, so a peer that
+		// responded and exited may have closed done with ch already filled.
+		select {
+		case m := <-ch:
+			return decodeResult(method, m, result)
+		default:
+			return c.Err()
+		}
 	case <-ctx.Done():
 		unregister()
 		return ctx.Err()
 	}
+}
+
+func decodeResult(method string, m *Message, result any) error {
+	if m.Error != nil {
+		return m.Error
+	}
+	if result == nil || len(m.Result) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(m.Result, result); err != nil {
+		return fmt.Errorf("decoding %s result: %w", method, err)
+	}
+	return nil
 }
 
 // writeErr explains a failed write. It usually means the agent exited, and the

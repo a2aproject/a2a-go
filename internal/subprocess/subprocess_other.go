@@ -24,7 +24,9 @@ import (
 
 func configureProcessGroup(*exec.Cmd) {}
 
-func terminateProcessGroup(c *exec.Cmd) error {
+func terminateProcessGroup(c *exec.Cmd) error { return killProcessGroup(c) }
+
+func killProcessGroup(c *exec.Cmd) error {
 	err := c.Process.Kill()
 	if errors.Is(err, os.ErrProcessDone) {
 		return nil

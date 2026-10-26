@@ -120,26 +120,41 @@ func (p *process) Read(b []byte) (int, error) {
 
 func (p *process) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 
-// Close closes stdin and terminates the process group if the process doesn't
-// exit in time.
+// Close closes stdin, terminates the process group if the process doesn't
+// exit in time and kills it if it doesn't exit after that either. Processes
+// left in the group, such as MCP servers the agent started, are terminated.
 func (p *process) Close() error {
 	// Wait closes stdin once the process exits, which is fine here.
 	stdinErr := p.stdin.Close()
 	if errors.Is(stdinErr, os.ErrClosed) {
 		stdinErr = nil
 	}
-	select {
-	case <-p.exited:
-	case <-time.After(2 * time.Second):
-		if err := terminateProcessGroup(p.cmd); err != nil {
-			return errors.Join(stdinErr, err)
+	var signalErr error
+	if !p.waitExit(closeGrace) {
+		signalErr = terminateProcessGroup(p.cmd)
+		if !p.waitExit(closeGrace) {
+			if err := killProcessGroup(p.cmd); err != nil {
+				return errors.Join(stdinErr, signalErr, err)
+			}
+			<-p.exited
 		}
-		<-p.exited
 	}
+	groupErr := terminateProcessGroup(p.cmd)
 	stdoutErr := p.closeStdout()
 	var exitErr *exec.ExitError
 	if p.waitErr != nil && !errors.As(p.waitErr, &exitErr) {
-		return errors.Join(stdinErr, stdoutErr, p.waitErr)
+		return errors.Join(stdinErr, signalErr, groupErr, stdoutErr, p.waitErr)
 	}
-	return errors.Join(stdinErr, stdoutErr)
+	return errors.Join(stdinErr, signalErr, groupErr, stdoutErr)
+}
+
+const closeGrace = 2 * time.Second
+
+func (p *process) waitExit(timeout time.Duration) bool {
+	select {
+	case <-p.exited:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }

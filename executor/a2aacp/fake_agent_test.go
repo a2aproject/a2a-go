@@ -230,8 +230,12 @@ var testPermissionOptions = []acp.PermissionOption{
 }
 
 func (s *promptScript) askPermission(tc acp.ToolCall) acp.PermissionOutcome {
+	return s.askPermissionWith(tc, testPermissionOptions)
+}
+
+func (s *promptScript) askPermissionWith(tc acp.ToolCall, options []acp.PermissionOption) acp.PermissionOutcome {
 	var resp acp.RequestPermissionResponse
-	req := acp.RequestPermissionRequest{SessionID: s.req.SessionID, ToolCall: tc, Options: testPermissionOptions}
+	req := acp.RequestPermissionRequest{SessionID: s.req.SessionID, ToolCall: tc, Options: options}
 	if err := s.agent.conn.Call(context.Background(), acp.MethodRequestPermission, req, &resp); err != nil && !s.agent.isCrashed() {
 		s.t.Errorf("fake agent request_permission error = %v", err)
 	}

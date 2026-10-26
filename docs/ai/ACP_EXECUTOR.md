@@ -81,6 +81,13 @@ Question option IDs are derived from ACP option kinds (`allow_once`→`once`, `a
 `always`, `reject_once`→`reject`, `reject_always`→`reject_always`) so `Rules` and callers use
 stable IDs; `pendingPermission.optionIDs` maps them back to the agent's `optionId`.
 
+`Executor.applyRules` answers requests matched by `DenyTools` with `reject`, then `reject_always`,
+then the `cancelled` outcome, so a denied tool never reaches the caller. `AllowTools` only selects
+`once`; without it the caller is asked.
+
+`Config.SessionConfig` is applied until it succeeds once per session and agent process
+(`sessionInfo.configured`), so a turn that fails configuration doesn't lose it.
+
 ## Forms
 
 `questions.go` renders the schema as a field list and accepts a hitl/`answer` data part with an
@@ -94,6 +101,13 @@ invalid reply re-asks with the reason.
 closes the latter when the process exits and could drop the agent's last messages. Stdout is
 closed `outputGrace` after exit in case a child inherited it; reads then report `io.EOF`. A failed
 write waits briefly for the reader to report why the agent stopped (`acp.Conn.writeErr`).
+
+The agent runs in its own process group. `Close` closes stdin, sends SIGTERM to the group after
+`closeGrace`, SIGKILL after another `closeGrace`, and always sends SIGTERM to the group once the
+agent exited, so children such as MCP servers don't outlive it.
+
+`acp.Conn.Call` checks for a delivered response before reporting `done`, because the reader
+delivers a response and then fails when the agent exits right after responding.
 
 The agent's exit is visible on `Client.Done` before the prompt goroutine ends the turn, so
 `Executor.answer` checks `agent.exited()` and reports the question as gone instead of a write

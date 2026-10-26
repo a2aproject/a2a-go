@@ -97,17 +97,25 @@ type toolRules struct {
 	deny  []string
 }
 
-func (r toolRules) decide(q question) (answer, bool) {
+type ruleDecision int
+
+const (
+	ruleAsk ruleDecision = iota
+	ruleAllow
+	ruleDeny
+)
+
+func (r toolRules) decide(q question) ruleDecision {
 	if q.kind != kindPermission {
-		return answer{}, false
+		return ruleAsk
 	}
 	if matchAny(r.deny, q.tool) {
-		return answer{option: optionReject}, true
+		return ruleDeny
 	}
 	if matchAny(r.allow, q.tool) {
-		return answer{option: optionOnce}, true
+		return ruleAllow
 	}
-	return answer{}, false
+	return ruleAsk
 }
 
 func matchAny(patterns []string, s string) bool {

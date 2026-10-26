@@ -327,7 +327,7 @@ func (p *pendingQuestion) reply(ag *agent, a answer) error {
 
 // reject declines a form, or rejects a permission request if the agent offers
 // a way to, and cancels it otherwise.
-func (p *pendingQuestion) reject(ag *agent) {
+func (p *pendingQuestion) reject(ag *agent) error {
 	a := answer{option: acp.ElicitationDecline}
 	if p.q.kind == kindPermission {
 		a.option = optionReject
@@ -336,12 +336,10 @@ func (p *pendingQuestion) reject(ag *agent) {
 		}
 		if _, ok := p.q.option(a.option); !ok {
 			p.in.cancel(ag)
-			return
+			return nil
 		}
 	}
-	if err := p.reply(ag, a); err != nil {
-		log.Warn(context.Background(), "failed to reject acp request", "cause", err)
-	}
+	return p.reply(ag, a)
 }
 
 // textStream turns agent message chunks into one artifact: the first chunk

@@ -218,19 +218,47 @@ func TestExecutor_PermissionReaskedOnUnclearReply(t *testing.T) {
 func TestExecutor_PermissionAnsweredByToolRules(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		cfg  Config
-		want string
+		name    string
+		cfg     Config
+		options []acp.PermissionOption
+		want    acp.PermissionOutcome
 	}{
-		{name: "allow", cfg: Config{AllowTools: []string{"exec*"}}, want: "opt-allow"},
-		{name: "deny wins", cfg: Config{AllowTools: []string{"*"}, DenyTools: []string{"execute"}}, want: "opt-reject"},
+		{
+			name: "allow",
+			cfg:  Config{AllowTools: []string{"exec*"}},
+			want: acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-allow"},
+		},
+		{
+			name: "deny wins",
+			cfg:  Config{AllowTools: []string{"*"}, DenyTools: []string{"execute"}},
+			want: acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-reject"},
+		},
+		{
+			name: "deny with only reject always",
+			cfg:  Config{DenyTools: []string{"execute"}},
+			options: []acp.PermissionOption{
+				{OptionID: "opt-allow", Name: "Allow", Kind: acp.PermissionAllowOnce},
+				{OptionID: "opt-reject-always", Name: "Never", Kind: acp.PermissionRejectAlways},
+			},
+			want: acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-reject-always"},
+		},
+		{
+			name:    "deny without reject options",
+			cfg:     Config{DenyTools: []string{"execute"}},
+			options: []acp.PermissionOption{{OptionID: "opt-allow", Name: "Allow", Kind: acp.PermissionAllowOnce}},
+			want:    acp.PermissionOutcome{Outcome: acp.OutcomeCancelled},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			options := tc.options
+			if options == nil {
+				options = testPermissionOptions
+			}
 			outcomes := make(chan acp.PermissionOutcome, 1)
 			h := &fakeHarness{onPrompt: func(s *promptScript) {
-				outcomes <- s.askPermission(rmToolCall)
+				outcomes <- s.askPermissionWith(rmToolCall, options)
 				s.end(acp.StopEndTurn)
 			}}
 			e := newTestExecutor(t, h, tc.cfg)
@@ -240,8 +268,8 @@ func TestExecutor_PermissionAnsweredByToolRules(t *testing.T) {
 			if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
 				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 			}
-			if got := <-outcomes; got.OptionID != tc.want {
-				t.Fatalf("permission outcome = %v, want %v", got.OptionID, tc.want)
+			if diff := cmp.Diff(tc.want, <-outcomes); diff != "" {
+				t.Fatalf("permission outcome wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}
@@ -784,6 +812,14 @@ func TestExecutor_SessionConfig(t *testing.T) {
 			state:    configOptions,
 			messages: []map[string]any{{"temperature": 1}},
 			wantLast: failedWith(`configuring acp session: the agent has no session setting "temperature"`),
+		},
+		{
+			name:         "config retried after failed turn",
+			state:        configOptions,
+			cfg:          map[string]any{"model": "m1"},
+			messages:     []map[string]any{{"effort": "high"}, nil},
+			wantSettings: []string{"session/set_config_option model=m1 "},
+			wantLast:     completed,
 		},
 	}
 	for _, tc := range tests {

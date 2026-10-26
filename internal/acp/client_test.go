@@ -203,6 +203,29 @@ func TestClient_RejectsUnsupportedRequests(t *testing.T) {
 	}
 }
 
+func TestConn_ResponseBeforePeerExitIsDelivered(t *testing.T) {
+	t.Parallel()
+	for range 200 {
+		client, _, _ := newTestClient(t, func(agent *Conn, m *Message) {
+			if err := agent.Respond(m.ID, PromptResponse{StopReason: StopEndTurn}); err != nil {
+				t.Errorf("agent.Respond() error = %v", err)
+			}
+			if err := agent.Close(); err != nil {
+				t.Errorf("agent.Close() error = %v", err)
+			}
+		})
+
+		resp, err := client.Prompt(testContext(t), PromptRequest{SessionID: "s1"})
+
+		if err != nil {
+			t.Fatalf("client.Prompt() error = %v, want nil", err)
+		}
+		if resp.StopReason != StopEndTurn {
+			t.Fatalf("client.Prompt() = %v, want %v", resp.StopReason, StopEndTurn)
+		}
+	}
+}
+
 func TestConn_PeerExitFailsCalls(t *testing.T) {
 	t.Parallel()
 	exited := make(chan struct{})
