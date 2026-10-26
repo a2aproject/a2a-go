@@ -227,6 +227,10 @@ error.
 - Lifecycle tests (`agent_test.go`) use `fakeHarness.hangInitialize` for start timeouts and
   `fakeAgent.stopped` to observe the executor closing an agent.
 - `internal/acp` and `internal/subprocess` have their own tests (pipes, and `sh`/`cat`/`sleep`).
+- `tools/acp_smoke.sh [opencode|claude|codex|gemini]` (or `ACP_CMD="cloudcode acp"`; the
+  profile commands live in the script) runs a scripted conversation
+  against a real agent through `a2asrv` + `a2aclient`. It sets `OPENCODE_PERMISSION` /
+  `CLOUDCODE_PERMISSION` so opencode-based agents ask before running bash.
 
 ## Not implemented yet
 
