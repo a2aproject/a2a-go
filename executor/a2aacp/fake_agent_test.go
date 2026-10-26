@@ -38,6 +38,8 @@ type fakeHarness struct {
 	caps     acp.AgentCapabilities
 	state    acp.SessionState
 	onPrompt func(*promptScript)
+	// hangInitialize makes agents never answer initialize.
+	hangInitialize bool
 
 	mu     sync.Mutex
 	agents []*fakeAgent
@@ -55,6 +57,7 @@ type fakeAgent struct {
 	canceled   []string
 	settings   []string
 	mcpServers []json.RawMessage
+	cwds       []string
 	crashed    bool
 }
 
@@ -103,11 +106,15 @@ func (f *fakeAgent) handle(m *acp.Message) {
 	var result any
 	switch m.Method {
 	case acp.MethodInitialize:
+		if f.h.hangInitialize {
+			return
+		}
 		result = acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersion, AgentCapabilities: f.h.caps}
 	case acp.MethodSessionNew:
 		var req acp.NewSessionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.mcpServers = req.MCPServers
+		f.cwds = append(f.cwds, req.Cwd)
 		f.nextID++
 		id := fmt.Sprintf("sess-%d", f.nextID)
 		f.created = append(f.created, id)
@@ -116,6 +123,7 @@ func (f *fakeAgent) handle(m *acp.Message) {
 		var req acp.LoadSessionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.loaded = append(f.loaded, req.SessionID)
+		f.cwds = append(f.cwds, req.Cwd)
 		result = f.h.state
 	case acp.MethodSetConfigOption:
 		var req acp.SetConfigOptionRequest
@@ -156,10 +164,28 @@ func (f *fakeAgent) snapshot() (created, loaded, canceled []string, prompts []ac
 	return f.created, f.loaded, f.canceled, f.prompts
 }
 
+// sessionParams returns the working directories of created and loaded
+// sessions, and the MCP servers of the last created one.
+func (f *fakeAgent) sessionParams() ([]string, []json.RawMessage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cwds, f.mcpServers
+}
+
 func (f *fakeAgent) recordedSettings() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.settings
+}
+
+// stopped reports whether the executor closed the connection to the agent.
+func (f *fakeAgent) stopped() bool {
+	select {
+	case <-f.conn.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func (f *fakeAgent) isCrashed() bool {
@@ -260,7 +286,7 @@ func (s *promptScript) end(reason acp.StopReason) {
 func newTestExecutor(t *testing.T, h *fakeHarness, cfg Config) *Executor {
 	t.Helper()
 	h.t = t
-	cfg.start = h.start
+	cfg.Start = h.start
 	cfg.Dir = t.TempDir()
 	e, err := NewExecutor(t.Context(), cfg)
 	if err != nil {

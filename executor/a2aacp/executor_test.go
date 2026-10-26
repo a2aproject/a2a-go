@@ -18,12 +18,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/executor/a2aacp/hitl"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
 	"github.com/google/go-cmp/cmp"
 )
@@ -42,7 +44,7 @@ func rmInputRequired(preamble string) eventSummary {
 		Kind:  "status",
 		State: a2a.TaskStateInputRequired,
 		Text:  preamble + "Permission required: bash (rm x.txt).\nReply with one of: once, always, reject.",
-		Data: []any{map[string]any{hitlDataKey: map[string]any{
+		Data: []any{map[string]any{hitl.DataKey: map[string]any{
 			"id":     "t1",
 			"type":   "permission",
 			"title":  "bash",
@@ -139,7 +141,7 @@ func TestExecutor_PermissionAnsweredByCaller(t *testing.T) {
 		{name: "yes", answer: a2a.NewTextPart("Yes"), want: "opt-allow"},
 		{name: "no", answer: a2a.NewTextPart("no"), want: "opt-reject"},
 		{name: "label", answer: a2a.NewTextPart("Always Allow"), want: "opt-always"},
-		{name: "hitl data", answer: a2a.NewDataPart(map[string]any{hitlDataKey: map[string]any{"id": "t1", "answer": "always"}}), want: "opt-always"},
+		{name: "hitl data", answer: a2a.NewDataPart(map[string]any{hitl.DataKey: map[string]any{"id": "t1", "answer": "always"}}), want: "opt-always"},
 		{name: "answer data", answer: a2a.NewDataPart(map[string]any{"answer": "reject"}), want: "opt-reject"},
 	}
 	for _, tc := range tests {
@@ -247,6 +249,26 @@ func TestExecutor_PermissionAnsweredByToolRules(t *testing.T) {
 			cfg:     Config{DenyTools: []string{"execute"}},
 			options: []acp.PermissionOption{{OptionID: "opt-allow", Name: "Allow", Kind: acp.PermissionAllowOnce}},
 			want:    acp.PermissionOutcome{Outcome: acp.OutcomeCancelled},
+		},
+		{
+			name:    "allow with only allow always",
+			cfg:     Config{AllowTools: []string{"execute"}},
+			options: []acp.PermissionOption{{OptionID: "opt-always", Name: "Always", Kind: acp.PermissionAllowAlways}},
+			want:    acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-always"},
+		},
+		{
+			name: "auto answer",
+			cfg: Config{DenyTools: []string{"*"}, AutoAnswer: func(_ context.Context, _ *a2asrv.ExecutorContext, q hitl.Question) (hitl.Answer, bool) {
+				return hitl.Answer{Option: hitl.OptionAlways}, q.Input.(map[string]any)["command"] == "rm x.txt"
+			}},
+			want: acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-always"},
+		},
+		{
+			name: "auto answer falls back to rules",
+			cfg: Config{DenyTools: []string{"*"}, AutoAnswer: func(context.Context, *a2asrv.ExecutorContext, hitl.Question) (hitl.Answer, bool) {
+				return hitl.Answer{}, false
+			}},
+			want: acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-reject"},
 		},
 	}
 	for _, tc := range tests {
@@ -562,7 +584,7 @@ func TestNewExecutor_InvalidCommand(t *testing.T) {
 		cfg  Config
 		want string
 	}{
-		{name: "no command", cfg: Config{}, want: "one of Config.Command or Config.Profile is required"},
+		{name: "no command", cfg: Config{}, want: "one of Config.Start, Config.Command or Config.Profile is required"},
 		{name: "unknown profile", cfg: Config{Profile: "unknown"}, want: `unknown profile "unknown"`},
 		{name: "agent exits", cfg: Config{Command: []string{"true"}}, want: "initializing acp agent: acp agent exited"},
 		{name: "agent prints non-json", cfg: Config{Command: []string{"echo", "hello"}}, want: "initializing acp agent: invalid character"},
@@ -605,7 +627,7 @@ func formInputRequired(preamble, text string, schema map[string]any) eventSummar
 		Kind:  "status",
 		State: a2a.TaskStateInputRequired,
 		Text:  preamble + text,
-		Data: []any{map[string]any{hitlDataKey: map[string]any{
+		Data: []any{map[string]any{hitl.DataKey: map[string]any{
 			"id":    "elicitation-1",
 			"type":  "form",
 			"title": "Tell me about you",
@@ -644,7 +666,7 @@ func TestExecutor_FormElicitation(t *testing.T) {
 		{
 			name:   "hitl data",
 			schema: profileSchema,
-			answer: a2a.NewDataPart(map[string]any{hitlDataKey: map[string]any{"id": "elicitation-1", "answer": map[string]any{"name": "Bo"}}}),
+			answer: a2a.NewDataPart(map[string]any{hitl.DataKey: map[string]any{"id": "elicitation-1", "answer": map[string]any{"name": "Bo"}}}),
 			want:   acp.CreateElicitationResponse{Action: acp.ElicitationAccept, Content: map[string]any{"name": "Bo"}},
 		},
 		{
@@ -761,7 +783,7 @@ func TestExecutor_AgentExitWhileInputRequired(t *testing.T) {
 }
 
 func withConfig(execCtx *a2asrv.ExecutorContext, settings map[string]any) *a2asrv.ExecutorContext {
-	execCtx.Message.Metadata = map[string]any{configMetadataKey: settings}
+	execCtx.Message.Metadata = map[string]any{ConfigMetadataKey: settings}
 	return execCtx
 }
 
@@ -771,10 +793,12 @@ func TestExecutor_SessionConfig(t *testing.T) {
 		{ID: "model", Name: "Model", Type: "select"},
 		{ID: "fast", Name: "Fast", Type: "boolean"},
 	}}
+	modesAndModels := acp.SessionState{Modes: &struct{}{}, Models: &struct{}{}}
 	tests := []struct {
 		name         string
 		state        acp.SessionState
 		cfg          map[string]any
+		allowed      []string
 		messages     []map[string]any
 		wantSettings []string
 		wantLast     eventSummary
@@ -783,6 +807,7 @@ func TestExecutor_SessionConfig(t *testing.T) {
 			name:     "config options",
 			state:    configOptions,
 			cfg:      map[string]any{"model": "m1"},
+			allowed:  []string{"*"},
 			messages: []map[string]any{{"fast": true}, nil},
 			wantSettings: []string{
 				"session/set_config_option fast=true boolean",
@@ -794,6 +819,7 @@ func TestExecutor_SessionConfig(t *testing.T) {
 			name:     "message overrides config",
 			state:    configOptions,
 			cfg:      map[string]any{"model": "m1"},
+			allowed:  []string{"*"},
 			messages: []map[string]any{{"model": "m2"}},
 			wantSettings: []string{
 				"session/set_config_option model=m2 ",
@@ -802,7 +828,8 @@ func TestExecutor_SessionConfig(t *testing.T) {
 		},
 		{
 			name:         "modes and models",
-			state:        acp.SessionState{Modes: &struct{}{}, Models: &struct{}{}},
+			state:        modesAndModels,
+			allowed:      []string{"*"},
 			messages:     []map[string]any{{"mode": "plan", "model": "m1"}},
 			wantSettings: []string{"session/set_mode plan", "session/set_model m1"},
 			wantLast:     completed,
@@ -810,6 +837,7 @@ func TestExecutor_SessionConfig(t *testing.T) {
 		{
 			name:     "unknown setting",
 			state:    configOptions,
+			allowed:  []string{"*"},
 			messages: []map[string]any{{"temperature": 1}},
 			wantLast: failedWith(`configuring acp session: the agent has no session setting "temperature"`),
 		},
@@ -817,8 +845,30 @@ func TestExecutor_SessionConfig(t *testing.T) {
 			name:         "config retried after failed turn",
 			state:        configOptions,
 			cfg:          map[string]any{"model": "m1"},
+			allowed:      []string{"*"},
 			messages:     []map[string]any{{"effort": "high"}, nil},
 			wantSettings: []string{"session/set_config_option model=m1 "},
+			wantLast:     completed,
+		},
+		{
+			name:     "metadata ignored by default",
+			state:    modesAndModels,
+			messages: []map[string]any{{"mode": "bypassPermissions"}},
+			wantLast: completed,
+		},
+		{
+			name:     "setting not allowed",
+			state:    modesAndModels,
+			allowed:  []string{"model"},
+			messages: []map[string]any{{"mode": "bypassPermissions", "model": "m1"}},
+			wantLast: failedWith(`the session setting "mode" can't be changed in a message`),
+		},
+		{
+			name:         "setting allowed",
+			state:        modesAndModels,
+			allowed:      []string{"mod?l"},
+			messages:     []map[string]any{{"model": "m1"}},
+			wantSettings: []string{"session/set_model m1"},
 			wantLast:     completed,
 		},
 	}
@@ -826,7 +876,11 @@ func TestExecutor_SessionConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := &fakeHarness{state: tc.state, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
-			e := newTestExecutor(t, h, Config{SessionConfig: tc.cfg})
+			cfg := Config{SessionConfig: tc.cfg}
+			if tc.allowed != nil {
+				cfg.TurnConfig = MetadataConfig(tc.allowed...)
+			}
+			e := newTestExecutor(t, h, cfg)
 
 			var got []eventSummary
 			for _, settings := range tc.messages {
@@ -843,24 +897,304 @@ func TestExecutor_SessionConfig(t *testing.T) {
 	}
 }
 
-type staticMCPServers []json.RawMessage
+func TestExecutor_SessionParams(t *testing.T) {
+	t.Parallel()
+	servers := []json.RawMessage{json.RawMessage(`{"type":"http","name":"api","url":"https://example.com/mcp","headers":[]}`)}
+	absDir := t.TempDir()
+	tests := []struct {
+		name        string
+		session     func(context.Context, *a2asrv.ExecutorContext) (SessionParams, error)
+		wantCwd     func(dir string) string
+		wantServers []json.RawMessage
+		wantLast    eventSummary
+	}{
+		{
+			name:        "defaults",
+			wantCwd:     func(dir string) string { return dir },
+			wantServers: []json.RawMessage{},
+			wantLast:    completed,
+		},
+		{
+			name: "relative cwd per context",
+			session: func(_ context.Context, execCtx *a2asrv.ExecutorContext) (SessionParams, error) {
+				return SessionParams{Cwd: filepath.Join("work", execCtx.ContextID), MCPServers: servers}, nil
+			},
+			wantCwd:     func(dir string) string { return filepath.Join(dir, "work", "ctx") },
+			wantServers: servers,
+			wantLast:    completed,
+		},
+		{
+			name: "absolute cwd",
+			session: func(context.Context, *a2asrv.ExecutorContext) (SessionParams, error) {
+				return SessionParams{Cwd: absDir}, nil
+			},
+			wantCwd:     func(string) string { return absDir },
+			wantServers: []json.RawMessage{},
+			wantLast:    completed,
+		},
+		{
+			name: "error",
+			session: func(context.Context, *a2asrv.ExecutorContext) (SessionParams, error) {
+				return SessionParams{}, errors.New("no workspace")
+			},
+			wantLast: failedWith("resolving session parameters: no workspace"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+			e := newTestExecutor(t, h, Config{Session: tc.session})
 
-func (s staticMCPServers) MCPServers(context.Context, *a2asrv.ExecutorContext) ([]json.RawMessage, error) {
-	return s, nil
+			got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+
+			if diff := cmp.Diff(tc.wantLast, got[len(got)-1]); diff != "" {
+				t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
+			}
+			var wantCwds []string
+			if tc.wantCwd != nil {
+				wantCwds = []string{tc.wantCwd(e.cfg.Dir)}
+			}
+			gotCwds, gotServers := h.agent(0).sessionParams()
+			if diff := cmp.Diff(wantCwds, gotCwds); diff != "" {
+				t.Fatalf("session/new cwd wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(tc.wantServers, gotServers); diff != "" {
+				t.Fatalf("session/new mcpServers wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
 }
 
-func TestExecutor_MCPServers(t *testing.T) {
+func TestExecutor_SessionParamsOnLoad(t *testing.T) {
 	t.Parallel()
-	servers := staticMCPServers{json.RawMessage(`{"type":"http","name":"api","url":"https://example.com/mcp","headers":[]}`)}
+	h := &fakeHarness{caps: acp.AgentCapabilities{LoadSession: true}, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{Session: func(_ context.Context, execCtx *a2asrv.ExecutorContext) (SessionParams, error) {
+		return SessionParams{Cwd: execCtx.ContextID}, nil
+	}})
+	run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("one"))))
+	h.agent(0).crash()
+	waitFor(t, func() bool { return agentExited(e) })
+
+	run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("two"))))
+
+	_, loaded, _, _ := h.agent(1).snapshot()
+	gotCwds, _ := h.agent(1).sessionParams()
+	if diff := cmp.Diff([]string{"sess-1"}, loaded); diff != "" {
+		t.Fatalf("session/load wrong sessions (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]string{filepath.Join(e.cfg.Dir, "ctx")}, gotCwds); diff != "" {
+		t.Fatalf("session/load cwd wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_InvalidReply(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		reply        string
+		wantEvents   []eventSummary
+		wantOutcome  acp.PermissionOutcome
+		wantPrompts  []string
+		wantQuestion []QuestionOutcome
+	}{
+		{
+			name:         "unrecognized reply interrupts",
+			reply:        "rename it instead",
+			wantEvents:   []eventSummary{working, completed},
+			wantOutcome:  acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-reject"},
+			wantPrompts:  []string{"delete x.txt", "rename it instead"},
+			wantQuestion: []QuestionOutcome{QuestionInterrupted},
+		},
+		{
+			name:         "answer resumes",
+			reply:        "yes",
+			wantEvents:   []eventSummary{working, completed},
+			wantOutcome:  acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: "opt-allow"},
+			wantPrompts:  []string{"delete x.txt"},
+			wantQuestion: []QuestionOutcome{QuestionAnswered},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outcomes := make(chan acp.PermissionOutcome, 1)
+			h := &fakeHarness{onPrompt: func(s *promptScript) {
+				if s.promptText() != "delete x.txt" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				outcome := s.askPermission(rmToolCall)
+				outcomes <- outcome
+				if outcome.OptionID == "opt-reject" {
+					waitFor(t, func() bool { _, _, canceled, _ := s.agent.snapshot(); return len(canceled) > 0 })
+					s.end(acp.StopCancelled)
+					return
+				}
+				s.end(acp.StopEndTurn)
+			}}
+			questions := make(chan QuestionOutcome, 10)
+			e := newTestExecutor(t, h, Config{
+				OnInvalidReply: InterruptUnrecognized,
+				OnQuestionDone: func(_ context.Context, _ a2a.TaskID, _ hitl.Question, outcome QuestionOutcome) {
+					questions <- outcome
+				},
+			})
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+			run(t, execute(e, execCtx))
+
+			got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart(tc.reply))))
+
+			if diff := cmp.Diff(tc.wantEvents, got); diff != "" {
+				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(tc.wantOutcome, <-outcomes); diff != "" {
+				t.Fatalf("permission outcome wrong result (-want +got) diff = %s", diff)
+			}
+			_, _, _, prompts := h.agent(0).snapshot()
+			var gotPrompts []string
+			for _, p := range prompts {
+				gotPrompts = append(gotPrompts, p.Prompt[0].Text)
+			}
+			if diff := cmp.Diff(tc.wantPrompts, gotPrompts); diff != "" {
+				t.Fatalf("session/prompt wrong prompts (-want +got) diff = %s", diff)
+			}
+			close(questions)
+			var gotQuestions []QuestionOutcome
+			for q := range questions {
+				gotQuestions = append(gotQuestions, q)
+			}
+			if diff := cmp.Diff(tc.wantQuestion, gotQuestions); diff != "" {
+				t.Fatalf("OnQuestionDone() wrong outcomes (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestExecutor_InvalidFormValueAskedAgainWhenInterrupting(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		s.elicit("Tell me about you", profileSchema)
+		s.end(acp.StopEndTurn)
+	}}
+	e := newTestExecutor(t, h, Config{OnInvalidReply: InterruptUnrecognized})
+	execCtx := newExecCtx("ctx", a2a.NewTextPart("hi"))
+	run(t, execute(e, execCtx))
+
+	got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart(`{"color": "blue"}`))))
+
+	want := formInputRequired("I couldn't use the reply: the field name is required. ", profileFormText, profileSchema)
+	if diff := cmp.Diff([]eventSummary{want}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	run(t, execute(e, followUp(execCtx, a2a.NewTextPart(`{"name": "Anna"}`))))
+}
+
+func TestExecutor_OnQuestionDone(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		cfg     Config
+		resolve func(t *testing.T, e *Executor, h *fakeHarness, execCtx *a2asrv.ExecutorContext)
+		want    QuestionOutcome
+	}{
+		{
+			name: "answered",
+			resolve: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, execute(e, followUp(execCtx, hitl.NewAnswerPart("t1", hitl.OptionOnce))))
+			},
+			want: QuestionAnswered,
+		},
+		{
+			name: "canceled",
+			resolve: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, cancelTask(e, execCtx))
+			},
+			want: QuestionCanceled,
+		},
+		{
+			name:    "timed out",
+			cfg:     Config{QuestionTimeout: 10 * time.Millisecond},
+			resolve: func(*testing.T, *Executor, *fakeHarness, *a2asrv.ExecutorContext) {},
+			want:    QuestionTimedOut,
+		},
+		{
+			name: "abandoned",
+			resolve: func(_ *testing.T, _ *Executor, h *fakeHarness, _ *a2asrv.ExecutorContext) {
+				h.agent(0).crash()
+			},
+			want: QuestionAbandoned,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scriptDone := make(chan struct{})
+			h := &fakeHarness{onPrompt: func(s *promptScript) {
+				defer close(scriptDone)
+				outcome := s.askPermission(rmToolCall)
+				if s.agent.isCrashed() {
+					return
+				}
+				if outcome.OptionID == "opt-allow" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				s.end(acp.StopCancelled)
+			}}
+			type done struct {
+				taskID     a2a.TaskID
+				questionID string
+				outcome    QuestionOutcome
+			}
+			dones := make(chan done, 1)
+			tc.cfg.OnQuestionDone = func(_ context.Context, taskID a2a.TaskID, q hitl.Question, outcome QuestionOutcome) {
+				dones <- done{taskID: taskID, questionID: q.ID, outcome: outcome}
+			}
+			e := newTestExecutor(t, h, tc.cfg)
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+			run(t, execute(e, execCtx))
+
+			tc.resolve(t, e, h, execCtx)
+
+			select {
+			case got := <-dones:
+				want := done{taskID: execCtx.TaskID, questionID: "t1", outcome: tc.want}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(done{})); diff != "" {
+					t.Fatalf("OnQuestionDone() wrong result (-want +got) diff = %s", diff)
+				}
+			case <-time.After(testTimeout):
+				t.Fatal("OnQuestionDone() not called")
+			}
+			<-scriptDone
+		})
+	}
+}
+
+func TestExecutor_Prompt(t *testing.T) {
+	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
-	e := newTestExecutor(t, h, Config{MCPServers: servers})
+	e := newTestExecutor(t, h, Config{Prompt: func(_ context.Context, execCtx *a2asrv.ExecutorContext) ([]*a2a.Part, error) {
+		return append([]*a2a.Part{a2a.NewTextPart("[context]")}, execCtx.Message.Parts...), nil
+	}})
+	execCtx := newExecCtx("ctx", a2a.NewTextPart("hi"))
 
-	run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+	var task *a2a.Task
+	for ev, err := range e.Execute(t.Context(), execCtx) {
+		if err != nil {
+			t.Fatalf("Executor.Execute() error = %v", err)
+		}
+		if v, ok := ev.(*a2a.Task); ok {
+			task = v
+		}
+	}
 
-	h.agent(0).mu.Lock()
-	got := h.agent(0).mcpServers
-	h.agent(0).mu.Unlock()
-	if diff := cmp.Diff([]json.RawMessage(servers), got); diff != "" {
-		t.Fatalf("session/new mcpServers wrong result (-want +got) diff = %s", diff)
+	_, _, _, prompts := h.agent(0).snapshot()
+	want := []acp.ContentBlock{{Type: "text", Text: "[context]"}, {Type: "text", Text: "hi"}}
+	if diff := cmp.Diff(want, prompts[0].Prompt); diff != "" {
+		t.Fatalf("session/prompt wrong content (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]*a2a.Message{execCtx.Message}, task.History); diff != "" {
+		t.Fatalf("Executor.Execute() task history wrong result (-want +got) diff = %s", diff)
 	}
 }

@@ -17,23 +17,21 @@
 // as `opencode acp`, Zed's claude-agent-acp or `gemini --experimental-acp`.
 //
 // One agent process serves all tasks and is restarted if it exits. Every A2A
-// context maps to an ACP session and every task to an ACP prompt turn. Tasks
-// in the same context run one at a time, in arrival order. Agent text streams
-// into a "response" artifact and tool calls become working status updates.
+// context maps to an ACP session and every task to an ACP prompt turn. Tasks in the same context run one at a time, in arrival
+// order. Agent text streams into a "response" artifact and tool calls become
+// working status updates.
 //
-// Permission requests and form elicitations pause the task in input-required.
-// The status message has a text part for people and a data part
-// {"hitl": {"id", "type", "title", "detail", "options", "schema"}} for
-// programs. The caller answers by sending a message on the same task: an
-// option ID or label, yes/no for permissions, a JSON object of form fields,
-// or a data part {"hitl": {"id": "<question id>", "answer": <answer>}}.
-// Unanswered questions are rejected after [Config.QuestionTimeout] and the
-// turn is canceled; a later reply to such a task fails it.
+// Permission requests and form elicitations pause the task in input-required
+// with a question in the format of package [hitl], unless [Config.AutoAnswer],
+// [Config.AllowTools] or [Config.DenyTools] decide them. The caller answers by
+// sending a message on the same task; [Config.OnInvalidReply] decides what
+// happens to a message which isn't an answer. Unanswered questions are
+// rejected after [Config.QuestionTimeout] and the turn is canceled; a later
+// reply to such a task fails it.
 //
-// A message can change session settings, such as the mode or the model, with
-// metadata {"acpConfig": {"<config id>": <value>}}. Config IDs are those the
-// agent reports in configOptions; "mode" and "model" also work with agents
-// which only support session/set_mode and session/set_model.
+// Session settings, such as the mode or the model, come from
+// [Config.SessionConfig] and [Config.TurnConfig]. Callers can't change them
+// unless TurnConfig allows it, for example with [MetadataConfig].
 package a2aacp
 
 import (
@@ -48,12 +46,13 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/executor/a2aacp/hitl"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
-	"github.com/a2aproject/a2a-go/v2/internal/subprocess"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -63,167 +62,116 @@ type Config struct {
 	Profile string
 	// Command is the agent command line. It takes precedence over Profile.
 	Command []string
-	// Dir is the working directory of the agent and its sessions. Defaults to the current directory.
+	// Dir is the working directory of the agent, and of its sessions unless
+	// Session sets one. Defaults to the current directory.
 	Dir string
-	// Env is added to the environment of the agent.
+	// Env is added to the environment of the agent started from Command or Profile.
 	Env []string
-	// Stderr receives the agent's stderr. Discarded if nil.
+	// Stderr receives the stderr of the agent started from Command or Profile. Discarded if nil.
 	Stderr io.Writer
+	// Start starts the agent and returns its stdio: reads come from the
+	// agent's output, writes go to its input, and Close stops the agent. It
+	// takes precedence over Command and Profile, for example to run the agent
+	// in a sandbox; see [StartProcess], [WithCleanup] and [ProfileCommand].
+	// The agent must outlive ctx, which ends once the agent is initialized.
+	Start func(ctx context.Context) (io.ReadWriteCloser, error)
+	// StartTimeout limits starting and initializing the agent. Zero means one minute.
+	StartTimeout time.Duration
+	// CancelTimeout is how long a canceled turn may run before the agent is
+	// stopped, which fails all its turns. Zero waits for the agent forever,
+	// and the context of the turn accepts no new turns meanwhile.
+	CancelTimeout time.Duration
 
 	// AllowTools and DenyTools answer permission requests without asking the
 	// caller. They hold glob patterns matched against the ACP tool kind: read,
 	// edit, delete, move, search, execute, think, fetch or other. DenyTools
-	// takes precedence.
+	// takes precedence. An allowed request is approved once, or always if the
+	// agent offers no other way to approve it.
 	AllowTools []string
 	DenyTools  []string
+	// AutoAnswer answers questions without asking the caller. It is consulted
+	// before AllowTools and DenyTools; returning false leaves the question to
+	// them. An answer with an option the question doesn't offer fails the turn.
+	AutoAnswer func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q hitl.Question) (hitl.Answer, bool)
 	// QuestionTimeout is how long a question waits for the caller before it is
 	// rejected and the turn canceled. Zero means 24 hours, negative means forever.
 	QuestionTimeout time.Duration
+	// OnInvalidReply decides what happens to a message on an input-required
+	// task which doesn't answer its question. err is the [hitl.ParseAnswer]
+	// error. If nil, the question is asked again. See [InterruptUnrecognized].
+	OnInvalidReply func(ctx context.Context, execCtx *a2asrv.ExecutorContext, q hitl.Question, err error) ReplyAction
+	// OnQuestionDone is called when a question asked from the caller stops
+	// being pending, for example to withdraw notifications about it. No task
+	// event reports a question which timed out or was abandoned. It is called
+	// from executor goroutines and must not block.
+	OnQuestionDone func(ctx context.Context, taskID a2a.TaskID, q hitl.Question, outcome QuestionOutcome)
 
 	// SessionConfig is applied to every session the agent starts or loads, for
-	// example {"model": "anthropic/claude-sonnet-4"}. See the package documentation.
+	// example {"model": "anthropic/claude-sonnet-4"}. Keys are the config IDs
+	// the agent reports in configOptions; "mode" and "model" also work with
+	// agents which only support session/set_mode and session/set_model.
 	SessionConfig map[string]any
+	// TurnConfig returns session settings to apply before a turn, over
+	// SessionConfig. Settings stay in effect for later turns of the session.
+	// See [MetadataConfig].
+	TurnConfig func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (map[string]any, error)
+	// Prompt returns the parts sent to the agent for the message of a new
+	// turn, for example to add context the caller didn't write. The task keeps
+	// the original message. Defaults to the message parts.
+	Prompt func(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]*a2a.Part, error)
 	// Sessions maps A2A contexts to ACP sessions. Defaults to an in-memory store.
 	Sessions SessionStore
-	// MCPServers provides the MCP servers of new sessions. Optional.
-	MCPServers MCPServerProvider
-
-	// start overrides how the agent is started, for tests.
-	start startFunc
+	// Session returns the parameters of the session of an A2A context. It is
+	// called when the agent creates the session or, after a restart, loads it,
+	// for the message which caused it, so parameters which depend on the caller
+	// apply to everyone in the context. Optional.
+	Session func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (SessionParams, error)
 }
 
-// startFunc starts an ACP agent and returns its stdio stream.
-type startFunc func(ctx context.Context) (io.ReadWriteCloser, error)
-
-// MCPServerProvider decides which MCP servers the agent connects to in the
-// session of an A2A context.
-type MCPServerProvider interface {
-	// MCPServers returns servers in the JSON form of the ACP McpServer schema,
-	// for example {"name": "fs", "command": "mcp-fs", "args": [], "env": []} or
+// SessionParams are the parameters of an ACP session, fixed for its lifetime
+// in an agent process.
+type SessionParams struct {
+	// Cwd is the working directory of the session. A relative path is
+	// resolved against [Config.Dir], which is also the default.
+	Cwd string
+	// MCPServers are the MCP servers the agent connects to, in the JSON form
+	// of the ACP McpServer schema, for example
+	// {"name": "fs", "command": "mcp-fs", "args": [], "env": []} or
 	// {"type": "http", "name": "api", "url": "https://...", "headers": []}.
-	MCPServers(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]json.RawMessage, error)
+	MCPServers []json.RawMessage
 }
 
 // Executor implements [a2asrv.AgentExecutor] for an ACP agent.
 type Executor struct {
 	cfg   Config
-	start startFunc
+	start func(ctx context.Context) (io.ReadWriteCloser, error)
 	rules toolRules
 
+	elicitations atomic.Int64
+
+	// startMu serializes starting and stopping agents, so that at most one
+	// agent process runs at a time.
 	startMu sync.Mutex
 
-	mu     sync.Mutex
-	agent  *agent
-	closed bool
-	routes map[string]*turn     // ACP session ID -> turn in progress
-	turns  map[a2a.TaskID]*turn // task ID -> turn in progress
-	locks  map[string]*ctxLock  // A2A context ID -> turn lock
+	mu       sync.Mutex
+	agent    *agent
+	closed   bool
+	routes   map[string]*turn     // ACP session ID -> turn in progress
+	turns    map[a2a.TaskID]*turn // task ID -> turn in progress
+	locks    map[string]*ctxLock  // A2A context ID -> turn lock
+	startErr error                // the last failed start
+	retryAt  time.Time            // when a start may be tried again after startErr
+	backoff  time.Duration
 }
 
 var _ a2asrv.AgentExecutor = (*Executor)(nil)
 
-const (
-	defaultQuestionTimeout = 24 * time.Hour
-	configMetadataKey      = "acpConfig"
-)
+const defaultQuestionTimeout = 24 * time.Hour
 
 var errClosed = errors.New("acp executor is closed")
 
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
 const errQuestionGone = "the question is no longer pending: it timed out or the agent restarted. Send a new message to continue"
-
-// agent is one running ACP agent process.
-type agent struct {
-	client *acp.Client
-	caps   acp.AgentCapabilities
-
-	mu       sync.Mutex
-	sessions map[string]*sessionInfo // sessions created or loaded by this process
-}
-
-type sessionInfo struct {
-	options    map[string]string // config option ID -> type
-	modes      bool
-	models     bool
-	configured bool // Config.SessionConfig was applied
-}
-
-// exited reports whether the agent process's output ended. Its turns end
-// shortly after, once the pending prompt calls observe it.
-func (a *agent) exited() bool {
-	select {
-	case <-a.client.Done():
-		return true
-	default:
-		return false
-	}
-}
-
-func (a *agent) hasSession(sessionID string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.sessions[sessionID] != nil
-}
-
-func (a *agent) addSession(sessionID string, st acp.SessionState) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.sessions[sessionID] = &sessionInfo{modes: st.Modes != nil, models: st.Models != nil}
-	a.setOptionsLocked(sessionID, st.ConfigOptions)
-}
-
-func (a *agent) isConfigured(sessionID string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	info := a.sessions[sessionID]
-	return info != nil && info.configured
-}
-
-func (a *agent) markConfigured(sessionID string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if info := a.sessions[sessionID]; info != nil {
-		info.configured = true
-	}
-}
-
-func (a *agent) setOptions(sessionID string, opts []acp.SessionConfigOption) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.setOptionsLocked(sessionID, opts)
-}
-
-func (a *agent) setOptionsLocked(sessionID string, opts []acp.SessionConfigOption) {
-	info := a.sessions[sessionID]
-	if info == nil || opts == nil {
-		return
-	}
-	info.options = map[string]string{}
-	for _, o := range opts {
-		info.options[o.ID] = o.Type
-	}
-}
-
-// configMethod returns the ACP method which changes a session setting, and
-// the type of the config option for session/set_config_option.
-func (a *agent) configMethod(sessionID, configID string) (string, string, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	info := a.sessions[sessionID]
-	if info == nil {
-		return "", "", false
-	}
-	if typ, ok := info.options[configID]; ok {
-		return acp.MethodSetConfigOption, typ, true
-	}
-	switch {
-	case configID == "mode" && info.modes:
-		return acp.MethodSetMode, "", true
-	case configID == "model" && info.models:
-		return acp.MethodSetModel, "", true
-	}
-	return "", "", false
-}
 
 // ctxLock serializes turns of one A2A context. refs counts holders and
 // waiters, so that the lock can be dropped when nobody uses it.
@@ -253,14 +201,17 @@ func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 	if cfg.QuestionTimeout == 0 {
 		cfg.QuestionTimeout = defaultQuestionTimeout
 	}
-	start := cfg.start
+	if cfg.StartTimeout <= 0 {
+		cfg.StartTimeout = defaultStartTimeout
+	}
+	start := cfg.Start
 	if start == nil {
 		argv, err := agentCommand(cfg)
 		if err != nil {
 			return nil, err
 		}
-		cmd := subprocess.Command{Argv: argv, Dir: cfg.Dir, Env: cfg.Env, Stderr: cfg.Stderr}
-		start = func(ctx context.Context) (io.ReadWriteCloser, error) { return subprocess.Start(ctx, cmd) }
+		p := Process{Argv: argv, Dir: cfg.Dir, Env: cfg.Env, Stderr: cfg.Stderr}
+		start = func(ctx context.Context) (io.ReadWriteCloser, error) { return StartProcess(ctx, p) }
 	}
 	e := &Executor{
 		cfg:    cfg,
@@ -274,70 +225,6 @@ func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 		return nil, err
 	}
 	return e, nil
-}
-
-// Close stops the agent. Turns in progress fail.
-func (e *Executor) Close() error {
-	e.startMu.Lock()
-	defer e.startMu.Unlock()
-	e.mu.Lock()
-	e.closed = true
-	ag := e.agent
-	e.agent = nil
-	e.mu.Unlock()
-	if ag == nil {
-		return nil
-	}
-	return ag.client.Close()
-}
-
-// ensureAgent returns the running agent, starting a new one if there is none
-// or the previous one exited.
-func (e *Executor) ensureAgent(ctx context.Context) (*agent, error) {
-	e.startMu.Lock()
-	defer e.startMu.Unlock()
-	e.mu.Lock()
-	ag, closed := e.agent, e.closed
-	e.mu.Unlock()
-	if closed {
-		return nil, errClosed
-	}
-	if ag != nil {
-		select {
-		case <-ag.client.Done():
-			log.Warn(ctx, "acp agent exited, restarting", "cause", ag.client.Err())
-			if err := ag.client.Close(); err != nil {
-				log.Warn(ctx, "failed to stop acp agent", "cause", err)
-			}
-		default:
-			return ag, nil
-		}
-	}
-
-	rwc, err := e.start(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ag = &agent{sessions: map[string]*sessionInfo{}}
-	ag.client = acp.NewClient(rwc, &agentHandler{e: e, ag: ag})
-	ag.client.Start()
-
-	resp, err := ag.client.Initialize(ctx, acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersion,
-		ClientInfo:      &acp.Implementation{Name: "a2a-go", Version: "2"},
-	})
-	if err == nil && resp.ProtocolVersion != acp.ProtocolVersion {
-		err = fmt.Errorf("unsupported acp protocol version %d, want %d", resp.ProtocolVersion, acp.ProtocolVersion)
-	}
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("initializing acp agent: %w", err), ag.client.Close())
-	}
-	ag.caps = resp.AgentCapabilities
-
-	e.mu.Lock()
-	e.agent = ag
-	e.mu.Unlock()
-	return ag, nil
 }
 
 // agentHandler routes what an agent process sends to the turn of its session.
@@ -407,7 +294,8 @@ func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 
 		switch p := t.pendingQuestion(); {
 		case p != nil:
-			if !e.answer(execCtx, t, p, yield) {
+			var ok bool
+			if t, ok = e.answer(ctx, execCtx, t, p, yield); !ok {
 				return
 			}
 		case execCtx.StoredTask != nil && execCtx.StoredTask.Status.State == a2a.TaskStateInputRequired:
@@ -442,33 +330,56 @@ func (e *Executor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) 
 	}
 }
 
-// answer forwards the caller's reply to the pending question. It returns
-// false if Execute should stop, for example because the reply didn't answer
-// the question and the task stays in input-required.
-func (e *Executor) answer(execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQuestion, yield func(a2a.Event, error) bool) bool {
-	ans, err := parseAnswer(p.q, execCtx.Message)
+// answer forwards the caller's reply to the pending question and returns the
+// turn to resume. It returns false if Execute should stop, for example because
+// the reply didn't answer the question and the task stays in input-required.
+func (e *Executor) answer(ctx context.Context, execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQuestion, yield func(a2a.Event, error) bool) (*turn, bool) {
+	ans, err := hitl.ParseAnswer(p.q, execCtx.Message)
 	if err != nil {
+		if e.cfg.OnInvalidReply != nil && e.cfg.OnInvalidReply(ctx, execCtx, p.q, err) == ReplyInterrupt {
+			return e.interrupt(ctx, execCtx, t, p, yield)
+		}
 		preamble := "I didn't understand the reply. "
-		if !errors.Is(err, errNoAnswer) {
+		if !errors.Is(err, hitl.ErrNoAnswer) {
 			preamble = fmt.Sprintf("I couldn't use the reply: %v. ", err)
 		}
-		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, inputRequiredMessage(execCtx, p.q, preamble)), nil)
-		return false
+		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, hitl.NewStatusMessage(execCtx, p.q, preamble)), nil)
+		return nil, false
 	}
 	if t.agent.exited() || !t.takePending(p) {
 		yield(failed(execCtx, errQuestionGone), nil)
-		return false
+		return nil, false
 	}
 	if err := p.reply(t.agent, ans); err != nil {
+		e.questionDone(ctx, t, p, QuestionAbandoned)
 		e.cancelTurn(t)
 		msg := fmt.Sprintf("forwarding answer to acp agent: %v", err)
 		if t.agent.exited() {
 			msg = errQuestionGone
 		}
 		yield(failed(execCtx, msg), nil)
-		return false
+		return nil, false
 	}
-	return true
+	e.questionDone(ctx, t, p, QuestionAnswered)
+	return t, true
+}
+
+// interrupt rejects the pending question, cancels its turn and starts a new
+// turn with the caller's message once the agent ended the canceled one.
+func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQuestion, yield func(a2a.Event, error) bool) (*turn, bool) {
+	if t.takePending(p) {
+		if err := p.reject(t.agent); err != nil {
+			log.Warn(ctx, "failed to reject acp request", "cause", err)
+		}
+		e.questionDone(ctx, t, p, QuestionInterrupted)
+	}
+	e.cancelTurn(t)
+	next, err := e.startTurn(ctx, execCtx)
+	if err != nil {
+		yield(failed(execCtx, err.Error()), nil)
+		return nil, false
+	}
+	return next, true
 }
 
 // startTurn waits for the previous turn in the context to finish and sends
@@ -486,12 +397,22 @@ func (e *Executor) startTurn(ctx context.Context, execCtx *a2asrv.ExecutorContex
 	return t, nil
 }
 
-func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, unlock func()) (*turn, error) {
+// prompt sends the message as a prompt and returns its turn. done is called
+// when the agent responds to the prompt.
+func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, done func()) (*turn, error) {
+	parts, err := e.promptParts(ctx, execCtx)
+	if err != nil {
+		return nil, err
+	}
+	turnSettings, err := e.turnConfig(ctx, execCtx)
+	if err != nil {
+		return nil, err
+	}
 	ag, err := e.ensureAgent(ctx)
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := toPrompt(execCtx.Message, ag.caps.PromptCapabilities)
+	prompt, err := toPrompt(parts, ag.caps.PromptCapabilities)
 	if err != nil {
 		return nil, err
 	}
@@ -504,8 +425,7 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	if !configured {
 		maps.Copy(settings, e.cfg.SessionConfig)
 	}
-	maps.Copy(settings, metadataConfig(execCtx.Metadata))
-	maps.Copy(settings, metadataConfig(execCtx.Message.Metadata))
+	maps.Copy(settings, turnSettings)
 	if err := configure(ctx, ag, sessionID, settings); err != nil {
 		return nil, fmt.Errorf("configuring acp session: %w", err)
 	}
@@ -521,11 +441,13 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 
 	go func() {
 		resp, err := ag.client.Prompt(context.WithoutCancel(ctx), acp.PromptRequest{SessionID: sessionID, Prompt: prompt})
-		result := &promptResult{err: err}
+		result := &promptResult{err: err, canceled: t.isCanceled()}
 		if err == nil {
 			result.reason = resp.StopReason
 		}
-		t.end()
+		if p := t.end(); p != nil {
+			e.questionDone(context.WithoutCancel(ctx), t, p, QuestionAbandoned)
+		}
 		t.events.push(turnEvent{result: result})
 		e.mu.Lock()
 		if e.routes[sessionID] == t {
@@ -535,9 +457,26 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 			delete(e.turns, t.taskID)
 		}
 		e.mu.Unlock()
-		unlock()
+		done()
 	}()
 	return t, nil
+}
+
+func (e *Executor) promptParts(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]*a2a.Part, error) {
+	if e.cfg.Prompt != nil {
+		return e.cfg.Prompt(ctx, execCtx)
+	}
+	if execCtx.Message == nil {
+		return nil, errors.New("no message to send to the agent")
+	}
+	return execCtx.Message.Parts, nil
+}
+
+func (e *Executor) turnConfig(ctx context.Context, execCtx *a2asrv.ExecutorContext) (map[string]any, error) {
+	if e.cfg.TurnConfig == nil {
+		return nil, nil
+	}
+	return e.cfg.TurnConfig(ctx, execCtx)
 }
 
 // session returns the ACP session of the A2A context. It reuses a session the
@@ -551,12 +490,12 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 	if ok && ag.hasSession(id) {
 		return id, nil
 	}
-	servers, err := e.mcpServers(ctx, execCtx)
+	params, err := e.sessionParams(ctx, execCtx)
 	if err != nil {
 		return "", err
 	}
 	if ok && ag.caps.LoadSession {
-		resp, err := ag.client.LoadSession(ctx, acp.LoadSessionRequest{SessionID: id, Cwd: e.cfg.Dir, MCPServers: servers})
+		resp, err := ag.client.LoadSession(ctx, acp.LoadSessionRequest{SessionID: id, Cwd: params.Cwd, MCPServers: params.MCPServers})
 		if err == nil {
 			ag.addSession(id, *resp)
 			return id, nil
@@ -564,7 +503,7 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 		log.Warn(ctx, "failed to load acp session, starting a new one", "session", id, "cause", err)
 	}
 
-	resp, err := ag.client.NewSession(ctx, acp.NewSessionRequest{Cwd: e.cfg.Dir, MCPServers: servers})
+	resp, err := ag.client.NewSession(ctx, acp.NewSessionRequest{Cwd: params.Cwd, MCPServers: params.MCPServers})
 	if err != nil {
 		return "", fmt.Errorf("creating acp session: %w", err)
 	}
@@ -575,23 +514,23 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 	return resp.SessionID, nil
 }
 
-func (e *Executor) mcpServers(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]json.RawMessage, error) {
-	if e.cfg.MCPServers == nil {
-		return []json.RawMessage{}, nil
+// sessionParams returns the parameters of a session with defaults applied:
+// ACP requires an absolute working directory and a non-null server list.
+func (e *Executor) sessionParams(ctx context.Context, execCtx *a2asrv.ExecutorContext) (SessionParams, error) {
+	var params SessionParams
+	if e.cfg.Session != nil {
+		var err error
+		if params, err = e.cfg.Session(ctx, execCtx); err != nil {
+			return SessionParams{}, fmt.Errorf("resolving session parameters: %w", err)
+		}
 	}
-	servers, err := e.cfg.MCPServers.MCPServers(ctx, execCtx)
-	if err != nil {
-		return nil, fmt.Errorf("resolving mcp servers: %w", err)
+	if !filepath.IsAbs(params.Cwd) {
+		params.Cwd = filepath.Join(e.cfg.Dir, params.Cwd)
 	}
-	if servers == nil {
-		return []json.RawMessage{}, nil
+	if params.MCPServers == nil {
+		params.MCPServers = []json.RawMessage{}
 	}
-	return servers, nil
-}
-
-func metadataConfig(md map[string]any) map[string]any {
-	cfg, _ := md[configMetadataKey].(map[string]any)
-	return cfg
+	return params, nil
 }
 
 // configure applies session settings in a stable order.
@@ -684,8 +623,8 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 			}
 
 		case ev.question != nil:
-			p := t.newPending(ev.question)
-			decided, err := e.applyRules(t.agent, p)
+			p := t.newPending(ev.question, fmt.Sprintf("elicitation-%d", e.elicitations.Add(1)))
+			decided, err := e.autoAnswer(ctx, execCtx, t.agent, p)
 			if err != nil {
 				e.cancelTurn(t)
 				yield(failed(execCtx, fmt.Sprintf("forwarding answer to acp agent: %v", err)), nil)
@@ -698,7 +637,7 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 				p.in.cancel(t.agent)
 				continue
 			}
-			yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, inputRequiredMessage(execCtx, p.q, "")), nil)
+			yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, hitl.NewStatusMessage(execCtx, p.q, "")), nil)
 			return
 
 		case ev.result != nil:
@@ -708,18 +647,30 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 	}
 }
 
-// applyRules answers p with Config.AllowTools and DenyTools. A denied request
-// is never passed to the caller, even if the agent offers no way to reject it.
-func (e *Executor) applyRules(ag *agent, p *pendingQuestion) (bool, error) {
+// autoAnswer answers p with Config.AutoAnswer, AllowTools and DenyTools. A
+// denied request is never passed to the caller, even if the agent offers no
+// way to reject it.
+func (e *Executor) autoAnswer(ctx context.Context, execCtx *a2asrv.ExecutorContext, ag *agent, p *pendingQuestion) (bool, error) {
+	if e.cfg.AutoAnswer != nil {
+		if ans, ok := e.cfg.AutoAnswer(ctx, execCtx, p.q); ok {
+			return true, p.reply(ag, ans)
+		}
+	}
 	switch e.rules.decide(p.q) {
 	case ruleDeny:
 		return true, p.reject(ag)
 	case ruleAllow:
-		if _, offered := p.q.option(optionOnce); offered {
-			return true, p.reply(ag, answer{option: optionOnce})
+		if id := firstOffered(p.q, hitl.OptionOnce, hitl.OptionAlways); id != "" {
+			return true, p.reply(ag, hitl.Answer{Option: id})
 		}
 	}
 	return false, nil
+}
+
+func (e *Executor) questionDone(ctx context.Context, t *turn, p *pendingQuestion, outcome QuestionOutcome) {
+	if e.cfg.OnQuestionDone != nil {
+		e.cfg.OnQuestionDone(ctx, t.taskID, p.q, outcome)
+	}
 }
 
 // expire rejects a question nobody answered in time and cancels its turn,
@@ -728,16 +679,18 @@ func (e *Executor) expire(t *turn, p *pendingQuestion) {
 	if !t.takePending(p) {
 		return
 	}
-	log.Info(context.Background(), "acp question timed out", "task", t.taskID, "question", p.q.id)
+	ctx := context.Background()
+	log.Info(ctx, "acp question timed out", "task", t.taskID, "question", p.q.ID)
 	if err := p.reject(t.agent); err != nil {
-		log.Warn(context.Background(), "failed to reject acp request", "cause", err)
+		log.Warn(ctx, "failed to reject acp request", "cause", err)
 	}
+	e.questionDone(ctx, t, p, QuestionTimedOut)
 	e.cancelTurn(t)
 }
 
 // cancelTurn asks the agent to stop the turn and cancels its open questions,
 // as ACP requires from the client. The turn ends when the agent responds to
-// the prompt.
+// the prompt, or when the agent is stopped after Config.CancelTimeout.
 func (e *Executor) cancelTurn(t *turn) {
 	p, ok := t.cancel()
 	if !ok {
@@ -748,9 +701,19 @@ func (e *Executor) cancelTurn(t *turn) {
 	}
 	if p != nil {
 		p.in.cancel(t.agent)
+		e.questionDone(context.Background(), t, p, QuestionCanceled)
 	}
 	for _, ev := range t.events.removeIf(func(ev turnEvent) bool { return ev.question != nil }) {
 		ev.question.cancel(t.agent)
+	}
+	if e.cfg.CancelTimeout > 0 {
+		time.AfterFunc(e.cfg.CancelTimeout, func() {
+			if t.hasEnded() {
+				return
+			}
+			log.Warn(context.Background(), "acp agent didn't stop a canceled turn, stopping the agent", "session", t.sessionID)
+			e.stopAgent(t.agent)
+		})
 	}
 }
 

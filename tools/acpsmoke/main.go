@@ -50,7 +50,7 @@ func main() {
 	if *dir == "" {
 		log.Fatal("-dir is required")
 	}
-	cfg := a2aacp.Config{Profile: *profile, Command: strings.Fields(*command), Dir: *dir}
+	cfg := a2aacp.Config{Profile: *profile, Command: strings.Fields(*command), Dir: *dir, TurnConfig: a2aacp.MetadataConfig("mode")}
 	if *verbose {
 		cfg.Stderr = os.Stderr
 	}

@@ -25,7 +25,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
-	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // turn is one ACP prompt. It outlives an Execute call when the task pauses in
@@ -52,29 +51,12 @@ type turnEvent struct {
 	result   *promptResult
 }
 
-// incomingQuestion is a permission request or a form elicitation from the agent.
-type incomingQuestion struct {
-	rpcID       json.RawMessage
-	permission  *acp.RequestPermissionRequest
-	elicitation *acp.CreateElicitationRequest
-}
-
-// cancel responds to the request with the cancelled outcome.
-func (in *incomingQuestion) cancel(ag *agent) {
-	var err error
-	if in.elicitation != nil {
-		err = ag.client.RespondElicitation(in.rpcID, acp.CreateElicitationResponse{Action: acp.ElicitationCancel})
-	} else {
-		err = ag.client.RespondPermission(in.rpcID, acp.PermissionOutcome{Outcome: acp.OutcomeCancelled})
-	}
-	if err != nil {
-		log.Warn(context.Background(), "failed to cancel acp request", "cause", err)
-	}
-}
-
 type promptResult struct {
 	reason acp.StopReason
 	err    error
+	// canceled reports that the turn was canceled, so that an agent stopped
+	// for not ending a canceled turn doesn't fail the task.
+	canceled bool
 }
 
 func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
@@ -145,12 +127,18 @@ func (t *turn) cancel() (*pendingQuestion, bool) {
 }
 
 // end is called when the agent responded to the prompt: questions of the
-// turn can no longer be answered.
-func (t *turn) end() {
+// turn can no longer be answered. It returns the question left pending.
+func (t *turn) end() *pendingQuestion {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ended = true
-	t.clearPendingLocked()
+	return t.clearPendingLocked()
+}
+
+func (t *turn) hasEnded() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.ended
 }
 
 func (t *turn) isCanceled() bool {
@@ -160,6 +148,9 @@ func (t *turn) isCanceled() bool {
 }
 
 func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
+	if r.err != nil && r.canceled {
+		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
+	}
 	if r.err != nil {
 		return failed(info, fmt.Sprintf("acp agent error: %v", r.err))
 	}
@@ -266,82 +257,6 @@ func (t *turn) onToolStatus(info a2a.TaskInfoProvider, tc *acp.ToolCall) []a2a.E
 	return []a2a.Event{a2a.NewStatusUpdateEvent(info, a2a.TaskStateWorking, msg)}
 }
 
-// pendingQuestion is an ACP request translated to a question for the caller.
-type pendingQuestion struct {
-	in        *incomingQuestion
-	q         question
-	optionIDs map[string]string // permission option ID -> ACP option ID
-	timer     *time.Timer
-}
-
-var optionIDByKind = map[string]string{
-	acp.PermissionAllowOnce:    optionOnce,
-	acp.PermissionAllowAlways:  optionAlways,
-	acp.PermissionRejectOnce:   optionReject,
-	acp.PermissionRejectAlways: optionRejectAlways,
-}
-
-func (t *turn) newPending(in *incomingQuestion) *pendingQuestion {
-	p := &pendingQuestion{in: in, optionIDs: map[string]string{}}
-	if el := in.elicitation; el != nil {
-		p.q = question{
-			id:      "elicitation-" + strings.Trim(string(in.rpcID), `"`),
-			kind:    kindForm,
-			title:   el.Message,
-			schema:  el.RequestedSchema,
-			options: formOptions,
-		}
-		if len(formFields(el.RequestedSchema)) == 0 {
-			p.q.options = append([]option{{id: acp.ElicitationAccept, label: "Accept"}}, formOptions...)
-		}
-		return p
-	}
-
-	tc := t.mergeTool(in.permission.ToolCall)
-	title := tc.Title
-	if title == "" {
-		title = tc.Kind
-	}
-	p.q = question{id: tc.ToolCallID, kind: kindPermission, tool: tc.Kind, title: title, input: tc.RawInput}
-	for _, o := range in.permission.Options {
-		id, ok := optionIDByKind[o.Kind]
-		if _, taken := p.optionIDs[id]; !ok || taken {
-			id = o.OptionID
-		}
-		p.optionIDs[id] = o.OptionID
-		p.q.options = append(p.q.options, option{id: id, label: o.Name})
-	}
-	return p
-}
-
-func (p *pendingQuestion) reply(ag *agent, a answer) error {
-	if p.q.kind == kindForm {
-		return ag.client.RespondElicitation(p.in.rpcID, acp.CreateElicitationResponse{Action: a.option, Content: a.content})
-	}
-	acpID, ok := p.optionIDs[a.option]
-	if !ok {
-		return fmt.Errorf("option %q was not offered", a.option)
-	}
-	return ag.client.RespondPermission(p.in.rpcID, acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: acpID})
-}
-
-// reject declines a form, or rejects a permission request if the agent offers
-// a way to, and cancels it otherwise.
-func (p *pendingQuestion) reject(ag *agent) error {
-	a := answer{option: acp.ElicitationDecline}
-	if p.q.kind == kindPermission {
-		a.option = optionReject
-		if _, ok := p.q.option(optionReject); !ok {
-			a.option = optionRejectAlways
-		}
-		if _, ok := p.q.option(a.option); !ok {
-			p.in.cancel(ag)
-			return nil
-		}
-	}
-	return p.reply(ag, a)
-}
-
 // textStream turns agent message chunks into one artifact: the first chunk
 // creates it, later chunks append to it. Separate agent messages and text
 // around tool calls are separated by a blank line.
@@ -382,12 +297,9 @@ func (s *textStream) breakBlock() {
 	}
 }
 
-func toPrompt(msg *a2a.Message, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
-	if msg == nil {
-		return nil, fmt.Errorf("no message to send to the agent")
-	}
+func toPrompt(parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
 	var out []acp.ContentBlock
-	for i, p := range msg.Parts {
+	for i, p := range parts {
 		switch c := p.Content.(type) {
 		case a2a.Text:
 			out = append(out, acp.ContentBlock{Type: "text", Text: string(c)})
