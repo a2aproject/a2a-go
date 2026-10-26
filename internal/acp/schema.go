@@ -16,6 +16,7 @@ package acp
 
 import (
 	"encoding/json"
+	"slices"
 )
 
 // ProtocolVersion is the ACP major version the client speaks.
@@ -177,6 +178,8 @@ type CancelNotification struct {
 // ContentBlock is a piece of prompt or message content. Type is "text",
 // "image", "audio", "resource_link" or "resource".
 type ContentBlock struct {
+	// Raw, if set, is sent instead of the other fields.
+	Raw      json.RawMessage   `json:"-"`
 	Type     string            `json:"type"`
 	Text     string            `json:"text,omitempty"`
 	Data     string            `json:"data,omitempty"`
@@ -184,6 +187,15 @@ type ContentBlock struct {
 	URI      string            `json:"uri,omitempty"`
 	Name     string            `json:"name,omitempty"`
 	Resource *EmbeddedResource `json:"resource,omitempty"`
+}
+
+// MarshalJSON implements [json.Marshaler].
+func (b ContentBlock) MarshalJSON() ([]byte, error) {
+	if b.Raw != nil {
+		return b.Raw, nil
+	}
+	type plain ContentBlock
+	return json.Marshal(plain(b))
 }
 
 // EmbeddedResource is the content of a resource block, as Text or base64 Blob.
@@ -211,11 +223,26 @@ const (
 // SessionUpdate is a union of all session/update variants. Content holds a
 // single content block for message chunks and a list for tool calls.
 type SessionUpdate struct {
+	// Raw is the update as the agent sent it, including fields this type
+	// doesn't describe.
+	Raw           json.RawMessage       `json:"-"`
 	SessionUpdate string                `json:"sessionUpdate"`
 	Content       json.RawMessage       `json:"content,omitempty"`
 	MessageID     string                `json:"messageId,omitempty"`
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 	ToolCall
+}
+
+// UnmarshalJSON implements [json.Unmarshaler].
+func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
+	type plain SessionUpdate
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*u = SessionUpdate(p)
+	u.Raw = slices.Clone(data)
+	return nil
 }
 
 // ToolCall describes a tool call. In updates and permission requests only the

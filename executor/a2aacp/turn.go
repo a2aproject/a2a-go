@@ -37,8 +37,9 @@ type turn struct {
 	events    *queue[turnEvent]
 
 	// Accessed only by the goroutine running Execute.
-	text  textStream
-	tools map[string]*acp.ToolCall
+	text      textStream
+	tools     map[string]*acp.ToolCall
+	converter UpdateConverter
 
 	mu       sync.Mutex
 	pending  *pendingQuestion
@@ -192,8 +193,19 @@ func (t *turn) onUpdate(ctx context.Context, info a2a.TaskInfoProvider, u *acp.S
 	case acp.UpdateConfigOption:
 		return nil
 	}
-	log.Debug(ctx, "dropped acp session update", "session", t.sessionID, "type", u.SessionUpdate)
+	if t.converter == nil {
+		log.Debug(ctx, "dropped acp session update", "session", t.sessionID, "type", u.SessionUpdate)
+	}
 	return nil
+}
+
+// convert passes the built-in conversion of u through Config.UpdateConverter.
+func (t *turn) convert(ctx context.Context, info a2a.TaskInfoProvider, u *acp.SessionUpdate) ([]a2a.Event, error) {
+	events := t.onUpdate(ctx, info, u)
+	if t.converter == nil {
+		return events, nil
+	}
+	return t.converter.Convert(ctx, Update{Type: u.SessionUpdate, Raw: u.Raw}, events)
 }
 
 // mergeTool applies the fields set in patch to the known state of the tool
@@ -306,9 +318,21 @@ func (s *textStream) breakBlock() {
 	}
 }
 
-func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
+// toPrompt converts message parts to prompt content. convert, if not nil,
+// takes precedence over the built-in conversion.
+func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilities, convert func(*a2a.Part) (json.RawMessage, bool, error)) ([]acp.ContentBlock, error) {
 	var out []acp.ContentBlock
 	for i, p := range parts {
+		if convert != nil {
+			raw, ok, err := convert(p)
+			if err != nil {
+				return nil, fmt.Errorf("converting part %d: %w", i, err)
+			}
+			if ok {
+				out = append(out, acp.ContentBlock{Raw: raw})
+				continue
+			}
+		}
 		switch c := p.Content.(type) {
 		case a2a.Text:
 			out = append(out, acp.ContentBlock{Type: "text", Text: string(c)})

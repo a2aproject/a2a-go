@@ -16,10 +16,17 @@
 // speaking the Agent Client Protocol (https://agentclientprotocol.com), such
 // as `opencode acp`, Zed's claude-agent-acp or `gemini --experimental-acp`.
 //
-// One agent process serves all tasks and is restarted if it exits. Every A2A
-// context maps to an ACP session and every task to an ACP prompt turn. Tasks in the same context run one at a time, in arrival
-// order. Agent text streams into a "response" artifact and tool calls become
-// working status updates.
+// Every A2A context maps to an ACP session and every task to an ACP prompt
+// turn. Tasks in the same context run one at a time, in arrival order. One
+// agent process serves all contexts unless [Config.AgentKey] groups them into
+// processes, for example one per context or tenant; agents are restarted if
+// they exit and can be stopped when idle. Agent text streams into a
+// "response" artifact and tool calls become working status updates;
+// [Config.UpdateConverter] and [Config.ConvertPart] change the conversion.
+//
+// Questions are tied to the agent process which asked them, so in a cluster
+// every message of a context must reach the node which runs its agent. See
+// [Config.AgentKey], [ErrNotOwner] and [Executor.Drain].
 //
 // Permission requests and form elicitations pause the task in input-required
 // with a question in the format of package [hitl], unless [Config.AutoAnswer],
@@ -69,12 +76,31 @@ type Config struct {
 	Env []string
 	// Stderr receives the stderr of the agent started from Command or Profile. Discarded if nil.
 	Stderr io.Writer
-	// Start starts the agent and returns its stdio: reads come from the
-	// agent's output, writes go to its input, and Close stops the agent. It
-	// takes precedence over Command and Profile, for example to run the agent
-	// in a sandbox; see [StartProcess], [WithCleanup] and [ProfileCommand].
-	// The agent must outlive ctx, which ends once the agent is initialized.
-	Start func(ctx context.Context) (io.ReadWriteCloser, error)
+	// Start starts the agent of a key (see AgentKey) and returns its stdio:
+	// reads come from the agent's output, writes go to its input, and Close
+	// stops the agent. It takes precedence over Command and Profile, for
+	// example to run the agent in a sandbox of the key; see [StartProcess],
+	// [WithCleanup] and [ProfileCommand]. The agent must outlive ctx, which
+	// ends once the agent is initialized. Return an error wrapping
+	// [ErrNotOwner] if another node runs the agent of the key.
+	Start func(ctx context.Context, key string) (io.ReadWriteCloser, error)
+	// AgentKey selects the agent process of a new A2A context: contexts with
+	// the same key share a process, contexts with different keys never do.
+	// For example, return contextID for a process per context, or a tenant
+	// from the call context in ctx for a process per tenant. It is called
+	// when a context has no session yet; later turns use the agent whose key
+	// is stored with the session, since a session lives in one agent's
+	// storage. Defaults to one agent, with key "", for all contexts.
+	AgentKey func(ctx context.Context, contextID string) (string, error)
+	// IdleTimeout stops an agent which has no turns in progress, including
+	// turns waiting for an answer, for this long. Its sessions are loaded
+	// again by the next agent of the key if the agent supports session/load,
+	// and lost otherwise. Zero keeps agents running.
+	IdleTimeout time.Duration
+	// MaxAgents limits the number of running agents. At the limit, the least
+	// recently used idle agent is stopped to start another; if all are busy,
+	// the turn fails. Zero means no limit.
+	MaxAgents int
 	// StartTimeout limits starting and initializing the agent. Zero means one minute.
 	StartTimeout time.Duration
 	// CancelTimeout is how long a canceled turn may run before the agent is
@@ -123,6 +149,14 @@ type Config struct {
 	// turn, for example to add context the caller didn't write. The task keeps
 	// the original message. Defaults to the message parts.
 	Prompt func(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]*a2a.Part, error)
+	// ConvertPart converts a prompt part to an ACP content block, given as
+	// JSON. It is called for every part before the built-in conversion, which
+	// is used if it returns false.
+	ConvertPart func(ctx context.Context, execCtx *a2asrv.ExecutorContext, part *a2a.Part) (block json.RawMessage, ok bool, err error)
+	// UpdateConverter returns the converter of the session updates of a new
+	// turn, to emit what the built-in conversion drops or emits differently.
+	// A nil converter keeps the built-in conversion.
+	UpdateConverter func(ctx context.Context, execCtx *a2asrv.ExecutorContext) UpdateConverter
 	// Sessions maps A2A contexts to ACP sessions. Defaults to an in-memory store.
 	Sessions SessionStore
 	// Session returns the parameters of the session of an A2A context. It is
@@ -148,25 +182,27 @@ type SessionParams struct {
 // Executor implements [a2asrv.AgentExecutor] for an ACP agent.
 type Executor struct {
 	cfg   Config
-	start func(ctx context.Context) (io.ReadWriteCloser, error)
+	start func(ctx context.Context, key string) (io.ReadWriteCloser, error)
 	rules toolRules
 
 	elicitations atomic.Int64
 
-	// startMu serializes starting and stopping agents, so that at most one
-	// agent process runs at a time.
-	startMu sync.Mutex
-
 	mu       sync.Mutex
-	agent    *agent
+	agents   map[string]*agentSlot // agent key -> agent
 	closed   bool
-	routes   map[string]*turn                       // ACP session ID -> turn in progress
+	draining bool
+	drained  chan struct{}                          // closed when draining and no turn runs or waits
+	routes   map[routeKey]*turn                     // agent session -> turn in progress
 	turns    map[a2a.TaskID]*turn                   // task ID -> turn in progress
 	waiting  map[a2a.TaskID]context.CancelCauseFunc // task ID -> turn being started
 	locks    map[string]*ctxLock                    // A2A context ID -> turn lock
-	startErr error                                  // the last failed start
-	retryAt  time.Time                              // when a start may be tried again after startErr
-	backoff  time.Duration
+}
+
+// routeKey identifies a session in an agent process: processes of different
+// keys may use the same session IDs.
+type routeKey struct {
+	agent     *agent
+	sessionID string
 }
 
 var _ a2asrv.AgentExecutor = (*Executor)(nil)
@@ -198,8 +234,10 @@ func (e *busyError) Error() string {
 	return fmt.Sprintf("the context is busy with task %s, send the message after it finishes", e.holder)
 }
 
-// NewExecutor starts the agent and negotiates the protocol version. Call
-// [Executor.Close] to stop the agent.
+// NewExecutor returns an executor. Without [Config.AgentKey] it starts the
+// agent and negotiates the protocol version, so that a broken configuration
+// fails early; agents of keys start on their first turn. Call
+// [Executor.Close] or [Executor.Drain] to stop the agents.
 func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 	if cfg.Dir == "" {
 		wd, err := os.Getwd()
@@ -229,19 +267,25 @@ func NewExecutor(ctx context.Context, cfg Config) (*Executor, error) {
 			return nil, err
 		}
 		p := Process{Argv: argv, Dir: cfg.Dir, Env: cfg.Env, Stderr: cfg.Stderr}
-		start = func(ctx context.Context) (io.ReadWriteCloser, error) { return StartProcess(ctx, p) }
+		start = func(ctx context.Context, _ string) (io.ReadWriteCloser, error) { return StartProcess(ctx, p) }
 	}
 	e := &Executor{
 		cfg:     cfg,
 		start:   start,
 		rules:   toolRules{allow: cfg.AllowTools, deny: cfg.DenyTools},
-		routes:  map[string]*turn{},
+		agents:  map[string]*agentSlot{},
+		drained: make(chan struct{}),
+		routes:  map[routeKey]*turn{},
 		turns:   map[a2a.TaskID]*turn{},
 		waiting: map[a2a.TaskID]context.CancelCauseFunc{},
 		locks:   map[string]*ctxLock{},
 	}
-	if _, err := e.ensureAgent(ctx); err != nil {
-		return nil, err
+	if cfg.AgentKey == nil {
+		_, release, err := e.acquireAgent(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		release()
 	}
 	return e, nil
 }
@@ -291,11 +335,7 @@ func (h *agentHandler) ask(sessionID string, in *incomingQuestion) {
 func (e *Executor) route(ag *agent, sessionID string) *turn {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	t := e.routes[sessionID]
-	if t == nil || t.agent != ag {
-		return nil
-	}
-	return t
+	return e.routes[routeKey{ag, sessionID}]
 }
 
 // Execute implements [a2asrv.AgentExecutor].
@@ -417,6 +457,10 @@ func (e *Executor) startTurn(ctx context.Context, execCtx *a2asrv.ExecutorContex
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	e.mu.Lock()
+	if e.draining {
+		e.mu.Unlock()
+		return nil, errDraining
+	}
 	e.waiting[execCtx.TaskID] = cancel
 	e.mu.Unlock()
 	defer e.stopWaiting(execCtx.TaskID)
@@ -445,6 +489,7 @@ func (e *Executor) stopWaiting(taskID a2a.TaskID) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	delete(e.waiting, taskID)
+	e.checkDrainedLocked()
 }
 
 func (e *Executor) isWaiting(taskID a2a.TaskID) bool {
@@ -464,15 +509,37 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	if err != nil {
 		return nil, err
 	}
-	ag, err := e.ensureAgent(ctx)
+	stored, hasSession, err := e.cfg.Sessions.Get(ctx, execCtx.ContextID)
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := toPrompt(ctx, parts, ag.caps.PromptCapabilities)
+	key := stored.AgentKey
+	if !hasSession {
+		if key, err = e.agentKey(ctx, execCtx.ContextID); err != nil {
+			return nil, err
+		}
+	}
+	ag, release, err := e.acquireAgent(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	sessionID, err := e.session(ctx, ag, execCtx)
+	t, err := e.promptAgent(ctx, execCtx, ag, parts, turnSettings, stored, hasSession, func() {
+		release()
+		done()
+	})
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return t, nil
+}
+
+func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorContext, ag *agent, parts []*a2a.Part, turnSettings map[string]any, stored Session, hasSession bool, done func()) (*turn, error) {
+	prompt, err := toPrompt(ctx, parts, ag.caps.PromptCapabilities, e.partConverter(ctx, execCtx))
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := e.session(ctx, ag, execCtx, stored, hasSession)
 	if err != nil {
 		return nil, err
 	}
@@ -490,13 +557,17 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	}
 
 	t := newTurn(execCtx.TaskID, sessionID, ag)
+	if e.cfg.UpdateConverter != nil {
+		t.converter = e.cfg.UpdateConverter(ctx, execCtx)
+	}
+	route := routeKey{ag, sessionID}
 	e.mu.Lock()
 	if err := context.Cause(ctx); err != nil {
 		e.mu.Unlock()
 		return nil, err
 	}
 	delete(e.waiting, execCtx.TaskID)
-	e.routes[sessionID] = t
+	e.routes[route] = t
 	e.turns[execCtx.TaskID] = t
 	e.mu.Unlock()
 
@@ -511,16 +582,37 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 		}
 		t.events.push(turnEvent{result: result})
 		e.mu.Lock()
-		if e.routes[sessionID] == t {
-			delete(e.routes, sessionID)
+		if e.routes[route] == t {
+			delete(e.routes, route)
 		}
 		if e.turns[t.taskID] == t {
 			delete(e.turns, t.taskID)
 		}
+		e.checkDrainedLocked()
 		e.mu.Unlock()
 		done()
 	}()
 	return t, nil
+}
+
+func (e *Executor) agentKey(ctx context.Context, contextID string) (string, error) {
+	if e.cfg.AgentKey == nil {
+		return "", nil
+	}
+	key, err := e.cfg.AgentKey(ctx, contextID)
+	if err != nil {
+		return "", fmt.Errorf("selecting the agent: %w", err)
+	}
+	return key, nil
+}
+
+func (e *Executor) partConverter(ctx context.Context, execCtx *a2asrv.ExecutorContext) func(*a2a.Part) (json.RawMessage, bool, error) {
+	if e.cfg.ConvertPart == nil {
+		return nil
+	}
+	return func(p *a2a.Part) (json.RawMessage, bool, error) {
+		return e.cfg.ConvertPart(ctx, execCtx, p)
+	}
 }
 
 func (e *Executor) promptParts(ctx context.Context, execCtx *a2asrv.ExecutorContext) ([]*a2a.Part, error) {
@@ -543,11 +635,8 @@ func (e *Executor) turnConfig(ctx context.Context, execCtx *a2asrv.ExecutorConte
 // session returns the ACP session of the A2A context. It reuses a session the
 // agent already knows, loads a session created by a previous agent process,
 // or creates a new one.
-func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.ExecutorContext) (string, error) {
-	id, ok, err := e.cfg.Sessions.Get(ctx, execCtx.ContextID)
-	if err != nil {
-		return "", err
-	}
+func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.ExecutorContext, stored Session, ok bool) (string, error) {
+	id := stored.ID
 	if ok && ag.hasSession(id) {
 		return id, nil
 	}
@@ -569,7 +658,7 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 		return "", fmt.Errorf("creating acp session: %w", err)
 	}
 	ag.addSession(resp.SessionID, resp.SessionState)
-	if err := e.cfg.Sessions.Put(ctx, execCtx.ContextID, resp.SessionID); err != nil {
+	if err := e.cfg.Sessions.Put(ctx, execCtx.ContextID, Session{ID: resp.SessionID, AgentKey: ag.key}); err != nil {
 		return "", err
 	}
 	return resp.SessionID, nil
@@ -699,7 +788,13 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 
 		switch {
 		case ev.update != nil:
-			for _, out := range t.onUpdate(ctx, execCtx, ev.update) {
+			events, err := t.convert(ctx, execCtx, ev.update)
+			if err != nil {
+				e.cancelTurn(t)
+				yield(failed(execCtx, fmt.Sprintf("converting acp update: %v", err)), nil)
+				return
+			}
+			for _, out := range events {
 				if !yield(out, nil) {
 					e.cancelTurn(t)
 					return

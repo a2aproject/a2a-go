@@ -47,6 +47,7 @@ type fakeHarness struct {
 
 type fakeAgent struct {
 	h    *fakeHarness
+	key  string
 	conn *acp.Conn
 
 	mu         sync.Mutex
@@ -61,10 +62,10 @@ type fakeAgent struct {
 	crashed    bool
 }
 
-func (h *fakeHarness) start(context.Context) (io.ReadWriteCloser, error) {
+func (h *fakeHarness) start(_ context.Context, key string) (io.ReadWriteCloser, error) {
 	clientR, agentW := io.Pipe()
 	agentR, clientW := io.Pipe()
-	f := &fakeAgent{h: h}
+	f := &fakeAgent{h: h, key: key}
 	f.conn = acp.NewConn(pipeRWC{r: agentR, w: agentW}, f.handle)
 	f.conn.Start()
 	h.mu.Lock()

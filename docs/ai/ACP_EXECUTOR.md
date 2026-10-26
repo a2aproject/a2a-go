@@ -11,33 +11,35 @@
 
 | Package | Contents |
 | :--- | :--- |
-| `executor/a2aacp` | the executor: turns (`turn.go`), agent lifecycle (`agent.go`), ACP request → question translation and tool rules (`questions.go`), hook types and helpers (`hooks.go`), process utilities and profiles (`process.go`), `SessionStore` default |
+| `executor/a2aacp` | the executor: turns (`turn.go`), keyed agent lifecycle and `Drain` (`agent.go`), ACP request → question translation and tool rules (`questions.go`), hook types and helpers (`hooks.go`), update converters (`convert.go`), process utilities and profiles (`process.go`), `SessionStore` default |
 | `executor/a2aacp/hitl` | public question/answer format: `Question`, `Answer`, `FromStatus`/`FromMessage`, `NewStatusMessage`, `ParseAnswer`, `NewAnswerMessage`, `Question.MatchOption`/`Fields`/`AcceptForm`; used by the executor and by clients |
 | `internal/acp` | hand-rolled ACP client: protocol types (`schema.go`), JSON-RPC 2.0 over NDJSON (`Conn`), typed `Client` with a `Handler` for agent→client requests |
 | `internal/subprocess` | starts a child process and exposes its stdio as an `io.ReadWriteCloser` |
 
 Everything dropped in conversion is logged: unsupported prompt parts and malformed agent content
 (warn), unmapped session updates and content types, unsupported notifications and unmatched
-responses (debug).
+responses (debug). Unmapped session updates are logged only when no `UpdateConverter` is set.
 
 `internal/acp` covers only what the executor uses. `Client` answers unsupported agent requests
 ("method not found") and malformed ones ("invalid params") itself; `executor.agentHandler`
 routes the rest to turns.
 
-The exported API is `Executor`, `NewExecutor`, `Config`, `SessionStore`, `SessionParams`, and
+The exported API is `Executor` (with `Close` and `Drain`), `NewExecutor`, `Config`,
+`SessionStore`/`Session`, `SessionParams`, `ErrNotOwner`, `Update`/`UpdateConverter`, and
 helpers consumers would otherwise rewrite: `StartProcess`/`Process`,
 `WithCleanup`, `ProfileCommand` (to build `Config.Start`), `MetadataConfig` (a `TurnConfig`),
-`InterruptUnrecognized` (an `OnInvalidReply`). Extension points are `Config` callbacks:
-`Start`, `Session`, `AutoAnswer`, `OnInvalidReply`, `OnQuestionDone`, `TurnConfig`, `Prompt`. Fields cover
-the common cases: `AllowTools`/`DenyTools`, `CancelTimeout`, `StartTimeout`, `BusyContext`,
-`QuestionTimeout`, `SessionConfig`.
+`InterruptUnrecognized` (an `OnInvalidReply`), `ThoughtsAsArtifact` / `ChainUpdateConverters` /
+`UpdateConverterFunc`. Extension points are `Config` callbacks: `Start`, `AgentKey`, `Session`,
+`AutoAnswer`, `OnInvalidReply`, `OnQuestionDone`, `TurnConfig`, `Prompt`, `ConvertPart`,
+`UpdateConverter`. Fields cover the common cases: `AllowTools`/`DenyTools`, `CancelTimeout`,
+`StartTimeout`, `IdleTimeout`, `MaxAgents`, `BusyContext`, `QuestionTimeout`, `SessionConfig`.
 
 ## Mapping
 
 | A2A | ACP |
 | :--- | :--- |
-| Executor | one agent process (`Config.Start`, or `Command`/`Profile` via `StartProcess`), restarted lazily on the next turn if it exited |
-| Context | session (`SessionStore`); `session/load` restores it in a new process if `loadSession` is advertised, otherwise `session/new`. Both take `cwd` and `mcpServers` from `Config.Session` (`sessionParams`: relative `cwd` joined to `Config.Dir`, the default; nil servers sent as `[]`) |
+| Executor | one agent process per key (`Config.AgentKey`, default one key `""`; `Config.Start(ctx, key)`, or `Command`/`Profile` via `StartProcess`), restarted lazily on the next turn if it exited |
+| Context | session (`SessionStore`, which records the session ID and the agent key); `session/load` restores it in a new process if `loadSession` is advertised, otherwise `session/new`. Both take `cwd` and `mcpServers` from `Config.Session` (`sessionParams`: relative `cwd` joined to `Config.Dir`, the default; nil servers sent as `[]`) |
 | Task / message | one `session/prompt` turn |
 | `response` artifact | `agent_message_chunk` text, appended; new `messageId` or a tool call in between adds a blank line |
 | working status + `toolCall` data part | `tool_call` / `tool_call_update` status changes (`in_progress`, `completed`, `failed`) |
@@ -78,7 +80,7 @@ notifications (`agent.sessions`).
 - `Config.Prompt` replaces the message parts sent as the prompt; the task history keeps the
   caller's message, since `Execute` yields the submitted task from `execCtx.Message`.
 - The connection's read goroutine routes `session/update` and `session/request_permission` by
-  session ID (`Executor.routes`) into the turn's unbounded `queue`, so it never blocks on a turn
+  agent and session ID (`Executor.routes`) into the turn's unbounded `queue`, so it never blocks on a turn
   nobody consumes. The prompt goroutine pushes the prompt result into the same queue after all
   notifications that preceded it, so ordering is preserved.
 - `pump` drains the queue. On an unanswered permission request it stores `turn.pending`, yields
@@ -107,11 +109,50 @@ notifications (`agent.sessions`).
 
 ## Agent lifecycle (`agent.go`)
 
-- `startMu` serializes starting and stopping, so at most one agent process exists (a sandbox
-  with a fixed name can be reused). `ensureAgent` runs `Config.Start` + `initialize` within
-  `StartTimeout`; a failed start refuses further starts for a backoff (1s doubling to 1m) and
-  reports `startErr`.
-- `stopAgent` (used by `CancelTimeout`) closes the agent only if it is still the running one.
+- Agents are keyed. `Config.AgentKey(ctx, contextID)` picks the key of a context with no stored
+  session; afterwards the key stored with the session (`Session.AgentKey`) wins, since the
+  session lives in that agent's storage. A changing `AgentKey` result therefore never splits a
+  context. Without `AgentKey`, `NewExecutor` starts the `""` agent eagerly to surface config
+  errors; keyed agents start on their first turn.
+- `Executor.agents` maps keys to `agentSlot`s. `slot.startMu` serializes starting and stopping
+  that key's agent, so at most one process per key exists (a sandbox with a fixed name can be
+  reused). Lock order: `slot.startMu` before `Executor.mu`, never two `startMu`s except via
+  `TryLock` in `makeRoom`.
+- `acquireAgent` increments `slot.refs` and returns a release func. Turn setup holds a ref and
+  the prompt goroutine releases it when the prompt ends, so a turn waiting for an answer keeps
+  its agent. At zero refs, `Config.IdleTimeout` arms `slot.idle`; `stopIfIdle` re-checks refs
+  under `Executor.mu` before closing. A slot is removed only after its agent closed, so a new
+  start of the key waits on `startMu` instead of racing a closing process.
+- `ensureAgent` runs `Config.Start` + `initialize` within `StartTimeout`; a failed start refuses
+  further starts of the key for a backoff (1s doubling to 1m) and reports `startErr`. Errors
+  wrapping `ErrNotOwner` (another node owns the key) skip the backoff.
+- `makeRoom` enforces `Config.MaxAgents`: it stops the least recently used idle agent or fails
+  the turn with "all N agents are busy".
+- Turns are routed by `routeKey{agent, sessionID}`: processes of different keys can hand out the
+  same session IDs.
+- `stopAgent` (used by `CancelTimeout`) closes the agent only if it is still the running one of
+  its key. `Close` stops all agents.
+- `Drain` sets `draining`: `startTurn` fails new turns with `errDraining` (so do queued turns
+  once they get the context lock, in `acquireAgent`), while answers to pending questions still
+  resume their turns. `drained` closes when `turns` and `waiting` are empty
+  (`checkDrainedLocked`, called where either shrinks). If ctx ends first, waiting turns get
+  `errDraining`, running turns are canceled, and `Close` stops the agents.
+- Cluster integration lives outside the executor: a push-queue router sends all payloads of a
+  context (cancels included, via the task's context) to the node owning the key, `Start`
+  claims the key's lease and restores its sandbox (returning `ErrNotOwner` if another node
+  holds it), and the `WithCleanup` callback snapshots and releases it.
+
+## Conversion hooks (`convert.go`)
+
+- `Config.ConvertPart` runs per prompt part before the built-in mapping; a returned JSON block is
+  sent as is (`acp.ContentBlock.Raw`, emitted by its `MarshalJSON`).
+- `Config.UpdateConverter` creates a per-turn `UpdateConverter` (stored in `turn.converter`).
+  `turn.convert` computes the built-in events first (keeping `textStream` and tool state
+  consistent), then passes `Update{Type, Raw}` and those events to the converter. `Raw` comes
+  from `acp.SessionUpdate.UnmarshalJSON`, which keeps the undecoded JSON so fields the schema
+  doesn't model (`rawOutput`, `entries`, …) reach converters. A converter error cancels the turn
+  and fails the task.
+- Questions and prompt results don't pass through converters.
 
 ## Permission requests
 

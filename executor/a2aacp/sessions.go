@@ -19,38 +19,49 @@ import (
 	"sync"
 )
 
+// Session is the ACP session of an A2A context.
+type Session struct {
+	// ID is the ACP session ID.
+	ID string
+	// AgentKey is the key of the agent process which has the session in its
+	// storage, see [Config.AgentKey].
+	AgentKey string
+}
+
 // SessionStore maps A2A contexts to ACP sessions, so that every task in a
 // context continues the same agent conversation. A persistent store lets
-// contexts survive a restart when the agent supports session/load.
+// contexts survive a restart when the agent supports session/load. In a
+// cluster, a shared store also tells which agent key, and so which node,
+// serves a context.
 type SessionStore interface {
 	// Get returns the ACP session of the A2A context, or false if there is none.
-	Get(ctx context.Context, contextID string) (sessionID string, ok bool, err error)
+	Get(ctx context.Context, contextID string) (Session, bool, error)
 	// Put records the ACP session of the A2A context.
-	Put(ctx context.Context, contextID, sessionID string) error
+	Put(ctx context.Context, contextID string, s Session) error
 }
 
 // memorySessions is a [SessionStore] which forgets everything on restart.
 type memorySessions struct {
 	mu sync.Mutex
-	m  map[string]string
+	m  map[string]Session
 }
 
 var _ SessionStore = (*memorySessions)(nil)
 
 func newMemorySessions() *memorySessions {
-	return &memorySessions{m: map[string]string{}}
+	return &memorySessions{m: map[string]Session{}}
 }
 
-func (s *memorySessions) Get(_ context.Context, contextID string) (string, bool, error) {
+func (s *memorySessions) Get(_ context.Context, contextID string) (Session, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	id, ok := s.m[contextID]
-	return id, ok, nil
+	sess, ok := s.m[contextID]
+	return sess, ok, nil
 }
 
-func (s *memorySessions) Put(_ context.Context, contextID, sessionID string) error {
+func (s *memorySessions) Put(_ context.Context, contextID string, sess Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.m[contextID] = sessionID
+	s.m[contextID] = sess
 	return nil
 }

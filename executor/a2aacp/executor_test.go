@@ -491,12 +491,8 @@ func TestExecutor_CancelQueuedTurn(t *testing.T) {
 func agentExited(e *Executor) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	select {
-	case <-e.agent.client.Done():
-		return true
-	default:
-		return false
-	}
+	s := e.agents[""]
+	return s == nil || s.agent == nil || s.agent.exited()
 }
 
 func TestExecutor_RestartsAgent(t *testing.T) {
