@@ -15,7 +15,8 @@ The SDK employs a **layered, transport-agnostic architecture**:
 *   **`a2aclient/`**: **Client SDK.** High-level API structs and interfaces to connect to and interact with A2A servers.
 *   **`a2asrv/`**: **Server SDK.** Interfaces for server execution (`AgentExecutor`), handler patterns, middleware, and non-gRPC transports (REST, JSON-RPC).
 *   **`a2agrpc/` & `a2apb/`**: **gRPC Transport.** Logic for A2A over gRPC and underlying Protobuf definitions (`v1/pbconv/` for type conversions).
-*   **`internal/`**: **Private Mechanisms.** Task lifecycle, state machine configuration (`taskexec/`), and task persistence adapters (`taskstore/`).
+*   **`executor/`**: Ready-made `AgentExecutor` implementations, e.g. `a2aacp` for Agent Client Protocol agents (see `ACP_EXECUTOR.md`).
+*   **`internal/`**: **Private Mechanisms.** Task lifecycle, state machine configuration (`taskexec/`), and task persistence adapters (`taskstore/`). `acp/` and `subprocess/` support `executor/a2aacp`, which asks questions with the Structured Input extension (`a2aext/structuredinput`).
 *   **`e2e/` & `examples/`**: End-to-end tests and reference implementations (e.g., `helloworld`).
 *   **`docs/`**: Documentation, including AI developer guides (`ai/`).
 
