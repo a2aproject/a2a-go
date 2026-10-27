@@ -98,9 +98,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 
 	u := t.url
 	if req.tenant != "" {
-		u = u.JoinPath(req.tenant, rel.Path)
+		u = u.JoinPath(url.PathEscape(req.tenant), rel.EscapedPath())
 	} else {
-		u = u.JoinPath(rel.Path)
+		u = u.JoinPath(rel.EscapedPath())
 	}
 	u.RawQuery = rel.RawQuery
 	fullURL := u.String()
@@ -197,7 +197,7 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 
 // GetTask implements [a2a.Transport].
 func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	path := rest.MakeGetTaskPath(string(req.ID))
+	path := rest.MakeGetTaskPath(url.PathEscape(string(req.ID)))
 	q := url.Values{}
 	if req.HistoryLength != nil {
 		q.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
@@ -266,7 +266,7 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 
 // CancelTask implements [a2a.Transport].
 func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
-	path := rest.MakeCancelTaskPath(string(req.ID))
+	path := rest.MakeCancelTaskPath(url.PathEscape(string(req.ID)))
 	var result a2a.Task
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -315,7 +315,7 @@ func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, r
 
 // SubscribeToTask implements [a2a.Transport].
 func (t *RESTTransport) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
-	path := rest.MakeSubscribeTaskPath(string(req.ID))
+	path := rest.MakeSubscribeTaskPath(url.PathEscape(string(req.ID)))
 	return t.doStreamingRequest(ctx, &restRequest{
 		method:  "POST",
 		params:  params,
@@ -339,7 +339,7 @@ func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params Service
 
 // GetTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	path := rest.MakeGetPushConfigPath(string(req.TaskID), req.ID)
+	path := rest.MakeGetPushConfigPath(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID))
 	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -356,7 +356,7 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 
 // ListTaskPushConfigs implements [a2a.Transport].
 func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
-	path := rest.MakeListPushConfigsPath(string(req.TaskID))
+	path := rest.MakeListPushConfigsPath(url.PathEscape(string(req.TaskID)))
 	var resp a2a.ListTaskPushConfigResponse
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -373,7 +373,7 @@ func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceP
 
 // CreateTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
-	path := rest.MakeCreatePushConfigPath(string(req.TaskID))
+	path := rest.MakeCreatePushConfigPath(url.PathEscape(string(req.TaskID)))
 	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -390,7 +390,7 @@ func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params Service
 
 // DeleteTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
-	path := rest.MakeDeletePushConfigPath(string(req.TaskID), req.ID)
+	path := rest.MakeDeletePushConfigPath(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID))
 	return t.doRequest(ctx, &restRequest{
 		method:  "DELETE",
 		params:  params,

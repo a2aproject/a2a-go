@@ -103,7 +103,7 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse path: %w", err)
 	}
-	u := t.base.JoinPath(rel.Path)
+	u := t.base.JoinPath(rel.EscapedPath())
 	if len(req.query) > 0 {
 		u.RawQuery = req.query.Encode()
 	}
@@ -234,7 +234,7 @@ func (t *restCompatTransport) GetTask(ctx context.Context, params a2aclient.Serv
 	}
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   t.paths.GetTask(string(req.ID)),
+		path:   t.paths.GetTask(url.PathEscape(string(req.ID))),
 		query:  q,
 		params: params,
 	})
@@ -284,7 +284,7 @@ func (t *restCompatTransport) ListTasks(ctx context.Context, params a2aclient.Se
 func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "POST",
-		path:   t.paths.CancelTask(string(req.ID)),
+		path:   t.paths.CancelTask(url.PathEscape(string(req.ID))),
 		params: params,
 	})
 	if err != nil {
@@ -297,7 +297,7 @@ func (t *restCompatTransport) CancelTask(ctx context.Context, params a2aclient.S
 func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2aclient.ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return t.doStreamingRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   t.paths.SubscribeTask(string(req.ID)),
+		path:   t.paths.SubscribeTask(url.PathEscape(string(req.ID))),
 		params: params,
 	})
 }
@@ -306,7 +306,7 @@ func (t *restCompatTransport) SubscribeToTask(ctx context.Context, params a2acli
 func (t *restCompatTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   t.paths.GetPushConfig(string(req.TaskID), req.ID),
+		path:   t.paths.GetPushConfig(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID)),
 		params: params,
 	})
 	if err != nil {
@@ -326,7 +326,7 @@ func (t *restCompatTransport) ListTaskPushConfigs(ctx context.Context, params a2
 	}
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "GET",
-		path:   t.paths.ListPushConfigs(string(req.TaskID)),
+		path:   t.paths.ListPushConfigs(url.PathEscape(string(req.TaskID))),
 		query:  q,
 		params: params,
 	})
@@ -344,7 +344,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 	}
 	data, err := t.doRequest(ctx, &compatRestReq{
 		method: "POST",
-		path:   t.paths.CreatePushConfig(string(req.TaskID)),
+		path:   t.paths.CreatePushConfig(url.PathEscape(string(req.TaskID))),
 		params: params,
 		body:   body,
 	})
@@ -358,7 +358,7 @@ func (t *restCompatTransport) CreateTaskPushConfig(ctx context.Context, params a
 func (t *restCompatTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclient.ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
 	_, err := t.doRequest(ctx, &compatRestReq{
 		method: "DELETE",
-		path:   t.paths.DeletePushConfig(string(req.TaskID), req.ID),
+		path:   t.paths.DeletePushConfig(url.PathEscape(string(req.TaskID)), url.PathEscape(req.ID)),
 		params: params,
 	})
 	return err

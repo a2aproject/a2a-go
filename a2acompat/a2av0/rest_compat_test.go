@@ -825,3 +825,71 @@ func TestREST_ClientResponseTrailingData(t *testing.T) {
 		})
 	}
 }
+
+func TestREST_ClientEscapedTaskID(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") != "task/a?b#c%20" {
+			t.Errorf("PathValue(id) = %q, want task/a?b#c%%20", r.PathValue("id"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"id":"task/a?b#c%20","contextId":"ctx","status":{"state":"TASK_STATE_COMPLETED"}}`)); err != nil {
+			t.Errorf("Write() error = %v, want nil", err)
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	transport, err := NewRESTTransport(RESTTransportConfig{URL: server.URL, Client: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task/a?b#c%20"})
+	if err != nil {
+		t.Fatalf("GetTask() error = %v, want nil", err)
+	}
+	if task.ID != "task/a?b#c%20" {
+		t.Fatalf("GetTask().ID = %q, want task/a?b#c%%20", task.ID)
+	}
+}
+
+func TestREST_ClientEscapedPushConfigIDs(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			taskID, configID := "task/a?b#c%20", "config/a?b#c%20"
+			mux := http.NewServeMux()
+			mux.HandleFunc(method+" /v1/tasks/{id}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
+				want := []string{taskID, configID}
+				got := []string{r.PathValue("id"), r.PathValue("configId")}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("PathValue() wrong result (-want +got) diff = %s", diff)
+				}
+				if method == http.MethodDelete {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := io.WriteString(w, `{"taskId":"task/a?b#c%20","pushNotificationConfig":{"id":"config/a?b#c%20","url":"https://example.com/push"}}`); err != nil {
+					t.Errorf("io.WriteString() error = %v, want nil", err)
+				}
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			transport, err := NewRESTTransport(RESTTransportConfig{URL: server.URL, Client: server.Client()})
+			if err != nil {
+				t.Fatalf("NewRESTTransport() error = %v, want nil", err)
+			}
+			if method == http.MethodDelete {
+				if err := transport.DeleteTaskPushConfig(t.Context(), nil, &a2a.DeleteTaskPushConfigRequest{TaskID: a2a.TaskID(taskID), ID: configID}); err != nil {
+					t.Fatalf("DeleteTaskPushConfig() error = %v, want nil", err)
+				}
+				return
+			}
+			if _, err := transport.GetTaskPushConfig(t.Context(), nil, &a2a.GetTaskPushConfigRequest{TaskID: a2a.TaskID(taskID), ID: configID}); err != nil {
+				t.Fatalf("GetTaskPushConfig() error = %v, want nil", err)
+			}
+		})
+	}
+}

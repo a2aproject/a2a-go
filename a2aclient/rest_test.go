@@ -632,3 +632,41 @@ func TestRESTTransport_ResponseTrailingData(t *testing.T) {
 		})
 	}
 }
+
+func TestRESTTransport_EscapedPathSegments(t *testing.T) {
+	t.Parallel()
+	for _, tenant := range []string{"", "owner/a?b#c%20"} {
+		t.Run(tenant, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			prefix := ""
+			wantTenant := tenant
+			if tenant != "" {
+				prefix = "/{tenant}"
+			}
+			mux.HandleFunc("GET "+prefix+"/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+				if r.PathValue("id") != "task/a?b#c%20" || r.PathValue("tenant") != wantTenant {
+					t.Errorf("PathValue() = (%q, %q), want (%q, %q)", r.PathValue("id"), r.PathValue("tenant"), "task/a?b#c%20", wantTenant)
+				}
+				if r.URL.Query().Get("historyLength") != "2" {
+					t.Errorf("historyLength = %q, want 2", r.URL.Query().Get("historyLength"))
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := io.WriteString(w, `{"id":"task/a?b#c%20","contextId":"ctx","status":{"state":"TASK_STATE_COMPLETED"}}`); err != nil {
+					t.Errorf("io.WriteString() error = %v, want nil", err)
+				}
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+			historyLength := 2
+			task, err := transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task/a?b#c%20", Tenant: tenant, HistoryLength: &historyLength})
+			if err != nil {
+				t.Fatalf("GetTask() error = %v, want nil", err)
+			}
+			if task.ID != "task/a?b#c%20" {
+				t.Fatalf("GetTask().ID = %q, want task/a?b#c%%20", task.ID)
+			}
+		})
+	}
+}
