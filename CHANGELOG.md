@@ -5,10 +5,7 @@
 
 ### Features
 
-* acp agent executor (part 1) ([#491](https://github.com/a2aproject/a2a-go/issues/491)) ([1d2031c](https://github.com/a2aproject/a2a-go/commit/1d2031cb9fcc78728da9006ed89e3fc33fa9ac0c))
-* acp agent executor (part 2) ([#492](https://github.com/a2aproject/a2a-go/issues/492)) ([75e34bd](https://github.com/a2aproject/a2a-go/commit/75e34bd09f3c38336345e77df972c649a73f5793))
-* acp agent executor (part 3) ([#493](https://github.com/a2aproject/a2a-go/issues/493)) ([c60c40e](https://github.com/a2aproject/a2a-go/commit/c60c40e583edd8da5e6242705c73d7d04b3b961d))
-* acp agent executor (part 4) ([#494](https://github.com/a2aproject/a2a-go/issues/494)) ([929512f](https://github.com/a2aproject/a2a-go/commit/929512f7172d687c08c6390376bf2d713e7b1fbf))
+* acp agent executor ([#491](https://github.com/a2aproject/a2a-go/issues/491), [#492](https://github.com/a2aproject/a2a-go/issues/492), [#493](https://github.com/a2aproject/a2a-go/issues/493), [#494](https://github.com/a2aproject/a2a-go/issues/494)) ([1d2031c](https://github.com/a2aproject/a2a-go/commit/1d2031cb9fcc78728da9006ed89e3fc33fa9ac0c), [75e34bd](https://github.com/a2aproject/a2a-go/commit/75e34bd09f3c38336345e77df972c649a73f5793), [c60c40e](https://github.com/a2aproject/a2a-go/commit/c60c40e583edd8da5e6242705c73d7d04b3b961d), [929512f](https://github.com/a2aproject/a2a-go/commit/929512f7172d687c08c6390376bf2d713e7b1fbf))
 * implement structured input extension ([#490](https://github.com/a2aproject/a2a-go/issues/490)) ([367f987](https://github.com/a2aproject/a2a-go/commit/367f987e7adb79c6c23ca7f6ede826683459ab30))
 
 ## [2.7.0](https://github.com/a2aproject/a2a-go/compare/v2.6.0...v2.7.0) (2026-10-21)
