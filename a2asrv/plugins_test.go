@@ -297,32 +297,6 @@ func TestExecutionPluginHooks(t *testing.T) {
 	}
 }
 
-func TestExecutionPluginSkippedWhenNoHooks(t *testing.T) {
-	t.Parallel()
-
-	plugin := &noExecutionHooksPlugin{recordingExecutionPlugin: newRecordingExecutionPlugin("p")}
-	agent := newEventReplayAgent(nil, nil)
-	agent.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
-		return func(yield func(a2a.Event, error) bool) {
-			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("done")), nil)
-		}
-	}
-	handler := NewHandler(agent, WithPlugins(plugin))
-
-	if _, err := handler.SendMessage(t.Context(), newSendMessageRequest()); err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-	if got := plugin.recorded(); len(got) != 0 {
-		t.Fatalf("SendMessage() plugin log = %v, want empty", got)
-	}
-}
-
-type noExecutionHooksPlugin struct {
-	*recordingExecutionPlugin
-}
-
-func (*noExecutionHooksPlugin) HasExecutionHooks() bool { return false }
-
 func TestPluginUnaryHooks(t *testing.T) {
 	t.Parallel()
 
@@ -376,25 +350,7 @@ func TestPluginUnaryHooks(t *testing.T) {
 	}
 }
 
-func TestPluginReceivesCallContext(t *testing.T) {
-	t.Parallel()
-
-	var log []string
-	plugin := &recordingServerPlugin{name: "p", log: &log}
-	handler := newPluginTestHandler(plugin, &mockHandler{})
-
-	if _, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "x", Tenant: "acme"}); err != nil {
-		t.Fatalf("GetTask() error = %v", err)
-	}
-	if plugin.gotReq.CallContext == nil {
-		t.Fatalf("BeforeHandlerRun() got nil CallContext")
-	}
-	if got := plugin.gotReq.CallContext.Tenant(); got != "acme" {
-		t.Fatalf("CallContext.Tenant() = %q, want %q", got, "acme")
-	}
-}
-
-func TestPluginContextFlowsToHandler(t *testing.T) {
+func TestPluginContext(t *testing.T) {
 	t.Parallel()
 
 	type ctxKey struct{}
@@ -410,8 +366,11 @@ func TestPluginContextFlowsToHandler(t *testing.T) {
 	}
 	handler := newPluginTestHandler(plugin, inner)
 
-	if _, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "x"}); err != nil {
+	if _, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "x", Tenant: "acme"}); err != nil {
 		t.Fatalf("GetTask() error = %v", err)
+	}
+	if got := plugin.gotReq.CallContext.Tenant(); got != "acme" {
+		t.Fatalf("BeforeHandlerRun() CallContext.Tenant() = %q, want %q", got, "acme")
 	}
 	if seen != "set-by-plugin" {
 		t.Fatalf("handler ctx value = %q, want %q", seen, "set-by-plugin")

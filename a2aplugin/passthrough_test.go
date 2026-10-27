@@ -16,63 +16,47 @@ package a2aplugin_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 )
 
-func TestPassthroughSatisfiesCompletePlugin(t *testing.T) {
-	t.Parallel()
-
-	var _ a2aplugin.CompletePlugin = a2aplugin.Passthrough{}
-}
-
-func TestPassthroughHooksAreNoOps(t *testing.T) {
+func TestPassthrough(t *testing.T) {
 	t.Parallel()
 
 	type ctxKey struct{}
 	ctx := context.WithValue(t.Context(), ctxKey{}, "marker")
 	p := a2aplugin.Passthrough{}
-
-	beforeHandlerCtx, err := p.BeforeHandlerRun(ctx, &a2asrv.ServerRequest{Method: "SendMessage"})
-	if err != nil {
-		t.Errorf("Passthrough.BeforeHandlerRun() error = %v, want nil", err)
-	}
-	if beforeHandlerCtx != ctx {
-		t.Errorf("Passthrough.BeforeHandlerRun() returned a different context, want the input context unchanged")
+	keepCtx := func(got context.Context, err error) error {
+		if got != ctx {
+			return errors.New("context changed")
+		}
+		return err
 	}
 
-	afterHandlerCtx, err := p.AfterHandlerRun(ctx, &a2asrv.ServerResponse{Method: "SendMessage", IsFinal: true})
-	if err != nil {
-		t.Errorf("Passthrough.AfterHandlerRun() error = %v, want nil", err)
+	hooks := map[string]error{
+		"BeforeHandlerRun":    keepCtx(p.BeforeHandlerRun(ctx, &a2asrv.ServerRequest{})),
+		"AfterHandlerRun":     keepCtx(p.AfterHandlerRun(ctx, &a2asrv.ServerResponse{})),
+		"BeforeClientRequest": keepCtx(p.BeforeClientRequest(ctx, &a2aclient.ClientRequest{})),
+		"AfterClientRequest":  keepCtx(p.AfterClientRequest(ctx, &a2aclient.ClientResponse{})),
+		"BeforeExecution":     keepCtx(p.BeforeExecution(ctx, &a2asrv.ExecutorContext{})),
+		"OnExecutionEvent":    p.OnExecutionEvent(ctx, &a2asrv.ExecutorContext{}, &a2a.Task{}),
+		"AfterExecution":      p.AfterExecution(ctx, &a2asrv.ExecutorContext{}, nil),
+		"OnTaskEvent":         p.OnTaskEvent(ctx, &a2asrv.TaskEventInfo{}),
+		"BeforePushSend":      keepCtx(p.BeforePushSend(ctx, &push.Delivery{})),
+		"OnPushSent":          p.OnPushSent(ctx, &push.DeliveryResult{}),
 	}
-	if afterHandlerCtx != ctx {
-		t.Errorf("Passthrough.AfterHandlerRun() returned a different context, want the input context unchanged")
+	for hook, err := range hooks {
+		if err != nil {
+			t.Errorf("Passthrough.%s() error = %v, want nil and the input context", hook, err)
+		}
 	}
-
-	beforeClientCtx, err := p.BeforeClientRequest(ctx, &a2aclient.ClientRequest{Method: "SendMessage"})
-	if err != nil {
-		t.Errorf("Passthrough.BeforeClientRequest() error = %v, want nil", err)
-	}
-	if beforeClientCtx != ctx {
-		t.Errorf("Passthrough.BeforeClientRequest() returned a different context, want the input context unchanged")
-	}
-
-	afterClientCtx, err := p.AfterClientRequest(ctx, &a2aclient.ClientResponse{Method: "SendMessage", IsFinal: true})
-	if err != nil {
-		t.Errorf("Passthrough.AfterClientRequest() error = %v, want nil", err)
-	}
-	if afterClientCtx != ctx {
-		t.Errorf("Passthrough.AfterClientRequest() returned a different context, want the input context unchanged")
-	}
-}
-
-func TestPassthroughDefaultName(t *testing.T) {
-	t.Parallel()
-
-	if got := (a2aplugin.Passthrough{}).Name(); got != "unnamed" {
-		t.Errorf("Passthrough{}.Name() = %q, want %q", got, "unnamed")
+	if got := p.Name(); got != "unnamed" {
+		t.Errorf("Passthrough.Name() = %q, want %q", got, "unnamed")
 	}
 }

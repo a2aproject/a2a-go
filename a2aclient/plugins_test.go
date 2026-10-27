@@ -306,26 +306,6 @@ func TestPluginSkipped(t *testing.T) {
 	}
 }
 
-func TestPluginDeleteTaskPushConfig(t *testing.T) {
-	t.Parallel()
-
-	var log []string
-	transport := &testTransport{
-		DeleteTaskPushConfigFn: func(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error {
-			return nil
-		},
-	}
-	client := newPluginTestClient(transport, &recordingClientPlugin{name: "p", log: &log})
-
-	if err := client.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigRequest{TaskID: "t1"}); err != nil {
-		t.Fatalf("client.DeleteTaskPushConfig() error = %v", err)
-	}
-	want := []string{"p:before:DeleteTaskPushConfig", "p:after-final"}
-	if diff := cmp.Diff(want, log); diff != "" {
-		t.Fatalf("client.DeleteTaskPushConfig() wrong plugin log (-want +got) diff = %s", diff)
-	}
-}
-
 func TestPluginStreamingHooks(t *testing.T) {
 	t.Parallel()
 
@@ -408,28 +388,6 @@ func TestPluginStreamingHooks(t *testing.T) {
 	}
 }
 
-func TestPluginSubscribeToTask(t *testing.T) {
-	t.Parallel()
-
-	var log []string
-	transport := &testTransport{
-		SubscribeToTaskFn: func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
-			return makeEventSeq2([]a2a.Event{&a2a.Task{ID: "t1"}})
-		},
-	}
-	client := newPluginTestClient(transport, &recordingClientPlugin{name: "p", log: &log})
-
-	for _, err := range client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{ID: "t1"}) {
-		if err != nil {
-			t.Fatalf("client.SubscribeToTask() error = %v", err)
-		}
-	}
-	want := []string{"p:before:SubscribeToTask", "p:after-event", "p:after-final"}
-	if diff := cmp.Diff(want, log); diff != "" {
-		t.Fatalf("client.SubscribeToTask() wrong plugin log (-want +got) diff = %s", diff)
-	}
-}
-
 func TestPluginWrapsOutsideInterceptors(t *testing.T) {
 	t.Parallel()
 
@@ -457,5 +415,58 @@ func TestPluginWrapsOutsideInterceptors(t *testing.T) {
 	want := []string{"pl:before:GetTask", "ic:before", "ic:after", "pl:after-final"}
 	if diff := cmp.Diff(want, log); diff != "" {
 		t.Fatalf("client.GetTask() wrong ordering (-want +got) diff = %s", diff)
+	}
+}
+
+func TestPluginOtherMethods(t *testing.T) {
+	t.Parallel()
+
+	transport := &testTransport{
+		DeleteTaskPushConfigFn: func(context.Context, ServiceParams, *a2a.DeleteTaskPushConfigRequest) error {
+			return nil
+		},
+		SubscribeToTaskFn: func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+			return makeEventSeq2([]a2a.Event{&a2a.Task{ID: "t1"}})
+		},
+	}
+	tests := []struct {
+		name string
+		call func(c *Client) error
+		want []string
+	}{
+		{
+			name: "DeleteTaskPushConfig",
+			call: func(c *Client) error {
+				return c.DeleteTaskPushConfig(t.Context(), &a2a.DeleteTaskPushConfigRequest{TaskID: "t1"})
+			},
+			want: []string{"p:before:DeleteTaskPushConfig", "p:after-final"},
+		},
+		{
+			name: "SubscribeToTask",
+			call: func(c *Client) error {
+				for _, err := range c.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{ID: "t1"}) {
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+			want: []string{"p:before:SubscribeToTask", "p:after-event", "p:after-final"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var log []string
+			client := newPluginTestClient(transport, &recordingClientPlugin{name: "p", log: &log})
+
+			if err := tc.call(client); err != nil {
+				t.Fatalf("client.%s() error = %v", tc.name, err)
+			}
+			if diff := cmp.Diff(tc.want, log); diff != "" {
+				t.Fatalf("client.%s() wrong plugin log (-want +got) diff = %s", tc.name, diff)
+			}
+		})
 	}
 }
