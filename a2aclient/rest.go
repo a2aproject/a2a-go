@@ -103,10 +103,15 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		u = u.JoinPath(rel.EscapedPath())
 	}
 	u.RawQuery = rel.RawQuery
+	if extraQuery := HTTPQueryParamsFrom(ctx); len(extraQuery) > 0 {
+		query := u.Query()
+		mergeQueryParams(query, extraQuery)
+		u.RawQuery = query.Encode()
+	}
 	fullURL := u.String()
 	httpReq, err := http.NewRequestWithContext(ctx, req.method, fullURL, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", redactURLError(err))
 	}
 	if len(reqBody) > 0 {
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -125,7 +130,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		// The error carries the full request URL; strip the query so that
+		// credentials passed as query parameters do not leak into logs.
+		return nil, fmt.Errorf("failed to send HTTP request: %w", redactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
