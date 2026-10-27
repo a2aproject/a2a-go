@@ -28,8 +28,9 @@ import (
 type Passthrough struct{}
 
 var (
-	_ CompletePlugin         = Passthrough{}
-	_ a2asrv.ExecutionPlugin = Passthrough{}
+	_ CompletePlugin            = Passthrough{}
+	_ a2asrv.ExecutionPlugin    = Passthrough{}
+	_ a2asrv.TaskObserverPlugin = Passthrough{}
 )
 
 // Name implements [Plugin]. Embedders should override it with a stable identifier.
@@ -67,5 +68,10 @@ func (Passthrough) OnExecutionEvent(context.Context, *a2asrv.ExecutorContext, a2
 
 // AfterExecution implements [a2asrv.ExecutionPlugin] as a no-op.
 func (Passthrough) AfterExecution(context.Context, *a2asrv.ExecutorContext, error) error {
+	return nil
+}
+
+// OnTaskEvent implements [a2asrv.TaskObserverPlugin] as a no-op.
+func (Passthrough) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
 	return nil
 }

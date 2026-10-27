@@ -19,6 +19,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
+	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -87,8 +88,36 @@ type ExecutionPlugin interface {
 	AfterExecution(ctx context.Context, execCtx *ExecutorContext, cause error) error
 }
 
+// TaskObserverPlugin is notified after every successful task store write: task creation,
+// every applied agent event, user messages appended to an existing task and cancelation.
+type TaskObserverPlugin interface {
+	core.Plugin
+
+	// OnTaskEvent is called after a successful task write. Returned errors are logged.
+	OnTaskEvent(ctx context.Context, info *TaskEventInfo) error
+}
+
+// TaskEventInfo is passed to [TaskObserverPlugin.OnTaskEvent].
+type TaskEventInfo struct {
+	// TaskID is the ID of the written task.
+	TaskID a2a.TaskID
+	// FromState is the task state before the write, or [a2a.TaskStateUnspecified] if the write created the task.
+	FromState a2a.TaskState
+	// ToState is the task state after the write. It equals FromState for writes which
+	// don't change the state, such as artifact updates.
+	ToState a2a.TaskState
+	// Event is the event which caused the write.
+	Event a2a.Event
+	// Task is the task state passed to the store. It must not be modified. With a custom
+	// materializer set using [WithUpdateMaterializer] it might contain only a part of the task.
+	Task *a2a.Task
+	// CallContext is the context of the request which caused the write, if available.
+	CallContext *CallContext
+}
+
 // WithPlugins sets the plugin whose hooks run around every call and agent execution.
-// The handler uses the hook interfaces the plugin implements: [ServerPlugin] and [ExecutionPlugin].
+// The handler uses the hook interfaces the plugin implements: [ServerPlugin], [ExecutionPlugin]
+// and [TaskObserverPlugin].
 // If omitted, the handler uses the global plugin registered with
 // [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction time.
 // Passing nil is a no-op.
@@ -99,6 +128,32 @@ func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 		}
 		ih.Plugins, _ = plugin.(ServerPlugin)
 		h.executionPlugin, _ = plugin.(ExecutionPlugin)
+		h.taskObserver, _ = plugin.(TaskObserverPlugin)
+	}
+}
+
+// taskHooksReporter is implemented by plugin managers which can report
+// that none of the registered plugins implement task observer hooks.
+type taskHooksReporter interface {
+	HasTaskHooks() bool
+}
+
+// observeTaskWrites reports the writes made by mgr to the task observer plugin, if one is configured.
+func (f *factory) observeTaskWrites(mgr *taskupdate.Manager) {
+	if f.taskObserver != nil {
+		mgr.OnWrite = f.reportTaskWrite
+	}
+}
+
+// reportTaskWrite calls [TaskObserverPlugin.OnTaskEvent], if a plugin is configured, and logs the error it returns.
+func (f *factory) reportTaskWrite(ctx context.Context, w taskupdate.Write) {
+	if f.taskObserver == nil {
+		return
+	}
+	info := &TaskEventInfo{TaskID: w.TaskID, FromState: w.PrevState, ToState: w.State, Event: w.Event, Task: w.Task}
+	info.CallContext, _ = CallContextFrom(ctx)
+	if err := f.taskObserver.OnTaskEvent(ctx, info); err != nil {
+		log.Error(ctx, "plugin OnTaskEvent failed", err, "plugin", f.taskObserver.Name())
 	}
 }
 

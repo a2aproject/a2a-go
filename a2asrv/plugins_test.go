@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"slices"
 	"sync"
@@ -535,5 +536,83 @@ func TestPluginWrapsOutsideInterceptors(t *testing.T) {
 	want := []string{"pl:before:GetTask", "ic:before", "ic:after", "pl:after-final"}
 	if diff := cmp.Diff(want, log); diff != "" {
 		t.Fatalf("GetTask() wrong ordering (-want +got) diff = %s", diff)
+	}
+}
+
+type taskWrite struct {
+	From  a2a.TaskState
+	To    a2a.TaskState
+	Event string
+}
+
+type recordingTaskObserver struct {
+	mu     sync.Mutex
+	writes []taskWrite
+}
+
+var _ TaskObserverPlugin = (*recordingTaskObserver)(nil)
+
+func (*recordingTaskObserver) Name() string { return "task-observer" }
+
+func (p *recordingTaskObserver) OnTaskEvent(_ context.Context, info *TaskEventInfo) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.writes = append(p.writes, taskWrite{From: info.FromState, To: info.ToState, Event: fmt.Sprintf("%T", info.Event)})
+	return errors.New("observer errors are logged")
+}
+
+func (p *recordingTaskObserver) recorded() []taskWrite {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.writes)
+}
+
+func TestTaskObserverPlugin(t *testing.T) {
+	t.Parallel()
+
+	agent := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				if execCtx.StoredTask == nil && !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+					return
+				}
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, nil), nil)
+			}
+		},
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+	}
+	observer := &recordingTaskObserver{}
+	handler := NewHandler(agent, WithPlugins(observer))
+
+	result, err := handler.SendMessage(t.Context(), newSendMessageRequest())
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	task, ok := result.(*a2a.Task)
+	if !ok {
+		t.Fatalf("SendMessage() result = %T, want *a2a.Task", result)
+	}
+	followUp := newSendMessageRequest()
+	followUp.Message.TaskID, followUp.Message.ContextID = task.ID, task.ContextID
+	if _, err := handler.SendMessage(t.Context(), followUp); err != nil {
+		t.Fatalf("SendMessage() follow-up error = %v", err)
+	}
+	if _, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: task.ID}); err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+
+	want := []taskWrite{
+		{From: a2a.TaskStateUnspecified, To: a2a.TaskStateSubmitted, Event: "*a2a.Task"},
+		{From: a2a.TaskStateSubmitted, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
+		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.Message"},
+		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
+		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateCanceled, Event: "*a2a.TaskStatusUpdateEvent"},
+	}
+	if diff := cmp.Diff(want, observer.recorded()); diff != "" {
+		t.Fatalf("OnTaskEvent() wrong calls (-want +got) diff = %s", diff)
 	}
 }

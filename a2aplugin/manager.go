@@ -32,6 +32,7 @@ import (
 type Manager interface {
 	CompletePlugin
 	a2asrv.ExecutionPlugin
+	a2asrv.TaskObserverPlugin
 
 	// HasServerHooks reports whether any registered plugin implements [a2asrv.ServerPlugin].
 	HasServerHooks() bool
@@ -39,6 +40,8 @@ type Manager interface {
 	HasClientHooks() bool
 	// HasExecutionHooks reports whether any registered plugin implements [a2asrv.ExecutionPlugin].
 	HasExecutionHooks() bool
+	// HasTaskHooks reports whether any registered plugin implements [a2asrv.TaskObserverPlugin].
+	HasTaskHooks() bool
 }
 
 // SetGlobal installs m as the process-wide plugin [Manager]. SDK components
@@ -69,6 +72,7 @@ type SequentialManager struct {
 	server    []a2asrv.ServerPlugin
 	client    []a2aclient.ClientPlugin
 	execution []a2asrv.ExecutionPlugin
+	task      []a2asrv.TaskObserverPlugin
 }
 
 // Sequential returns a [Manager] that runs the given plugins sequentially.
@@ -78,6 +82,7 @@ func Sequential(plugins ...Plugin) *SequentialManager {
 		server:    selectPlugins[a2asrv.ServerPlugin](plugins, Manager.HasServerHooks),
 		client:    selectPlugins[a2aclient.ClientPlugin](plugins, Manager.HasClientHooks),
 		execution: selectPlugins[a2asrv.ExecutionPlugin](plugins, Manager.HasExecutionHooks),
+		task:      selectPlugins[a2asrv.TaskObserverPlugin](plugins, Manager.HasTaskHooks),
 	}
 }
 
@@ -97,6 +102,9 @@ func (m *SequentialManager) HasClientHooks() bool { return len(m.client) > 0 }
 
 // HasExecutionHooks implements [Manager].
 func (m *SequentialManager) HasExecutionHooks() bool { return len(m.execution) > 0 }
+
+// HasTaskHooks implements [Manager].
+func (m *SequentialManager) HasTaskHooks() bool { return len(m.task) > 0 }
 
 // BeforeHandlerRun implements [a2asrv.ServerPlugin]. If a hook returns an error,
 // AfterHandlerRun is invoked on plugins that already ran, in reverse order,
@@ -171,6 +179,17 @@ func (m *SequentialManager) OnExecutionEvent(ctx context.Context, execCtx *a2asr
 // AfterExecution implements [a2asrv.ExecutionPlugin]. Errors are logged and swallowed.
 func (m *SequentialManager) AfterExecution(ctx context.Context, execCtx *a2asrv.ExecutorContext, cause error) error {
 	runAfterExecution(ctx, m.execution, execCtx, cause)
+	return nil
+}
+
+// OnTaskEvent implements [a2asrv.TaskObserverPlugin]. Hooks run in registration order.
+// Errors are logged and swallowed.
+func (m *SequentialManager) OnTaskEvent(ctx context.Context, info *a2asrv.TaskEventInfo) error {
+	for _, p := range m.task {
+		if err := p.OnTaskEvent(ctx, info); err != nil {
+			log.Error(ctx, "a2aplugin: OnTaskEvent failed", err, "plugin", p.Name())
+		}
+	}
 	return nil
 }
 

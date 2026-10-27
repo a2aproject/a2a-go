@@ -609,3 +609,39 @@ func TestSequentialBeforeExecutionUnwindsOnError(t *testing.T) {
 		t.Fatalf("BeforeExecution() wrong log (-want +got) diff = %s", diff)
 	}
 }
+
+type recordingTaskPlugin struct {
+	name string
+	log  *[]string
+}
+
+func (p recordingTaskPlugin) Name() string { return p.name }
+
+func (p recordingTaskPlugin) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
+	*p.log = append(*p.log, p.name+":task-event")
+	return errors.New("task hook error is swallowed")
+}
+
+func TestSequentialTaskHooks(t *testing.T) {
+	t.Parallel()
+
+	var log []string
+	m := a2aplugin.Sequential(
+		recordingTaskPlugin{name: "a", log: &log},
+		bareServerPlugin{name: "server-only"},
+		recordingTaskPlugin{name: "b", log: &log},
+	)
+
+	if !m.HasTaskHooks() {
+		t.Fatalf("Sequential(...).HasTaskHooks() = false, want true")
+	}
+	if err := m.OnTaskEvent(t.Context(), &a2asrv.TaskEventInfo{}); err != nil {
+		t.Fatalf("OnTaskEvent() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{"a:task-event", "b:task-event"}, log); diff != "" {
+		t.Fatalf("OnTaskEvent() wrong log (-want +got) diff = %s", diff)
+	}
+	if a2aplugin.Sequential(bareServerPlugin{name: "s"}).HasTaskHooks() {
+		t.Fatalf("Sequential(server-only).HasTaskHooks() = true, want false")
+	}
+}

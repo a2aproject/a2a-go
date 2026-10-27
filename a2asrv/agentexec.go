@@ -159,6 +159,7 @@ type factory struct {
 	agent              AgentExecutor
 	interceptors       []ExecutorContextInterceptor
 	executionPlugin    ExecutionPlugin
+	taskObserver       TaskObserverPlugin
 	taskRetrySupported bool
 	materializer       taskstore.UpdateMaterializer
 }
@@ -191,6 +192,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
+	f.observeTaskWrites(updateManager)
 	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors}
 	if core.HasHooks(f.executionPlugin, executionHooksReporter.HasExecutionHooks) {
 		executor.plugin = f.executionPlugin
@@ -298,6 +300,13 @@ func (f *factory) updateHistory(ctx context.Context, task *a2a.Task, version tas
 	if err != nil {
 		return nil, taskstore.TaskVersionMissing, fmt.Errorf("store update: %w", err)
 	}
+	f.reportTaskWrite(ctx, taskupdate.Write{
+		TaskID:    task.ID,
+		Event:     message,
+		Task:      newTask,
+		PrevState: task.Status.State,
+		State:     task.Status.State,
+	})
 	return newTask, newVersion, nil
 }
 
@@ -346,6 +355,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
+	f.observeTaskWrites(updateManager)
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx, f.taskStore)
 	return canceler, processor, &cleaner{agent: f.agent, execCtx: execCtx}, nil
 }

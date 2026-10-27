@@ -93,6 +93,7 @@ type defaultRequestHandler struct {
 	ctxCodec               ContextCodec
 	reqContextInterceptors []ExecutorContextInterceptor
 	executionPlugin        ExecutionPlugin
+	taskObserver           TaskObserverPlugin
 
 	agentInactivityTimeout time.Duration
 
@@ -215,7 +216,11 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
-	h := &defaultRequestHandler{agentExecutor: executor, executionPlugin: core.GlobalAs[ExecutionPlugin]()}
+	h := &defaultRequestHandler{
+		agentExecutor:   executor,
+		executionPlugin: core.GlobalAs[ExecutionPlugin](),
+		taskObserver:    core.GlobalAs[TaskObserverPlugin](),
+	}
 	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugins: core.GlobalAs[ServerPlugin]()}
 
 	for _, option := range options {
@@ -243,6 +248,9 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,
+	}
+	if core.HasHooks(h.taskObserver, taskHooksReporter.HasTaskHooks) {
+		execFactory.taskObserver = h.taskObserver
 	}
 	if h.workQueue != nil {
 		if h.taskStore == nil || h.queueManager == nil {
