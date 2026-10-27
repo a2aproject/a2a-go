@@ -18,6 +18,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
@@ -30,11 +31,14 @@ import (
 // plugin implements the hooks they would call.
 type Manager interface {
 	CompletePlugin
+	a2asrv.ExecutionPlugin
 
 	// HasServerHooks reports whether any registered plugin implements [a2asrv.ServerPlugin].
 	HasServerHooks() bool
 	// HasClientHooks reports whether any registered plugin implements [a2aclient.ClientPlugin].
 	HasClientHooks() bool
+	// HasExecutionHooks reports whether any registered plugin implements [a2asrv.ExecutionPlugin].
+	HasExecutionHooks() bool
 }
 
 // SetGlobal installs m as the process-wide plugin [Manager]. SDK components
@@ -61,9 +65,10 @@ var emptyGlobal Manager = Sequential()
 // SequentialManager runs the registered plugins one after another. Before*
 // hooks run in registration order and After* hooks run in reverse order.
 type SequentialManager struct {
-	plugins []Plugin
-	server  []a2asrv.ServerPlugin
-	client  []a2aclient.ClientPlugin
+	plugins   []Plugin
+	server    []a2asrv.ServerPlugin
+	client    []a2aclient.ClientPlugin
+	execution []a2asrv.ExecutionPlugin
 }
 
 // Sequential returns a [Manager] that runs the given plugins sequentially.
@@ -75,6 +80,9 @@ func Sequential(plugins ...Plugin) *SequentialManager {
 		}
 		if cp, ok := p.(a2aclient.ClientPlugin); ok && hasClientHooks(cp) {
 			m.client = append(m.client, cp)
+		}
+		if ep, ok := p.(a2asrv.ExecutionPlugin); ok && hasExecutionHooks(ep) {
+			m.execution = append(m.execution, ep)
 		}
 	}
 	return m
@@ -93,6 +101,9 @@ func (m *SequentialManager) HasServerHooks() bool { return len(m.server) > 0 }
 
 // HasClientHooks implements [Manager].
 func (m *SequentialManager) HasClientHooks() bool { return len(m.client) > 0 }
+
+// HasExecutionHooks implements [Manager].
+func (m *SequentialManager) HasExecutionHooks() bool { return len(m.execution) > 0 }
 
 // BeforeHandlerRun implements [a2asrv.ServerPlugin]. If a hook returns an error,
 // AfterHandlerRun is invoked on plugins that already ran, in reverse order,
@@ -167,6 +178,47 @@ func (m *SequentialManager) AfterClientRequest(ctx context.Context, resp *a2acli
 	return ctx, nil
 }
 
+// BeforeExecution implements [a2asrv.ExecutionPlugin]. If a hook returns an error,
+// AfterExecution is invoked on plugins that already ran, in reverse order, with the error.
+func (m *SequentialManager) BeforeExecution(ctx context.Context, execCtx *a2asrv.ExecutorContext) (context.Context, error) {
+	var ran []a2asrv.ExecutionPlugin
+	for _, p := range m.execution {
+		next, err := p.BeforeExecution(ctx, execCtx)
+		if err != nil {
+			unwindAfterExecution(ctx, ran, execCtx, err)
+			return ctx, err
+		}
+		ctx = next
+		ran = append(ran, p)
+	}
+	return ctx, nil
+}
+
+// OnExecutionEvent implements [a2asrv.ExecutionPlugin]. Hooks run in registration order.
+// Errors are logged and swallowed.
+func (m *SequentialManager) OnExecutionEvent(ctx context.Context, execCtx *a2asrv.ExecutorContext, event a2a.Event) error {
+	for _, p := range m.execution {
+		if err := p.OnExecutionEvent(ctx, execCtx, event); err != nil {
+			log.Error(ctx, "a2aplugin: OnExecutionEvent failed", err, "plugin", p.Name())
+		}
+	}
+	return nil
+}
+
+// AfterExecution implements [a2asrv.ExecutionPlugin]. Errors are logged and swallowed.
+func (m *SequentialManager) AfterExecution(ctx context.Context, execCtx *a2asrv.ExecutorContext, cause error) error {
+	unwindAfterExecution(ctx, m.execution, execCtx, cause)
+	return nil
+}
+
+func unwindAfterExecution(ctx context.Context, ran []a2asrv.ExecutionPlugin, execCtx *a2asrv.ExecutorContext, cause error) {
+	for _, p := range slices.Backward(ran) {
+		if err := p.AfterExecution(ctx, execCtx, cause); err != nil {
+			log.Error(ctx, "a2aplugin: AfterExecution failed", err, "plugin", p.Name())
+		}
+	}
+}
+
 func unwindAfterHandlerRun(ctx context.Context, ran []a2asrv.ServerPlugin, resp *a2asrv.ServerResponse) {
 	for _, p := range slices.Backward(ran) {
 		if _, err := p.AfterHandlerRun(ctx, resp); err != nil {
@@ -196,6 +248,14 @@ func hasServerHooks(sp a2asrv.ServerPlugin) bool {
 func hasClientHooks(cp a2aclient.ClientPlugin) bool {
 	if m, ok := cp.(Manager); ok {
 		return m.HasClientHooks()
+	}
+	return true
+}
+
+// hasExecutionHooks mirrors [hasServerHooks] for execution hooks.
+func hasExecutionHooks(ep a2asrv.ExecutionPlugin) bool {
+	if m, ok := ep.(Manager); ok {
+		return m.HasExecutionHooks()
 	}
 	return true
 }

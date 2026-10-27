@@ -157,6 +157,7 @@ type factory struct {
 	pushConfigStore    push.ConfigStore
 	agent              AgentExecutor
 	interceptors       []ExecutorContextInterceptor
+	executionPlugin    ExecutionPlugin
 	taskRetrySupported bool
 	materializer       taskstore.UpdateMaterializer
 }
@@ -190,6 +191,9 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
 	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors}
+	if hasExecutionHooks(f.executionPlugin) {
+		executor.plugin = f.executionPlugin
+	}
 	processor := newProcessor(
 		updateManager,
 		f.pushConfigStore,
@@ -349,12 +353,13 @@ type executor struct {
 	agent        AgentExecutor
 	execCtx      *ExecutorContext
 	interceptors []ExecutorContextInterceptor
+	plugin       ExecutionPlugin
 }
 
 var _ taskexec.Executor = (*executor)(nil)
 
 // Execute invokes the agent execution logic and writes events to the provided writer.
-func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
+func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) (retErr error) {
 	var err error
 	for _, interceptor := range e.interceptors {
 		ctx, err = interceptor.Intercept(ctx, e.execCtx)
@@ -363,9 +368,20 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 		}
 	}
 
+	if e.plugin != nil {
+		ctx, err = e.plugin.BeforeExecution(ctx, e.execCtx)
+		if err != nil {
+			return fmt.Errorf("plugin failed: %w", err)
+		}
+		defer func() { afterExecution(ctx, e.plugin, e.execCtx, retErr) }()
+	}
+
 	for event, err := range e.agent.Execute(ctx, e.execCtx) {
 		if err != nil {
 			return err
+		}
+		if e.plugin != nil {
+			onExecutionEvent(ctx, e.plugin, e.execCtx, event)
 		}
 		if err := q.Write(ctx, event); err != nil {
 			return err

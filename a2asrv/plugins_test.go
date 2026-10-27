@@ -18,11 +18,15 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 )
 
 type recordingServerPlugin struct {
@@ -107,32 +111,211 @@ func yieldAll(events ...a2a.Event) iter.Seq2[a2a.Event, error] {
 	}
 }
 
+type recordingExecutionPlugin struct {
+	name      string
+	beforeErr error
+	ctxKey    any
+	ctxValue  string
+
+	mu    sync.Mutex
+	log   []string
+	after chan struct{}
+}
+
+var _ ExecutionPlugin = (*recordingExecutionPlugin)(nil)
+
+func newRecordingExecutionPlugin(name string) *recordingExecutionPlugin {
+	return &recordingExecutionPlugin{name: name, after: make(chan struct{})}
+}
+
+func (p *recordingExecutionPlugin) Name() string { return p.name }
+
+func (p *recordingExecutionPlugin) BeforeExecution(ctx context.Context, _ *ExecutorContext) (context.Context, error) {
+	p.record(p.name + ":before")
+	if p.beforeErr != nil {
+		return ctx, p.beforeErr
+	}
+	if p.ctxKey != nil {
+		ctx = context.WithValue(ctx, p.ctxKey, p.ctxValue)
+	}
+	return ctx, nil
+}
+
+func (p *recordingExecutionPlugin) OnExecutionEvent(context.Context, *ExecutorContext, a2a.Event) error {
+	p.record(p.name + ":event")
+	return nil
+}
+
+func (p *recordingExecutionPlugin) AfterExecution(_ context.Context, _ *ExecutorContext, cause error) error {
+	entry := p.name + ":after"
+	if cause != nil {
+		entry += "(err=" + cause.Error() + ")"
+	}
+	p.record(entry)
+	close(p.after)
+	return nil
+}
+
+func (p *recordingExecutionPlugin) record(entry string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.log = append(p.log, entry)
+}
+
+func (p *recordingExecutionPlugin) recorded() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.log)
+}
+
+type serverAndExecutionPlugin struct {
+	recordingServerPlugin
+	*recordingExecutionPlugin
+}
+
+func (p *serverAndExecutionPlugin) Name() string { return "both" }
+
 func TestWithPlugins(t *testing.T) {
 	t.Parallel()
 
-	existing := &recordingServerPlugin{name: "existing"}
-	replacement := &recordingServerPlugin{name: "replacement"}
+	existingServer := &recordingServerPlugin{name: "existing-server"}
+	existingExecution := newRecordingExecutionPlugin("existing-execution")
+	server := &recordingServerPlugin{name: "server"}
+	execution := newRecordingExecutionPlugin("execution")
+	both := &serverAndExecutionPlugin{recordingExecutionPlugin: newRecordingExecutionPlugin("both")}
 
 	tests := []struct {
-		name   string
-		option ServerPlugin
-		want   ServerPlugin
+		name          string
+		option        core.Plugin
+		wantServer    ServerPlugin
+		wantExecution ExecutionPlugin
 	}{
-		{name: "installs plugin", option: replacement, want: replacement},
-		{name: "nil is no-op", option: nil, want: existing},
+		{name: "server plugin", option: server, wantServer: server, wantExecution: nil},
+		{name: "execution plugin", option: execution, wantServer: nil, wantExecution: execution},
+		{name: "server and execution plugin", option: both, wantServer: both, wantExecution: both},
+		{name: "nil is no-op", option: nil, wantServer: existingServer, wantExecution: existingExecution},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ih := &InterceptedHandler{Plugins: existing}
-			WithPlugins(tc.option)(ih, &defaultRequestHandler{})
-			if ih.Plugins != tc.want {
-				t.Errorf("WithPlugins() set Plugins = %v, want %v", ih.Plugins, tc.want)
+			ih := &InterceptedHandler{Plugins: existingServer}
+			h := &defaultRequestHandler{executionPlugin: existingExecution}
+			WithPlugins(tc.option)(ih, h)
+			if ih.Plugins != tc.wantServer {
+				t.Fatalf("WithPlugins() server plugin = %v, want %v", ih.Plugins, tc.wantServer)
+			}
+			if h.executionPlugin != tc.wantExecution {
+				t.Fatalf("WithPlugins() execution plugin = %v, want %v", h.executionPlugin, tc.wantExecution)
 			}
 		})
 	}
 }
+
+func TestExecutionPluginHooks(t *testing.T) {
+	t.Parallel()
+
+	agentErr := errors.New("agent boom")
+	rejected := errors.New("rejected")
+
+	tests := []struct {
+		name         string
+		agentErr     error
+		beforeErr    error
+		wantAgentRun bool
+		wantLog      []string
+	}{
+		{
+			name:         "success",
+			wantAgentRun: true,
+			wantLog:      []string{"p:before", "p:event", "p:after"},
+		},
+		{
+			name:         "agent error reaches after",
+			agentErr:     agentErr,
+			wantAgentRun: true,
+			wantLog:      []string{"p:before", "p:after(err=agent boom)"},
+		},
+		{
+			name:      "before error skips agent",
+			beforeErr: rejected,
+			wantLog:   []string{"p:before"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			type ctxKey struct{}
+			plugin := newRecordingExecutionPlugin("p")
+			plugin.beforeErr = tc.beforeErr
+			plugin.ctxKey, plugin.ctxValue = ctxKey{}, "set-by-plugin"
+
+			var agentCtxValue string
+			agent := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+					agentCtxValue, _ = ctx.Value(ctxKey{}).(string)
+					return func(yield func(a2a.Event, error) bool) {
+						if tc.agentErr != nil {
+							yield(nil, tc.agentErr)
+							return
+						}
+						task := a2a.NewSubmittedTask(execCtx, execCtx.Message)
+						task.Status = a2a.TaskStatus{State: a2a.TaskStateCompleted}
+						yield(task, nil)
+					}
+				},
+			}
+			handler := NewHandler(agent, WithPlugins(plugin))
+
+			_, err := handler.SendMessage(t.Context(), newSendMessageRequest())
+			if tc.agentErr == nil && tc.beforeErr == nil && err != nil {
+				t.Fatalf("SendMessage() error = %v, want nil", err)
+			}
+			if tc.wantAgentRun {
+				select {
+				case <-plugin.after:
+				case <-time.After(5 * time.Second):
+					t.Fatalf("AfterExecution() was not called")
+				}
+				if agentCtxValue != "set-by-plugin" {
+					t.Fatalf("agent ctx value = %q, want %q", agentCtxValue, "set-by-plugin")
+				}
+			} else if agent.executeCalled {
+				t.Fatalf("SendMessage() ran the agent despite plugin rejection")
+			}
+			if diff := cmp.Diff(tc.wantLog, plugin.recorded()); diff != "" {
+				t.Fatalf("SendMessage() wrong plugin log (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestExecutionPluginSkippedWhenNoHooks(t *testing.T) {
+	t.Parallel()
+
+	plugin := &noExecutionHooksPlugin{recordingExecutionPlugin: newRecordingExecutionPlugin("p")}
+	agent := newEventReplayAgent(nil, nil)
+	agent.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("done")), nil)
+		}
+	}
+	handler := NewHandler(agent, WithPlugins(plugin))
+
+	if _, err := handler.SendMessage(t.Context(), newSendMessageRequest()); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+	if got := plugin.recorded(); len(got) != 0 {
+		t.Fatalf("SendMessage() plugin log = %v, want empty", got)
+	}
+}
+
+type noExecutionHooksPlugin struct {
+	*recordingExecutionPlugin
+}
+
+func (*noExecutionHooksPlugin) HasExecutionHooks() bool { return false }
 
 func TestPluginUnaryHooks(t *testing.T) {
 	t.Parallel()

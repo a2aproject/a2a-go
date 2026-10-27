@@ -17,16 +17,20 @@ package a2aplugin
 import (
 	"context"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 // Passthrough can be embedded by plugins that only need a subset of hooks.
-// It provides a no-op implementation of [CompletePlugin]; embedders override
+// It provides a no-op implementation of every hook interface; embedders override
 // the hooks they care about and the [Passthrough.Name] method.
 type Passthrough struct{}
 
-var _ CompletePlugin = Passthrough{}
+var (
+	_ CompletePlugin         = Passthrough{}
+	_ a2asrv.ExecutionPlugin = Passthrough{}
+)
 
 // Name implements [Plugin]. Embedders should override it with a stable identifier.
 func (Passthrough) Name() string { return "unnamed" }
@@ -49,4 +53,19 @@ func (Passthrough) BeforeClientRequest(ctx context.Context, _ *a2aclient.ClientR
 // AfterClientRequest implements [a2aclient.ClientPlugin] as a no-op.
 func (Passthrough) AfterClientRequest(ctx context.Context, _ *a2aclient.ClientResponse) (context.Context, error) {
 	return ctx, nil
+}
+
+// BeforeExecution implements [a2asrv.ExecutionPlugin] as a no-op.
+func (Passthrough) BeforeExecution(ctx context.Context, _ *a2asrv.ExecutorContext) (context.Context, error) {
+	return ctx, nil
+}
+
+// OnExecutionEvent implements [a2asrv.ExecutionPlugin] as a no-op.
+func (Passthrough) OnExecutionEvent(context.Context, *a2asrv.ExecutorContext, a2a.Event) error {
+	return nil
+}
+
+// AfterExecution implements [a2asrv.ExecutionPlugin] as a no-op.
+func (Passthrough) AfterExecution(context.Context, *a2asrv.ExecutorContext, error) error {
+	return nil
 }

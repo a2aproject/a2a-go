@@ -35,10 +35,12 @@ type recordingPlugin struct {
 	name string
 	log  *[]string
 
-	beforeServerErr error
-	afterServerErr  error
-	beforeClientErr error
-	afterClientErr  error
+	beforeServerErr    error
+	afterServerErr     error
+	beforeClientErr    error
+	afterClientErr     error
+	beforeExecutionErr error
+	afterExecutionErr  error
 }
 
 func newRecordingPlugin(name string, log *[]string) *recordingPlugin {
@@ -73,6 +75,42 @@ func (p *recordingPlugin) AfterClientRequest(ctx context.Context, resp *a2aclien
 	}
 	*p.log = append(*p.log, entry)
 	return ctx, p.afterClientErr
+}
+
+func (p *recordingPlugin) BeforeExecution(ctx context.Context, _ *a2asrv.ExecutorContext) (context.Context, error) {
+	*p.log = append(*p.log, p.name+":before-execution")
+	return ctx, p.beforeExecutionErr
+}
+
+func (p *recordingPlugin) OnExecutionEvent(context.Context, *a2asrv.ExecutorContext, a2a.Event) error {
+	*p.log = append(*p.log, p.name+":execution-event")
+	return errors.New("event hook error is swallowed")
+}
+
+func (p *recordingPlugin) AfterExecution(_ context.Context, _ *a2asrv.ExecutorContext, cause error) error {
+	entry := p.name + ":after-execution"
+	if cause != nil {
+		entry += "(err=" + cause.Error() + ")"
+	}
+	*p.log = append(*p.log, entry)
+	return p.afterExecutionErr
+}
+
+// bareExecutionPlugin implements only ExecutionPlugin.
+type bareExecutionPlugin struct{ name string }
+
+func (p bareExecutionPlugin) Name() string { return p.name }
+
+func (p bareExecutionPlugin) BeforeExecution(ctx context.Context, _ *a2asrv.ExecutorContext) (context.Context, error) {
+	return ctx, nil
+}
+
+func (p bareExecutionPlugin) OnExecutionEvent(context.Context, *a2asrv.ExecutorContext, a2a.Event) error {
+	return nil
+}
+
+func (p bareExecutionPlugin) AfterExecution(context.Context, *a2asrv.ExecutorContext, error) error {
+	return nil
 }
 
 // serverOnlyPlugin satisfies [a2asrv.ServerPlugin] but not ClientPlugin.
@@ -491,4 +529,83 @@ func TestSetGlobalPanicsOnNil(t *testing.T) {
 		}
 	}()
 	a2aplugin.SetGlobal(nil)
+}
+
+func TestSequentialHasExecutionHooks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		plugins []a2aplugin.Plugin
+		want    bool
+	}{
+		{name: "no plugins", want: false},
+		{name: "server-only plugin", plugins: []a2aplugin.Plugin{bareServerPlugin{name: "s"}}, want: false},
+		{name: "execution-only plugin", plugins: []a2aplugin.Plugin{bareExecutionPlugin{name: "e"}}, want: true},
+		{name: "Passthrough embedding", plugins: []a2aplugin.Plugin{serverOnlyPlugin{name: "p"}}, want: true},
+		{name: "nested empty manager", plugins: []a2aplugin.Plugin{a2aplugin.Sequential()}, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := a2aplugin.Sequential(tc.plugins...).HasExecutionHooks(); got != tc.want {
+				t.Fatalf("Sequential(...).HasExecutionHooks() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSequentialExecutionHooks(t *testing.T) {
+	t.Parallel()
+
+	var log []string
+	a := newRecordingPlugin("a", &log)
+	b := newRecordingPlugin("b", &log)
+	b.afterExecutionErr = errors.New("after error is swallowed")
+	m := a2aplugin.Sequential(a, b)
+	execCtx := &a2asrv.ExecutorContext{}
+	cause := errors.New("agent failed")
+
+	if _, err := m.BeforeExecution(t.Context(), execCtx); err != nil {
+		t.Fatalf("BeforeExecution() error = %v", err)
+	}
+	if err := m.OnExecutionEvent(t.Context(), execCtx, &a2a.Task{}); err != nil {
+		t.Fatalf("OnExecutionEvent() error = %v", err)
+	}
+	if err := m.AfterExecution(t.Context(), execCtx, cause); err != nil {
+		t.Fatalf("AfterExecution() error = %v", err)
+	}
+
+	want := []string{
+		"a:before-execution",
+		"b:before-execution",
+		"a:execution-event",
+		"b:execution-event",
+		"b:after-execution(err=agent failed)",
+		"a:after-execution(err=agent failed)",
+	}
+	if diff := cmp.Diff(want, log); diff != "" {
+		t.Fatalf("Sequential execution hooks wrong log (-want +got) diff = %s", diff)
+	}
+}
+
+func TestSequentialBeforeExecutionUnwindsOnError(t *testing.T) {
+	t.Parallel()
+
+	var log []string
+	a := newRecordingPlugin("a", &log)
+	b := newRecordingPlugin("b", &log)
+	b.beforeExecutionErr = errors.New("rejected by b")
+	c := newRecordingPlugin("c", &log)
+
+	_, err := a2aplugin.Sequential(a, b, c).BeforeExecution(t.Context(), &a2asrv.ExecutorContext{})
+	if !errors.Is(err, b.beforeExecutionErr) {
+		t.Fatalf("BeforeExecution() error = %v, want %v", err, b.beforeExecutionErr)
+	}
+
+	want := []string{"a:before-execution", "b:before-execution", "a:after-execution(err=rejected by b)"}
+	if diff := cmp.Diff(want, log); diff != "" {
+		t.Fatalf("BeforeExecution() wrong log (-want +got) diff = %s", diff)
+	}
 }

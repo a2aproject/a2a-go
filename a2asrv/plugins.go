@@ -69,16 +69,36 @@ type ServerResponse struct {
 	IsFinal bool
 }
 
-// WithPlugins sets the [ServerPlugin] whose hooks run around every call.
+// ExecutionPlugin is invoked around every [AgentExecutor.Execute] call. Executions run
+// outside the request scope, so in cluster mode the hooks run on the node executing the agent.
+// A non-nil error from [ExecutionPlugin.BeforeExecution] fails the execution without running the agent.
+type ExecutionPlugin interface {
+	core.Plugin
+
+	// BeforeExecution is called before the agent runs. The returned context is passed
+	// to the agent and to the other execution hooks.
+	BeforeExecution(ctx context.Context, execCtx *ExecutorContext) (context.Context, error)
+
+	// OnExecutionEvent is called for every event emitted by the agent, before it is processed.
+	// It runs on the agent's path, so it should be cheap.
+	OnExecutionEvent(ctx context.Context, execCtx *ExecutorContext, event a2a.Event) error
+
+	// AfterExecution is called after the agent finishes, with the error that ended the execution, if any.
+	AfterExecution(ctx context.Context, execCtx *ExecutorContext, cause error) error
+}
+
+// WithPlugins sets the plugin whose hooks run around every call and agent execution.
+// The handler uses the hook interfaces the plugin implements: [ServerPlugin] and [ExecutionPlugin].
 // If omitted, the handler uses the global plugin registered with
 // [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction time.
 // Passing nil is a no-op.
-func WithPlugins(plugin ServerPlugin) RequestHandlerOption {
+func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		if plugin == nil {
 			return
 		}
-		ih.Plugins = plugin
+		ih.Plugins, _ = plugin.(ServerPlugin)
+		h.executionPlugin, _ = plugin.(ExecutionPlugin)
 	}
 }
 
@@ -88,6 +108,44 @@ func globalServerPlugin() ServerPlugin {
 		return p
 	}
 	return nil
+}
+
+// globalExecutionPlugin returns the global plugin if it implements [ExecutionPlugin].
+func globalExecutionPlugin() ExecutionPlugin {
+	if p, ok := core.Global().(ExecutionPlugin); ok {
+		return p
+	}
+	return nil
+}
+
+// executionHooksReporter is implemented by plugin managers which can report
+// that none of the registered plugins implement execution hooks.
+type executionHooksReporter interface {
+	HasExecutionHooks() bool
+}
+
+func hasExecutionHooks(p ExecutionPlugin) bool {
+	if p == nil {
+		return false
+	}
+	if r, ok := p.(executionHooksReporter); ok {
+		return r.HasExecutionHooks()
+	}
+	return true
+}
+
+// onExecutionEvent calls [ExecutionPlugin.OnExecutionEvent] and logs the error it returns.
+func onExecutionEvent(ctx context.Context, p ExecutionPlugin, execCtx *ExecutorContext, event a2a.Event) {
+	if err := p.OnExecutionEvent(ctx, execCtx, event); err != nil {
+		log.Error(ctx, "plugin OnExecutionEvent failed", err, "plugin", p.Name())
+	}
+}
+
+// afterExecution calls [ExecutionPlugin.AfterExecution] and logs the error it returns.
+func afterExecution(ctx context.Context, p ExecutionPlugin, execCtx *ExecutorContext, cause error) {
+	if err := p.AfterExecution(ctx, execCtx, cause); err != nil {
+		log.Error(ctx, "plugin AfterExecution failed", err, "plugin", p.Name())
+	}
 }
 
 // serverHooksReporter is implemented by plugin managers which can report
