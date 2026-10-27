@@ -42,3 +42,22 @@ func Global() Plugin {
 	}
 	return nil
 }
+
+// GlobalAs returns the process-wide plugin if it implements P, or the zero value of P otherwise.
+func GlobalAs[P any]() P {
+	p, _ := Global().(P)
+	return p
+}
+
+// HasHooks reports whether hooks should be dispatched to p. It returns false for a nil p,
+// report(p) if p implements R (for example, a plugin manager reporting whether any of its
+// plugins implement the hooks), and true otherwise.
+func HasHooks[P, R any](p P, report func(R) bool) bool {
+	if any(p) == nil {
+		return false
+	}
+	if r, ok := any(p).(R); ok {
+		return report(r)
+	}
+	return true
+}

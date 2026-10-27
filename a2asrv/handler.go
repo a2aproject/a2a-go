@@ -23,6 +23,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -214,8 +215,8 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
-	h := &defaultRequestHandler{agentExecutor: executor, executionPlugin: globalExecutionPlugin()}
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugins: globalServerPlugin()}
+	h := &defaultRequestHandler{agentExecutor: executor, executionPlugin: core.GlobalAs[ExecutionPlugin]()}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugins: core.GlobalAs[ServerPlugin]()}
 
 	for _, option := range options {
 		option(ih, h)

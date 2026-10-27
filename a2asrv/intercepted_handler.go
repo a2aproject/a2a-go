@@ -110,9 +110,8 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 			yield(nil, pluginErr)
 			return
 		}
-		var finalErr error
-		defer func() { hook.finish(nil, finalErr) }()
-		yield = hook.wrapStreamYield(yield, &finalErr)
+		defer hook.finishStream()
+		yield = hook.wrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -149,9 +148,8 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			yield(nil, pluginErr)
 			return
 		}
-		var finalErr error
-		defer func() { hook.finish(nil, finalErr) }()
-		yield = hook.wrapStreamYield(yield, &finalErr)
+		defer hook.finishStream()
+		yield = hook.wrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)

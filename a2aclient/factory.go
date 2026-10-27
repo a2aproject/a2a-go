@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	"golang.org/x/mod/semver"
@@ -151,7 +152,7 @@ func (f *Factory) clientPlugins() ClientPlugin {
 	if f.plugins != nil {
 		return f.plugins
 	}
-	return globalClientPlugin()
+	return core.GlobalAs[ClientPlugin]()
 }
 
 // createTransport attempts to connect using the provided transports, returning the first

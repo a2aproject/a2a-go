@@ -102,36 +102,10 @@ func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 	}
 }
 
-// globalServerPlugin returns the global plugin if it implements [ServerPlugin].
-func globalServerPlugin() ServerPlugin {
-	if p, ok := core.Global().(ServerPlugin); ok {
-		return p
-	}
-	return nil
-}
-
-// globalExecutionPlugin returns the global plugin if it implements [ExecutionPlugin].
-func globalExecutionPlugin() ExecutionPlugin {
-	if p, ok := core.Global().(ExecutionPlugin); ok {
-		return p
-	}
-	return nil
-}
-
 // executionHooksReporter is implemented by plugin managers which can report
 // that none of the registered plugins implement execution hooks.
 type executionHooksReporter interface {
 	HasExecutionHooks() bool
-}
-
-func hasExecutionHooks(p ExecutionPlugin) bool {
-	if p == nil {
-		return false
-	}
-	if r, ok := p.(executionHooksReporter); ok {
-		return r.HasExecutionHooks()
-	}
-	return true
 }
 
 // onExecutionEvent calls [ExecutionPlugin.OnExecutionEvent] and logs the error it returns.
@@ -154,24 +128,15 @@ type serverHooksReporter interface {
 	HasServerHooks() bool
 }
 
-func hasServerHooks(p ServerPlugin) bool {
-	if p == nil {
-		return false
-	}
-	if r, ok := p.(serverHooksReporter); ok {
-		return r.HasServerHooks()
-	}
-	return true
-}
-
 // pluginCall carries the per-call plugin state across the Before and After
 // (or stream-end) hooks of a single request.
 type pluginCall struct {
-	active  bool
-	plugin  ServerPlugin
-	ctx     context.Context
-	req     *ServerRequest
-	finaled bool
+	active    bool
+	plugin    ServerPlugin
+	ctx       context.Context
+	req       *ServerRequest
+	streamErr error
+	finaled   bool
 }
 
 // beginPluginCall runs [ServerPlugin.BeforeHandlerRun] and returns a handle used
@@ -180,7 +145,7 @@ type pluginCall struct {
 // further plugin dispatch. If the handler has no plugin hooks the returned handle
 // is inactive and ctx is returned unchanged.
 func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*pluginCall, context.Context, error) {
-	if !hasServerHooks(h.Plugins) {
+	if !core.HasHooks(h.Plugins, serverHooksReporter.HasServerHooks) {
 		return &pluginCall{}, ctx, nil
 	}
 	req := &ServerRequest{
@@ -213,10 +178,16 @@ func (p *pluginCall) finish(payload any, err error) {
 	p.after(resp)
 }
 
+// finishStream fires the final [ServerPlugin.AfterHandlerRun] call of a stream with
+// the last error yielded through the function returned by wrapStreamYield.
+func (p *pluginCall) finishStream() {
+	p.finish(nil, p.streamErr)
+}
+
 // wrapStreamYield returns a yield function that fires a per-event
 // [ServerPlugin.AfterHandlerRun] call before each yield, recording any yielded
-// error into finalErr for the trailing final call.
-func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool, finalErr *error) func(a2a.Event, error) bool {
+// error for finishStream.
+func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool) func(a2a.Event, error) bool {
 	if !p.active {
 		return yield
 	}
@@ -228,7 +199,7 @@ func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool, finalErr
 			IsStreamEvent: true,
 		}
 		if err != nil {
-			*finalErr = err
+			p.streamErr = err
 		} else {
 			resp.Payload = ev
 		}

@@ -102,9 +102,8 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 			yield(nil, pluginErr)
 			return
 		}
-		var finalErr error
-		defer func() { hook.finish(nil, finalErr) }()
-		yield = hook.wrapStreamYield(yield, &finalErr)
+		defer hook.finishStream()
+		yield = hook.wrapStreamYield(yield)
 
 		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {
@@ -157,9 +156,8 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 			yield(nil, pluginErr)
 			return
 		}
-		var finalErr error
-		defer func() { hook.finish(nil, finalErr) }()
-		yield = hook.wrapStreamYield(yield, &finalErr)
+		defer hook.finishStream()
+		yield = hook.wrapStreamYield(yield)
 
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {

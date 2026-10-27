@@ -86,38 +86,21 @@ func WithPlugins(plugin ClientPlugin) FactoryOption {
 	})
 }
 
-// globalClientPlugin returns the global plugin if it implements [ClientPlugin].
-func globalClientPlugin() ClientPlugin {
-	if p, ok := core.Global().(ClientPlugin); ok {
-		return p
-	}
-	return nil
-}
-
 // clientHooksReporter is implemented by plugin managers which can report
 // that none of the registered plugins implement client hooks.
 type clientHooksReporter interface {
 	HasClientHooks() bool
 }
 
-func hasClientHooks(p ClientPlugin) bool {
-	if p == nil {
-		return false
-	}
-	if r, ok := p.(clientHooksReporter); ok {
-		return r.HasClientHooks()
-	}
-	return true
-}
-
 // pluginCall carries the per-call plugin state across the Before and After
 // (or stream-end) hooks of a single request.
 type pluginCall struct {
-	active  bool
-	plugin  ClientPlugin
-	ctx     context.Context
-	req     *ClientRequest
-	finaled bool
+	active    bool
+	plugin    ClientPlugin
+	ctx       context.Context
+	req       *ClientRequest
+	streamErr error
+	finaled   bool
 }
 
 // beginPluginCall runs [ClientPlugin.BeforeClientRequest] and returns a handle used to
@@ -127,7 +110,7 @@ type pluginCall struct {
 // If the client has no plugin hooks the returned handle is inactive and the inputs are
 // returned unchanged.
 func beginPluginCall[Req any](ctx context.Context, c *Client, method string, payload Req) (*pluginCall, context.Context, Req, error) {
-	if !hasClientHooks(c.plugins) {
+	if !core.HasHooks(c.plugins, clientHooksReporter.HasClientHooks) {
 		return &pluginCall{}, ctx, payload, nil
 	}
 	params := serviceParamsCloneFrom(ctx)
@@ -168,10 +151,16 @@ func (p *pluginCall) finish(payload any, err error) {
 	p.after(resp)
 }
 
+// finishStream fires the final [ClientPlugin.AfterClientRequest] call of a stream with
+// the last error yielded through the function returned by wrapStreamYield.
+func (p *pluginCall) finishStream() {
+	p.finish(nil, p.streamErr)
+}
+
 // wrapStreamYield returns a yield function that fires a per-event
 // [ClientPlugin.AfterClientRequest] call before each yield, recording any yielded
-// error into finalErr for the trailing final call.
-func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool, finalErr *error) func(a2a.Event, error) bool {
+// error for finishStream.
+func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool) func(a2a.Event, error) bool {
 	if !p.active {
 		return yield
 	}
@@ -179,7 +168,7 @@ func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool, finalErr
 		resp := p.newResponse(err)
 		resp.IsStreamEvent = true
 		if err != nil {
-			*finalErr = err
+			p.streamErr = err
 		} else {
 			resp.Payload = ev
 		}
