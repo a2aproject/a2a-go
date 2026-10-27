@@ -32,6 +32,7 @@ import (
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
+	plugins      ClientPlugin
 	transports   map[transportKey]TransportFactory
 }
 
@@ -109,6 +110,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
+		plugins:         f.clientPlugins(),
 		endpoint:        *selected.endpoint,
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
@@ -137,9 +139,19 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
+		plugins:         f.clientPlugins(),
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 		endpoint:        *selected.endpoint,
 	}, nil
+}
+
+// clientPlugins returns the plugin set with [WithPlugins] or the global plugin
+// registered at the time of the call.
+func (f *Factory) clientPlugins() ClientPlugin {
+	if f.plugins != nil {
+		return f.plugins
+	}
+	return globalClientPlugin()
 }
 
 // createTransport attempts to connect using the provided transports, returning the first
@@ -310,6 +322,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
 		WithCallInterceptors(f.interceptors...),
+		WithPlugins(f.plugins),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))
