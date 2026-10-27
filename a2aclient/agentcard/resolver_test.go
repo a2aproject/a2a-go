@@ -269,3 +269,38 @@ func TestResolver_CompleteCardURL(t *testing.T) {
 		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
+
+func TestResolver_DefaultA2AVersionHeader(t *testing.T) {
+	captured := []string{}
+	card := &a2a.AgentCard{Name: "TestResolver_DefaultA2AVersionHeader"}
+	cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, card), func(req *http.Request) {
+		captured = req.Header.Values(a2a.SvcParamVersion)
+	})
+
+	resolver := NewResolver(nil)
+	if _, err := resolver.Resolve(t.Context(), cardURL); err != nil {
+		t.Fatalf("Resolve() failed with: %v", err)
+	}
+
+	if len(captured) != 1 || captured[0] != string(a2a.Version) {
+		t.Errorf("expected request %s to be [%s], got %v", a2a.SvcParamVersion, a2a.Version, captured)
+	}
+}
+
+func TestResolver_A2AVersionHeaderOverride(t *testing.T) {
+	captured := []string{}
+	card := &a2a.AgentCard{Name: "TestResolver_A2AVersionHeaderOverride"}
+	cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, card), func(req *http.Request) {
+		captured = req.Header.Values(a2a.SvcParamVersion)
+	})
+
+	resolver := NewResolver(nil)
+	_, err := resolver.Resolve(t.Context(), cardURL, WithRequestHeader(a2a.SvcParamVersion, "0.3"))
+	if err != nil {
+		t.Fatalf("Resolve() failed with: %v", err)
+	}
+
+	if len(captured) != 1 || captured[0] != "0.3" {
+		t.Errorf("expected caller-provided %s to win with value [0.3], got %v", a2a.SvcParamVersion, captured)
+	}
+}
