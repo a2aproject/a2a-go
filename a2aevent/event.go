@@ -18,6 +18,7 @@ package a2aevent
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -120,7 +121,7 @@ func applyShallowArtifactUpdate(src *a2a.Task, event *a2a.TaskArtifactUpdateEven
 
 func applyShallowStatusUpdate(src *a2a.Task, event *a2a.TaskStatusUpdateEvent) *a2a.Task {
 	task := *src
-	if task.Status.Message != nil {
+	if task.Status.Message != nil && !statusMessageInHistory(&task) {
 		task.History = slices.Clone(task.History)
 		task.History = append(task.History, task.Status.Message)
 	}
@@ -139,8 +140,17 @@ func applyShallowStatusUpdate(src *a2a.Task, event *a2a.TaskStatusUpdateEvent) *
 func applyShallowHistoryUpdate(src *a2a.Task, msg *a2a.Message) *a2a.Task {
 	task := *src
 	task.History = slices.Clone(src.History)
+	if task.Status.Message != nil && !statusMessageInHistory(&task) {
+		task.History = append(task.History, task.Status.Message)
+	}
 	task.History = append(task.History, msg)
 	return &task
+}
+
+func statusMessageInHistory(task *a2a.Task) bool {
+	return slices.ContainsFunc(task.History, func(msg *a2a.Message) bool {
+		return reflect.DeepEqual(msg, task.Status.Message)
+	})
 }
 
 func validateUpdate(task *a2a.Task, event a2a.Event) error {
