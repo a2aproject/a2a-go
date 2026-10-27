@@ -117,12 +117,13 @@ type pluginCall struct {
 }
 
 // beginPluginCall runs [ServerPlugin.BeforeHandlerRun] and returns a handle used
-// to emit per-event and final AfterHandlerRun calls. A non-nil error means the
-// call must be rejected without further plugin dispatch. If the handler has no
-// plugin hooks the returned handle is inactive.
-func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*pluginCall, error) {
+// to emit per-event and final AfterHandlerRun calls, together with the context to
+// continue the call with. A non-nil error means the call must be rejected without
+// further plugin dispatch. If the handler has no plugin hooks the returned handle
+// is inactive and ctx is returned unchanged.
+func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*pluginCall, context.Context, error) {
 	if !hasServerHooks(h.Plugins) {
-		return &pluginCall{}, nil
+		return &pluginCall{}, ctx, nil
 	}
 	req := &ServerRequest{
 		Method:      callCtx.Method(),
@@ -131,9 +132,9 @@ func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallCo
 	}
 	newCtx, err := h.Plugins.BeforeHandlerRun(ctx, req)
 	if err != nil {
-		return &pluginCall{}, err
+		return &pluginCall{}, ctx, err
 	}
-	return &pluginCall{active: true, plugin: h.Plugins, ctx: newCtx, req: req}, nil
+	return &pluginCall{active: true, plugin: h.Plugins, ctx: newCtx, req: req}, newCtx, nil
 }
 
 // finish fires the final [ServerPlugin.AfterHandlerRun] call at most once.
