@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs a scripted A2A conversation against a real ACP agent through the
-# integration/executor/a2aacp executor: text turn, approved and denied tool calls,
+# integrations/executor/a2aacp executor: text turn, approved and denied tool calls,
 # follow-up in the same context, cancel while input-required.
 #
 # Usage:

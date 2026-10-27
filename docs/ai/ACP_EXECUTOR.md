@@ -1,4 +1,4 @@
-# ACP Executor (`integration/executor/a2aacp`)
+# ACP Executor (`integrations/executor/a2aacp`)
 
 > **Staleness warning**: if anything described here contradicts observed behavior, re-read
 > the source code. This document may be out of date.
@@ -11,7 +11,7 @@
 
 | Package | Contents |
 | :--- | :--- |
-| `integration/executor/a2aacp` | the executor: turns (`turn.go`), keyed agent lifecycle and `Shutdown` (`agent.go`), ACP request → `Question` / structured input request translation, typed-reply matching (`questions.go`), `AutoAnswerer` / `ToolRules` / `MetadataSettings` (`hooks.go`), `Converter` and per-task output streams (`convert.go`), `Agent` / `AgentFunc` / `Process` / `WithCleanup` (`process.go`), `SessionStore` default |
+| `integrations/executor/a2aacp` | the executor: turns (`turn.go`), keyed agent lifecycle and `Shutdown` (`agent.go`), ACP request → `Question` / structured input request translation, typed-reply matching (`questions.go`), `AutoAnswerer` / `ToolRules` / `MetadataSettings` (`hooks.go`), `Converter` and per-task output streams (`convert.go`), `Agent` / `AgentFunc` / `Process` / `WithCleanup` (`process.go`), `SessionStore` default |
 | `a2aext/structuredinput` | the Structured Input extension the executor asks questions with: `Request`, `NewRequestEvent`, `Processor`, `Validator`; clients use `PendingRequest` / `NewResponse` |
 | `internal/acp` | hand-rolled ACP client: protocol types (`schema.go`), JSON-RPC 2.0 over NDJSON (`Conn`), typed `Client` with a `Handler` for agent→client requests |
 | `internal/subprocess` | starts a child process and exposes its stdio as an `io.ReadWriteCloser` |
