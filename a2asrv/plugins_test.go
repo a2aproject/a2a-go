@@ -112,15 +112,31 @@ func yieldAll(events ...a2a.Event) iter.Seq2[a2a.Event, error] {
 	}
 }
 
+// syncLog is a list of entries which hooks running on other goroutines can append to.
+type syncLog[T any] struct {
+	mu      sync.Mutex
+	entries []T
+}
+
+func (l *syncLog[T]) record(entry T) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = append(l.entries, entry)
+}
+
+func (l *syncLog[T]) recorded() []T {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.entries)
+}
+
 type recordingExecutionPlugin struct {
+	syncLog[string]
 	name      string
 	beforeErr error
 	ctxKey    any
 	ctxValue  string
-
-	mu    sync.Mutex
-	log   []string
-	after chan struct{}
+	after     chan struct{}
 }
 
 var _ ExecutionPlugin = (*recordingExecutionPlugin)(nil)
@@ -155,18 +171,6 @@ func (p *recordingExecutionPlugin) AfterExecution(_ context.Context, _ *Executor
 	p.record(entry)
 	close(p.after)
 	return nil
-}
-
-func (p *recordingExecutionPlugin) record(entry string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.log = append(p.log, entry)
-}
-
-func (p *recordingExecutionPlugin) recorded() []string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Clone(p.log)
 }
 
 type serverAndExecutionPlugin struct {
@@ -546,8 +550,7 @@ type taskWrite struct {
 }
 
 type recordingTaskObserver struct {
-	mu     sync.Mutex
-	writes []taskWrite
+	syncLog[taskWrite]
 }
 
 var _ TaskObserverPlugin = (*recordingTaskObserver)(nil)
@@ -555,16 +558,8 @@ var _ TaskObserverPlugin = (*recordingTaskObserver)(nil)
 func (*recordingTaskObserver) Name() string { return "task-observer" }
 
 func (p *recordingTaskObserver) OnTaskEvent(_ context.Context, info *TaskEventInfo) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.writes = append(p.writes, taskWrite{From: info.FromState, To: info.ToState, Event: fmt.Sprintf("%T", info.Event)})
+	p.record(taskWrite{From: info.FromState, To: info.ToState, Event: fmt.Sprintf("%T", info.Event)})
 	return errors.New("observer errors are logged")
-}
-
-func (p *recordingTaskObserver) recorded() []taskWrite {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Clone(p.writes)
 }
 
 func TestTaskObserverPlugin(t *testing.T) {

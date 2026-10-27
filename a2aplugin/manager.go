@@ -168,11 +168,9 @@ func (m *SequentialManager) BeforeExecution(ctx context.Context, execCtx *a2asrv
 // OnExecutionEvent implements [a2asrv.ExecutionPlugin]. Hooks run in registration order.
 // Errors are logged and swallowed.
 func (m *SequentialManager) OnExecutionEvent(ctx context.Context, execCtx *a2asrv.ExecutorContext, event a2a.Event) error {
-	for _, p := range m.execution {
-		if err := p.OnExecutionEvent(ctx, execCtx, event); err != nil {
-			log.Error(ctx, "a2aplugin: OnExecutionEvent failed", err, "plugin", p.Name())
-		}
-	}
+	runObservers(ctx, m.execution, "OnExecutionEvent", func(p a2asrv.ExecutionPlugin) error {
+		return p.OnExecutionEvent(ctx, execCtx, event)
+	})
 	return nil
 }
 
@@ -185,11 +183,9 @@ func (m *SequentialManager) AfterExecution(ctx context.Context, execCtx *a2asrv.
 // OnTaskEvent implements [a2asrv.TaskObserverPlugin]. Hooks run in registration order.
 // Errors are logged and swallowed.
 func (m *SequentialManager) OnTaskEvent(ctx context.Context, info *a2asrv.TaskEventInfo) error {
-	for _, p := range m.task {
-		if err := p.OnTaskEvent(ctx, info); err != nil {
-			log.Error(ctx, "a2aplugin: OnTaskEvent failed", err, "plugin", p.Name())
-		}
-	}
+	runObservers(ctx, m.task, "OnTaskEvent", func(p a2asrv.TaskObserverPlugin) error {
+		return p.OnTaskEvent(ctx, info)
+	})
 	return nil
 }
 
@@ -228,6 +224,15 @@ func runBefore[P Plugin](
 		ctx = next
 	}
 	return ctx, nil
+}
+
+// runObservers calls hook on plugins in registration order. Errors are logged and swallowed.
+func runObservers[P Plugin](ctx context.Context, plugins []P, hookName string, hook func(P) error) {
+	for _, p := range plugins {
+		if err := hook(p); err != nil {
+			log.Error(ctx, "a2aplugin: "+hookName+" failed", err, "plugin", p.Name())
+		}
+	}
 }
 
 // runAfter calls hook on plugins in reverse order, passing the returned context to the

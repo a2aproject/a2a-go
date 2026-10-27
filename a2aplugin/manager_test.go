@@ -96,6 +96,11 @@ func (p *recordingPlugin) AfterExecution(_ context.Context, _ *a2asrv.ExecutorCo
 	return p.afterExecutionErr
 }
 
+func (p *recordingPlugin) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
+	*p.log = append(*p.log, p.name+":task-event")
+	return errors.New("task hook error is swallowed")
+}
+
 // bareExecutionPlugin implements only ExecutionPlugin.
 type bareExecutionPlugin struct{ name string }
 
@@ -610,26 +615,14 @@ func TestSequentialBeforeExecutionUnwindsOnError(t *testing.T) {
 	}
 }
 
-type recordingTaskPlugin struct {
-	name string
-	log  *[]string
-}
-
-func (p recordingTaskPlugin) Name() string { return p.name }
-
-func (p recordingTaskPlugin) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
-	*p.log = append(*p.log, p.name+":task-event")
-	return errors.New("task hook error is swallowed")
-}
-
 func TestSequentialTaskHooks(t *testing.T) {
 	t.Parallel()
 
 	var log []string
 	m := a2aplugin.Sequential(
-		recordingTaskPlugin{name: "a", log: &log},
+		newRecordingPlugin("a", &log),
 		bareServerPlugin{name: "server-only"},
-		recordingTaskPlugin{name: "b", log: &log},
+		newRecordingPlugin("b", &log),
 	)
 
 	if !m.HasTaskHooks() {

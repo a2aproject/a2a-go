@@ -23,7 +23,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
-	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
@@ -193,10 +192,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
 	f.observeTaskWrites(updateManager)
-	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors}
-	if core.HasHooks(f.executionPlugin, executionHooksReporter.HasExecutionHooks) {
-		executor.plugin = f.executionPlugin
-	}
+	executor := &executor{agent: f.agent, execCtx: execCtx.ctx, interceptors: f.interceptors, plugin: f.executionPlugin}
 	processor := newProcessor(
 		updateManager,
 		f.pushConfigStore,
