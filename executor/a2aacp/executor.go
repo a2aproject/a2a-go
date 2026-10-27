@@ -12,33 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package a2aacp implements an [a2asrv.AgentExecutor] on top of an agent
-// speaking the Agent Client Protocol (https://agentclientprotocol.com), such
-// as `opencode acp`, Zed's claude-agent-acp or `gemini --experimental-acp`:
-//
-//	exec, err := a2aacp.NewExecutor(ctx, a2aacp.Process{Argv: []string{"opencode", "acp"}}, nil)
-//
-// Every A2A context maps to an ACP session and every task to the agent's work
-// on a message. Tasks in the same context run one at a time, in arrival order.
-// One agent process serves all contexts unless [Config.Pool] groups them into
-// processes, for example one per context or tenant; agents are restarted if
-// they exit. The agent's reply streams into the [ResponseArtifact] artifact and
-// tool calls become working status updates; [Config.Converter] changes that.
-//
-// Permission requests and form elicitations pause the task in input-required
-// with a [Question] asked as a request of the Structured Input extension (see
-// package [structuredinput]; advertise it in the agent card with
-// structuredinput.NewExtension), unless [Config.AutoAnswer] decides them, for
-// example with [ToolRules]. The caller answers with an [Answer] as structured
-// input, or by typing an option. A message which isn't an answer at all
-// interrupts the agent and is sent as a new instruction, like typing instead
-// of approving does in coding agents; an invalid answer is asked again.
-// Unanswered questions are rejected after [Config.QuestionTimeout] and the
-// agent stops working on the task; a later reply to the task fails it.
-//
-// Questions are tied to the agent process which asked them, so in a cluster
-// every message of a context must reach the node which runs its agent. See
-// [PoolConfig.Key], [ErrNotOwner] and [Executor.Shutdown].
 package a2aacp
 
 import (
