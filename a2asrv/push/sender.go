@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -43,6 +44,7 @@ var tokenHeader = http.CanonicalHeaderKey("A2A-Notification-Token")
 type HTTPPushSender struct {
 	client      *http.Client
 	failOnError bool
+	plugin      Plugin
 }
 
 // HTTPSenderConfig allows to configure [HTTPPushSender].
@@ -58,6 +60,10 @@ type HTTPSenderConfig struct {
 	// true only for trusted internal deployments (for example a webhook on the
 	// same host or private network).
 	AllowPrivateNetworks bool
+	// Plugins is the plugin whose [Plugin] hooks run around every delivery. If not set, the global
+	// plugin registered with [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction
+	// time is used. It is independent of the plugin configured for the request handler.
+	Plugins core.Plugin
 }
 
 // NewHTTPPushSender creates a new HTTPPushSender. It uses a default client
@@ -70,11 +76,18 @@ type HTTPSenderConfig struct {
 func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 	t := 30 * time.Second
 	allowPrivate := false
+	plugin := core.GlobalAs[Plugin]()
 	if config != nil {
 		if config.Timeout > 0 {
 			t = config.Timeout
 		}
 		allowPrivate = config.AllowPrivateNetworks
+		if config.Plugins != nil {
+			plugin, _ = config.Plugins.(Plugin)
+		}
+	}
+	if !core.HasHooks(plugin, pushHooksReporter.HasPushHooks) {
+		plugin = nil
 	}
 	client := &http.Client{Timeout: t}
 	// Bound the redirect chain and strip the token on cross-host redirects
@@ -87,6 +100,7 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 	return &HTTPPushSender{
 		client:      client,
 		failOnError: config != nil && config.FailOnError,
+		plugin:      plugin,
 	}
 }
 
@@ -180,9 +194,20 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 		}
 	}
 
+	if s.plugin != nil {
+		return s.sendWithPlugin(ctx, config, event, req)
+	}
+	if _, err := s.do(ctx, req); err != nil {
+		return s.handleError(ctx, err)
+	}
+	return nil
+}
+
+// do sends req and returns the response status code, or 0 if no response was received.
+func (s *HTTPPushSender) do(ctx context.Context, req *http.Request) (int, error) {
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return s.handleError(ctx, fmt.Errorf("failed to send push notification: %w", err))
+		return 0, fmt.Errorf("failed to send push notification: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -191,10 +216,10 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return s.handleError(ctx, fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status))
+		return resp.StatusCode, fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status)
 	}
 
-	return nil
+	return resp.StatusCode, nil
 }
 
 func (s *HTTPPushSender) handleError(ctx context.Context, err error) error {

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -356,4 +357,154 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 			t.Errorf("notification token leaked to a different host on redirect: %q, want empty", finalToken)
 		}
 	})
+}
+
+type recordingPushPlugin struct {
+	beforeErr error
+	skip      bool
+	header    string
+
+	befores int
+	results []*DeliveryResult
+}
+
+func (*recordingPushPlugin) Name() string { return "push-recorder" }
+
+func (p *recordingPushPlugin) BeforePushSend(ctx context.Context, d *Delivery) (context.Context, error) {
+	p.befores++
+	if p.beforeErr != nil {
+		return ctx, p.beforeErr
+	}
+	if p.header != "" {
+		d.Headers.Set("X-Plugin", p.header)
+	}
+	d.Skip = p.skip
+	return ctx, nil
+}
+
+func (p *recordingPushPlugin) OnPushSent(_ context.Context, r *DeliveryResult) error {
+	p.results = append(p.results, r)
+	return errors.New("plugin errors are logged")
+}
+
+type noPushHooksPlugin struct{ recordingPushPlugin }
+
+func (*noPushHooksPlugin) HasPushHooks() bool { return false }
+
+type namedOnlyPlugin struct{}
+
+func (namedOnlyPlugin) Name() string { return "named-only" }
+
+func TestHTTPPushSender_Plugin(t *testing.T) {
+	t.Parallel()
+
+	rejected := errors.New("rejected")
+
+	tests := []struct {
+		name        string
+		plugin      *recordingPushPlugin
+		status      int
+		failOnError bool
+		wantErr     error
+		wantSent    bool
+		wantHeader  string
+		wantResult  *DeliveryResult
+	}{
+		{
+			name:       "plugin header is sent and result reported",
+			plugin:     &recordingPushPlugin{header: "added"},
+			status:     http.StatusOK,
+			wantSent:   true,
+			wantHeader: "added",
+			wantResult: &DeliveryResult{StatusCode: http.StatusOK},
+		},
+		{
+			name:       "skipped delivery",
+			plugin:     &recordingPushPlugin{skip: true},
+			wantResult: &DeliveryResult{Skipped: true},
+		},
+		{
+			name:       "swallowed endpoint error is reported",
+			plugin:     &recordingPushPlugin{},
+			status:     http.StatusInternalServerError,
+			wantSent:   true,
+			wantResult: &DeliveryResult{StatusCode: http.StatusInternalServerError, Err: errors.New("non-success status")},
+		},
+		{
+			name:        "before error fails the delivery",
+			plugin:      &recordingPushPlugin{beforeErr: rejected},
+			failOnError: true,
+			wantErr:     rejected,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var sent bool
+			var gotHeader string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sent = true
+				gotHeader = r.Header.Get("X-Plugin")
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(server.Close)
+
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true, FailOnError: tc.failOnError, Plugins: tc.plugin})
+			config := &a2a.PushConfig{TaskID: "task-1", URL: server.URL}
+			err := sender.SendPush(t.Context(), config, &a2a.Task{ID: "task-1"})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("SendPush() error = %v, want %v", err, tc.wantErr)
+			}
+			if sent != tc.wantSent {
+				t.Fatalf("SendPush() sent = %v, want %v", sent, tc.wantSent)
+			}
+			if gotHeader != tc.wantHeader {
+				t.Fatalf("SendPush() X-Plugin header = %q, want %q", gotHeader, tc.wantHeader)
+			}
+			if tc.wantResult == nil {
+				if len(tc.plugin.results) != 0 {
+					t.Fatalf("OnPushSent() called %d times, want 0", len(tc.plugin.results))
+				}
+				return
+			}
+			if len(tc.plugin.results) != 1 {
+				t.Fatalf("OnPushSent() called %d times, want 1", len(tc.plugin.results))
+			}
+			got := tc.plugin.results[0]
+			if got.Delivery.TaskID != "task-1" || got.Delivery.URL != server.URL {
+				t.Fatalf("OnPushSent() delivery = %+v, want task-1 to %s", got.Delivery, server.URL)
+			}
+			if got.StatusCode != tc.wantResult.StatusCode || got.Skipped != tc.wantResult.Skipped || (got.Err != nil) != (tc.wantResult.Err != nil) {
+				t.Fatalf("OnPushSent() result = {StatusCode: %d, Skipped: %v, Err: %v}, want %+v", got.StatusCode, got.Skipped, got.Err, tc.wantResult)
+			}
+		})
+	}
+}
+
+func TestNewHTTPPushSender_Plugin(t *testing.T) {
+	t.Cleanup(func() { core.SetGlobal(namedOnlyPlugin{}) })
+
+	global := &recordingPushPlugin{}
+	explicit := &recordingPushPlugin{}
+	core.SetGlobal(global)
+
+	tests := []struct {
+		name   string
+		config *HTTPSenderConfig
+		want   Plugin
+	}{
+		{name: "global is the default", config: nil, want: global},
+		{name: "config overrides global", config: &HTTPSenderConfig{Plugins: explicit}, want: explicit},
+		{name: "non-push plugin disables global", config: &HTTPSenderConfig{Plugins: namedOnlyPlugin{}}, want: nil},
+		{name: "plugin reporting no push hooks is skipped", config: &HTTPSenderConfig{Plugins: &noPushHooksPlugin{}}, want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NewHTTPPushSender(tc.config).plugin; got != tc.want {
+				t.Fatalf("NewHTTPPushSender() plugin = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

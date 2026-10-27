@@ -28,6 +28,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
 
 type recordingServerPlugin struct {
@@ -565,49 +566,79 @@ func (p *recordingTaskObserver) OnTaskEvent(_ context.Context, info *TaskEventIn
 func TestTaskObserverPlugin(t *testing.T) {
 	t.Parallel()
 
-	agent := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
-			return func(yield func(a2a.Event, error) bool) {
-				if execCtx.StoredTask == nil && !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
-					return
+	newAgent := func() *mockAgentExecutor {
+		return &mockAgentExecutor{
+			ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+				return func(yield func(a2a.Event, error) bool) {
+					if execCtx.StoredTask == nil && !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+						return
+					}
+					yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, nil), nil)
 				}
-				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, nil), nil)
-			}
-		},
-		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
-			return func(yield func(a2a.Event, error) bool) {
-				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
-			}
-		},
+			},
+			CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+				return func(yield func(a2a.Event, error) bool) {
+					yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+				}
+			},
+		}
 	}
-	observer := &recordingTaskObserver{}
-	handler := NewHandler(agent, WithPlugins(observer))
-
-	result, err := handler.SendMessage(t.Context(), newSendMessageRequest())
-	if err != nil {
-		t.Fatalf("SendMessage() error = %v", err)
-	}
-	task, ok := result.(*a2a.Task)
-	if !ok {
-		t.Fatalf("SendMessage() result = %T, want *a2a.Task", result)
-	}
+	stored := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 	followUp := newSendMessageRequest()
-	followUp.Message.TaskID, followUp.Message.ContextID = task.ID, task.ContextID
-	if _, err := handler.SendMessage(t.Context(), followUp); err != nil {
-		t.Fatalf("SendMessage() follow-up error = %v", err)
-	}
-	if _, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: task.ID}); err != nil {
-		t.Fatalf("CancelTask() error = %v", err)
+	followUp.Message.TaskID, followUp.Message.ContextID = stored.ID, stored.ContextID
+
+	tests := []struct {
+		name string
+		call func(h RequestHandler) error
+		want []taskWrite
+	}{
+		{
+			name: "new task",
+			call: func(h RequestHandler) error {
+				_, err := h.SendMessage(t.Context(), newSendMessageRequest())
+				return err
+			},
+			want: []taskWrite{
+				{From: a2a.TaskStateUnspecified, To: a2a.TaskStateSubmitted, Event: "*a2a.Task"},
+				{From: a2a.TaskStateSubmitted, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
+			},
+		},
+		{
+			name: "follow-up message",
+			call: func(h RequestHandler) error {
+				_, err := h.SendMessage(t.Context(), followUp)
+				return err
+			},
+			want: []taskWrite{
+				{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.Message"},
+				{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
+			},
+		},
+		{
+			name: "cancelation",
+			call: func(h RequestHandler) error {
+				_, err := h.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: stored.ID})
+				return err
+			},
+			want: []taskWrite{
+				{From: a2a.TaskStateInputRequired, To: a2a.TaskStateCanceled, Event: "*a2a.TaskStatusUpdateEvent"},
+			},
+		},
 	}
 
-	want := []taskWrite{
-		{From: a2a.TaskStateUnspecified, To: a2a.TaskStateSubmitted, Event: "*a2a.Task"},
-		{From: a2a.TaskStateSubmitted, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
-		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.Message"},
-		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateInputRequired, Event: "*a2a.TaskStatusUpdateEvent"},
-		{From: a2a.TaskStateInputRequired, To: a2a.TaskStateCanceled, Event: "*a2a.TaskStatusUpdateEvent"},
-	}
-	if diff := cmp.Diff(want, observer.recorded()); diff != "" {
-		t.Fatalf("OnTaskEvent() wrong calls (-want +got) diff = %s", diff)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			observer := &recordingTaskObserver{}
+			store := testutil.NewTestTaskStore().WithTasks(t, stored)
+			handler := NewHandler(newAgent(), WithTaskStore(store), WithPlugins(observer))
+
+			if err := tc.call(handler); err != nil {
+				t.Fatalf("handler call error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, observer.recorded()); diff != "" {
+				t.Fatalf("OnTaskEvent() wrong calls (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

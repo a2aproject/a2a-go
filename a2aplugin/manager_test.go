@@ -26,6 +26,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 )
 
 // recordingPlugin records every hook invocation it receives in a shared log
@@ -41,6 +42,7 @@ type recordingPlugin struct {
 	afterClientErr     error
 	beforeExecutionErr error
 	afterExecutionErr  error
+	beforePushErr      error
 }
 
 func newRecordingPlugin(name string, log *[]string) *recordingPlugin {
@@ -99,6 +101,20 @@ func (p *recordingPlugin) AfterExecution(_ context.Context, _ *a2asrv.ExecutorCo
 func (p *recordingPlugin) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
 	*p.log = append(*p.log, p.name+":task-event")
 	return errors.New("task hook error is swallowed")
+}
+
+func (p *recordingPlugin) BeforePushSend(ctx context.Context, _ *push.Delivery) (context.Context, error) {
+	*p.log = append(*p.log, p.name+":before-push")
+	return ctx, p.beforePushErr
+}
+
+func (p *recordingPlugin) OnPushSent(_ context.Context, r *push.DeliveryResult) error {
+	entry := p.name + ":push-sent"
+	if r.Err != nil {
+		entry += "(err=" + r.Err.Error() + ")"
+	}
+	*p.log = append(*p.log, entry)
+	return errors.New("push hook error is swallowed")
 }
 
 // bareExecutionPlugin implements only ExecutionPlugin.
@@ -636,5 +652,52 @@ func TestSequentialTaskHooks(t *testing.T) {
 	}
 	if a2aplugin.Sequential(bareServerPlugin{name: "s"}).HasTaskHooks() {
 		t.Fatalf("Sequential(server-only).HasTaskHooks() = true, want false")
+	}
+}
+
+func TestSequentialPushHooks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		bErr    error
+		wantErr bool
+		wantLog []string
+	}{
+		{
+			name:    "success",
+			wantLog: []string{"a:before-push", "b:before-push", "a:push-sent", "b:push-sent"},
+		},
+		{
+			name:    "before error unwinds earlier plugins",
+			bErr:    errors.New("rejected by b"),
+			wantErr: true,
+			wantLog: []string{"a:before-push", "b:before-push", "a:push-sent(err=rejected by b)"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var log []string
+			a := newRecordingPlugin("a", &log)
+			b := newRecordingPlugin("b", &log)
+			b.beforePushErr = tc.bErr
+			m := a2aplugin.Sequential(a, bareServerPlugin{name: "server-only"}, b)
+			delivery := &push.Delivery{}
+
+			_, err := m.BeforePushSend(t.Context(), delivery)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("BeforePushSend() error = %v, want error: %v", err, tc.wantErr)
+			}
+			if err == nil {
+				if err := m.OnPushSent(t.Context(), &push.DeliveryResult{Delivery: delivery}); err != nil {
+					t.Fatalf("OnPushSent() error = %v, want nil", err)
+				}
+			}
+			if diff := cmp.Diff(tc.wantLog, log); diff != "" {
+				t.Fatalf("push hooks wrong log (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

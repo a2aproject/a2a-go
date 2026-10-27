@@ -22,6 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -33,6 +34,7 @@ type Manager interface {
 	CompletePlugin
 	a2asrv.ExecutionPlugin
 	a2asrv.TaskObserverPlugin
+	push.Plugin
 
 	// HasServerHooks reports whether any registered plugin implements [a2asrv.ServerPlugin].
 	HasServerHooks() bool
@@ -42,6 +44,8 @@ type Manager interface {
 	HasExecutionHooks() bool
 	// HasTaskHooks reports whether any registered plugin implements [a2asrv.TaskObserverPlugin].
 	HasTaskHooks() bool
+	// HasPushHooks reports whether any registered plugin implements [push.Plugin].
+	HasPushHooks() bool
 }
 
 // SetGlobal installs m as the process-wide plugin [Manager]. SDK components
@@ -73,6 +77,7 @@ type SequentialManager struct {
 	client    []a2aclient.ClientPlugin
 	execution []a2asrv.ExecutionPlugin
 	task      []a2asrv.TaskObserverPlugin
+	pushes    []push.Plugin
 }
 
 // Sequential returns a [Manager] that runs the given plugins sequentially.
@@ -83,6 +88,7 @@ func Sequential(plugins ...Plugin) *SequentialManager {
 		client:    selectPlugins[a2aclient.ClientPlugin](plugins, Manager.HasClientHooks),
 		execution: selectPlugins[a2asrv.ExecutionPlugin](plugins, Manager.HasExecutionHooks),
 		task:      selectPlugins[a2asrv.TaskObserverPlugin](plugins, Manager.HasTaskHooks),
+		pushes:    selectPlugins[push.Plugin](plugins, Manager.HasPushHooks),
 	}
 }
 
@@ -105,6 +111,9 @@ func (m *SequentialManager) HasExecutionHooks() bool { return len(m.execution) >
 
 // HasTaskHooks implements [Manager].
 func (m *SequentialManager) HasTaskHooks() bool { return len(m.task) > 0 }
+
+// HasPushHooks implements [Manager].
+func (m *SequentialManager) HasPushHooks() bool { return len(m.pushes) > 0 }
 
 // BeforeHandlerRun implements [a2asrv.ServerPlugin]. If a hook returns an error,
 // AfterHandlerRun is invoked on plugins that already ran, in reverse order,
@@ -187,6 +196,31 @@ func (m *SequentialManager) OnTaskEvent(ctx context.Context, info *a2asrv.TaskEv
 		return p.OnTaskEvent(ctx, info)
 	})
 	return nil
+}
+
+// BeforePushSend implements [push.Plugin]. If a hook returns an error, OnPushSent is invoked
+// on plugins that already ran with a [push.DeliveryResult] carrying the error.
+func (m *SequentialManager) BeforePushSend(ctx context.Context, delivery *push.Delivery) (context.Context, error) {
+	return runBefore(ctx, m.pushes,
+		func(ctx context.Context, p push.Plugin) (context.Context, error) {
+			return p.BeforePushSend(ctx, delivery)
+		},
+		func(ran []push.Plugin, err error) {
+			runOnPushSent(ctx, ran, &push.DeliveryResult{Delivery: delivery, Err: err})
+		},
+	)
+}
+
+// OnPushSent implements [push.Plugin]. Hooks run in registration order. Errors are logged and swallowed.
+func (m *SequentialManager) OnPushSent(ctx context.Context, result *push.DeliveryResult) error {
+	runOnPushSent(ctx, m.pushes, result)
+	return nil
+}
+
+func runOnPushSent(ctx context.Context, plugins []push.Plugin, result *push.DeliveryResult) {
+	runObservers(ctx, plugins, "OnPushSent", func(p push.Plugin) error {
+		return p.OnPushSent(ctx, result)
+	})
 }
 
 func runAfterHandlerRun(ctx context.Context, plugins []a2asrv.ServerPlugin, resp *a2asrv.ServerResponse) context.Context {

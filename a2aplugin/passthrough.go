@@ -20,6 +20,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 )
 
 // Passthrough can be embedded by plugins that only need a subset of hooks.
@@ -31,6 +32,7 @@ var (
 	_ CompletePlugin            = Passthrough{}
 	_ a2asrv.ExecutionPlugin    = Passthrough{}
 	_ a2asrv.TaskObserverPlugin = Passthrough{}
+	_ push.Plugin               = Passthrough{}
 )
 
 // Name implements [Plugin]. Embedders should override it with a stable identifier.
@@ -73,5 +75,15 @@ func (Passthrough) AfterExecution(context.Context, *a2asrv.ExecutorContext, erro
 
 // OnTaskEvent implements [a2asrv.TaskObserverPlugin] as a no-op.
 func (Passthrough) OnTaskEvent(context.Context, *a2asrv.TaskEventInfo) error {
+	return nil
+}
+
+// BeforePushSend implements [push.Plugin] as a no-op.
+func (Passthrough) BeforePushSend(ctx context.Context, _ *push.Delivery) (context.Context, error) {
+	return ctx, nil
+}
+
+// OnPushSent implements [push.Plugin] as a no-op.
+func (Passthrough) OnPushSent(context.Context, *push.DeliveryResult) error {
 	return nil
 }
