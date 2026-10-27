@@ -628,7 +628,6 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 			result.reason = resp.StopReason
 		}
 		t.end()
-		t.events.push(turnEvent{result: result})
 		e.mu.Lock()
 		if e.routes[route] == t {
 			delete(e.routes, route)
@@ -638,7 +637,10 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		}
 		e.checkDrainedLocked()
 		e.mu.Unlock()
+		// Released before the result is pushed, so that a client reacting to the
+		// final event finds the agent idle and the context unlocked.
 		done()
+		t.events.push(turnEvent{result: result})
 	}()
 	return t, nil
 }

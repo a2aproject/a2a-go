@@ -86,7 +86,9 @@ notifications (`agent.sessions`).
 - The connection's read goroutine routes `session/update` and `session/request_permission` by
   agent and session ID (`Executor.routes`) into the turn's unbounded `queue`, so it never blocks on a turn
   nobody consumes. The prompt goroutine pushes the prompt result into the same queue after all
-  notifications that preceded it, so ordering is preserved.
+  notifications that preceded it, so ordering is preserved. It releases the agent ref and the
+  context lock before pushing the result, so a client sending its next message right after the
+  final event never sees the agent busy (`MaxAgents`) or the context locked (`RejectBusyContext`).
 - `pump` drains the queue. On an unanswered permission request it stores `turn.pending`, yields
   input-required and returns; the turn (and the ACP request) stays open. The next `Execute`
   for the same task finds the turn in `Executor.turns`, parses the reply (`parseAnswer`), responds
