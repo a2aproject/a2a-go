@@ -28,6 +28,57 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestRESTTransport_EndpointQuery(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		request   *a2a.ListTasksRequest
+		wantPath  string
+		wantQuery url.Values
+	}{
+		{
+			name:      "no request parameters",
+			request:   &a2a.ListTasksRequest{},
+			wantPath:  "/agent/tasks",
+			wantQuery: url.Values{"api_key": {"token + value"}, "tag": {"one", "two"}, "pageSize": {"5"}},
+		},
+		{
+			name:      "request overrides endpoint defaults",
+			request:   &a2a.ListTasksRequest{Tenant: "tenant", PageSize: 20, PageToken: "next+token"},
+			wantPath:  "/agent/tenant/tasks",
+			wantQuery: url.Values{"api_key": {"token + value"}, "tag": {"one", "two"}, "pageSize": {"20"}, "pageToken": {"next+token"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Path; got != tc.wantPath {
+					t.Errorf("RESTTransport.ListTasks() path = %q, want %q", got, tc.wantPath)
+				}
+				if diff := cmp.Diff(tc.wantQuery, r.URL.Query()); diff != "" {
+					t.Errorf("RESTTransport.ListTasks() query wrong result (-want +got) diff = %s", diff)
+				}
+				if _, err := io.WriteString(w, `{"tasks":[]}`); err != nil {
+					t.Errorf("io.WriteString() error = %v, want nil", err)
+				}
+			}))
+			defer server.Close()
+			endpoint, err := url.Parse(server.URL + "/agent?api_key=token+%2B+value&tag=one&tag=two&pageSize=5")
+			if err != nil {
+				t.Fatalf("url.Parse() error = %v, want nil", err)
+			}
+			original := endpoint.String()
+			transport := NewRESTTransport(endpoint, server.Client())
+			if _, err := transport.ListTasks(t.Context(), nil, tc.request); err != nil {
+				t.Fatalf("RESTTransport.ListTasks() error = %v, want nil", err)
+			}
+			if got := endpoint.String(); got != original {
+				t.Fatalf("endpoint.String() = %q, want %q", got, original)
+			}
+		})
+	}
+}
+
 func TestRESTTransport_GetTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
