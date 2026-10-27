@@ -473,6 +473,45 @@ func TestApplyUpdate_UserMessage(t *testing.T) {
 	}
 }
 
+func TestApplyUpdate_InputRequiredHistoryOrder(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range modes {
+		t.Run("answer before working"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			tip, _ := newTestTaskInfo()
+			initial := a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("initial"))
+			question := a2a.NewMessageForTask(a2a.MessageRoleAgent, tip, a2a.NewTextPart("Q"))
+			answer := a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("A"))
+			base := newTask(tip, a2a.TaskStateInputRequired)
+			base.Status.Message = question
+			base.History = make([]*a2a.Message, 1, 4)
+			base.History[0] = initial
+			before, err := utils.DeepCopy(base)
+			if err != nil {
+				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+			}
+
+			answered, err := mode.applyUpdate(base, answer)
+			if err != nil {
+				t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+			}
+			got, err := mode.applyUpdate(answered, a2a.NewStatusUpdateEvent(tip, a2a.TaskStateWorking, nil))
+			if err != nil {
+				t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+			}
+			want := newTask(tip, a2a.TaskStateWorking)
+			want.History = []*a2a.Message{initial, question, answer}
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")); diff != "" {
+				t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(before, base); diff != "" {
+				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func makeTextParts(texts ...string) a2a.ContentParts {
 	parts := make(a2a.ContentParts, len(texts))
 	for i, text := range texts {
