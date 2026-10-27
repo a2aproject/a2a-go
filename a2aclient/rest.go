@@ -103,6 +103,15 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		u = u.JoinPath(rel.Path)
 	}
 	u.RawQuery = rel.RawQuery
+	if extraQuery := httpQueryParamsFrom(ctx); len(extraQuery) > 0 {
+		query := u.Query()
+		for k, vals := range extraQuery {
+			for _, v := range vals {
+				query.Add(k, v)
+			}
+		}
+		u.RawQuery = query.Encode()
+	}
 	fullURL := u.String()
 	httpReq, err := http.NewRequestWithContext(ctx, req.method, fullURL, bodyReader)
 	if err != nil {
