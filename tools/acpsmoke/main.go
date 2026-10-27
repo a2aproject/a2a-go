@@ -36,7 +36,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/executor/a2aacp"
+	"github.com/a2aproject/a2a-go/v2/integration/executor/a2aacp"
 )
 
 func main() {
