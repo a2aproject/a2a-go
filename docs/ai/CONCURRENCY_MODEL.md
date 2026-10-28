@@ -249,8 +249,10 @@ The event flow through the pipeline is identical to local mode. The difference i
 
 1. Loads the task from the store and validates it's cancelable.
 2. Writes a `Payload{Type: "cancel"}` to the work queue.
-3. Creates a `remoteSubscription` and iterates events until it finds a terminal event.
+3. Rechecks the task snapshot for a terminal state, then consumes cancellation events newer than the version loaded before enqueueing. A nonterminal snapshot is not a cancellation result: `INPUT_REQUIRED` ends a Send execution, but does not mean this cancellation was refused.
 4. Returns the terminal task, or on error falls back to loading the latest task from the store.
+
+The version watermark must come from before enqueueing: a fast worker may already have persisted a genuine `INPUT_REQUIRED` refusal by the second read. That event must remain observable. Send and Subscribe retain their original snapshot-first behavior; only Cancel skips the old nonterminal snapshot.
 
 Unlike `localManager`, there is no in-process coalescing of duplicate cancels, no check for active executions, and no promise-based result sharing. The work queue and OCC handle coordination.
 

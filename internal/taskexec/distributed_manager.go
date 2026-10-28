@@ -154,6 +154,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
+// Cancel 等待真实取消结果，不将取消前的输入等待快照误判为拒绝。
 func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	storedTask, err := m.taskStore.Get(ctx, req.ID)
 	if err != nil {
@@ -195,19 +196,37 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("bug: work-queue task id override is only allowed for executions")
 	}
 
-	subscription := newRemoteSubscription(queue, m.taskStore, req.ID)
-
+	// 取消前的非终态快照只提供事件水位，不能作为本次取消结果。
+	// Send/Subscribe仍使用原remoteSubscription；此处只消费实际取消后的事件。
+	defer safeCloseReader(ctx, queue)
 	var subscriptionErr error
-	for event, err := range subscription.Events(ctx) {
-		if err != nil {
-			subscriptionErr = err
-			break
-		}
-		if a2aevent.IsFinal(event) {
-			if result, ok := event.(*a2a.Task); ok {
-				return convertToCancelationResult(ctx, result, nil)
+	snapshot, snapshotErr := m.taskStore.Get(ctx, req.ID)
+	if snapshotErr != nil && !errors.Is(snapshotErr, a2a.ErrTaskNotFound) {
+		subscriptionErr = fmt.Errorf("task snapshot loading failed: %w", snapshotErr)
+	} else {
+		// 水位取排队取消前版本，避免快worker的真实拒绝事件被排队后的快照吞掉。
+		snapshotVersion := storedTask.Version
+		if snapshot != nil {
+			if snapshot.Task.Status.State.Terminal() {
+				return convertToCancelationResult(ctx, snapshot.Task, nil)
 			}
-			break
+		}
+		for {
+			msg, readErr := queue.Read(ctx)
+			if readErr != nil {
+				subscriptionErr = readErr
+				break
+			}
+			if msg.TaskVersion != taskstore.TaskVersionMissing && !msg.TaskVersion.After(snapshotVersion) {
+				continue
+			}
+			// 后续真正的INPUT_REQUIRED事件仍是拒绝取消，不能按类型一概过滤。
+			if a2aevent.IsFinal(msg.Event) {
+				if result, ok := msg.Event.(*a2a.Task); ok {
+					return convertToCancelationResult(ctx, result, nil)
+				}
+				break
+			}
 		}
 	}
 
