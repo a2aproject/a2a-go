@@ -21,6 +21,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -31,6 +32,7 @@ func init() {
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.
+// 保留显式空切片与 nil 的区别，避免元数据数组被复制为 null。
 func DeepCopy[T any](task *T) (*T, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -45,6 +47,8 @@ func DeepCopy[T any](task *T) (*T, error) {
 		return nil, err
 	}
 
+	// gob decodes non-nil empty slices as nil; restore their shape without changing nil values.
+	restoreEmptySlices(reflect.ValueOf(task).Elem(), reflect.ValueOf(&copy).Elem())
 	return &copy, nil
 }
 
@@ -94,10 +98,70 @@ func FromMapStruct[T any](value map[string]any) (*T, error) {
 }
 
 // MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.
+// 仅供诊断展示结构化值，编码失败时保留显式失败，避免输出误导性内容。
 func MustPrettyPrint(value any) {
 	raw, err := json.MarshalIndent(value, "", " ")
 	if err != nil {
 		panic(err.Error())
 	}
 	fmt.Println(string(raw))
+}
+
+// restoreEmptySlices 仅恢复 gob 丢失的空切片形状，保留原 nil 和 gob 的类型及深复制语义。
+func restoreEmptySlices(source, target reflect.Value) {
+	if !source.IsValid() || !target.IsValid() || source.Type() != target.Type() {
+		return
+	}
+	// 自定义 gob 编解码器拥有该类型的表示，不覆盖其有意执行的转换。
+	encoder := reflect.TypeFor[gob.GobEncoder]()
+	if source.Type().Implements(encoder) || (source.Kind() != reflect.Pointer && reflect.PointerTo(source.Type()).Implements(encoder)) {
+		return
+	}
+	switch source.Kind() {
+	case reflect.Interface:
+		if source.IsNil() || target.IsNil() {
+			return
+		}
+		value := reflect.New(target.Elem().Type()).Elem()
+		value.Set(target.Elem())
+		restoreEmptySlices(source.Elem(), value)
+		if target.CanSet() {
+			target.Set(value)
+		}
+	case reflect.Pointer:
+		if !source.IsNil() && !target.IsNil() {
+			restoreEmptySlices(source.Elem(), target.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < source.NumField(); i++ {
+			if target.Field(i).CanSet() {
+				restoreEmptySlices(source.Field(i), target.Field(i))
+			}
+		}
+	case reflect.Map:
+		if source.IsNil() || target.IsNil() {
+			return
+		}
+		for iter := source.MapRange(); iter.Next(); {
+			previous := target.MapIndex(iter.Key())
+			if !previous.IsValid() {
+				continue
+			}
+			value := reflect.New(previous.Type()).Elem()
+			value.Set(previous)
+			restoreEmptySlices(iter.Value(), value)
+			target.SetMapIndex(iter.Key(), value)
+		}
+	case reflect.Slice:
+		if !source.IsNil() && source.Len() == 0 && target.IsNil() && target.CanSet() {
+			target.Set(reflect.MakeSlice(target.Type(), 0, 0))
+		}
+		for i := 0; i < min(source.Len(), target.Len()); i++ {
+			restoreEmptySlices(source.Index(i), target.Index(i))
+		}
+	case reflect.Array:
+		for i := 0; i < source.Len(); i++ {
+			restoreEmptySlices(source.Index(i), target.Index(i))
+		}
+	}
 }
