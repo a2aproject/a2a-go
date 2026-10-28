@@ -23,7 +23,13 @@ type namedPlugin string
 
 func (p namedPlugin) Name() string { return string(p) }
 
+func resetGlobal(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { global.Store(nil) })
+}
+
 func TestGlobal(t *testing.T) {
+	resetGlobal(t)
 	if got := Global(); got != nil {
 		t.Fatalf("Global() = %v, want nil before SetGlobal", got)
 	}
@@ -52,6 +58,7 @@ func (describedPlugin) Description() string { return "described" }
 type describer interface{ Description() string }
 
 func TestGlobalAs(t *testing.T) {
+	resetGlobal(t)
 	SetGlobal(namedPlugin("plain"))
 	if got := GlobalAs[describer](); got != nil {
 		t.Fatalf("GlobalAs[describer]() = %v, want nil for a plugin without Description", got)
