@@ -23,6 +23,8 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -275,9 +277,64 @@ func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.endpoint.ProtocolVersion)}}
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, "a2a-version": []string{string(client.endpoint.ProtocolVersion)}}
 	if !reflect.DeepEqual(receivedParams, wantParams) {
 		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
+	}
+}
+
+func TestClient_InterceptorsSeeProtocolVersion(t *testing.T) {
+	ctx := t.Context()
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			return &a2a.Task{}, nil
+		},
+	}
+
+	var got []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			got = r.ServiceParams.Get(a2a.SvcParamVersion)
+			return ctx, nil, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	client.protocolVersion = a2a.Version
+	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{string(a2a.Version)}, got); diff != "" {
+		t.Fatalf("ServiceParams.Get(%q) wrong result (-want +got) diff = %s", a2a.SvcParamVersion, diff)
+	}
+}
+
+func TestClient_AttachedProtocolVersionIsSentOnce(t *testing.T) {
+	ctx := t.Context()
+	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent), nil)
+		}
+	})
+	server := startJSONRPCTestServer(t, a2asrv.NewHandler(executor))
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+	}
+	client, err := NewFromCard(ctx, card, withTestJSONRPCTransport())
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+
+	ctx = AttachServiceParams(ctx, ServiceParams{a2a.SvcParamVersion: []string{string(a2a.Version)}})
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v, want nil", err)
 	}
 }
 
