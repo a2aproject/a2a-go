@@ -15,8 +15,9 @@
 package utils
 
 import (
-	"github.com/google/go-cmp/cmp"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // TestDeepCopyPreservesEmptyCollections 验证复制保持空数组、显式 null、嵌套元数据及写入隔离。
@@ -71,8 +72,8 @@ func (emptySliceCodec) GobEncode() ([]byte, error) {
 }
 
 // GobDecode 有意将空切片归一化为 nil，深复制不能覆盖此约定。
-func (value *emptySliceCodec) GobDecode([]byte) error {
-	value.Values = nil
+func (v *emptySliceCodec) GobDecode([]byte) error {
+	v.Values = nil
 	return nil
 }
 
