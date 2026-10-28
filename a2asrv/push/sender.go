@@ -45,6 +45,8 @@ type HTTPPushSender struct {
 	client      *http.Client
 	failOnError bool
 	plugin      Plugin
+	// pluginFromConfig is true if plugin was set with [HTTPSenderConfig.Plugin].
+	pluginFromConfig bool
 }
 
 // HTTPSenderConfig allows to configure [HTTPPushSender].
@@ -60,9 +62,10 @@ type HTTPSenderConfig struct {
 	// true only for trusted internal deployments (for example a webhook on the
 	// same host or private network).
 	AllowPrivateNetworks bool
-	// Plugin is the plugin whose [Plugin] hooks run around every delivery. If not set, the global
-	// plugin registered with [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction
-	// time is used. It is independent of the plugin configured for the request handler.
+	// Plugin is the plugin whose [Plugin] hooks run around every delivery. If not set, the plugin
+	// passed to [github.com/a2aproject/a2a-go/v2/a2asrv.WithPlugins] of the handler using the sender
+	// is used, or the global plugin registered with
+	// [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction time.
 	Plugin core.Plugin
 }
 
@@ -76,18 +79,15 @@ type HTTPSenderConfig struct {
 func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 	t := 30 * time.Second
 	allowPrivate := false
-	plugin := core.GlobalAs[Plugin]()
+	plugin := core.Global()
 	if config != nil {
 		if config.Timeout > 0 {
 			t = config.Timeout
 		}
 		allowPrivate = config.AllowPrivateNetworks
 		if config.Plugin != nil {
-			plugin, _ = config.Plugin.(Plugin)
+			plugin = config.Plugin
 		}
-	}
-	if !core.HasHooks(plugin, core.PushHooks) {
-		plugin = nil
 	}
 	client := &http.Client{Timeout: t}
 	// Bound the redirect chain and strip the token on cross-host redirects
@@ -100,8 +100,30 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 	return &HTTPPushSender{
 		client:      client,
 		failOnError: config != nil && config.FailOnError,
-		plugin:      plugin,
+		plugin:      pushPlugin(plugin),
+
+		pluginFromConfig: config != nil && config.Plugin != nil,
 	}
+}
+
+// WithDefaultPlugin returns a copy of the sender which uses plugin instead of the global plugin.
+// The sender is returned unchanged if plugin is nil or [HTTPSenderConfig.Plugin] was set.
+func (s *HTTPPushSender) WithDefaultPlugin(plugin core.Plugin) *HTTPPushSender {
+	if plugin == nil || s.pluginFromConfig {
+		return s
+	}
+	sender := *s
+	sender.plugin = pushPlugin(plugin)
+	return &sender
+}
+
+// pushPlugin returns p if it implements [Plugin] and has push hooks, or nil otherwise.
+func pushPlugin(p core.Plugin) Plugin {
+	if !core.HasHooks(p, core.PushHooks) {
+		return nil
+	}
+	pp, _ := p.(Plugin)
+	return pp
 }
 
 // ssrfGuardedTransport clones the default transport and validates the resolved

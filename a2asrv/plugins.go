@@ -124,12 +124,15 @@ type TaskEventInfo struct {
 // The plugin replaces the global plugin for all hook kinds; hook interfaces it doesn't
 // implement are disabled. To keep the global plugins, pass
 // a2aplugin.Sequential(a2aplugin.Global(), plugin).
+// The plugin is also used for push hooks of a [push.HTTPPushSender] passed to
+// [WithPushNotifications], unless [push.HTTPSenderConfig.Plugin] is set.
 // Passing nil is a no-op.
 func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		if plugin == nil {
 			return
 		}
+		h.plugin = plugin
 		ih.Plugin, _ = plugin.(ServerPlugin)
 		h.executionPlugin, _ = plugin.(ExecutionPlugin)
 		h.taskObserver, _ = plugin.(TaskObserverPlugin)

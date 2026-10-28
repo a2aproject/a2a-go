@@ -28,6 +28,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
 
@@ -213,6 +214,70 @@ func TestWithPlugins(t *testing.T) {
 			}
 			if h.executionPlugin != tc.wantExecution {
 				t.Fatalf("WithPlugins() execution plugin = %v, want %v", h.executionPlugin, tc.wantExecution)
+			}
+		})
+	}
+}
+
+type skippingPushPlugin struct {
+	syncLog[a2a.TaskID]
+	name string
+}
+
+func (p *skippingPushPlugin) Name() string { return p.name }
+
+func (p *skippingPushPlugin) BeforePushSend(ctx context.Context, d *push.Delivery) (context.Context, error) {
+	p.record(d.TaskID)
+	d.Skip = true
+	return ctx, nil
+}
+
+func (p *skippingPushPlugin) OnPushSent(context.Context, *push.DeliveryResult) error { return nil }
+
+func TestWithPluginsPushSender(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		senderPlugin    bool
+		wantHandlerPush bool
+	}{
+		{name: "handler plugin is used by sender without plugin", senderPlugin: false, wantHandlerPush: true},
+		{name: "sender plugin takes precedence", senderPlugin: true, wantHandlerPush: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			handlerPlugin := &skippingPushPlugin{name: "handler"}
+			senderPlugin := &skippingPushPlugin{name: "sender"}
+			config := &push.HTTPSenderConfig{}
+			if tc.senderPlugin {
+				config.Plugin = senderPlugin
+			}
+			task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+			req := &a2a.SendMessageRequest{
+				Message: newUserMessage(task, "hi"),
+				Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "http://127.0.0.1:1/push"}},
+			}
+			agent := newEventReplayAgent([]a2a.Event{newFinalTaskStatusUpdate(task, a2a.TaskStateCompleted, "done")}, nil)
+			handler := NewHandler(agent,
+				WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, task)),
+				WithPushNotifications(testutil.NewTestPushConfigStore(), push.NewHTTPPushSender(config)),
+				WithPlugins(handlerPlugin),
+			)
+
+			if _, err := handler.SendMessage(t.Context(), req); err != nil {
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+			}
+
+			gotHandlerPush := len(handlerPlugin.recorded()) > 0
+			if gotHandlerPush != tc.wantHandlerPush {
+				t.Fatalf("handler plugin BeforePushSend() called = %v, want %v", gotHandlerPush, tc.wantHandlerPush)
+			}
+			gotSenderPush := len(senderPlugin.recorded()) > 0
+			if gotSenderPush != tc.senderPlugin {
+				t.Fatalf("sender plugin BeforePushSend() called = %v, want %v", gotSenderPush, tc.senderPlugin)
 			}
 		})
 	}

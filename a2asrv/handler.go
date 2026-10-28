@@ -94,6 +94,7 @@ type defaultRequestHandler struct {
 	reqContextInterceptors []ExecutorContextInterceptor
 	executionPlugin        ExecutionPlugin
 	taskObserver           TaskObserverPlugin
+	plugin                 core.Plugin
 
 	agentInactivityTimeout time.Duration
 
@@ -225,6 +226,9 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 
 	for _, option := range options {
 		option(ih, h)
+	}
+	if sender, ok := h.pushSender.(*push.HTTPPushSender); ok {
+		h.pushSender = sender.WithDefaultPlugin(h.plugin)
 	}
 	for _, interceptor := range ih.Interceptors {
 		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {

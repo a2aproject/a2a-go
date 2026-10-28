@@ -508,3 +508,39 @@ func TestNewHTTPPushSender_Plugin(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPPushSender_WithDefaultPlugin(t *testing.T) {
+	t.Parallel()
+
+	explicit := &recordingPushPlugin{}
+	handlerPlugin := &recordingPushPlugin{}
+
+	tests := []struct {
+		name   string
+		config *HTTPSenderConfig
+		plugin core.Plugin
+		want   Plugin
+	}{
+		{name: "default is used without config plugin", config: &HTTPSenderConfig{}, plugin: handlerPlugin, want: handlerPlugin},
+		{name: "config plugin takes precedence", config: &HTTPSenderConfig{Plugin: explicit}, plugin: handlerPlugin, want: explicit},
+		{name: "non-push default disables hooks", config: &HTTPSenderConfig{}, plugin: namedOnlyPlugin{}, want: nil},
+		{name: "default reporting no push hooks is skipped", config: &HTTPSenderConfig{}, plugin: &noPushHooksPlugin{}, want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sender := NewHTTPPushSender(tc.config)
+			original := sender.plugin
+
+			got := sender.WithDefaultPlugin(tc.plugin)
+
+			if got.plugin != tc.want {
+				t.Fatalf("WithDefaultPlugin() plugin = %v, want %v", got.plugin, tc.want)
+			}
+			if sender.plugin != original {
+				t.Fatalf("WithDefaultPlugin() modified the original sender plugin = %v, want %v", sender.plugin, original)
+			}
+		})
+	}
+}
