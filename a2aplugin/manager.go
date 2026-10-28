@@ -111,7 +111,7 @@ func (m *SequentialManager) HasHooks(kind core.HookKind) bool {
 // AfterHandlerRun is invoked on plugins that already ran, in reverse order,
 // with an [a2asrv.ServerResponse] carrying the error.
 func (m *SequentialManager) BeforeHandlerRun(ctx context.Context, req *a2asrv.ServerRequest) (context.Context, error) {
-	return runBefore(ctx, m.server,
+	return runBefore(ctx, m.server, "BeforeHandlerRun",
 		func(ctx context.Context, p a2asrv.ServerPlugin) (context.Context, error) {
 			return p.BeforeHandlerRun(ctx, req)
 		},
@@ -130,7 +130,7 @@ func (m *SequentialManager) AfterHandlerRun(ctx context.Context, resp *a2asrv.Se
 // BeforeClientRequest implements [a2aclient.ClientPlugin]. See [SequentialManager.BeforeHandlerRun]
 // for the ordering and error semantics.
 func (m *SequentialManager) BeforeClientRequest(ctx context.Context, req *a2aclient.ClientRequest) (context.Context, error) {
-	return runBefore(ctx, m.client,
+	return runBefore(ctx, m.client, "BeforeClientRequest",
 		func(ctx context.Context, p a2aclient.ClientPlugin) (context.Context, error) {
 			return p.BeforeClientRequest(ctx, req)
 		},
@@ -156,7 +156,7 @@ func (m *SequentialManager) AfterClientRequest(ctx context.Context, resp *a2acli
 // BeforeExecution implements [a2asrv.ExecutionPlugin]. If a hook returns an error,
 // AfterExecution is invoked on plugins that already ran, in reverse order, with the error.
 func (m *SequentialManager) BeforeExecution(ctx context.Context, execCtx *a2asrv.ExecutorContext) (context.Context, error) {
-	return runBefore(ctx, m.execution,
+	return runBefore(ctx, m.execution, "BeforeExecution",
 		func(ctx context.Context, p a2asrv.ExecutionPlugin) (context.Context, error) {
 			return p.BeforeExecution(ctx, execCtx)
 		},
@@ -193,7 +193,7 @@ func (m *SequentialManager) OnTaskEvent(ctx context.Context, info *a2asrv.TaskEv
 // BeforePushSend implements [push.Plugin]. If a hook returns an error, OnPushSent is invoked
 // on plugins that already ran with a [push.DeliveryResult] carrying the error.
 func (m *SequentialManager) BeforePushSend(ctx context.Context, delivery *push.Delivery) (context.Context, error) {
-	return runBefore(ctx, m.pushes,
+	return runBefore(ctx, m.pushes, "BeforePushSend",
 		func(ctx context.Context, p push.Plugin) (context.Context, error) {
 			return p.BeforePushSend(ctx, delivery)
 		},
@@ -234,16 +234,17 @@ func runAfterExecution(ctx context.Context, plugins []a2asrv.ExecutionPlugin, ex
 }
 
 // runBefore calls hook on plugins in registration order, passing the returned context
-// to the next plugin. If a hook fails, unwind is called with the plugins that already ran
-// and the error is returned.
+// to the next plugin. If a hook fails, the rejecting plugin is logged, unwind is called with
+// the plugins that already ran and the error is returned.
 func runBefore[P Plugin](
-	ctx context.Context, plugins []P,
+	ctx context.Context, plugins []P, hookName string,
 	hook func(context.Context, P) (context.Context, error),
 	unwind func(ran []P, err error),
 ) (context.Context, error) {
 	for i, p := range plugins {
 		next, err := hook(ctx, p)
 		if err != nil {
+			log.Info(ctx, "a2aplugin: "+hookName+" rejected the call", "plugin", p.Name(), "cause", err)
 			unwind(plugins[:i], err)
 			return ctx, err
 		}

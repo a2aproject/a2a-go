@@ -378,7 +378,7 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) (retErr erro
 	if e.plugin != nil {
 		ctx, err = e.plugin.BeforeExecution(ctx, e.execCtx)
 		if err != nil {
-			return fmt.Errorf("plugin failed: %w", err)
+			return fmt.Errorf("plugin %q failed: %w", e.plugin.Name(), err)
 		}
 		defer func() { afterExecution(ctx, e.plugin, e.execCtx, retErr) }()
 	}
