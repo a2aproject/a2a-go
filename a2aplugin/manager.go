@@ -28,24 +28,14 @@ import (
 
 // Manager runs a group of registered plugins. It implements every plugin hook
 // interface, so Managers can be nested.
-// The Has*Hooks methods let call sites skip plugin work when no registered
+// [core.HooksReporter] lets call sites skip plugin work when no registered
 // plugin implements the hooks they would call.
 type Manager interface {
 	CompletePlugin
 	a2asrv.ExecutionPlugin
 	a2asrv.TaskObserverPlugin
 	push.Plugin
-
-	// HasServerHooks reports whether any registered plugin implements [a2asrv.ServerPlugin].
-	HasServerHooks() bool
-	// HasClientHooks reports whether any registered plugin implements [a2aclient.ClientPlugin].
-	HasClientHooks() bool
-	// HasExecutionHooks reports whether any registered plugin implements [a2asrv.ExecutionPlugin].
-	HasExecutionHooks() bool
-	// HasTaskHooks reports whether any registered plugin implements [a2asrv.TaskObserverPlugin].
-	HasTaskHooks() bool
-	// HasPushHooks reports whether any registered plugin implements [push.Plugin].
-	HasPushHooks() bool
+	core.HooksReporter
 }
 
 // SetGlobal installs m as the process-wide plugin [Manager]. SDK components
@@ -84,11 +74,11 @@ type SequentialManager struct {
 func Sequential(plugins ...Plugin) *SequentialManager {
 	return &SequentialManager{
 		plugins:   slices.Clone(plugins),
-		server:    selectPlugins[a2asrv.ServerPlugin](plugins, Manager.HasServerHooks),
-		client:    selectPlugins[a2aclient.ClientPlugin](plugins, Manager.HasClientHooks),
-		execution: selectPlugins[a2asrv.ExecutionPlugin](plugins, Manager.HasExecutionHooks),
-		task:      selectPlugins[a2asrv.TaskObserverPlugin](plugins, Manager.HasTaskHooks),
-		pushes:    selectPlugins[push.Plugin](plugins, Manager.HasPushHooks),
+		server:    selectPlugins[a2asrv.ServerPlugin](plugins, core.ServerHooks),
+		client:    selectPlugins[a2aclient.ClientPlugin](plugins, core.ClientHooks),
+		execution: selectPlugins[a2asrv.ExecutionPlugin](plugins, core.ExecutionHooks),
+		task:      selectPlugins[a2asrv.TaskObserverPlugin](plugins, core.TaskHooks),
+		pushes:    selectPlugins[push.Plugin](plugins, core.PushHooks),
 	}
 }
 
@@ -100,20 +90,22 @@ func (*SequentialManager) Name() string { return "sequential" }
 // Plugins returns the registered plugins in registration order.
 func (m *SequentialManager) Plugins() []Plugin { return slices.Clone(m.plugins) }
 
-// HasServerHooks implements [Manager].
-func (m *SequentialManager) HasServerHooks() bool { return len(m.server) > 0 }
-
-// HasClientHooks implements [Manager].
-func (m *SequentialManager) HasClientHooks() bool { return len(m.client) > 0 }
-
-// HasExecutionHooks implements [Manager].
-func (m *SequentialManager) HasExecutionHooks() bool { return len(m.execution) > 0 }
-
-// HasTaskHooks implements [Manager].
-func (m *SequentialManager) HasTaskHooks() bool { return len(m.task) > 0 }
-
-// HasPushHooks implements [Manager].
-func (m *SequentialManager) HasPushHooks() bool { return len(m.pushes) > 0 }
+// HasHooks implements [core.HooksReporter].
+func (m *SequentialManager) HasHooks(kind core.HookKind) bool {
+	switch kind {
+	case core.ServerHooks:
+		return len(m.server) > 0
+	case core.ClientHooks:
+		return len(m.client) > 0
+	case core.ExecutionHooks:
+		return len(m.execution) > 0
+	case core.TaskHooks:
+		return len(m.task) > 0
+	case core.PushHooks:
+		return len(m.pushes) > 0
+	}
+	return false
+}
 
 // BeforeHandlerRun implements [a2asrv.ServerPlugin]. If a hook returns an error,
 // AfterHandlerRun is invoked on plugins that already ran, in reverse order,
@@ -284,11 +276,11 @@ func runAfter[P Plugin](ctx context.Context, plugins []P, hookName string, hook 
 }
 
 // selectPlugins returns the plugins implementing hook interface P. Nested Managers are
-// included only when hasHooks reports that they have hooks of that kind.
-func selectPlugins[P Plugin](plugins []Plugin, hasHooks func(Manager) bool) []P {
+// included only when they report that they have hooks of the given kind.
+func selectPlugins[P Plugin](plugins []Plugin, kind core.HookKind) []P {
 	var selected []P
 	for _, p := range plugins {
-		if typed, ok := p.(P); ok && core.HasHooks(typed, hasHooks) {
+		if typed, ok := p.(P); ok && core.HasHooks(typed, kind) {
 			selected = append(selected, typed)
 		}
 	}

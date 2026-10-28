@@ -49,15 +49,37 @@ func GlobalAs[P any]() P {
 	return p
 }
 
-// HasHooks reports whether hooks should be dispatched to p. It returns false for a nil p,
-// report(p) if p implements R (for example, a plugin manager reporting whether any of its
-// plugins implement the hooks), and true otherwise.
-func HasHooks[P, R any](p P, report func(R) bool) bool {
-	if any(p) == nil {
+// HookKind identifies a group of plugin hooks.
+type HookKind int
+
+const (
+	// ServerHooks are the hooks of a2asrv.ServerPlugin.
+	ServerHooks HookKind = iota
+	// ClientHooks are the hooks of a2aclient.ClientPlugin.
+	ClientHooks
+	// ExecutionHooks are the hooks of a2asrv.ExecutionPlugin.
+	ExecutionHooks
+	// TaskHooks are the hooks of a2asrv.TaskObserverPlugin.
+	TaskHooks
+	// PushHooks are the hooks of push.Plugin.
+	PushHooks
+)
+
+// HooksReporter is implemented by plugins which can report whether they have hooks of
+// a given kind, for example a plugin manager none of whose plugins implement them.
+type HooksReporter interface {
+	// HasHooks reports whether the plugin has hooks of the given kind.
+	HasHooks(kind HookKind) bool
+}
+
+// HasHooks reports whether hooks of the given kind should be dispatched to p. It returns
+// false for a nil p, p.HasHooks(kind) if p implements [HooksReporter], and true otherwise.
+func HasHooks(p Plugin, kind HookKind) bool {
+	if p == nil {
 		return false
 	}
-	if r, ok := any(p).(R); ok {
-		return report(r)
+	if r, ok := p.(HooksReporter); ok {
+		return r.HasHooks(kind)
 	}
 	return true
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 )
@@ -140,11 +141,11 @@ type hookKinds struct {
 
 func hooksOf(m a2aplugin.Manager) hookKinds {
 	return hookKinds{
-		Server:    m.HasServerHooks(),
-		Client:    m.HasClientHooks(),
-		Execution: m.HasExecutionHooks(),
-		Task:      m.HasTaskHooks(),
-		Push:      m.HasPushHooks(),
+		Server:    m.HasHooks(core.ServerHooks),
+		Client:    m.HasHooks(core.ClientHooks),
+		Execution: m.HasHooks(core.ExecutionHooks),
+		Task:      m.HasHooks(core.TaskHooks),
+		Push:      m.HasHooks(core.PushHooks),
 	}
 }
 

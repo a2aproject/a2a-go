@@ -133,12 +133,6 @@ func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 	}
 }
 
-// taskHooksReporter is implemented by plugin managers which can report
-// that none of the registered plugins implement task observer hooks.
-type taskHooksReporter interface {
-	HasTaskHooks() bool
-}
-
 // observeTaskWrites reports the writes made by mgr to the task observer plugin, if one is configured.
 func (f *factory) observeTaskWrites(mgr *taskupdate.Manager) {
 	if f.taskObserver != nil {
@@ -158,12 +152,6 @@ func (f *factory) reportTaskWrite(ctx context.Context, w taskupdate.Write) {
 	}
 }
 
-// executionHooksReporter is implemented by plugin managers which can report
-// that none of the registered plugins implement execution hooks.
-type executionHooksReporter interface {
-	HasExecutionHooks() bool
-}
-
 // onExecutionEvent calls [ExecutionPlugin.OnExecutionEvent] and logs the error it returns.
 func onExecutionEvent(ctx context.Context, p ExecutionPlugin, execCtx *ExecutorContext, event a2a.Event) {
 	if err := p.OnExecutionEvent(ctx, execCtx, event); err != nil {
@@ -178,19 +166,13 @@ func afterExecution(ctx context.Context, p ExecutionPlugin, execCtx *ExecutorCon
 	}
 }
 
-// serverHooksReporter is implemented by plugin managers which can report
-// that none of the registered plugins implement server hooks.
-type serverHooksReporter interface {
-	HasServerHooks() bool
-}
-
 // beginPluginCall runs [ServerPlugin.BeforeHandlerRun] and returns a handle used
 // to emit per-event and final AfterHandlerRun calls, together with the context to
 // continue the call with. A non-nil error means the call must be rejected without
 // further plugin dispatch. If the handler has no plugin hooks the returned handle
 // is inactive and ctx is returned unchanged.
 func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*plugincall.Call, context.Context, error) {
-	if !core.HasHooks(h.Plugins, serverHooksReporter.HasServerHooks) {
+	if !core.HasHooks(h.Plugins, core.ServerHooks) {
 		return nil, ctx, nil
 	}
 	req := &ServerRequest{

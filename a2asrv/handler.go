@@ -248,10 +248,10 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,
 	}
-	if core.HasHooks(h.executionPlugin, executionHooksReporter.HasExecutionHooks) {
+	if core.HasHooks(h.executionPlugin, core.ExecutionHooks) {
 		execFactory.executionPlugin = h.executionPlugin
 	}
-	if core.HasHooks(h.taskObserver, taskHooksReporter.HasTaskHooks) {
+	if core.HasHooks(h.taskObserver, core.TaskHooks) {
 		execFactory.taskObserver = h.taskObserver
 	}
 	if h.workQueue != nil {

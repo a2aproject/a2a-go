@@ -87,12 +87,6 @@ func WithPlugins(plugin ClientPlugin) FactoryOption {
 	})
 }
 
-// clientHooksReporter is implemented by plugin managers which can report
-// that none of the registered plugins implement client hooks.
-type clientHooksReporter interface {
-	HasClientHooks() bool
-}
-
 // beginPluginCall runs [ClientPlugin.BeforeClientRequest] and returns a handle used to
 // emit per-event and final AfterClientRequest calls, together with the context and payload
 // to continue the call with. Service params modified by plugins are attached to the returned
@@ -100,7 +94,7 @@ type clientHooksReporter interface {
 // If the client has no plugin hooks the returned handle is inactive and the inputs are
 // returned unchanged.
 func beginPluginCall[Req any](ctx context.Context, c *Client, method string, payload Req) (*plugincall.Call, context.Context, Req, error) {
-	if !core.HasHooks(c.plugins, clientHooksReporter.HasClientHooks) {
+	if !core.HasHooks(c.plugins, core.ClientHooks) {
 		return nil, ctx, payload, nil
 	}
 	params := serviceParamsCloneFrom(ctx)

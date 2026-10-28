@@ -389,7 +389,7 @@ func (p *recordingPushPlugin) OnPushSent(_ context.Context, r *DeliveryResult) e
 
 type noPushHooksPlugin struct{ recordingPushPlugin }
 
-func (*noPushHooksPlugin) HasPushHooks() bool { return false }
+func (*noPushHooksPlugin) HasHooks(core.HookKind) bool { return false }
 
 type namedOnlyPlugin struct{}
 

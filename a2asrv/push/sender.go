@@ -86,7 +86,7 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 			plugin, _ = config.Plugins.(Plugin)
 		}
 	}
-	if !core.HasHooks(plugin, pushHooksReporter.HasPushHooks) {
+	if !core.HasHooks(plugin, core.PushHooks) {
 		plugin = nil
 	}
 	client := &http.Client{Timeout: t}

@@ -75,7 +75,7 @@ type noHooksPlugin struct {
 	recordingServerPlugin
 }
 
-func (*noHooksPlugin) HasServerHooks() bool { return false }
+func (*noHooksPlugin) HasHooks(core.HookKind) bool { return false }
 
 type recordingInterceptor struct {
 	PassthroughCallInterceptor

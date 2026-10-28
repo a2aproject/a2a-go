@@ -14,7 +14,10 @@
 
 package core
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 type namedPlugin string
 
@@ -60,14 +63,12 @@ func TestGlobalAs(t *testing.T) {
 	}
 }
 
-type hooksReporter interface{ HasTestHooks() bool }
-
 type reportingPlugin struct {
 	namedPlugin
-	has bool
+	kinds []HookKind
 }
 
-func (p reportingPlugin) HasTestHooks() bool { return p.has }
+func (p reportingPlugin) HasHooks(kind HookKind) bool { return slices.Contains(p.kinds, kind) }
 
 func TestHasHooks(t *testing.T) {
 	t.Parallel()
@@ -79,14 +80,14 @@ func TestHasHooks(t *testing.T) {
 	}{
 		{name: "nil plugin", plugin: nil, want: false},
 		{name: "plugin without reporter", plugin: namedPlugin("p"), want: true},
-		{name: "reporter with hooks", plugin: reportingPlugin{has: true}, want: true},
-		{name: "reporter without hooks", plugin: reportingPlugin{has: false}, want: false},
+		{name: "reporter with hooks", plugin: reportingPlugin{kinds: []HookKind{ClientHooks, ServerHooks}}, want: true},
+		{name: "reporter without hooks", plugin: reportingPlugin{kinds: []HookKind{ClientHooks}}, want: false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := HasHooks(tc.plugin, hooksReporter.HasTestHooks); got != tc.want {
+			if got := HasHooks(tc.plugin, ServerHooks); got != tc.want {
 				t.Fatalf("HasHooks() = %v, want %v", got, tc.want)
 			}
 		})

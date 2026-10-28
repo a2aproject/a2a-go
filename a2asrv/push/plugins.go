@@ -67,12 +67,6 @@ type DeliveryResult struct {
 	Skipped bool
 }
 
-// pushHooksReporter is implemented by plugin managers which can report
-// that none of the registered plugins implement push hooks.
-type pushHooksReporter interface {
-	HasPushHooks() bool
-}
-
 // sendWithPlugin sends req running the plugin hooks around the delivery.
 func (s *HTTPPushSender) sendWithPlugin(ctx context.Context, config *a2a.PushConfig, event a2a.Event, req *http.Request) error {
 	delivery := &Delivery{TaskID: config.TaskID, URL: config.URL, Headers: req.Header, Event: event}

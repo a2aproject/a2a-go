@@ -67,7 +67,7 @@ type noClientHooksPlugin struct {
 	recordingClientPlugin
 }
 
-func (*noClientHooksPlugin) HasClientHooks() bool { return false }
+func (*noClientHooksPlugin) HasHooks(core.HookKind) bool { return false }
 
 type namedOnlyPlugin struct{}
 
