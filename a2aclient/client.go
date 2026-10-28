@@ -55,6 +55,7 @@ type Client struct {
 	protocolVersion a2a.ProtocolVersion
 	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
+	plugin          ClientPlugin
 
 	card atomic.Pointer[a2a.AgentCard]
 }
@@ -95,6 +96,14 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 		method := "SendStreamingMessage"
 
 		req = c.withDefaultSendConfig(req)
+
+		hook, ctx, req, pluginErr := beginPluginCall(ctx, c, method, req)
+		if pluginErr != nil {
+			yield(nil, pluginErr)
+			return
+		}
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
 
 		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {
@@ -142,6 +151,14 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SubscribeToTask"
 
+		hook, ctx, req, pluginErr := beginPluginCall(ctx, c, method, req)
+		if pluginErr != nil {
+			yield(nil, pluginErr)
+			return
+		}
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
+
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, c, method, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -188,8 +205,14 @@ func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) 
 }
 
 // DeleteTaskPushConfig implements the `DeleteTaskPushNotificationConfig` protocol method.
-func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
+func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) (retErr error) {
 	method := "DeleteTaskPushConfig"
+
+	hook, ctx, req, pluginErr := beginPluginCall(ctx, c, method, req)
+	if pluginErr != nil {
+		return pluginErr
+	}
+	defer func() { hook.Finish(nil, retErr) }()
 
 	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, c, method, req)
 	if res.earlyErr != nil {
@@ -352,7 +375,13 @@ func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallIn
 func doCall[Req any, Resp any](
 	ctx context.Context, c *Client, method string, req Req,
 	transportCall func(context.Context, ServiceParams, Req) (Resp, error),
-) (Resp, error) {
+) (result Resp, retErr error) {
+	hook, ctx, req, pluginErr := beginPluginCall(ctx, c, method, req)
+	if pluginErr != nil {
+		return result, pluginErr
+	}
+	defer func() { hook.Finish(result, retErr) }()
+
 	ctx, res := interceptBefore[Req, Resp](ctx, c, method, req)
 	if res.earlyErr != nil {
 		var zero Resp

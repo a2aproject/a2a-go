@@ -23,6 +23,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -91,6 +92,9 @@ type defaultRequestHandler struct {
 	workQueue              workqueue.Queue
 	ctxCodec               ContextCodec
 	reqContextInterceptors []ExecutorContextInterceptor
+	executionPlugin        ExecutionPlugin
+	taskObserver           TaskObserverPlugin
+	plugin                 core.Plugin
 
 	agentInactivityTimeout time.Duration
 
@@ -213,11 +217,18 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
-	h := &defaultRequestHandler{agentExecutor: executor}
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
+	h := &defaultRequestHandler{
+		agentExecutor:   executor,
+		executionPlugin: core.GlobalAs[ExecutionPlugin](),
+		taskObserver:    core.GlobalAs[TaskObserverPlugin](),
+	}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugin: core.GlobalAs[ServerPlugin]()}
 
 	for _, option := range options {
 		option(ih, h)
+	}
+	if sender, ok := h.pushSender.(*push.HTTPPushSender); ok {
+		h.pushSender = sender.WithDefaultPlugin(h.plugin)
 	}
 	for _, interceptor := range ih.Interceptors {
 		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {
@@ -240,6 +251,12 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,
+	}
+	if core.HasHooks(h.executionPlugin, core.ExecutionHooks) {
+		execFactory.executionPlugin = h.executionPlugin
+	}
+	if core.HasHooks(h.taskObserver, core.TaskHooks) {
+		execFactory.taskObserver = h.taskObserver
 	}
 	if h.workQueue != nil {
 		if h.taskStore == nil || h.queueManager == nil {

@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	"golang.org/x/mod/semver"
@@ -32,6 +33,7 @@ import (
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
+	plugin       ClientPlugin
 	transports   map[transportKey]TransportFactory
 }
 
@@ -109,6 +111,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
+		plugin:          f.clientPlugin(),
 		endpoint:        *selected.endpoint,
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
@@ -137,9 +140,19 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
+		plugin:          f.clientPlugin(),
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 		endpoint:        *selected.endpoint,
 	}, nil
+}
+
+// clientPlugin returns the plugin set with [WithPlugins] or the global plugin
+// registered at the time of the call.
+func (f *Factory) clientPlugin() ClientPlugin {
+	if f.plugin != nil {
+		return f.plugin
+	}
+	return core.GlobalAs[ClientPlugin]()
 }
 
 // createTransport attempts to connect using the provided transports, returning the first
@@ -310,6 +323,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
 		WithCallInterceptors(f.interceptors...),
+		WithPlugins(f.plugin),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))

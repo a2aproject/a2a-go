@@ -967,3 +967,84 @@ func TestManager_PartialMaterializer_CancelationRetryUsesStoredTask(t *testing.T
 		t.Fatalf("materializer.ApplyUpdate() wrong input tasks (-want +got) diff = %s", diff)
 	}
 }
+
+func TestManager_OnWrite(t *testing.T) {
+	t.Parallel()
+
+	type write struct {
+		Event     a2a.Event
+		PrevState a2a.TaskState
+		State     a2a.TaskState
+	}
+	task := newSubmittedTask()
+	artifact := a2a.NewArtifactEvent(task, a2a.NewTextPart("hello"))
+	working := a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil)
+
+	tests := []struct {
+		name      string
+		stored    bool
+		event     a2a.Event
+		updateErr error
+		want      []write
+	}{
+		{
+			name:  "task creation",
+			event: task,
+			want:  []write{{Event: task, PrevState: a2a.TaskStateUnspecified, State: a2a.TaskStateSubmitted}},
+		},
+		{
+			name:   "status update",
+			stored: true,
+			event:  working,
+			want:   []write{{Event: working, PrevState: a2a.TaskStateSubmitted, State: a2a.TaskStateWorking}},
+		},
+		{
+			name:   "artifact update keeps state",
+			stored: true,
+			event:  artifact,
+			want:   []write{{Event: artifact, PrevState: a2a.TaskStateSubmitted, State: a2a.TaskStateSubmitted}},
+		},
+		{
+			name:      "failed write is not reported",
+			stored:    true,
+			event:     working,
+			updateErr: errors.New("update failed"),
+			want:      nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var m *Manager
+			var store *testutil.TestTaskStore
+			if tc.stored {
+				m, store = newUpdaterWithStoredTask(t, task)
+			} else {
+				m, store = newUpdater(t, task)
+			}
+			if tc.updateErr != nil {
+				store.UpdateFunc = func(context.Context, *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+					return taskstore.TaskVersionMissing, tc.updateErr
+				}
+			}
+			var got []write
+			m.OnWrite = func(_ context.Context, w Write) {
+				if w.TaskID != task.ID {
+					t.Errorf("OnWrite() TaskID = %q, want %q", w.TaskID, task.ID)
+				}
+				if w.Task == nil {
+					t.Errorf("OnWrite() Task = nil, want the written task")
+				}
+				got = append(got, write{Event: w.Event, PrevState: w.PrevState, State: w.State})
+			}
+
+			if _, err := m.Process(t.Context(), tc.event); !errors.Is(err, tc.updateErr) {
+				t.Fatalf("m.Process() error = %v, want %v", err, tc.updateErr)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("m.Process() wrong OnWrite calls (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}

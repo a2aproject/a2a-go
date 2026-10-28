@@ -37,6 +37,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+	// Plugin is invoked around every call, outside the Interceptors chain.
+	Plugin ServerPlugin
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
@@ -103,6 +105,13 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
+		hook, ctx, pluginErr := beginPluginCall(ctx, h, callCtx, req)
+		if pluginErr != nil {
+			yield(nil, pluginErr)
+			return
+		}
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -134,6 +143,13 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			return
 		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
+		hook, ctx, pluginErr := beginPluginCall(ctx, h, callCtx, req)
+		if pluginErr != nil {
+			yield(nil, pluginErr)
+			return
+		}
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -178,12 +194,17 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 }
 
 // DeleteTaskPushConfig implements RequestHandler.
-func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
+func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) (retErr error) {
 	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig", req.Tenant)
 	ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
 	if err := checkProtocolVersion(callCtx); err != nil {
 		return err
 	}
+	hook, ctx, pluginErr := beginPluginCall(ctx, h, callCtx, req)
+	if pluginErr != nil {
+		return pluginErr
+	}
+	defer func() { hook.Finish(nil, retErr) }()
 	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
 		return res.earlyErr
@@ -306,11 +327,16 @@ func attachMethodCallContext(ctx context.Context, method string, tenant string) 
 func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) (Resp, error),
-) (Resp, error) {
+) (result Resp, retErr error) {
 	if err := checkProtocolVersion(callCtx); err != nil {
 		var zero Resp
 		return zero, err
 	}
+	hook, ctx, pluginErr := beginPluginCall(ctx, h, callCtx, req)
+	if pluginErr != nil {
+		return result, pluginErr
+	}
+	defer func() { hook.Finish(result, retErr) }()
 	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
 		var zero Resp
