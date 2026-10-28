@@ -295,15 +295,11 @@ func toProtoMessages(msgs []*a2a.Message) ([]*a2apb.Message, error) {
 }
 
 func toProtoDataPart(part a2a.Data) (*a2apb.Part_Data, error) {
-	m, ok := part.Value.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("DataPart value must be a map for protobuf conversion, got %T", part.Value)
-	}
-	s, err := toProtoMap(m)
+	value, err := structpb.NewValue(part.Value)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
+		return nil, fmt.Errorf("failed to convert data to proto value: %w", err)
 	}
-	return &a2apb.Part_Data{Data: structpb.NewStructValue(s)}, nil
+	return &a2apb.Part_Data{Data: value}, nil
 }
 
 func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
@@ -327,7 +323,7 @@ func toProtoPart(part a2a.Part) (*a2apb.Part, error) {
 	case a2a.Data:
 		pPart.Content, err = toProtoDataPart(content)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert data to proto struct: %w", err)
+			return nil, fmt.Errorf("failed to convert data to proto value: %w", err)
 		}
 	case a2a.URL:
 		pPart.Content = &a2apb.Part_Url{Url: string(content)}

@@ -27,6 +27,56 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func TestFromProtoSendMessageRequest_DataPartJSONValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		value *structpb.Value
+		want  any
+	}{
+		{name: "object", value: structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{"key": structpb.NewStringValue("value")}}), want: map[string]any{"key": "value"}},
+		{name: "boolean", value: structpb.NewBoolValue(true), want: true},
+		{name: "false", value: structpb.NewBoolValue(false), want: false},
+		{name: "string", value: structpb.NewStringValue("value"), want: "value"},
+		{name: "empty string", value: structpb.NewStringValue(""), want: ""},
+		{name: "number", value: structpb.NewNumberValue(3.25), want: float64(3.25)},
+		{name: "array", value: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("value"), structpb.NewNumberValue(2), structpb.NewBoolValue(false), structpb.NewNullValue()}}), want: []any{"value", float64(2), false, nil}},
+		{name: "empty array", value: structpb.NewListValue(&structpb.ListValue{}), want: []any{}},
+		{name: "null", value: structpb.NewNullValue(), want: nil},
+		{name: "nested object", value: structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{"items": structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewBoolValue(true), structpb.NewNullValue()}})}}), want: map[string]any{"items": []any{true, nil}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			partMetadata := map[string]any{"part": "metadata"}
+			messageMetadata := map[string]any{"message": "metadata"}
+			requestMetadata := map[string]any{"request": "metadata"}
+			req := &a2apb.SendMessageRequest{
+				Tenant: "tenant",
+				Message: &a2apb.Message{
+					MessageId: "message-id", Role: a2apb.Role_ROLE_USER,
+					Parts:    []*a2apb.Part{{Content: &a2apb.Part_Data{Data: tt.value}, Metadata: mustMakeProtoMetadata(t, partMetadata)}},
+					Metadata: mustMakeProtoMetadata(t, messageMetadata),
+				},
+				Metadata: mustMakeProtoMetadata(t, requestMetadata),
+			}
+			got, err := FromProtoSendMessageRequest(req)
+			if err != nil {
+				t.Fatalf("FromProtoSendMessageRequest() error = %v, want nil", err)
+			}
+			part := a2a.NewDataPart(tt.want)
+			part.Metadata = partMetadata
+			message := a2a.NewMessage(a2a.MessageRoleUser, part)
+			message.ID = "message-id"
+			message.Metadata = messageMetadata
+			want := &a2a.SendMessageRequest{Tenant: "tenant", Message: message, Metadata: requestMetadata}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("FromProtoSendMessageRequest() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestFromProto_fromProtoPart(t *testing.T) {
 	pData, _ := structpb.NewValue(map[string]any{"key": "value"})
 	tests := []struct {
