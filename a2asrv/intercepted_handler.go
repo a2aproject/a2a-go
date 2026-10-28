@@ -110,8 +110,8 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 			yield(nil, pluginErr)
 			return
 		}
-		defer hook.finishStream()
-		yield = hook.wrapStreamYield(yield)
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -148,8 +148,8 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			yield(nil, pluginErr)
 			return
 		}
-		defer hook.finishStream()
-		yield = hook.wrapStreamYield(yield)
+		defer hook.FinishStream()
+		yield = hook.WrapStreamYield(yield)
 		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
@@ -204,7 +204,7 @@ func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.
 	if pluginErr != nil {
 		return pluginErr
 	}
-	defer func() { hook.finish(nil, retErr) }()
+	defer func() { hook.Finish(nil, retErr) }()
 	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
 		return res.earlyErr
@@ -336,7 +336,7 @@ func doCall[Req any, Resp any](
 	if pluginErr != nil {
 		return result, pluginErr
 	}
-	defer func() { hook.finish(result, retErr) }()
+	defer func() { hook.Finish(result, retErr) }()
 	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
 	if res.earlyErr != nil {
 		var zero Resp

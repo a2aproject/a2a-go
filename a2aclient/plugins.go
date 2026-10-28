@@ -20,6 +20,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
+	"github.com/a2aproject/a2a-go/v2/internal/plugincall"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -92,26 +93,15 @@ type clientHooksReporter interface {
 	HasClientHooks() bool
 }
 
-// pluginCall carries the per-call plugin state across the Before and After
-// (or stream-end) hooks of a single request.
-type pluginCall struct {
-	active    bool
-	plugin    ClientPlugin
-	ctx       context.Context
-	req       *ClientRequest
-	streamErr error
-	finaled   bool
-}
-
 // beginPluginCall runs [ClientPlugin.BeforeClientRequest] and returns a handle used to
 // emit per-event and final AfterClientRequest calls, together with the context and payload
 // to continue the call with. Service params modified by plugins are attached to the returned
 // context. A non-nil error means the call must be rejected without further plugin dispatch.
 // If the client has no plugin hooks the returned handle is inactive and the inputs are
 // returned unchanged.
-func beginPluginCall[Req any](ctx context.Context, c *Client, method string, payload Req) (*pluginCall, context.Context, Req, error) {
+func beginPluginCall[Req any](ctx context.Context, c *Client, method string, payload Req) (*plugincall.Call, context.Context, Req, error) {
 	if !core.HasHooks(c.plugins, clientHooksReporter.HasClientHooks) {
-		return &pluginCall{}, ctx, payload, nil
+		return nil, ctx, payload, nil
 	}
 	params := serviceParamsCloneFrom(ctx)
 	params[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
@@ -124,71 +114,30 @@ func beginPluginCall[Req any](ctx context.Context, c *Client, method string, pay
 	}
 	newCtx, err := c.plugins.BeforeClientRequest(ctx, req)
 	if err != nil {
-		return &pluginCall{}, ctx, payload, err
+		return nil, ctx, payload, err
 	}
 	newCtx = context.WithValue(newCtx, serviceParamsKeyType{}, req.ServiceParams)
-	hook := &pluginCall{active: true, plugin: c.plugins, ctx: newCtx, req: req}
+	plugin := c.plugins
+	hook := plugincall.New(func(payload any, err error, isStreamEvent bool) {
+		resp := &ClientResponse{
+			Method:        req.Method,
+			BaseURL:       req.BaseURL,
+			Payload:       payload,
+			Card:          req.Card,
+			ServiceParams: req.ServiceParams,
+			Err:           err,
+			IsStreamEvent: isStreamEvent,
+			IsFinal:       !isStreamEvent,
+		}
+		if _, err := plugin.AfterClientRequest(newCtx, resp); err != nil {
+			log.Error(newCtx, "plugin AfterClientRequest failed", err, "plugin", plugin.Name())
+		}
+	})
 	typed, ok := req.Payload.(Req)
 	if !ok {
 		err := fmt.Errorf("payload type changed from %T to %T", payload, req.Payload)
-		hook.finish(nil, err)
-		return &pluginCall{}, ctx, payload, err
+		hook.Finish(nil, err)
+		return nil, ctx, payload, err
 	}
 	return hook, newCtx, typed, nil
-}
-
-// finish fires the final [ClientPlugin.AfterClientRequest] call at most once.
-func (p *pluginCall) finish(payload any, err error) {
-	if !p.active || p.finaled {
-		return
-	}
-	p.finaled = true
-	resp := p.newResponse(err)
-	resp.IsFinal = true
-	if err == nil {
-		resp.Payload = payload
-	}
-	p.after(resp)
-}
-
-// finishStream fires the final [ClientPlugin.AfterClientRequest] call of a stream with
-// the last error yielded through the function returned by wrapStreamYield.
-func (p *pluginCall) finishStream() {
-	p.finish(nil, p.streamErr)
-}
-
-// wrapStreamYield returns a yield function that fires a per-event
-// [ClientPlugin.AfterClientRequest] call before each yield, recording any yielded
-// error for finishStream.
-func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool) func(a2a.Event, error) bool {
-	if !p.active {
-		return yield
-	}
-	return func(ev a2a.Event, err error) bool {
-		resp := p.newResponse(err)
-		resp.IsStreamEvent = true
-		if err != nil {
-			p.streamErr = err
-		} else {
-			resp.Payload = ev
-		}
-		p.after(resp)
-		return yield(ev, err)
-	}
-}
-
-func (p *pluginCall) newResponse(err error) *ClientResponse {
-	return &ClientResponse{
-		Method:        p.req.Method,
-		BaseURL:       p.req.BaseURL,
-		Card:          p.req.Card,
-		ServiceParams: p.req.ServiceParams,
-		Err:           err,
-	}
-}
-
-func (p *pluginCall) after(resp *ClientResponse) {
-	if _, err := p.plugin.AfterClientRequest(p.ctx, resp); err != nil {
-		log.Error(p.ctx, "plugin AfterClientRequest failed", err, "plugin", p.plugin.Name())
-	}
 }

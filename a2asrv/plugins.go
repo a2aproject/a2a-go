@@ -19,6 +19,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin/core"
+	"github.com/a2aproject/a2a-go/v2/internal/plugincall"
 	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -183,25 +184,14 @@ type serverHooksReporter interface {
 	HasServerHooks() bool
 }
 
-// pluginCall carries the per-call plugin state across the Before and After
-// (or stream-end) hooks of a single request.
-type pluginCall struct {
-	active    bool
-	plugin    ServerPlugin
-	ctx       context.Context
-	req       *ServerRequest
-	streamErr error
-	finaled   bool
-}
-
 // beginPluginCall runs [ServerPlugin.BeforeHandlerRun] and returns a handle used
 // to emit per-event and final AfterHandlerRun calls, together with the context to
 // continue the call with. A non-nil error means the call must be rejected without
 // further plugin dispatch. If the handler has no plugin hooks the returned handle
 // is inactive and ctx is returned unchanged.
-func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*pluginCall, context.Context, error) {
+func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*plugincall.Call, context.Context, error) {
 	if !core.HasHooks(h.Plugins, serverHooksReporter.HasServerHooks) {
-		return &pluginCall{}, ctx, nil
+		return nil, ctx, nil
 	}
 	req := &ServerRequest{
 		Method:      callCtx.Method(),
@@ -210,61 +200,20 @@ func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallCo
 	}
 	newCtx, err := h.Plugins.BeforeHandlerRun(ctx, req)
 	if err != nil {
-		return &pluginCall{}, ctx, err
+		return nil, ctx, err
 	}
-	return &pluginCall{active: true, plugin: h.Plugins, ctx: newCtx, req: req}, newCtx, nil
-}
-
-// finish fires the final [ServerPlugin.AfterHandlerRun] call at most once.
-func (p *pluginCall) finish(payload any, err error) {
-	if !p.active || p.finaled {
-		return
-	}
-	p.finaled = true
-	resp := &ServerResponse{
-		Method:      p.req.Method,
-		CallContext: p.req.CallContext,
-		Err:         err,
-		IsFinal:     true,
-	}
-	if err == nil {
-		resp.Payload = payload
-	}
-	p.after(resp)
-}
-
-// finishStream fires the final [ServerPlugin.AfterHandlerRun] call of a stream with
-// the last error yielded through the function returned by wrapStreamYield.
-func (p *pluginCall) finishStream() {
-	p.finish(nil, p.streamErr)
-}
-
-// wrapStreamYield returns a yield function that fires a per-event
-// [ServerPlugin.AfterHandlerRun] call before each yield, recording any yielded
-// error for finishStream.
-func (p *pluginCall) wrapStreamYield(yield func(a2a.Event, error) bool) func(a2a.Event, error) bool {
-	if !p.active {
-		return yield
-	}
-	return func(ev a2a.Event, err error) bool {
+	plugin := h.Plugins
+	return plugincall.New(func(payload any, err error, isStreamEvent bool) {
 		resp := &ServerResponse{
-			Method:        p.req.Method,
-			CallContext:   p.req.CallContext,
+			Method:        req.Method,
+			Payload:       payload,
+			CallContext:   req.CallContext,
 			Err:           err,
-			IsStreamEvent: true,
+			IsStreamEvent: isStreamEvent,
+			IsFinal:       !isStreamEvent,
 		}
-		if err != nil {
-			p.streamErr = err
-		} else {
-			resp.Payload = ev
+		if _, err := plugin.AfterHandlerRun(newCtx, resp); err != nil {
+			log.Error(newCtx, "plugin AfterHandlerRun failed", err, "plugin", plugin.Name())
 		}
-		p.after(resp)
-		return yield(ev, err)
-	}
-}
-
-func (p *pluginCall) after(resp *ServerResponse) {
-	if _, err := p.plugin.AfterHandlerRun(p.ctx, resp); err != nil {
-		log.Error(p.ctx, "plugin AfterHandlerRun failed", err, "plugin", p.plugin.Name())
-	}
+	}), newCtx, nil
 }
