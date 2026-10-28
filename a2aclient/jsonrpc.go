@@ -23,6 +23,7 @@ import (
 	"iter"
 	"mime"
 	"net/http"
+	"net/url"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
@@ -56,9 +57,9 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 //
 //	httpClient := &http.Client{Timeout: 5 * time.Minute}
 //	client := NewFromCard(ctx, card, WithJSONRPCTransport(httpClient))
-func NewJSONRPCTransport(url string, client *http.Client) Transport {
+func NewJSONRPCTransport(serverURL string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
-		url:        url,
+		url:        serverURL,
 		httpClient: client,
 	}
 
@@ -90,7 +91,23 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewBuffer(reqBody))
+	requestURL := t.url
+	if extraQuery := httpQueryParamsFrom(ctx); len(extraQuery) > 0 {
+		u, err := url.Parse(t.url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
+		}
+		query := u.Query()
+		for k, vals := range extraQuery {
+			for _, v := range vals {
+				query.Add(k, v)
+			}
+		}
+		u.RawQuery = query.Encode()
+		requestURL = u.String()
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}

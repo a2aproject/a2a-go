@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -93,8 +94,26 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				req.ServiceParams["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
-				req.ServiceParams[v.Name] = []string{string(credential)}
-				return ctx, nil, nil
+				switch v.Location {
+				case a2a.APIKeySecuritySchemeLocationQuery:
+					// Query parameters cannot be expressed via ServiceParams
+					// (they become HTTP headers in the HTTP protocol bindings).
+					// Attach them to the context instead; HTTP transports append
+					// them to the request URL.
+					ctx = attachHTTPQueryParams(ctx, url.Values{v.Name: {string(credential)}})
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationCookie:
+					req.ServiceParams.Append("Cookie", v.Name+"="+string(credential))
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationHeader, "":
+					// An unset location is treated as header for backward compatibility.
+					req.ServiceParams[v.Name] = []string{string(credential)}
+					return ctx, nil, nil
+				default:
+					// Do not inject the credential at an unknown location to
+					// avoid leaking it to the wrong place on the wire.
+					log.Warn(ctx, "unsupported API key security scheme location, credential not attached", "location", v.Location)
+				}
 			}
 		}
 	}
