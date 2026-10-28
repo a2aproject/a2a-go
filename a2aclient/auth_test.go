@@ -16,7 +16,10 @@ package a2aclient
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"iter"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -291,6 +294,61 @@ func TestAuthInterceptor(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, params); diff != "" {
 				t.Errorf("wrong ServiceParams (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestAuth_HTTPBasic(t *testing.T) {
+	t.Parallel()
+
+	for _, protocol := range []a2a.TransportProtocol{a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolJSONRPC} {
+		t.Run(string(protocol), func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				user, password, ok := r.BasicAuth()
+				if !ok || user != "demo" || password != "password" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if protocol == a2a.TransportProtocolJSONRPC {
+					req := mustDecodeJSONRPC(t, r, "GetTask")
+					if err := json.NewEncoder(w).Encode(newResponse(req, json.RawMessage(`{"id":"task-1"}`))); err != nil {
+						t.Errorf("Encode() error = %v, want nil", err)
+					}
+					return
+				}
+				if _, err := w.Write([]byte(`{"id":"task-1"}`)); err != nil {
+					t.Errorf("Write() error = %v, want nil", err)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			name := a2a.SecuritySchemeName("basic-auth")
+			card := &a2a.AgentCard{
+				SupportedInterfaces:  []*a2a.AgentInterface{a2a.NewAgentInterface(server.URL, protocol)},
+				SecurityRequirements: []a2a.SecurityRequirements{{name: {}}},
+				SecuritySchemes:      a2a.NamedSecuritySchemes{name: a2a.HTTPAuthSecurityScheme{Scheme: "Basic"}},
+			}
+			credentials := NewInMemoryCredentialsStore()
+			credentials.Set("session", name, AuthCredential(base64.StdEncoding.EncodeToString([]byte("demo:password"))))
+			client, err := NewFromCard(t.Context(), card, WithCallInterceptors(&AuthInterceptor{Service: credentials}))
+			if err != nil {
+				t.Fatalf("NewFromCard() error = %v, want nil", err)
+			}
+			t.Cleanup(func() {
+				if err := client.Destroy(); err != nil {
+					t.Errorf("Destroy() error = %v, want nil", err)
+				}
+			})
+			task, err := client.GetTask(AttachSessionID(t.Context(), "session"), &a2a.GetTaskRequest{ID: "task-1"})
+			if err != nil {
+				t.Fatalf("GetTask() error = %v, want nil", err)
+			}
+			if task.ID != "task-1" {
+				t.Fatalf("GetTask().ID = %q, want task-1", task.ID)
 			}
 		})
 	}
