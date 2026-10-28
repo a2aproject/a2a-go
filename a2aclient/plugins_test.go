@@ -74,7 +74,7 @@ type namedOnlyPlugin struct{}
 func (namedOnlyPlugin) Name() string { return "named-only" }
 
 func newPluginTestClient(transport Transport, plugin ClientPlugin, interceptors ...CallInterceptor) *Client {
-	return &Client{transport: transport, plugins: plugin, interceptors: interceptors}
+	return &Client{transport: transport, plugin: plugin, interceptors: interceptors}
 }
 
 func newSendMessageRequest() *a2a.SendMessageRequest {
@@ -100,8 +100,8 @@ func TestWithPlugins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := NewFactory(WithPlugins(existing), WithPlugins(tc.option))
-			if f.plugins != tc.want {
-				t.Fatalf("NewFactory(WithPlugins()) plugins = %v, want %v", f.plugins, tc.want)
+			if f.plugin != tc.want {
+				t.Fatalf("NewFactory(WithPlugins()) plugin = %v, want %v", f.plugin, tc.want)
 			}
 		})
 	}
@@ -112,8 +112,8 @@ func TestWithAdditionalOptionsKeepsPlugins(t *testing.T) {
 
 	plugin := &recordingClientPlugin{name: "p"}
 	f := WithAdditionalOptions(NewFactory(WithPlugins(plugin)))
-	if f.plugins != plugin {
-		t.Fatalf("WithAdditionalOptions() plugins = %v, want %v", f.plugins, plugin)
+	if f.plugin != plugin {
+		t.Fatalf("WithAdditionalOptions() plugin = %v, want %v", f.plugin, plugin)
 	}
 }
 
@@ -146,8 +146,8 @@ func TestFactoryUsesGlobalPlugin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewFromEndpoints() error = %v", err)
 			}
-			if client.plugins != tc.want {
-				t.Fatalf("NewFromEndpoints() client.plugins = %v, want %v", client.plugins, tc.want)
+			if client.plugin != tc.want {
+				t.Fatalf("NewFromEndpoints() client.plugin = %v, want %v", client.plugin, tc.want)
 			}
 		})
 	}

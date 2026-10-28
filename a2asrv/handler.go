@@ -221,7 +221,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		executionPlugin: core.GlobalAs[ExecutionPlugin](),
 		taskObserver:    core.GlobalAs[TaskObserverPlugin](),
 	}
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugins: core.GlobalAs[ServerPlugin]()}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), Plugin: core.GlobalAs[ServerPlugin]()}
 
 	for _, option := range options {
 		option(ih, h)

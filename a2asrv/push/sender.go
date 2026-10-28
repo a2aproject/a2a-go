@@ -60,10 +60,10 @@ type HTTPSenderConfig struct {
 	// true only for trusted internal deployments (for example a webhook on the
 	// same host or private network).
 	AllowPrivateNetworks bool
-	// Plugins is the plugin whose [Plugin] hooks run around every delivery. If not set, the global
+	// Plugin is the plugin whose [Plugin] hooks run around every delivery. If not set, the global
 	// plugin registered with [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction
 	// time is used. It is independent of the plugin configured for the request handler.
-	Plugins core.Plugin
+	Plugin core.Plugin
 }
 
 // NewHTTPPushSender creates a new HTTPPushSender. It uses a default client
@@ -82,8 +82,8 @@ func NewHTTPPushSender(config *HTTPSenderConfig) *HTTPPushSender {
 			t = config.Timeout
 		}
 		allowPrivate = config.AllowPrivateNetworks
-		if config.Plugins != nil {
-			plugin, _ = config.Plugins.(Plugin)
+		if config.Plugin != nil {
+			plugin, _ = config.Plugin.(Plugin)
 		}
 	}
 	if !core.HasHooks(plugin, core.PushHooks) {

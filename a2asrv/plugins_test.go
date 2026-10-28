@@ -94,7 +94,7 @@ func (r *recordingInterceptor) After(ctx context.Context, _ *CallContext, _ *Res
 }
 
 func newPluginTestHandler(plugin ServerPlugin, inner RequestHandler, interceptors ...CallInterceptor) RequestHandler {
-	return &InterceptedHandler{Handler: inner, Interceptors: interceptors, Plugins: plugin}
+	return &InterceptedHandler{Handler: inner, Interceptors: interceptors, Plugin: plugin}
 }
 
 func newSendMessageRequest() *a2a.SendMessageRequest {
@@ -205,11 +205,11 @@ func TestWithPlugins(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ih := &InterceptedHandler{Plugins: existingServer}
+			ih := &InterceptedHandler{Plugin: existingServer}
 			h := &defaultRequestHandler{executionPlugin: existingExecution}
 			WithPlugins(tc.option)(ih, h)
-			if ih.Plugins != tc.wantServer {
-				t.Fatalf("WithPlugins() server plugin = %v, want %v", ih.Plugins, tc.wantServer)
+			if ih.Plugin != tc.wantServer {
+				t.Fatalf("WithPlugins() server plugin = %v, want %v", ih.Plugin, tc.wantServer)
 			}
 			if h.executionPlugin != tc.wantExecution {
 				t.Fatalf("WithPlugins() execution plugin = %v, want %v", h.executionPlugin, tc.wantExecution)

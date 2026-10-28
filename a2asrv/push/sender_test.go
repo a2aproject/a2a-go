@@ -450,7 +450,7 @@ func TestHTTPPushSender_Plugin(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true, FailOnError: tc.failOnError, Plugins: tc.plugin})
+			sender := NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true, FailOnError: tc.failOnError, Plugin: tc.plugin})
 			config := &a2a.PushConfig{TaskID: "task-1", URL: server.URL}
 			err := sender.SendPush(t.Context(), config, &a2a.Task{ID: "task-1"})
 			if !errors.Is(err, tc.wantErr) {
@@ -495,9 +495,9 @@ func TestNewHTTPPushSender_Plugin(t *testing.T) {
 		want   Plugin
 	}{
 		{name: "global is the default", config: nil, want: global},
-		{name: "config overrides global", config: &HTTPSenderConfig{Plugins: explicit}, want: explicit},
-		{name: "non-push plugin disables global", config: &HTTPSenderConfig{Plugins: namedOnlyPlugin{}}, want: nil},
-		{name: "plugin reporting no push hooks is skipped", config: &HTTPSenderConfig{Plugins: &noPushHooksPlugin{}}, want: nil},
+		{name: "config overrides global", config: &HTTPSenderConfig{Plugin: explicit}, want: explicit},
+		{name: "non-push plugin disables global", config: &HTTPSenderConfig{Plugin: namedOnlyPlugin{}}, want: nil},
+		{name: "plugin reporting no push hooks is skipped", config: &HTTPSenderConfig{Plugin: &noPushHooksPlugin{}}, want: nil},
 	}
 
 	for _, tc := range tests {

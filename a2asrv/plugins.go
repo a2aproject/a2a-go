@@ -121,13 +121,16 @@ type TaskEventInfo struct {
 // and [TaskObserverPlugin].
 // If omitted, the handler uses the global plugin registered with
 // [github.com/a2aproject/a2a-go/v2/a2aplugin.SetGlobal] at construction time.
+// The plugin replaces the global plugin for all hook kinds; hook interfaces it doesn't
+// implement are disabled. To keep the global plugins, pass
+// a2aplugin.Sequential(a2aplugin.Global(), plugin).
 // Passing nil is a no-op.
 func WithPlugins(plugin core.Plugin) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		if plugin == nil {
 			return
 		}
-		ih.Plugins, _ = plugin.(ServerPlugin)
+		ih.Plugin, _ = plugin.(ServerPlugin)
 		h.executionPlugin, _ = plugin.(ExecutionPlugin)
 		h.taskObserver, _ = plugin.(TaskObserverPlugin)
 	}
@@ -172,7 +175,7 @@ func afterExecution(ctx context.Context, p ExecutionPlugin, execCtx *ExecutorCon
 // further plugin dispatch. If the handler has no plugin hooks the returned handle
 // is inactive and ctx is returned unchanged.
 func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload any) (*plugincall.Call, context.Context, error) {
-	if !core.HasHooks(h.Plugins, core.ServerHooks) {
+	if !core.HasHooks(h.Plugin, core.ServerHooks) {
 		return nil, ctx, nil
 	}
 	req := &ServerRequest{
@@ -180,11 +183,11 @@ func beginPluginCall(ctx context.Context, h *InterceptedHandler, callCtx *CallCo
 		Payload:     payload,
 		CallContext: callCtx,
 	}
-	newCtx, err := h.Plugins.BeforeHandlerRun(ctx, req)
+	newCtx, err := h.Plugin.BeforeHandlerRun(ctx, req)
 	if err != nil {
 		return nil, ctx, err
 	}
-	plugin := h.Plugins
+	plugin := h.Plugin
 	return plugincall.New(func(payload any, err error, isStreamEvent bool) {
 		resp := &ServerResponse{
 			Method:        req.Method,

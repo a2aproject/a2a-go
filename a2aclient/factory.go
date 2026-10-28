@@ -33,7 +33,7 @@ import (
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
-	plugins      ClientPlugin
+	plugin       ClientPlugin
 	transports   map[transportKey]TransportFactory
 }
 
@@ -111,7 +111,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
-		plugins:         f.clientPlugins(),
+		plugin:          f.clientPlugin(),
 		endpoint:        *selected.endpoint,
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 	}
@@ -140,17 +140,17 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
-		plugins:         f.clientPlugins(),
+		plugin:          f.clientPlugin(),
 		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
 		endpoint:        *selected.endpoint,
 	}, nil
 }
 
-// clientPlugins returns the plugin set with [WithPlugins] or the global plugin
+// clientPlugin returns the plugin set with [WithPlugins] or the global plugin
 // registered at the time of the call.
-func (f *Factory) clientPlugins() ClientPlugin {
-	if f.plugins != nil {
-		return f.plugins
+func (f *Factory) clientPlugin() ClientPlugin {
+	if f.plugin != nil {
+		return f.plugin
 	}
 	return core.GlobalAs[ClientPlugin]()
 }
@@ -323,7 +323,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
 		WithCallInterceptors(f.interceptors...),
-		WithPlugins(f.plugins),
+		WithPlugins(f.plugin),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))

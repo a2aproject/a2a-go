@@ -55,7 +55,7 @@ type Client struct {
 	protocolVersion a2a.ProtocolVersion
 	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
-	plugins         ClientPlugin
+	plugin          ClientPlugin
 
 	card atomic.Pointer[a2a.AgentCard]
 }

@@ -83,7 +83,7 @@ func WithPlugins(plugin ClientPlugin) FactoryOption {
 		if plugin == nil {
 			return
 		}
-		f.plugins = plugin
+		f.plugin = plugin
 	})
 }
 
@@ -94,7 +94,7 @@ func WithPlugins(plugin ClientPlugin) FactoryOption {
 // If the client has no plugin hooks the returned handle is inactive and the inputs are
 // returned unchanged.
 func beginPluginCall[Req any](ctx context.Context, c *Client, method string, payload Req) (*plugincall.Call, context.Context, Req, error) {
-	if !core.HasHooks(c.plugins, core.ClientHooks) {
+	if !core.HasHooks(c.plugin, core.ClientHooks) {
 		return nil, ctx, payload, nil
 	}
 	params := serviceParamsCloneFrom(ctx)
@@ -106,12 +106,12 @@ func beginPluginCall[Req any](ctx context.Context, c *Client, method string, pay
 		Card:          c.card.Load(),
 		ServiceParams: params,
 	}
-	newCtx, err := c.plugins.BeforeClientRequest(ctx, req)
+	newCtx, err := c.plugin.BeforeClientRequest(ctx, req)
 	if err != nil {
 		return nil, ctx, payload, err
 	}
 	newCtx = context.WithValue(newCtx, serviceParamsKeyType{}, req.ServiceParams)
-	plugin := c.plugins
+	plugin := c.plugin
 	hook := plugincall.New(func(payload any, err error, isStreamEvent bool) {
 		resp := &ClientResponse{
 			Method:        req.Method,
