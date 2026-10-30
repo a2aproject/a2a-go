@@ -125,11 +125,6 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 				return
 			}
 
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
 			if !yield(interceptedEvent, nil) {
 				return
 			}
@@ -157,11 +152,6 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
-				return
-			}
-
-			if err != nil {
-				yield(nil, err)
 				return
 			}
 
