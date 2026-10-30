@@ -1033,3 +1033,45 @@ func TestClient_intercept_EarlyReturn(t *testing.T) {
 		t.Fatalf("callOrder = %v, want %v", callOrder, wantCallOrder)
 	}
 }
+
+func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			transportErr := errors.New("transport failed")
+			fallback := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("fallback"))
+			transport := &testTransport{
+				SendStreamingMessageFn: func(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+				SubscribeToTaskFn: func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+			}
+			interceptor := &testInterceptor{AfterFn: func(ctx context.Context, resp *Response) error {
+				if !errors.Is(resp.Err, transportErr) {
+					t.Fatalf("Response.Err = %v, want %v", resp.Err, transportErr)
+				}
+				resp.Err = nil
+				resp.Payload = fallback
+				return nil
+			}}
+			client := newTestClient(transport, interceptor)
+			stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+			if method == "SubscribeToTask" {
+				stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+			}
+			var got []a2a.Event
+			for event, err := range stream {
+				if err != nil {
+					t.Fatalf("client.%s() error = %v, want nil", method, err)
+				}
+				got = append(got, event)
+			}
+			if diff := cmp.Diff([]a2a.Event{fallback}, got); diff != "" {
+				t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+			}
+		})
+	}
+}
