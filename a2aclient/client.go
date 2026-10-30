@@ -96,7 +96,7 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 
 		req = c.withDefaultSendConfig(req)
 
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, c, method, req)
+		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.Event](ctx, c, method, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return
@@ -142,7 +142,7 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 	return func(yield func(a2a.Event, error) bool) {
 		method := "SubscribeToTask"
 
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, c, method, req)
+		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.Event](ctx, c, method, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return

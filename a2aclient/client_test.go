@@ -17,6 +17,7 @@ package a2aclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"reflect"
 	"strings"
@@ -1031,5 +1032,33 @@ func TestClient_intercept_EarlyReturn(t *testing.T) {
 	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
 	if !reflect.DeepEqual(callOrder, wantCallOrder) {
 		t.Fatalf("callOrder = %v, want %v", callOrder, wantCallOrder)
+	}
+}
+
+func TestClient_StreamingInterceptorCachedEvents(t *testing.T) {
+	t.Parallel()
+	task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: "task", ContextID: "context"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("request")))
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		for _, event := range []a2a.Event{task, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("cached")), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), a2a.NewArtifactEvent(task, a2a.NewTextPart("cached"))} {
+			t.Run(fmt.Sprintf("%s/%T", method, event), func(t *testing.T) {
+				t.Parallel()
+				interceptor := &testInterceptor{BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) { return ctx, event, nil }}
+				client := newTestClient(&testTransport{}, interceptor)
+				stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+				if method == "SubscribeToTask" {
+					stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+				}
+				var got []a2a.Event
+				for e, err := range stream {
+					if err != nil {
+						t.Fatalf("client.%s() error = %v, want nil", method, err)
+					}
+					got = append(got, e)
+				}
+				if diff := cmp.Diff([]a2a.Event{event}, got); diff != "" {
+					t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+				}
+			})
+		}
 	}
 }
