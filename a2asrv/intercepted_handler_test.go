@@ -578,6 +578,9 @@ func TestInterceptedHandler_VersionNegotiation(t *testing.T) {
 	}{
 		{name: "no served version", header: []string{"1.0"}},
 		{name: "1.0 served, 1.0 header", served: a2a.Version, header: []string{"1.0"}},
+		{name: "1.0 served, 1.0.1 header", served: a2a.Version, header: []string{"1.0.1"}},
+		{name: "1.0 served, 1.1 header", served: a2a.Version, header: []string{"1.1"}, wantErr: a2a.ErrVersionNotSupported},
+		{name: "1.0 served, invalid header", served: a2a.Version, header: []string{"foo"}, wantErr: a2a.ErrVersionNotSupported},
 		{name: "1.0 served, no header", served: a2a.Version, wantErr: a2a.ErrVersionNotSupported},
 		{name: "1.0 served, 0.3 header", served: a2a.Version, header: []string{"0.3"}, wantErr: a2a.ErrVersionNotSupported},
 		{name: "1.0 served, empty header", served: a2a.Version, header: []string{""}, wantErr: a2a.ErrVersionNotSupported},

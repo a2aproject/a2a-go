@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
+	"golang.org/x/mod/semver"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/log"
@@ -337,7 +338,7 @@ func checkProtocolVersion(callCtx *CallContext) error {
 	if len(versions) == 1 && versions[0] != "" {
 		clientVersion = a2a.ProtocolVersion(versions[0])
 	}
-	if clientVersion != callCtx.ProtocolVersion {
+	if semver.MajorMinor("v"+string(clientVersion)) != semver.MajorMinor("v"+string(callCtx.ProtocolVersion)) {
 		return fmt.Errorf("%w: requested %q, served %q", a2a.ErrVersionNotSupported, clientVersion, callCtx.ProtocolVersion)
 	}
 	return nil
