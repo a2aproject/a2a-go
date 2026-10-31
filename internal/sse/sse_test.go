@@ -16,11 +16,15 @@ package sse
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSSE_Success(t *testing.T) {
@@ -219,5 +223,40 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	}
 	if eventCount != 1 {
 		t.Fatalf("ParseDataStream() emitted %d events, want 1", eventCount)
+	}
+}
+
+func TestParseDataStreamIncompleteEOF(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, stream string
+		want         []string
+	}{
+		{"no newline", "data: unfinished", nil},
+		{"one newline", "data: unfinished\n", nil},
+		{"one CRLF", "data: unfinished\r\n", nil},
+		{"complete", "data: first\n\n", []string{"first"}},
+		{"complete CRLF", "data: first\r\n\r\n", []string{"first"}},
+		{"complete then unfinished", "data: first\n\ndata: unfinished\n", []string{"first"}},
+	} {
+		for _, fragmented := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fragmented=%t", tc.name, fragmented), func(t *testing.T) {
+				t.Parallel()
+				var reader io.Reader = strings.NewReader(tc.stream)
+				if fragmented {
+					reader = iotest.OneByteReader(reader)
+				}
+				var got []string
+				for data, err := range ParseDataStream(reader) {
+					if err != nil {
+						t.Fatalf("ParseDataStream() error = %v, want nil", err)
+					}
+					got = append(got, string(data))
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("ParseDataStream() wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
 	}
 }

@@ -91,7 +91,8 @@ func (w *SSEWriter) WriteData(ctx context.Context, data []byte) error {
 // Per the WHATWG SSE spec, an event ends at a blank line and consecutive
 // "data:" fields belonging to the same event are joined by a "\n"
 // separator. This parser therefore accumulates "data:" values until a blank
-// line (or EOF) and yields the joined payload as one event.
+// line and yields the joined payload as one event. An unfinished event at EOF
+// is discarded.
 func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		scanner := bufio.NewScanner(body)
@@ -133,6 +134,5 @@ func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 			yield(nil, fmt.Errorf("SSE stream error: %w", err))
 			return
 		}
-		flush()
 	}
 }

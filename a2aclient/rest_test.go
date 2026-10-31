@@ -15,7 +15,9 @@
 package a2aclient
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -628,6 +630,52 @@ func TestRESTTransport_ResponseTrailingData(t *testing.T) {
 			}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestStreamingTransportsIncompleteEOF(t *testing.T) {
+	t.Parallel()
+	for _, rpc := range []bool{false, true} {
+		t.Run(fmt.Sprintf("jsonrpc=%t", rpc), func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				payload := []byte(`{"task":{"id":"task","contextId":"context","status":{"state":"TASK_STATE_WORKING"}}}`)
+				if rpc {
+					req := mustDecodeJSONRPC(t, r, "SendStreamingMessage")
+					var err error
+					payload, err = json.Marshal(newResponse(req, payload))
+					if err != nil {
+						t.Errorf("json.Marshal() error = %v, want nil", err)
+						return
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+
+				if _, err := fmt.Fprintf(w, "data: %s\n\ndata: %s\n", payload, payload); err != nil {
+					t.Errorf("fmt.Fprintf() error = %v, want nil", err)
+				}
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+			if rpc {
+				transport = NewJSONRPCTransport(server.URL, server.Client())
+			}
+			var got []a2a.TaskID
+			req := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))}
+			for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, req) {
+				if err != nil {
+					t.Fatalf("transport.SendStreamingMessage() error = %v, want nil", err)
+				}
+				task, ok := event.(*a2a.Task)
+				if !ok {
+					t.Fatalf("transport.SendStreamingMessage() = %T, want *a2a.Task", event)
+				}
+				got = append(got, task.ID)
+			}
+			if diff := cmp.Diff([]a2a.TaskID{"task"}, got); diff != "" {
+				t.Fatalf("transport.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}
