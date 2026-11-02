@@ -82,6 +82,54 @@ func TestContentPartsJSONCodecUnknownType(t *testing.T) {
 	}
 }
 
+func TestPartJSONCodecEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		part *Part
+		json string
+		want *Part
+	}{
+		{name: "null data", part: NewDataPart(nil), json: `{"data":null}`, want: NewDataPart(nil)},
+		{name: "null data with metadata", part: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}, json: `{"data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}},
+		{name: "nil raw", part: NewRawPart(nil), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty raw", part: NewRawPart([]byte{}), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty text", part: NewTextPart(""), json: `{"text":""}`, want: NewTextPart("")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.part); got != tc.json {
+				t.Fatalf("json.Marshal() = %s, want %s", got, tc.json)
+			}
+			var got Part
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
+	}
+}
+
+func TestPartJSONUnmarshalNullDataWithOtherContent(t *testing.T) {
+	t.Parallel()
+
+	input := `{"text":"hello","data":null}`
+	var got Part
+	err := json.Unmarshal([]byte(input), &got)
+	if err == nil {
+		t.Fatalf("json.Unmarshal(%s) error = nil, want error", input)
+	}
+	if want := "expected exactly one of text, raw, data, or url, got 2"; err.Error() != want {
+		t.Fatalf("json.Unmarshal(%s) error = %v, want %v", input, err, want)
+	}
+}
+
 func TestSecuritySchemeJSONCodec(t *testing.T) {
 	schemes := NamedSecuritySchemes{
 		"name1": APIKeySecurityScheme{Name: "abc", Location: APIKeySecuritySchemeLocationCookie},

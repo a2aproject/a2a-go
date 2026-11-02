@@ -715,11 +715,30 @@ type Data struct {
 type part struct {
 	Text      *Text          `json:"text,omitempty"`
 	Raw       *Raw           `json:"raw,omitempty"`
-	Data      *any           `json:"data,omitempty"`
+	Data      partData       `json:"data,omitzero"`
 	URL       *URL           `json:"url,omitempty"`
 	Filename  string         `json:"filename,omitempty"`
 	MediaType string         `json:"mediaType,omitempty"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
+}
+
+// partData keeps a data part present when its value is JSON null.
+type partData struct {
+	set   bool
+	value any
+}
+
+func (d partData) IsZero() bool {
+	return !d.set
+}
+
+func (d partData) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.value)
+}
+
+func (d *partData) UnmarshalJSON(b []byte) error {
+	d.set = true
+	return json.Unmarshal(b, &d.value)
 }
 
 // MarshalJSON custom serializer that flattens Content into the Part object.
@@ -733,9 +752,12 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	case Text:
 		wrapper.Text = &v
 	case Raw:
+		if v == nil {
+			v = Raw{}
+		}
 		wrapper.Raw = &v
 	case Data:
-		wrapper.Data = &v.Value
+		wrapper.Data = partData{set: true, value: v.Value}
 	case URL:
 		if v != "" {
 			wrapper.URL = &v
@@ -766,8 +788,8 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		content = *wrapper.Raw
 		n++
 	}
-	if wrapper.Data != nil {
-		content = Data{Value: *wrapper.Data}
+	if wrapper.Data.set {
+		content = Data{Value: wrapper.Data.value}
 		n++
 	}
 	if wrapper.URL != nil && *wrapper.URL != "" {
