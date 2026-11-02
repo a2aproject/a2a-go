@@ -145,10 +145,13 @@ func (h *Handler) ListTasks(ctx context.Context, pbReq *a2apb.ListTasksRequest) 
 
 // CancelTask implements a2apb.A2AServiceServer.
 func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest) (*a2apb.Task, error) {
-	taskID := a2a.TaskID(pbReq.GetId())
+	req, err := pbconv.FromProtoCancelTaskRequest(pbReq)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
+	}
 
 	ctx, callCtx := withCallContext(ctx)
-	task, err := h.handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskID})
+	task, err := h.handler.CancelTask(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
 	}
@@ -165,10 +168,13 @@ func (h *Handler) CancelTask(ctx context.Context, pbReq *a2apb.CancelTaskRequest
 
 // SubscribeToTask implements a2apb.A2AServiceServer.
 func (h *Handler) SubscribeToTask(pbReq *a2apb.SubscribeToTaskRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
-	taskID := a2a.TaskID(pbReq.GetId())
+	req, err := pbconv.FromProtoSubscribeToTaskRequest(pbReq)
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
+	}
 
 	ctx, callCtx := withCallContext(stream.Context())
-	for event, err := range h.handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}) {
+	for event, err := range h.handler.SubscribeToTask(ctx, req) {
 		if err != nil {
 			return grpcutil.ToGRPCError(err)
 		}
@@ -250,7 +256,7 @@ func (h *Handler) ListTaskPushNotificationConfigs(ctx context.Context, pbReq *a2
 
 	resp := &a2a.ListTaskPushConfigResponse{
 		Configs:       configs.Configs,
-		NextPageToken: "",
+		NextPageToken: configs.NextPageToken,
 	}
 
 	pbResp, err := pbconv.ToProtoListTaskPushConfigResponse(resp)
@@ -266,6 +272,8 @@ func (h *Handler) GetExtendedAgentCard(ctx context.Context, pbReq *a2apb.GetExte
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
+
+	ctx, _ = withCallContext(ctx)
 
 	card, err := h.handler.GetExtendedAgentCard(ctx, req)
 	if err != nil {
@@ -301,7 +309,9 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.NewCallContext(ctx, svcParams)
+	ctx, callCtx := a2asrv.NewCallContext(ctx, svcParams)
+	callCtx.ProtocolVersion = a2a.Version
+	return ctx, callCtx
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {

@@ -44,13 +44,15 @@ func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
 				ctx, cc := NewCallContext(ctx, NewServiceParams(map[string][]string{"x-api-key": {"key1", "key2"}}))
 				cc.User = &User{Name: "alice", Authenticated: true, Attributes: map[string]any{"role": "admin"}}
 				cc.tenant = "acme"
+				cc.ProtocolVersion = a2a.Version
 				return ctx
 			},
 			codec: &callCtxCodec{AttrCodec: &testCtxValueCodec{}},
 			wantCallCtx: &CallContext{
-				svcParams: NewServiceParams(map[string][]string{"x-api-key": {"key1", "key2"}}),
-				User:      &User{Name: "alice", Authenticated: true, Attributes: map[string]any{"role": "admin"}},
-				tenant:    "acme",
+				svcParams:       NewServiceParams(map[string][]string{"x-api-key": {"key1", "key2"}}),
+				User:            &User{Name: "alice", Authenticated: true, Attributes: map[string]any{"role": "admin"}},
+				tenant:          "acme",
+				ProtocolVersion: a2a.Version,
 			},
 			wantAttr: "attr-val",
 		},
@@ -60,13 +62,15 @@ func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
 				ctx, cc := NewCallContext(ctx, NewServiceParams(map[string][]string{"x-region": {"us-east-1"}}))
 				cc.User = &User{Name: "bob", Authenticated: false}
 				cc.tenant = "t1"
+				cc.ProtocolVersion = a2a.Version
 				return ctx
 			},
 			codec: &callCtxCodec{},
 			wantCallCtx: &CallContext{
-				svcParams: NewServiceParams(map[string][]string{"x-region": {"us-east-1"}}),
-				User:      &User{Name: "bob", Authenticated: false},
-				tenant:    "t1",
+				svcParams:       NewServiceParams(map[string][]string{"x-region": {"us-east-1"}}),
+				User:            &User{Name: "bob", Authenticated: false},
+				tenant:          "t1",
+				ProtocolVersion: a2a.Version,
 			},
 		},
 		{
@@ -115,6 +119,9 @@ func TestCallCtxCodec_JSONRoundTrip(t *testing.T) {
 				}
 				if tc.wantCallCtx.Tenant() != got.Tenant() {
 					t.Errorf("codec.Decode() tenant = %q, want %q", got.Tenant(), tc.wantCallCtx.Tenant())
+				}
+				if tc.wantCallCtx.ProtocolVersion != got.ProtocolVersion {
+					t.Errorf("codec.Decode() protocolVersion = %q, want %q", got.ProtocolVersion, tc.wantCallCtx.ProtocolVersion)
 				}
 			} else {
 				if _, ok := CallContextFrom(decodedCtx); ok {

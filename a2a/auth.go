@@ -15,6 +15,7 @@
 package a2a
 
 import (
+	"bytes"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -46,14 +47,57 @@ type SecurityRequirements map[SecuritySchemeName]SecuritySchemeScopes
 type SecurityRequirementsOptions []SecurityRequirements
 
 type securityRequirements struct {
-	Schemes map[SecuritySchemeName]SecuritySchemeScopes `json:"schemes"`
+	Schemes map[SecuritySchemeName]securityScopeList `json:"schemes"`
+}
+
+// securityScopeList is the ProtoJSON StringList emulation for a single
+// security scheme's scopes. Canonical input is {} or {"list":[...]};
+// legacy array input [...] is accepted and canonicalized on marshal.
+type securityScopeList []string
+
+type securityScopeListJSON struct {
+	List []string `json:"list"`
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s securityScopeList) MarshalJSON() ([]byte, error) {
+	if len(s) == 0 {
+		return []byte(`{}`), nil
+	}
+	return json.Marshal(securityScopeListJSON{List: s})
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *securityScopeList) UnmarshalJSON(b []byte) error {
+	if trimmed := bytes.TrimSpace(b); len(trimmed) > 0 && trimmed[0] == '[' {
+		var scopes []string
+		if err := json.Unmarshal(trimmed, &scopes); err != nil {
+			return err
+		}
+		*s = scopes
+		return nil
+	}
+	var wrapper securityScopeListJSON
+	if err := json.Unmarshal(b, &wrapper); err != nil {
+		return err
+	}
+	if wrapper.List == nil {
+		*s = securityScopeList{}
+		return nil
+	}
+	*s = wrapper.List
+	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (rs SecurityRequirementsOptions) MarshalJSON() ([]byte, error) {
-	var out []securityRequirements
+	out := make([]securityRequirements, 0, len(rs))
 	for _, req := range rs {
-		out = append(out, securityRequirements{Schemes: req})
+		schemes := make(map[SecuritySchemeName]securityScopeList, len(req))
+		for name, scopes := range req {
+			schemes[name] = securityScopeList(scopes)
+		}
+		out = append(out, securityRequirements{Schemes: schemes})
 	}
 	return json.Marshal(out)
 }
@@ -66,7 +110,11 @@ func (rs *SecurityRequirementsOptions) UnmarshalJSON(b []byte) error {
 	}
 	result := make(SecurityRequirementsOptions, 0, len(wrapped))
 	for _, w := range wrapped {
-		result = append(result, w.Schemes)
+		requirement := make(SecurityRequirements, len(w.Schemes))
+		for name, scopes := range w.Schemes {
+			requirement[name] = SecuritySchemeScopes(scopes)
+		}
+		result = append(result, requirement)
 	}
 	*rs = result
 	return nil

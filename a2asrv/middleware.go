@@ -48,6 +48,10 @@ type CallContext struct {
 	// the user who initiated the request.
 	User *User
 
+	// ProtocolVersion is the A2A protocol version served by the transport that received the request.
+	// When set, requests with a different A2A-Version are rejected with [a2a.ErrVersionNotSupported].
+	ProtocolVersion a2a.ProtocolVersion
+
 	// tenant is an optional ID of the agent owner.
 	tenant string
 }

@@ -21,7 +21,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -367,7 +366,7 @@ func TestFromProto_fromProtoGetTaskRequest(t *testing.T) {
 	}{
 		{
 			name: "with history",
-			req:  &a2apb.GetTaskRequest{Id: "test", HistoryLength: proto.Int32(int32(historyLen))},
+			req:  &a2apb.GetTaskRequest{Id: "test", HistoryLength: new(int32(historyLen))},
 			want: &a2a.GetTaskRequest{ID: "test", HistoryLength: &historyLen},
 		},
 		{
@@ -409,13 +408,13 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		},
 		{
 			name: "with historyLength",
-			req:  &a2apb.ListTasksRequest{HistoryLength: proto.Int32(int32(10))},
-			want: &a2a.ListTasksRequest{HistoryLength: utils.Ptr(10)},
+			req:  &a2apb.ListTasksRequest{HistoryLength: new(int32(10))},
+			want: &a2a.ListTasksRequest{HistoryLength: new(10)},
 		},
 		{
 			name: "with 0 historyLength",
-			req:  &a2apb.ListTasksRequest{HistoryLength: proto.Int32(int32(0))},
-			want: &a2a.ListTasksRequest{HistoryLength: utils.Ptr(0)},
+			req:  &a2apb.ListTasksRequest{HistoryLength: new(int32(0))},
+			want: &a2a.ListTasksRequest{HistoryLength: new(0)},
 		},
 		{
 			name: "with lastUpdatedAfter",
@@ -424,7 +423,7 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 		},
 		{
 			name: "with includeArtifacts",
-			req:  &a2apb.ListTasksRequest{IncludeArtifacts: proto.Bool(true)},
+			req:  &a2apb.ListTasksRequest{IncludeArtifacts: new(true)},
 			want: &a2a.ListTasksRequest{IncludeArtifacts: true},
 		},
 		{
@@ -433,13 +432,13 @@ func TestFromProto_fromProtoListTasksRequest(t *testing.T) {
 				PageSize:             proto.Int32(10),
 				PageToken:            "test",
 				HistoryLength:        proto.Int32(10),
-				IncludeArtifacts:     proto.Bool(true),
+				IncludeArtifacts:     new(true),
 				StatusTimestampAfter: timestamppb.New(cutOffTime),
 			},
 			want: &a2a.ListTasksRequest{
 				PageSize:             10,
 				PageToken:            "test",
-				HistoryLength:        utils.Ptr(10),
+				HistoryLength:        new(10),
 				IncludeArtifacts:     true,
 				StatusTimestampAfter: &cutOffTime,
 			},

@@ -15,14 +15,18 @@
 package a2aclient
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -33,6 +37,10 @@ func TestRESTTransport_GetTask(t *testing.T) {
 		}
 		if r.URL.String() != "/tasks/task-123?historyLength=2" {
 			t.Errorf("expected path /tasks/task-123?historyLength=2, got %s", r.URL.String())
+		}
+
+		if got := r.Header.Get("Accept"); got != "application/a2a+json, application/json" {
+			t.Errorf("got Accept %s, want application/a2a+json, application/json", got)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -118,6 +126,57 @@ func TestRESTTransport_ListTasks(t *testing.T) {
 	}
 }
 
+func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
+	t.Parallel()
+
+	cutoff := time.Date(2026, 6, 20, 14, 0, 0, 123456789, time.FixedZone("UTC+2", 2*60*60))
+	historyLength := 7
+	var gotQuery url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/tasks" {
+			t.Errorf("expected path /tasks, got %s", r.URL.Path)
+		}
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tasks":[]}`))
+	}))
+	defer server.Close()
+
+	transport := newRESTTransport(t, server)
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{
+		ContextID:            "ctx-999",
+		Status:               a2a.TaskStateWorking,
+		PageSize:             25,
+		PageToken:            "next-page",
+		HistoryLength:        &historyLength,
+		StatusTimestampAfter: &cutoff,
+		IncludeArtifacts:     true,
+	})
+	if err != nil {
+		t.Fatalf("ListTasks() error = %v, want nil", err)
+	}
+
+	want := url.Values{
+		"contextId":            []string{"ctx-999"},
+		"status":               []string{string(a2a.TaskStateWorking)},
+		"pageSize":             []string{"25"},
+		"pageToken":            []string{"next-page"},
+		"historyLength":        []string{"7"},
+		"statusTimestampAfter": []string{"2026-06-20T12:00:00.123Z"},
+		"includeArtifacts":     []string{"true"},
+	}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+	if got := gotQuery.Get("lastUpdatedAfter"); got != "" {
+		t.Fatalf("ListTasks() lastUpdatedAfter = %q, want empty", got)
+	}
+}
+
 func TestRESTTransport_CancelTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -197,8 +256,8 @@ func TestRESTTransport_ResubscribeToTask(t *testing.T) {
 		if r.URL.Path != "/tasks/task-123:subscribe" {
 			t.Errorf("expected path /tasks/task-123:subscribe, got %s", r.URL.Path)
 		}
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -248,8 +307,8 @@ func TestRESTTransport_SendStreamingMessage(t *testing.T) {
 		if r.URL.Path != "/message:stream" {
 			t.Errorf("expected path /message:stream, got %s", r.URL.Path)
 		}
-		if r.Header.Get("Accept") != "text/event-stream" {
-			t.Errorf("got Accept %s, want text/event-stream", r.Header.Get("Accept"))
+		if r.Header.Get("Accept") != "text/event-stream, application/json" {
+			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -522,4 +581,102 @@ func newRESTTransport(t *testing.T, server *httptest.Server) Transport {
 		t.Fatalf("url.Parse(%q) error = %v", server.URL, err)
 	}
 	return NewRESTTransport(u, server.Client())
+}
+
+func TestRESTTransport_ResponseTrailingData(t *testing.T) {
+	t.Parallel()
+
+	task := `{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`
+	want := &a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+
+	testCases := []struct {
+		name    string
+		body    string
+		wantErr error
+	}{
+		{
+			name: "trailing whitespace is accepted",
+			body: task + "\n\t ",
+		},
+		{
+			name:    "trailing garbage",
+			body:    task + "TRAILING_GARBAGE",
+			wantErr: utils.ErrTrailingData,
+		},
+		{
+			name:    "concatenated responses",
+			body:    task + task,
+			wantErr: utils.ErrTrailingData,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+
+			got, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr != nil {
+				return
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestStreamingTransportsBOM(t *testing.T) {
+	t.Parallel()
+	for _, rpc := range []bool{false, true} {
+		t.Run(fmt.Sprintf("jsonrpc=%t", rpc), func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				payload := []byte(`{"task":{"id":"task","contextId":"context","status":{"state":"TASK_STATE_WORKING"}}}`)
+				if rpc {
+					req := mustDecodeJSONRPC(t, r, "SendStreamingMessage")
+					var err error
+					payload, err = json.Marshal(newResponse(req, payload))
+					if err != nil {
+						t.Errorf("json.Marshal() error = %v, want nil", err)
+						return
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+
+				if _, err := fmt.Fprintf(w, "\ufeffdata: %s\n\n", payload); err != nil {
+					t.Errorf("fmt.Fprintf() error = %v, want nil", err)
+				}
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+			if rpc {
+				transport = NewJSONRPCTransport(server.URL, server.Client())
+			}
+			var got []a2a.TaskID
+			req := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))}
+			for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, req) {
+				if err != nil {
+					t.Fatalf("transport.SendStreamingMessage() error = %v, want nil", err)
+				}
+				task, ok := event.(*a2a.Task)
+				if !ok {
+					t.Fatalf("transport.SendStreamingMessage() = %T, want *a2a.Task", event)
+				}
+				got = append(got, task.ID)
+			}
+			if diff := cmp.Diff([]a2a.TaskID{"task"}, got); diff != "" {
+				t.Fatalf("transport.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
 }

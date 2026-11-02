@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -124,11 +125,6 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 				return
 			}
 
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
 			if !yield(interceptedEvent, nil) {
 				return
 			}
@@ -156,11 +152,6 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
-				return
-			}
-
-			if err != nil {
-				yield(nil, err)
 				return
 			}
 
@@ -229,6 +220,12 @@ func (c *Client) UpdateCard(card *a2a.AgentCard) error {
 	return nil
 }
 
+// Card returns the last AgentCard set on this client or nil if it was created from an [a2a.AgentInterface] handle
+// and was not updated using [Client.UpdateCard].
+func (c *Client) Card() *a2a.AgentCard {
+	return c.card.Load()
+}
+
 // Destroy cleans up resources associated with the client.
 func (c *Client) Destroy() error {
 	return c.transport.Destroy()
@@ -260,7 +257,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.Sen
 
 func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method string, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
 	serviceParams := serviceParamsCloneFrom(ctx)
-	serviceParams[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
+	serviceParams.set(a2a.SvcParamVersion, string(c.protocolVersion))
 	req := Request{
 		Method:        method,
 		BaseURL:       c.endpoint.URL,
@@ -324,8 +321,8 @@ func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallIn
 	}
 
 	var zero T
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if err := interceptors[i].After(ctx, &resp); err != nil {
+	for _, interceptor := range slices.Backward(interceptors) {
+		if err := interceptor.After(ctx, &resp); err != nil {
 			return zero, err
 		}
 	}

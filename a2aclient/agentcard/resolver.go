@@ -17,13 +17,16 @@ package agentcard
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2acrypto"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -62,6 +65,8 @@ type Resolver struct {
 	Client *http.Client
 	// CardParser can be used to configure AgentCard parsing.
 	CardParser Parser
+	// Verifier optionally verifies AgentCard signatures after resolution.
+	Verifier *a2acrypto.Verifier
 }
 
 // NewResolver is a [Resolver] constructor function.
@@ -77,30 +82,78 @@ type resolveRequest struct {
 	headers map[string]string
 }
 
-// Resolve fetches an [a2a.AgentCard] from the provided base URL.
-// By default the request is sent for the  /.well-known/agent-card.json path.
+// Resolve fetches an [a2a.AgentCard] from the provided URL (base URL or complete agent card URL).
+// By default, if the provided URL has no path or a root path, the request is sent for the /.well-known/agent-card.json path.
+// If the provided URL contains a non-root path, it is fetched directly as the complete agent card URL.
+// A file:// URL is supported to load the card from the local file system, in which case
+// the card is read directly from the referenced path and request headers are ignored.
 func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveOption) (*a2a.AgentCard, error) {
-	reqSpec := &resolveRequest{path: defaultAgentCardPath, headers: make(map[string]string)}
+	reqSpec := &resolveRequest{headers: make(map[string]string)}
 	for _, o := range opts {
 		o(reqSpec)
 	}
 
-	reqUrl, err := url.JoinPath(baseURL, reqSpec.path)
+	reqURL, err := buildURL(baseURL, reqSpec.path)
 	if err != nil {
-		return nil, fmt.Errorf("url construction failed: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", reqUrl, nil)
+	u, err := url.Parse(reqURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct a request: %w", err)
+		return nil, fmt.Errorf("url parsing failed: %w", err)
 	}
-	for h, val := range reqSpec.headers {
-		req.Header.Add(h, val)
+
+	if u.Scheme == "file" {
+		body, err := readCardFile(u)
+		if err != nil {
+			return nil, err
+		}
+		return r.parseCard(ctx, body)
 	}
 
 	client := r.Client
 	if client == nil {
 		client = defaultClient
+	}
+
+	body, err := fetchCard(ctx, client, reqURL, reqSpec.headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.parseCard(ctx, body)
+}
+
+func buildURL(baseURL, path string) (string, error) {
+	if path != "" {
+		reqURL, err := url.JoinPath(baseURL, path)
+		if err != nil {
+			return "", fmt.Errorf("url construction failed: %w", err)
+		}
+		return reqURL, nil
+	}
+
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("url construction failed: %w", err)
+	}
+	if u.Path == "" || u.Path == "/" {
+		reqURL, err := url.JoinPath(baseURL, defaultAgentCardPath)
+		if err != nil {
+			return "", fmt.Errorf("url construction failed: %w", err)
+		}
+		return reqURL, nil
+	}
+	return baseURL, nil
+}
+
+func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct a request: %w", err)
+	}
+	for h, val := range headers {
+		req.Header.Add(h, val)
 	}
 
 	resp, err := client.Do(req)
@@ -109,7 +162,7 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Error(ctx, "failed to close response body", err, "from", reqUrl)
+			log.Error(ctx, "failed to close response body", err, "from", reqURL)
 		}
 	}()
 
@@ -121,7 +174,30 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 	if err != nil {
 		return nil, fmt.Errorf("failed to read card response: %w", err)
 	}
+	return body, nil
+}
 
+func readCardFile(u *url.URL) ([]byte, error) {
+	if u.Host != "" && u.Host != "localhost" {
+		return nil, fmt.Errorf("unsupported file URL host %q, only an empty host or localhost is allowed", u.Host)
+	}
+
+	path := u.Path
+	if path == "" {
+		path = u.Opaque
+	}
+	if path == "" {
+		return nil, fmt.Errorf("file URL %q has no path", u)
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read card file: %w", err)
+	}
+	return body, nil
+}
+
+func (r *Resolver) parseCard(ctx context.Context, body []byte) (*a2a.AgentCard, error) {
 	parseFn := r.CardParser
 	if parseFn == nil {
 		parseFn = DefaultCardParser
@@ -129,6 +205,22 @@ func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveO
 	card, err := parseFn(body)
 	if err != nil {
 		return nil, fmt.Errorf("card parsing failed: %w", err)
+	}
+
+	if r.Verifier != nil && len(card.Signatures) > 0 {
+		var verified bool
+		var errs []error
+		for _, sig := range card.Signatures {
+			if err := r.Verifier.Verify(ctx, body, &sig); err == nil {
+				verified = true
+				break
+			} else {
+				errs = append(errs, err)
+			}
+		}
+		if !verified {
+			return nil, fmt.Errorf("agent card signature verification failed: %w", errors.Join(errs...))
+		}
 	}
 
 	return card, nil

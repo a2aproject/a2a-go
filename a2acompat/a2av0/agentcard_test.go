@@ -116,6 +116,37 @@ func TestAgentCard_NewToNew(t *testing.T) {
 	}
 }
 
+func TestAgentCardParser_ProtoJSONSecurityRequirements(t *testing.T) {
+	cardJSON := []byte(`{
+		"name": "ProtoJSON Agent",
+		"description": "An agent using canonical ProtoJSON security requirements.",
+		"version": "1.0.0",
+		"supportedInterfaces": [{
+			"url": "https://example.com/a2a",
+			"protocolBinding": "JSONRPC",
+			"protocolVersion": "1.0"
+		}],
+		"securityRequirements": [{
+			"schemes": {
+				"oauth2": {"list": ["openid", "profile"]}
+			}
+		}]
+	}`)
+
+	parser := NewAgentCardParser()
+	gotCard, err := parser(cardJSON)
+	if err != nil {
+		t.Fatalf("parser.Parse() error = %v", err)
+	}
+
+	want := a2a.SecurityRequirementsOptions{
+		a2a.SecurityRequirements{"oauth2": {"openid", "profile"}},
+	}
+	if diff := cmp.Diff(want, gotCard.SecurityRequirements); diff != "" {
+		t.Fatalf("parser.Parse() security requirements wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestAgentCard_CompatToNew(t *testing.T) {
 	compatProducer := compatProducer{&staticCardProducer{card: newAgentCard}}
 	compatCardJSON, err := compatProducer.CardJSON(context.Background())

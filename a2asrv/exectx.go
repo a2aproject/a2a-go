@@ -42,7 +42,8 @@ type ExecutorContext struct {
 	Message *a2a.Message
 	// TaskID is an ID of the task or a newly generated UUIDv4 in case Message did not reference any Task.
 	TaskID a2a.TaskID
-	// StoredTask is present if request message specified a TaskID.
+	// StoredTask is present if request message specified a TaskID. It is the full task state with the request
+	// message appended to history. It MUST NOT be modified.
 	StoredTask *a2a.Task
 	// RelatedTasks can be present when Message includes Task references and RequestContextBuilder is configured to load them.
 	RelatedTasks []*a2a.Task

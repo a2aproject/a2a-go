@@ -499,10 +499,7 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 	if id == "" {
 		return nil, fmt.Errorf("task id cannot be empty")
 	}
-	contextID := pTask.GetContextId()
-	if contextID == "" {
-		return nil, fmt.Errorf("context id cannot be empty")
-	}
+
 	status, err := fromProtoTaskStatus(pTask.Status)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert status: %w", err)
@@ -520,7 +517,7 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 
 	result := &a2a.Task{
 		ID:        id,
-		ContextID: contextID,
+		ContextID: pTask.GetContextId(),
 		Status:    status,
 		Artifacts: artifacts,
 		History:   history,

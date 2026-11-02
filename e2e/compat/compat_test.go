@@ -273,8 +273,8 @@ func startOldServer(t *testing.T, transport legacycore.TransportProtocol, opts .
 		Description:        "Legacy Agent for compatibility tests",
 		URL:                cardURL,
 		PreferredTransport: transport,
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		DefaultInputModes:  []string{"text/plain"},
+		DefaultOutputModes: []string{"text/plain"},
 		Capabilities:       legacycore.AgentCapabilities{Streaming: false},
 	}
 
@@ -405,8 +405,8 @@ func startNewServer(t *testing.T, preferredTransport a2a.TransportProtocol) (por
 				ProtocolVersion: a2av0.Version,
 			},
 		},
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		DefaultInputModes:  []string{"text/plain"},
+		DefaultOutputModes: []string{"text/plain"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: false},
 	}
 	cardProducer := a2av0.NewStaticAgentCardProducer(card)

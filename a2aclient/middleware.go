@@ -48,6 +48,11 @@ func (m ServiceParams) Append(key string, vals ...string) {
 	m[strings.ToLower(key)] = result
 }
 
+// set replaces the values associated with the key. Key matching is case-insensitive.
+func (m ServiceParams) set(key string, vals ...string) {
+	m[strings.ToLower(key)] = vals
+}
+
 func (m ServiceParams) clone() ServiceParams {
 	if m == nil {
 		return nil

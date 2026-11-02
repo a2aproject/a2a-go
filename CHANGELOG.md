@@ -1,5 +1,69 @@
 # Changelog
 
+## [2.7.0](https://github.com/a2aproject/a2a-go/compare/v2.6.0...v2.7.0) (2026-10-21)
+
+
+### Features
+
+* add input mode validation ([#456](https://github.com/a2aproject/a2a-go/issues/456)) ([8c814be](https://github.com/a2aproject/a2a-go/commit/8c814be7ca6db3cc394db83148f3887f0752d8e9))
+* extension point for snapshot materialization logic ([#449](https://github.com/a2aproject/a2a-go/issues/449)) ([4899045](https://github.com/a2aproject/a2a-go/commit/48990454bc4925a76d85f2ccc542a9576eec0f03))
+* reject requests with unsupported A2A-Version ([#457](https://github.com/a2aproject/a2a-go/issues/457)) ([4226e74](https://github.com/a2aproject/a2a-go/commit/4226e7459929be04a20a30d3d67276d0b2d7876a))
+* use application/a2a+json with Accept-based negotiation ([#465](https://github.com/a2aproject/a2a-go/issues/465)) ([a8caf47](https://github.com/a2aproject/a2a-go/commit/a8caf47aa4878b356d8673c4dcdbc544c2a1cfc3))
+
+
+### Bug Fixes
+
+* **a2a:** serialize task status timestamps in UTC ([#452](https://github.com/a2aproject/a2a-go/issues/452)) ([b657f33](https://github.com/a2aproject/a2a-go/commit/b657f339b2607a75b743ace00121addf7d83117a))
+* decode application/a2a+json error responses in the REST client ([#448](https://github.com/a2aproject/a2a-go/issues/448)) ([3e1aa7f](https://github.com/a2aproject/a2a-go/commit/3e1aa7fa38015722bf03dce19b025aee729177bf))
+* **errordetails:** handle nil Value in Typed.MarshalJSON ([#474](https://github.com/a2aproject/a2a-go/issues/474)) ([73c49ac](https://github.com/a2aproject/a2a-go/commit/73c49aceb46064ca33c464270517e0db8bfd715a))
+* **grpc:** forward next_page_token in push config list responses ([#455](https://github.com/a2aproject/a2a-go/issues/455)) ([7210014](https://github.com/a2aproject/a2a-go/commit/721001455933970829ee631c2f19d6d423d9f43e))
+* **grpc:** keep caller metadata when attaching service params ([#476](https://github.com/a2aproject/a2a-go/issues/476)) ([f01e895](https://github.com/a2aproject/a2a-go/commit/f01e895d9e9795ef49b04b9a5d42b65e4417702e))
+* honor a2a+json Content Type when Accept is */* or missing ([#468](https://github.com/a2aproject/a2a-go/issues/468)) ([2169266](https://github.com/a2aproject/a2a-go/commit/2169266362192bece70de568194c5bc84c1b84b4))
+* reject trailing data after the JSON body ([#453](https://github.com/a2aproject/a2a-go/issues/453)) ([e85760e](https://github.com/a2aproject/a2a-go/commit/e85760e87ce007bfbd02e38374a4ce2fc2037fe3))
+* **rest:** map non-A2A HTTP error responses by status code ([#471](https://github.com/a2aproject/a2a-go/issues/471)) ([4baba5f](https://github.com/a2aproject/a2a-go/commit/4baba5f7edf0362404868fd8ff20ad758dea4006))
+* return plain error when streaming fails before the first event ([#463](https://github.com/a2aproject/a2a-go/issues/463)) ([cf62533](https://github.com/a2aproject/a2a-go/commit/cf625334b8590a1a9dc2e7a85bcafe268f9028ec))
+* **taskstate:** reject unknown task state values on unmarshal and REST status param ([#404](https://github.com/a2aproject/a2a-go/issues/404)) ([534a60f](https://github.com/a2aproject/a2a-go/commit/534a60fc0163a963e3577211cede46290ff3f562))
+
+## [2.6.0](https://github.com/a2aproject/a2a-go/compare/v2.5.0...v2.6.0) (2026-09-25)
+
+
+### Features
+
+* **a2acrypto:** add AgentCard JWS signing and verification (fixes [#141](https://github.com/a2aproject/a2a-go/issues/141)) ([#368](https://github.com/a2aproject/a2a-go/issues/368)) ([b03b830](https://github.com/a2aproject/a2a-go/commit/b03b830d43ea8924d3c8006fc1d7a5715478f550))
+* **itk:** use shared scenarios ([#429](https://github.com/a2aproject/a2a-go/issues/429)) ([e54a070](https://github.com/a2aproject/a2a-go/commit/e54a070b4435c76b4b99795eb7ab319037a3bab4))
+
+
+### Bug Fixes
+
+* a2acrypto canonicalization and refactoring ([#441](https://github.com/a2aproject/a2a-go/issues/441)) ([012cc74](https://github.com/a2aproject/a2a-go/commit/012cc74900780787f7b71540978aae3c87782296))
+* **a2asrv:** return spec error codes for terminal and parked tasks ([#438](https://github.com/a2aproject/a2a-go/issues/438)) ([#442](https://github.com/a2aproject/a2a-go/issues/442)) ([a2f11cb](https://github.com/a2aproject/a2a-go/commit/a2f11cbe7bcf05e15d6443bc92c9775becc629c9))
+* align ListTasks timestamp query parameter ([#425](https://github.com/a2aproject/a2a-go/issues/425)) ([621e01e](https://github.com/a2aproject/a2a-go/commit/621e01ee5537a5eb414f8f1768cb1c8bea4ca75b))
+* **ci:** skip scheduled nightly workflows on forks ([#427](https://github.com/a2aproject/a2a-go/issues/427)) ([03b1f84](https://github.com/a2aproject/a2a-go/commit/03b1f8483cc9cbdd3e95567100d95c5509687eb5)), closes [#426](https://github.com/a2aproject/a2a-go/issues/426)
+* compare recovery timestamps by value ([#428](https://github.com/a2aproject/a2a-go/issues/428)) ([b3d23f5](https://github.com/a2aproject/a2a-go/commit/b3d23f5dc39cd3c2d74ab9d9c040a91e8f8c88a6))
+* support ProtoJSON security requirement scopes in Agent Cards ([#437](https://github.com/a2aproject/a2a-go/issues/437)) ([76da16e](https://github.com/a2aproject/a2a-go/commit/76da16e668de714a18bcc726b2360880bece90a5))
+
+## [2.5.0](https://github.com/a2aproject/a2a-go/compare/v2.4.0...v2.5.0) (2026-08-18)
+
+
+### Features
+
+* agent executor constructor helper ([#418](https://github.com/a2aproject/a2a-go/issues/418)) ([0f45c92](https://github.com/a2aproject/a2a-go/commit/0f45c92388ebdf88de6e5536234e97eb47a6d784))
+* cli supports full agent card urls ([#413](https://github.com/a2aproject/a2a-go/issues/413)) ([d5d1cec](https://github.com/a2aproject/a2a-go/commit/d5d1cec20091eb8ed235128bb50712ee8aa3d42c)), closes [#412](https://github.com/a2aproject/a2a-go/issues/412)
+* **cli:** polling fallback for servers which don't support streaming ([#419](https://github.com/a2aproject/a2a-go/issues/419)) ([b5b9f85](https://github.com/a2aproject/a2a-go/commit/b5b9f8548682141f5ae618cd5961bde77985335a))
+* make agentcard resolver handler file:// ([#424](https://github.com/a2aproject/a2a-go/issues/424)) ([e1c3cc0](https://github.com/a2aproject/a2a-go/commit/e1c3cc0b5ffce301ce31efff7f9e3a553f898603))
+* utilities for working with a2a events  ([#416](https://github.com/a2aproject/a2a-go/issues/416)) ([1b8cac7](https://github.com/a2aproject/a2a-go/commit/1b8cac7c391681c8049788f6bb683194e8d2c914))
+
+
+### Bug Fixes
+
+* added missing converters and made sure a2agrpc uses pbconv ([#421](https://github.com/a2aproject/a2a-go/issues/421)) ([579cff8](https://github.com/a2aproject/a2a-go/commit/579cff89f7bab361010249d0df3dea6c6e51f8e7))
+* cli not parsing compat agent cards ([#415](https://github.com/a2aproject/a2a-go/issues/415)) ([bebdcee](https://github.com/a2aproject/a2a-go/commit/bebdceec0c744c462ae32182f3028518002a642c))
+* handle negative historyLength as empty history request ([#393](https://github.com/a2aproject/a2a-go/issues/393)) ([f4d5882](https://github.com/a2aproject/a2a-go/commit/f4d588216b0c9520e94d571bab725c38ce23064c))
+* **jsonrpc:** lenient decode of error.data to preserve server errors ([#386](https://github.com/a2aproject/a2a-go/issues/386)) ([497cbac](https://github.com/a2aproject/a2a-go/commit/497cbac9ce5e82d73614449687e6852e48696095))
+* remove empty contextId check in proto converter ([#392](https://github.com/a2aproject/a2a-go/issues/392)) ([758c7a1](https://github.com/a2aproject/a2a-go/commit/758c7a13a657441c003d1b05a665c2c84b5ca7ac))
+* **sse:** buffer REST SSE panicChan to avoid goroutine leak on client disconnect ([#396](https://github.com/a2aproject/a2a-go/issues/396)) ([ff6035b](https://github.com/a2aproject/a2a-go/commit/ff6035bd21e44bb3ee1bfa547885b8c08327fa01))
+* **taskexec:** close event-queue reader on cancel early exits ([#409](https://github.com/a2aproject/a2a-go/issues/409)) ([14e41a9](https://github.com/a2aproject/a2a-go/commit/14e41a978b31e134ffa1170d8657f9dd98529aa3))
+
 ## [2.4.0](https://github.com/a2aproject/a2a-go/compare/v2.3.1...v2.4.0) (2026-07-28)
 
 

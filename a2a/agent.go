@@ -20,10 +20,10 @@ type AgentCapabilities struct {
 	Extensions []AgentExtension `json:"extensions,omitempty" yaml:"extensions,omitempty" mapstructure:"extensions,omitempty"`
 
 	// PushNotifications indicates if the agent supports sending push notifications for asynchronous task updates.
-	PushNotifications bool `json:"pushNotifications,omitempty" yaml:"pushNotifications,omitempty" mapstructure:"pushNotifications,omitempty"`
+	PushNotifications bool `json:"pushNotifications" yaml:"pushNotifications" mapstructure:"pushNotifications"`
 
 	// Streaming indicates if the agent supports streaming responses.
-	Streaming bool `json:"streaming,omitempty" yaml:"streaming,omitempty" mapstructure:"streaming,omitempty"`
+	Streaming bool `json:"streaming" yaml:"streaming" mapstructure:"streaming"`
 
 	// ExtendedAgentCard indicates if the agent supports providing an extended agent card when authenticated.
 	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty" yaml:"extendedAgentCard,omitempty" mapstructure:"extendedAgentCard,omitempty"`

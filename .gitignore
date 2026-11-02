@@ -18,6 +18,9 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# GoReleaser build output
+dist/
+
 # Go workspace file
 go.work
 
@@ -64,3 +67,8 @@ itk/instruction.proto
 itk/pb
 itk/a2a-itk
 itk/logs
+
+# ACTS conformance run output
+itk/acts-report-*.json
+itk/acts_results_*.json
+itk/acts_go.json

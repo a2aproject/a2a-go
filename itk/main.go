@@ -29,6 +29,7 @@ import (
 	a2agrpc "github.com/a2aproject/a2a-go/v2/a2agrpc/v1"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -39,6 +40,10 @@ import (
 type V10AgentExecutor struct{}
 
 func (e *V10AgentExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	if behavior := actsBehaviorFor(execCtx); behavior != "" {
+		return actsRun(ctx, execCtx, behavior)
+	}
+
 	return func(yield func(a2a.Event, error) bool) {
 		log.Info(ctx, "Executing task", "taskId", string(execCtx.TaskID))
 
@@ -264,11 +269,13 @@ func (e *V10AgentExecutor) handleCallAgentWithResubscribe(ctx context.Context, c
 
 	events := client.SendStreamingMessage(initCtx, &a2a.SendMessageRequest{Message: wrappedMsg})
 	var taskID string
+	var responses []string
 
 	for ev, err := range events {
 		if err != nil {
 			return nil, fmt.Errorf("initial call failed: %w", err)
 		}
+		responses = append(responses, extractResponses(ctx, ev)...)
 		switch r := ev.(type) {
 		case *a2a.Task:
 			taskID = string(r.ID)
@@ -280,17 +287,34 @@ func (e *V10AgentExecutor) handleCallAgentWithResubscribe(ctx context.Context, c
 		}
 	}
 
-	cancelInit()
-	log.Info(ctx, "Disconnected from task, now re-subscribing", "taskId", taskID)
+	log.Info(ctx, "Attempting re-subscribe", "taskId", taskID)
 
 	resubEvents := client.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)})
 
 	var taskObj *a2a.Task
-	var responses []string
+	disconnected := false
 outerLoop:
 	for ev, err := range resubEvents {
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "task not found") {
+				// Some SDK combinations can complete before re-subscribe attaches.
+				// Fall back to draining the original stream so verification tokens
+				// are still collected.
+				log.Info(ctx, "Re-subscribe raced with completion; draining original stream", "taskId", taskID, "error", err)
+				for origEv, origErr := range events {
+					if origErr != nil {
+						return nil, fmt.Errorf("fallback original stream failed: %w", origErr)
+					}
+					responses = append(responses, extractResponses(ctx, origEv)...)
+				}
+				return responses, nil
+			}
 			return nil, fmt.Errorf("resubscribe failed: %w", err)
+		}
+		if !disconnected {
+			cancelInit()
+			disconnected = true
+			log.Info(ctx, "Disconnected from task, now re-subscribing", "taskId", taskID)
 		}
 		if r, ok := ev.(*a2a.Task); ok {
 			taskObj = r
@@ -454,12 +478,23 @@ func run() error {
 	jsonRPCV0Addr := fmt.Sprintf("http://127.0.0.1:%d", *httpPort)
 
 	agentCard := &a2a.AgentCard{
-		Name:               "ITK v10 Agent",
-		Description:        "Multi-transport Go agent with A2A v0.3 compatibility.",
-		Version:            "1.0.0-alpha",
-		Capabilities:       a2a.AgentCapabilities{Streaming: true},
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		Name:        "ITK v10 Agent",
+		Description: "Multi-transport Go agent with A2A v0.3 compatibility.",
+		Version:     "1.0.0-alpha",
+		// Authentication is not a capability — AgentCapabilities has no member
+		// for it — so it is declared at the top level, where the ACTS
+		// authentication precondition reads both of these.
+		Capabilities:         actsCapabilities(),
+		SecuritySchemes:      actsSecuritySchemes(),
+		SecurityRequirements: actsSecurityRequirements(),
+		Skills: []a2a.AgentSkill{{
+			ID:          "itk",
+			Name:        "ITK harness",
+			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
+			Tags:        []string{"itk", "acts"},
+		}},
+		DefaultInputModes:  []string{"text/plain", "application/json", "application/x-protobuf"},
+		DefaultOutputModes: []string{"text/plain"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
 				URL:             fmt.Sprintf("http://127.0.0.1:%d/jsonrpc", *httpPort),
@@ -494,21 +529,48 @@ func run() error {
 		},
 	}
 
+	// The harness authenticates nobody, and the in-memory store scopes tasks
+	// by user — so without a name of its own every ListTasks would come back
+	// unauthenticated. One fixed identity gives the store something to scope
+	// by without pretending to implement an auth scheme.
+	taskStore := taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
+		Authenticator: func(context.Context) (string, error) { return "itk", nil },
+	})
+
 	pushStore := push.NewInMemoryStore()
 	// The ITK harness delivers to loopback notification servers, so it opts out
 	// of the default SSRF guard that rejects loopback and private targets.
 	pushSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
 
+	enforcer, err := a2asrv.NewAgentCardEnforcer(agentCard)
+	if err != nil {
+		return fmt.Errorf("failed to create agent card enforcer: %w", err)
+	}
 	executor := &V10AgentExecutor{}
 	requestHandler := a2asrv.NewHandler(
 		executor,
 		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
 		a2asrv.WithPushNotifications(pushStore, pushSender),
+		a2asrv.WithTaskStore(taskStore),
+		// Makes the advertised card enforcing rather than advisory, so the
+		// reduced pass actually refuses what its card no longer offers.
+		a2asrv.WithCallInterceptors(enforcer),
+		// The card advertises extendedAgentCard, and a capability is a promise:
+		// without a producer every binding answers the ACTS extended-card tests
+		// with ExtendedCardNotConfigured.
+		a2asrv.WithExtendedAgentCard(agentCard),
 	)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", a2av0.NewJSONRPCHandler(requestHandler))
-	mux.Handle("/jsonrpc", a2asrv.NewJSONRPCHandler(requestHandler))
+
+	// Both spellings, because "/jsonrpc" is an exact-match pattern: a client
+	// that appends a trailing slash to the advertised URL would otherwise fall
+	// through to the v0.3 catch-all at "/", where every v1.0 method reads as
+	// method-not-found and tasks come back in the v0.3 shape.
+	jsonRPCHandler := a2asrv.NewJSONRPCHandler(requestHandler)
+	mux.Handle("/jsonrpc", jsonRPCHandler)
+	mux.Handle("/jsonrpc/", jsonRPCHandler)
 	mux.Handle("/rest/", http.StripPrefix("/rest", a2asrv.NewRESTHandler(requestHandler)))
 	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
@@ -517,7 +579,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", *httpPort),
-		Handler:           loggingMiddleware(logger, mux),
+		Handler:           loggingMiddleware(logger, actsCredentialMiddleware(mux)),
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
@@ -538,8 +600,8 @@ func run() error {
 	})
 
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryLoggingInterceptor(logger)),
-		grpc.StreamInterceptor(streamLoggingInterceptor(logger)),
+		grpc.ChainUnaryInterceptor(unaryLoggingInterceptor(logger), actsUnaryAuthInterceptor()),
+		grpc.ChainStreamInterceptor(streamLoggingInterceptor(logger), actsStreamAuthInterceptor()),
 	)
 	a2agrpcv0.NewHandler(requestHandler).RegisterWith(grpcServer)
 	a2agrpc.NewHandler(requestHandler).RegisterWith(grpcServer)

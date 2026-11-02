@@ -19,7 +19,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -92,7 +91,7 @@ func toProtoSendMessageConfig(config *a2a.SendMessageConfig) (*a2apb.SendMessage
 		ReturnImmediately:          config.ReturnImmediately,
 	}
 	if config.HistoryLength != nil {
-		pConf.HistoryLength = proto.Int32(int32(*config.HistoryLength))
+		pConf.HistoryLength = new(int32(*config.HistoryLength))
 	}
 	return pConf, nil
 }
@@ -110,7 +109,7 @@ func ToProtoGetTaskRequest(req *a2a.GetTaskRequest) (*a2apb.GetTaskRequest, erro
 	}
 
 	if req.HistoryLength != nil {
-		result.HistoryLength = proto.Int32(int32(*req.HistoryLength))
+		result.HistoryLength = new(int32(*req.HistoryLength))
 	}
 
 	return result, nil
@@ -154,7 +153,7 @@ func ToProtoGetTaskPushConfigRequest(req *a2a.GetTaskPushConfigRequest) (*a2apb.
 	return &a2apb.GetTaskPushNotificationConfigRequest{
 		Tenant: req.Tenant,
 		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Id:     req.ID,
 	}, nil
 }
 
@@ -167,7 +166,7 @@ func ToProtoDeleteTaskPushConfigRequest(req *a2a.DeleteTaskPushConfigRequest) (*
 	return &a2apb.DeleteTaskPushNotificationConfigRequest{
 		Tenant: req.Tenant,
 		TaskId: string(req.TaskID),
-		Id:     string(req.ID),
+		Id:     req.ID,
 	}, nil
 }
 
@@ -481,10 +480,10 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 		PageSize:             &pageSize,
 		PageToken:            request.PageToken,
 		StatusTimestampAfter: lastUpdatedAfter,
-		IncludeArtifacts:     proto.Bool(request.IncludeArtifacts),
+		IncludeArtifacts:     new(request.IncludeArtifacts),
 	}
 	if request.HistoryLength != nil {
-		pbReq.HistoryLength = proto.Int32(int32(*request.HistoryLength))
+		pbReq.HistoryLength = new(int32(*request.HistoryLength))
 	}
 	return pbReq, nil
 }
@@ -535,7 +534,6 @@ func ToProtoTaskPushConfig(config *a2a.PushConfig) (*a2apb.TaskPushNotificationC
 	}
 
 	return pConf, nil
-
 }
 
 // ToProtoListTaskPushConfigResponse converts a [a2a.ListTaskPushConfigResponse] to a [a2apb.ListTaskPushNotificationConfigResponse].
@@ -618,10 +616,10 @@ func toProtoCapabilities(capabilities a2a.AgentCapabilities) (*a2apb.AgentCapabi
 	}
 
 	result := &a2apb.AgentCapabilities{
-		Streaming:         proto.Bool(capabilities.Streaming),
-		PushNotifications: proto.Bool(capabilities.PushNotifications),
+		Streaming:         new(capabilities.Streaming),
+		PushNotifications: new(capabilities.PushNotifications),
 		Extensions:        extensions,
-		ExtendedAgentCard: proto.Bool(capabilities.ExtendedAgentCard),
+		ExtendedAgentCard: new(capabilities.ExtendedAgentCard),
 	}
 	return result, nil
 }
@@ -732,7 +730,7 @@ func toProtoSecurityScheme(scheme a2a.SecurityScheme) (*a2apb.SecurityScheme, er
 		return &a2apb.SecurityScheme{
 			Scheme: &a2apb.SecurityScheme_HttpAuthSecurityScheme{
 				HttpAuthSecurityScheme: &a2apb.HTTPAuthSecurityScheme{
-					Scheme:       string(s.Scheme),
+					Scheme:       s.Scheme,
 					Description:  s.Description,
 					BearerFormat: s.BearerFormat,
 				},
