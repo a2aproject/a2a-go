@@ -64,11 +64,15 @@ type StoredTask struct {
 
 // UpdateRequest represents a request to update a task.
 type UpdateRequest struct {
-	// Task represents the desired state of the task in the store.
+	// Task represents the desired state of the task in the store. During agent execution it is the task
+	// produced by [UpdateMaterializer], which might not be the full task state if a partial materializer was provided.
+	// The store MUST NOT modify the task, because it can share data with the event and with the previous task state.
 	Task *a2a.Task
 	// Event is the event that triggered the update. It can be a user message which is added to task history.
+	// The store MUST NOT modify the event, because it is delivered to subscribers concurrently.
 	Event a2a.Event
-	// PrevTask is the previous state of the task in the store. It is passed for detecting concurrent udpates.
+	// PrevTask is the previous state of the task in the store. It is passed for implementations which
+	// need to understand how exactly the task was changed by event.
 	PrevTask *a2a.Task
 	// PrevVersion is the version of the task before the update. It is passed for detecting concurrent udpates.
 	// If the provided version does not match the latest task version the update request MUST be rejected with [ErrConcurrentModification].
@@ -81,9 +85,11 @@ type Store interface {
 	Create(ctx context.Context, task *a2a.Task) (TaskVersion, error)
 
 	// Update updates the stored task. It should return [a2a.ErrTaskNotFound] if a task with the provided ID doesn't exist.
+	// When a new user message gets appended to the history of an existing task, [UpdateRequest.Event] is the message.
 	Update(ctx context.Context, update *UpdateRequest) (TaskVersion, error)
 
 	// Get retrieves a task by ID. If a Task doesn't exist the method should return [a2a.ErrTaskNotFound].
+	// The returned task must be the full task state matching the returned version.
 	Get(ctx context.Context, taskID a2a.TaskID) (*StoredTask, error)
 
 	// List retrieves a list of tasks based on the provided request.

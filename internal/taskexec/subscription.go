@@ -21,9 +21,9 @@ import (
 	"iter"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v2/internal/taskupdate"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -104,7 +104,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			if !yield(event, nil) {
 				return
 			}
-			if taskupdate.IsFinal(event) {
+			if a2aevent.IsFinal(event) {
 				return
 			}
 		}
@@ -183,7 +183,7 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 			if !yield(msg.Event, nil) {
 				return
 			}
-			if taskupdate.IsFinal(msg.Event) {
+			if a2aevent.IsFinal(msg.Event) {
 				return
 			}
 		}

@@ -24,7 +24,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -670,7 +669,7 @@ func FromV1SendMessageRequest(req *a2a.SendMessageRequest) *a2alegacy.MessageSen
 			AcceptedOutputModes: req.Config.AcceptedOutputModes,
 			HistoryLength:       req.Config.HistoryLength,
 		}
-		res.Config.Blocking = utils.Ptr(!req.Config.ReturnImmediately)
+		res.Config.Blocking = new(!req.Config.ReturnImmediately)
 		if req.Config.PushConfig != nil {
 			legacyTaskPushConfig := FromV1PushConfig(req.Config.PushConfig)
 			res.Config.PushConfig = &legacyTaskPushConfig.Config
@@ -925,7 +924,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
 		}
 		if iface.ProtocolVersion == "" {
-			iface.ProtocolVersion = a2a.ProtocolVersion(Version)
+			iface.ProtocolVersion = Version
 		}
 		ifaces = append(ifaces, iface)
 	}
@@ -942,7 +941,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			ifaces = append(ifaces, &a2a.AgentInterface{
 				URL:             ai.URL,
 				ProtocolBinding: a2a.TransportProtocol(ai.Transport),
-				ProtocolVersion: a2a.ProtocolVersion(Version),
+				ProtocolVersion: Version,
 			})
 		}
 	}

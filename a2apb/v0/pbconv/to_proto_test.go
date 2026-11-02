@@ -785,8 +785,8 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 		Name:        "Test Agent",
 		Description: "An agent for testing.",
 		SupportedInterfaces: []*a2a.AgentInterface{
-			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)},
-			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2a.ProtocolVersion(a2av0.Version)},
+			{ProtocolBinding: a2a.TransportProtocolGRPC, URL: "https://example.com/agent", ProtocolVersion: a2av0.Version},
+			{ProtocolBinding: a2a.TransportProtocolJSONRPC, URL: "https://example.com/agent/jsonrpc", ProtocolVersion: a2av0.Version},
 		},
 		Provider: &a2a.AgentProvider{
 			Org: "Test Org",

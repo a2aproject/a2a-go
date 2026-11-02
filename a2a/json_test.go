@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -120,6 +121,135 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
+func TestSecurityRequirementsJSONMarshal(t *testing.T) {
+	tests := []struct {
+		name string
+		in   SecurityRequirementsOptions
+		want string
+	}{
+		{
+			name: "populated scopes",
+			in: SecurityRequirementsOptions{
+				{"oauth2": {"read"}},
+			},
+			want: `[{"schemes":{"oauth2":{"list":["read"]}}}]`,
+		},
+		{
+			name: "empty scopes",
+			in: SecurityRequirementsOptions{
+				{"bearer": {}},
+			},
+			want: `[{"schemes":{"bearer":{}}}]`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mustMarshal(t, tc.in); got != tc.want {
+				t.Fatalf("Marshal() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONUnmarshal(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want SecurityRequirementsOptions
+	}{
+		{
+			name: "canonical populated scopes",
+			json: `[{"schemes":{"oauth2":{"list":["openid","profile"]}}}]`,
+			want: SecurityRequirementsOptions{
+				{"oauth2": {"openid", "profile"}},
+			},
+		},
+		{
+			name: "canonical empty scopes",
+			json: `[{"schemes":{"bearer":{}}}]`,
+			want: SecurityRequirementsOptions{
+				{"bearer": {}},
+			},
+		},
+		{
+			name: "legacy array scopes",
+			json: `[{"schemes":{"oauth2":["openid","profile"]}}]`,
+			want: SecurityRequirementsOptions{
+				{"oauth2": {"openid", "profile"}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "empty scopes",
+			json: `[{"schemes":{"bearer":{}}}]`,
+		},
+		{
+			name: "populated scopes",
+			json: `[{"schemes":{"oauth2":{"list":["openid","profile"]}}}]`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if remarshalled := mustMarshal(t, got); remarshalled != tc.json {
+				t.Fatalf("RoundTrip() = %v, want %v", remarshalled, tc.json)
+			}
+		})
+	}
+}
+
+func TestSecurityRequirementsJSONUnmarshalError(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		wantError string
+	}{
+		{
+			name:      "string scopes",
+			json:      `[{"schemes":{"oauth2":"openid"}}]`,
+			wantError: `cannot unmarshal`,
+		},
+		{
+			name:      "number scopes",
+			json:      `[{"schemes":{"oauth2":42}}]`,
+			wantError: `cannot unmarshal`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got SecurityRequirementsOptions
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if err == nil {
+				t.Fatalf("Unmarshal() error = %v, want %v", err, tc.wantError)
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("Unmarshal() error = %v, want %v", err, tc.wantError)
+			}
+		})
+	}
+}
+
 func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -152,7 +282,7 @@ func TestSecuritySchemeJSONUnmarshalUnknownType(t *testing.T) {
 }
 
 func TestAgentCardParsing(t *testing.T) {
-	cardJSON := `
+	cardJSONTemplate := `
 {
   "name": "GeoSpatial Route Planner Agent",
   "description": "Provides advanced route planning, traffic analysis, and custom map generation services. This agent can calculate optimal routes, estimate travel times considering real-time traffic, and create personalized maps with points of interest.",
@@ -180,7 +310,7 @@ func TestAgentCardParsing(t *testing.T) {
       }
     }
   },
-  "securityRequirements": [{ "schemes": { "google": ["openid", "profile", "email"] } }],
+  "securityRequirements": [{ "schemes": { "google": %s } }],
   "defaultInputModes": ["application/json", "text/plain"],
   "defaultOutputModes": ["application/json", "image/png"],
   "skills": [
@@ -199,7 +329,7 @@ func TestAgentCardParsing(t *testing.T) {
         "application/vnd.geo+json",
         "text/html"
       ],
-      "securityRequirements": [{ "schemes": { "google": ["https://www.googleapis.com/auth/maps"] } }]
+      "securityRequirements": [{ "schemes": { "google": %s } }]
     },
     {
       "id": "custom-map-generator",
@@ -298,13 +428,35 @@ func TestAgentCardParsing(t *testing.T) {
 		},
 	}
 
-	var got AgentCard
-	if err := json.Unmarshal([]byte(cardJSON), &got); err != nil {
-		t.Fatalf("AgentCard parsing failed: %v", err)
+	tests := []struct {
+		name        string
+		cardScopes  string
+		skillScopes string
+	}{
+		{
+			name:        "protojson scopes",
+			cardScopes:  `{"list": ["openid", "profile", "email"]}`,
+			skillScopes: `{"list": ["https://www.googleapis.com/auth/maps"]}`,
+		},
+		{
+			name:        "legacy array scopes",
+			cardScopes:  `["openid", "profile", "email"]`,
+			skillScopes: `["https://www.googleapis.com/auth/maps"]`,
+		},
 	}
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cardJSON := fmt.Sprintf(cardJSONTemplate, tc.cardScopes, tc.skillScopes)
+			var got AgentCard
+			if err := json.Unmarshal([]byte(cardJSON), &got); err != nil {
+				t.Fatalf("AgentCard parsing failed: %v", err)
+			}
+
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("AgentCard codec diff(-want +got):\n%v", diff)
+			}
+		})
 	}
 }
 
@@ -365,5 +517,158 @@ func TestMessageRole_Codec(t *testing.T) {
 		if got != role {
 			t.Errorf("got %s, want %s", got, role)
 		}
+	}
+}
+
+func TestTaskStateUnmarshalJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		json string
+		want TaskState
+	}{
+		{name: "unspecified", json: `"TASK_STATE_UNSPECIFIED"`, want: TaskStateUnspecified},
+		{name: "auth required", json: `"TASK_STATE_AUTH_REQUIRED"`, want: TaskStateAuthRequired},
+		{name: "canceled", json: `"TASK_STATE_CANCELED"`, want: TaskStateCanceled},
+		{name: "completed", json: `"TASK_STATE_COMPLETED"`, want: TaskStateCompleted},
+		{name: "failed", json: `"TASK_STATE_FAILED"`, want: TaskStateFailed},
+		{name: "input required", json: `"TASK_STATE_INPUT_REQUIRED"`, want: TaskStateInputRequired},
+		{name: "rejected", json: `"TASK_STATE_REJECTED"`, want: TaskStateRejected},
+		{name: "submitted", json: `"TASK_STATE_SUBMITTED"`, want: TaskStateSubmitted},
+		{name: "working", json: `"TASK_STATE_WORKING"`, want: TaskStateWorking},
+
+		{name: "empty string", json: `""`, want: TaskStateUnspecified},
+		{name: "unknown token", json: `"BOGUS_STATE"`, want: TaskStateUnspecified},
+		{name: "lowercase known token", json: `"task_state_completed"`, want: TaskStateUnspecified},
+		{name: "truncated token", json: `"TASK_STATE_"`, want: TaskStateUnspecified},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got TaskState
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("UnmarshalJSON(%s) error = %v, want nil", tc.json, err)
+			}
+			if got != tc.want {
+				t.Fatalf("UnmarshalJSON(%s) = %q, want %q", tc.json, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONMarshal(t *testing.T) {
+	t.Parallel()
+
+	utcPlus2 := time.FixedZone("UTC+2", 2*60*60)
+	wholeSecond := time.Date(2026, 10, 1, 10, 30, 0, 0, utcPlus2)
+	millis := time.Date(2026, 10, 1, 10, 30, 0, 142000000, utcPlus2)
+	nanos := time.Date(2026, 10, 1, 6, 10, 55, 114002345, time.UTC)
+
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{
+			name: "whole second",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}`,
+		},
+		{
+			name: "milliseconds",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &millis},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.142Z"}`,
+		},
+		{
+			name: "nanoseconds truncated",
+			in:   &TaskStatus{State: TaskStateWorking, Timestamp: &nanos},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "nil timestamp omitted",
+			in:   TaskStatus{State: TaskStateWorking},
+			want: `{"state":"TASK_STATE_WORKING"}`,
+		},
+		{
+			name: "status inside task",
+			in:   &Task{ID: "task-1", ContextID: "ctx-1", Status: TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond}},
+			want: `{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}}`,
+		},
+		{
+			name: "list tasks request",
+			in:   &ListTasksRequest{ContextID: "ctx-1", StatusTimestampAfter: &nanos},
+			want: `{"contextId":"ctx-1","statusTimestampAfter":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "list tasks request nil timestamp omitted",
+			in:   ListTasksRequest{ContextID: "ctx-1"},
+			want: `{"contextId":"ctx-1"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.in); got != tc.want {
+				t.Fatalf("Marshal() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	noFraction := time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC)
+	threeDigits := noFraction.Add(123 * time.Millisecond)
+	sixDigits := noFraction.Add(123456 * time.Microsecond)
+	nineDigits := noFraction.Add(123456789 * time.Nanosecond)
+
+	tests := []struct {
+		name string
+		json string
+		want TaskStatus
+	}{
+		{
+			name: "no fraction",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &noFraction},
+		},
+		{
+			name: "3 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &threeDigits},
+		},
+		{
+			name: "6 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &sixDigits},
+		},
+		{
+			name: "9 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456789Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &nineDigits},
+		},
+		{
+			name: "no timestamp",
+			json: `{"state":"TASK_STATE_COMPLETED"}`,
+			want: TaskStatus{State: TaskStateCompleted},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got TaskStatus
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

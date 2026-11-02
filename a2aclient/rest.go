@@ -24,11 +24,11 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -112,9 +112,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 	if req.streaming {
-		httpReq.Header.Set("Accept", sse.ContentEventStream)
+		httpReq.Header.Set("Accept", "text/event-stream, application/json")
 	} else {
-		httpReq.Header.Set("Accept", "application/json")
+		httpReq.Header.Set("Accept", "application/a2a+json, application/json")
 	}
 
 	for k, vals := range req.params {
@@ -154,7 +154,7 @@ func (t *RESTTransport) doRequest(ctx context.Context, req *restRequest, result 
 	}()
 
 	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		if err := utils.DecodeJSON(resp.Body, result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
 	}
@@ -200,7 +200,7 @@ func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *
 	path := rest.MakeGetTaskPath(string(req.ID))
 	q := url.Values{}
 	if req.HistoryLength != nil {
-		q.Add("historyLength", strconv.Itoa(*req.HistoryLength))
+		q.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
@@ -225,25 +225,25 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 
 	query := url.Values{}
 	if req.ContextID != "" {
-		query.Add("contextId", string(req.ContextID))
+		query.Add(rest.QueryContextID, req.ContextID)
 	}
 	if req.Status != "" {
-		query.Add("status", string(req.Status))
+		query.Add(rest.QueryStatus, string(req.Status))
 	}
 	if req.PageSize != 0 {
-		query.Add("pageSize", strconv.Itoa(req.PageSize))
+		query.Add(rest.QueryPageSize, strconv.Itoa(req.PageSize))
 	}
 	if req.PageToken != "" {
-		query.Add("pageToken", string(req.PageToken))
+		query.Add(rest.QueryPageToken, req.PageToken)
 	}
 	if req.HistoryLength != nil {
-		query.Add("historyLength", strconv.Itoa(*req.HistoryLength))
+		query.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
 	if req.StatusTimestampAfter != nil {
-		query.Add("lastUpdatedAfter", req.StatusTimestampAfter.Format(time.RFC3339))
+		query.Add(rest.QueryStatusTimestampAfter, rest.FormatTimestamp(*req.StatusTimestampAfter))
 	}
 	if req.IncludeArtifacts {
-		query.Add("includeArtifacts", "true")
+		query.Add(rest.QueryIncludeArtifacts, "true")
 	}
 
 	if encoded := query.Encode(); encoded != "" {
@@ -339,7 +339,7 @@ func (t *RESTTransport) SendStreamingMessage(ctx context.Context, params Service
 
 // GetTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
-	path := rest.MakeGetPushConfigPath(string(req.TaskID), string(req.ID))
+	path := rest.MakeGetPushConfigPath(string(req.TaskID), req.ID)
 	var config a2a.PushConfig
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -390,7 +390,7 @@ func (t *RESTTransport) CreateTaskPushConfig(ctx context.Context, params Service
 
 // DeleteTaskPushConfig implements [a2a.Transport].
 func (t *RESTTransport) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
-	path := rest.MakeDeletePushConfigPath(string(req.TaskID), string(req.ID))
+	path := rest.MakeDeletePushConfigPath(string(req.TaskID), req.ID)
 	return t.doRequest(ctx, &restRequest{
 		method:  "DELETE",
 		params:  params,

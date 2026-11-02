@@ -52,15 +52,15 @@ const (
 // TODO(yarolegovich): Convert to transport-agnostic error format so Client can use errors.Is(err, a2a.ErrMethodNotFound).
 // This needs to be implemented across all transports (currently not in grpc either).
 type Error struct {
-	Code    int                   `json:"code"`
-	Message string                `json:"message"`
-	Data    []*errordetails.Typed `json:"data,omitempty"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // Error implements the error interface for jsonrpcError.
 func (e *Error) Error() string {
 	if len(e.Data) > 0 {
-		return fmt.Sprintf("jsonrpc error %d: %s (data: %v)", e.Code, e.Message, e.Data)
+		return fmt.Sprintf("jsonrpc error %d: %s (data: %s)", e.Code, e.Message, string(e.Data))
 	}
 	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
 }
@@ -100,11 +100,28 @@ func FromJSONRPCError(e *Error) error {
 		msg = err.Error()
 	}
 
+	result := a2a.NewError(err, msg)
+
 	var typedDetails []*errordetails.Typed
+	if len(e.Data) > 0 {
+		var parsedDetails []*errordetails.Typed
+		if json.Unmarshal(e.Data, &parsedDetails) == nil {
+			typedDetails = parsedDetails
+		} else { // parse error data leniently for A2A v0.3 compatibility
+			var singleDetail map[string]any
+			var d errordetails.Typed
+			if json.Unmarshal(e.Data, &d) == nil {
+				typedDetails = []*errordetails.Typed{&d}
+			} else if json.Unmarshal(e.Data, &singleDetail) == nil {
+				typedDetails = []*errordetails.Typed{errordetails.NewFromStruct(singleDetail)}
+			}
+		}
+	}
+
+	var nonErrorInfoDetails []*errordetails.Typed
 	firstStruct := true
 
-	result := a2a.NewError(err, msg)
-	for _, d := range e.Data {
+	for _, d := range typedDetails {
 		if d.TypeURL == errordetails.ErrorInfoType {
 			if rawMeta, ok := d.Value["metadata"]; ok {
 				m, ok := utils.ToStringMap(rawMeta)
@@ -117,10 +134,10 @@ func FromJSONRPCError(e *Error) error {
 				result = result.WithDetails(d.Value)
 				firstStruct = false
 			}
-			typedDetails = append(typedDetails, d)
+			nonErrorInfoDetails = append(nonErrorInfoDetails, d)
 		}
 	}
-	result.TypedDetails = append(result.TypedDetails, typedDetails...)
+	result.TypedDetails = append(result.TypedDetails, nonErrorInfoDetails...)
 	return result
 }
 
@@ -172,10 +189,15 @@ func ToJSONRPCError(err error) *Error {
 	errorInfo := errordetails.NewErrorInfo(reason, a2a.ProtocolDomain, metadata)
 	data = append(data, errorInfo)
 
+	var rawData json.RawMessage
+	if len(data) > 0 {
+		rawData, _ = json.Marshal(data)
+	}
+
 	return &Error{
 		Code:    code,
 		Message: err.Error(),
-		Data:    data,
+		Data:    rawData,
 	}
 }
 

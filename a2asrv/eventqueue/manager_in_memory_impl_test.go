@@ -73,7 +73,7 @@ func TestInMemoryManager_ConcurrentCreation(t *testing.T) {
 	numGoroutines, numTaskIDs := 100, 10
 
 	created := make(chan taskQueue, numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

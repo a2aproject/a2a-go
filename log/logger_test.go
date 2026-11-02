@@ -74,5 +74,4 @@ func TestLogAddSource(t *testing.T) {
 			}
 		})
 	}
-
 }

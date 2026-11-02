@@ -319,12 +319,22 @@ func (ts *TaskState) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	if s == "TASK_STATE_UNSPECIFIED" {
-		*ts = TaskStateUnspecified
-		return nil
-	}
-	*ts = TaskState(s)
+	*ts = TaskStateFromString(s)
 	return nil
+}
+
+// TaskStateFromString maps a wire value to its TaskState. Any value outside the
+// known set, including the empty string, maps to TaskStateUnspecified, which the
+// spec defines as the unknown or indeterminate state.
+func TaskStateFromString(s string) TaskState {
+	switch s {
+	case string(TaskStateSubmitted), string(TaskStateWorking), string(TaskStateCompleted),
+		string(TaskStateFailed), string(TaskStateCanceled), string(TaskStateInputRequired),
+		string(TaskStateRejected), string(TaskStateAuthRequired), string(TaskStateUnspecified):
+		return TaskState(s)
+	default:
+		return TaskStateUnspecified
+	}
 }
 
 // Terminal returns true for states in which a Task becomes immutable, i.e. no further
@@ -390,6 +400,26 @@ type TaskStatus struct {
 
 	// Timestamp is a datetime indicating when this status was recorded.
 	Timestamp *time.Time `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
+}
+
+// MarshalJSON implements json.Marshaler. The timestamp is written in the format
+// the spec requires, see [jsonTimestamp].
+func (s TaskStatus) MarshalJSON() ([]byte, error) {
+	type wire TaskStatus
+	return json.Marshal(struct {
+		wire
+		Timestamp *jsonTimestamp `json:"timestamp,omitempty"`
+	}{wire: wire(s), Timestamp: (*jsonTimestamp)(s.Timestamp)})
+}
+
+const timestampLayout = "2006-01-02T15:04:05.000Z"
+
+// jsonTimestamp writes a time as ISO 8601 formatted strings in UTC timezone with Millisecond precision.
+type jsonTimestamp time.Time
+
+// MarshalJSON implements json.Marshaler.
+func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(t).UTC().Format(timestampLayout))
 }
 
 // Meta implements MetadataCarrier.
@@ -533,7 +563,9 @@ type TaskStatusUpdateEvent struct {
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
 func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *Message) *TaskStatusUpdateEvent {
-	now := time.Now()
+	// Millisecond precision is what the spec writes on the wire, so the event
+	// reads back equal to the one created here.
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskStatusUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -608,7 +640,7 @@ func NewRawPart(raw []byte) *Part {
 
 // NewFileURLPart creates a Part that contains a URL.
 func NewFileURLPart(url URL, mimeType string) *Part {
-	return &Part{Content: URL(url), MediaType: mimeType}
+	return &Part{Content: url, MediaType: mimeType}
 }
 
 // NewDataPart creates a Part that contains structured data.
@@ -862,6 +894,16 @@ type ListTasksRequest struct {
 
 	// IncludeArtifacts is whether to include artifacts in the response.
 	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
+}
+
+// MarshalJSON implements json.Marshaler. StatusTimestampAfter is written in the
+// format the spec requires, see [jsonTimestamp].
+func (r ListTasksRequest) MarshalJSON() ([]byte, error) {
+	type wire ListTasksRequest
+	return json.Marshal(struct {
+		wire
+		StatusTimestampAfter *jsonTimestamp `json:"statusTimestampAfter,omitempty"`
+	}{wire: wire(r), StatusTimestampAfter: (*jsonTimestamp)(r.StatusTimestampAfter)})
 }
 
 // ListTasksResponse defines the response for a request to tasks/list.
