@@ -226,6 +226,39 @@ func TestSSE_NoSpaceCompatibility(t *testing.T) {
 	}
 }
 
+func TestParseDataStreamBOM(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, stream string
+		want         []string
+	}{
+		{"leading", "\ufeffdata: first\n\ndata: second\n\n", []string{"first", "second"}},
+		{"comment", "\ufeff: comment\n\ndata: first\n\n", []string{"first"}},
+		{"none", "data: first\n\n", []string{"first"}},
+		{"interior", "data: \ufefffirst\n\n\ufeffdata: ignored\n\n", []string{"\ufefffirst"}},
+	} {
+		for _, fragmented := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fragmented=%t", tc.name, fragmented), func(t *testing.T) {
+				t.Parallel()
+				var reader io.Reader = strings.NewReader(tc.stream)
+				if fragmented {
+					reader = iotest.OneByteReader(reader)
+				}
+				var got []string
+				for data, err := range ParseDataStream(reader) {
+					if err != nil {
+						t.Fatalf("ParseDataStream() error = %v, want nil", err)
+					}
+					got = append(got, string(data))
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("ParseDataStream() wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
 func TestParseDataStreamIncompleteEOF(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
