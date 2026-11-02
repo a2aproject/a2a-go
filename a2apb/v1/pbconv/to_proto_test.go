@@ -34,6 +34,63 @@ func mustMakeProtoMetadata(t *testing.T, meta map[string]any) *structpb.Struct {
 	return s
 }
 
+func TestToProtoSendMessageRequest_DataPartJSONValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		value   any
+		want    *structpb.Value
+		wantErr bool
+	}{
+		{name: "object", value: map[string]any{"key": "value"}, want: structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{"key": structpb.NewStringValue("value")}})},
+		{name: "boolean", value: true, want: structpb.NewBoolValue(true)},
+		{name: "false", value: false, want: structpb.NewBoolValue(false)},
+		{name: "string", value: "value", want: structpb.NewStringValue("value")},
+		{name: "empty string", value: "", want: structpb.NewStringValue("")},
+		{name: "number", value: float64(3.25), want: structpb.NewNumberValue(3.25)},
+		{name: "array", value: []any{"value", float64(2), false, nil}, want: structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewStringValue("value"), structpb.NewNumberValue(2), structpb.NewBoolValue(false), structpb.NewNullValue()}})},
+		{name: "empty array", value: []any{}, want: structpb.NewListValue(&structpb.ListValue{})},
+		{name: "null", value: nil, want: structpb.NewNullValue()},
+		{name: "nested object", value: map[string]any{"items": []any{true, nil}}, want: structpb.NewStructValue(&structpb.Struct{Fields: map[string]*structpb.Value{"items": structpb.NewListValue(&structpb.ListValue{Values: []*structpb.Value{structpb.NewBoolValue(true), structpb.NewNullValue()}})}})},
+		{name: "unsupported value", value: func() {}, wantErr: true},
+		{name: "unsupported nested value", value: map[string]any{"bad": func() {}}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			part := a2a.NewDataPart(tt.value)
+			part.Metadata = map[string]any{"part": "metadata"}
+			message := a2a.NewMessage(a2a.MessageRoleUser, part)
+			message.Metadata = map[string]any{"message": "metadata"}
+			req := &a2a.SendMessageRequest{
+				Tenant: "tenant", Message: message, Metadata: map[string]any{"request": "metadata"},
+			}
+			got, err := ToProtoSendMessageRequest(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("ToProtoSendMessageRequest() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ToProtoSendMessageRequest() error = %v, want nil", err)
+			}
+			want := &a2apb.SendMessageRequest{
+				Tenant: "tenant",
+				Message: &a2apb.Message{
+					MessageId: message.ID, Role: a2apb.Role_ROLE_USER,
+					Parts:    []*a2apb.Part{{Content: &a2apb.Part_Data{Data: tt.want}, Metadata: mustMakeProtoMetadata(t, part.Metadata)}},
+					Metadata: mustMakeProtoMetadata(t, message.Metadata),
+				},
+				Metadata: mustMakeProtoMetadata(t, req.Metadata),
+			}
+			if !proto.Equal(want, got) {
+				t.Fatalf("ToProtoSendMessageRequest() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestToProto_toProtoMessage(t *testing.T) {
 	a2aMeta := map[string]any{"key": "value"}
 	pMeta, _ := structpb.NewStruct(a2aMeta)
