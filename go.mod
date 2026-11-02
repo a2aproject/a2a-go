@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/a2aproject/a2a-go v0.3.15
 	github.com/google/go-cmp v0.7.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/mod v0.41.0
