@@ -125,11 +125,6 @@ func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageR
 				return
 			}
 
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
 			if !yield(interceptedEvent, nil) {
 				return
 			}
@@ -157,11 +152,6 @@ func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRe
 			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
 			if errOverride != nil {
 				yield(nil, errOverride)
-				return
-			}
-
-			if err != nil {
-				yield(nil, err)
 				return
 			}
 
@@ -267,7 +257,7 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.Sen
 
 func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method string, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
 	serviceParams := serviceParamsCloneFrom(ctx)
-	serviceParams[a2a.SvcParamVersion] = []string{string(c.protocolVersion)}
+	serviceParams.set(a2a.SvcParamVersion, string(c.protocolVersion))
 	req := Request{
 		Method:        method,
 		BaseURL:       c.endpoint.URL,

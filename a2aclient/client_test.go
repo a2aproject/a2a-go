@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -276,9 +278,64 @@ func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.endpoint.ProtocolVersion)}}
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, "a2a-version": []string{string(client.endpoint.ProtocolVersion)}}
 	if !reflect.DeepEqual(receivedParams, wantParams) {
 		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
+	}
+}
+
+func TestClient_InterceptorsSeeProtocolVersion(t *testing.T) {
+	ctx := t.Context()
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			return &a2a.Task{}, nil
+		},
+	}
+
+	var got []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			got = r.ServiceParams.Get(a2a.SvcParamVersion)
+			return ctx, nil, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	client.protocolVersion = a2a.Version
+	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{string(a2a.Version)}, got); diff != "" {
+		t.Fatalf("ServiceParams.Get(%q) wrong result (-want +got) diff = %s", a2a.SvcParamVersion, diff)
+	}
+}
+
+func TestClient_AttachedProtocolVersionIsSentOnce(t *testing.T) {
+	ctx := t.Context()
+	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent), nil)
+		}
+	})
+	server := startJSONRPCTestServer(t, a2asrv.NewHandler(executor))
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+	}
+	client, err := NewFromCard(ctx, card, withTestJSONRPCTransport())
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+
+	ctx = AttachServiceParams(ctx, ServiceParams{a2a.SvcParamVersion: []string{string(a2a.Version)}})
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v, want nil", err)
 	}
 }
 
@@ -1060,5 +1117,47 @@ func TestClient_StreamingInterceptorCachedEvents(t *testing.T) {
 				}
 			})
 		}
+  }
+}
+
+func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			transportErr := errors.New("transport failed")
+			fallback := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("fallback"))
+			transport := &testTransport{
+				SendStreamingMessageFn: func(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+				SubscribeToTaskFn: func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+			}
+			interceptor := &testInterceptor{AfterFn: func(ctx context.Context, resp *Response) error {
+				if !errors.Is(resp.Err, transportErr) {
+					t.Fatalf("Response.Err = %v, want %v", resp.Err, transportErr)
+				}
+				resp.Err = nil
+				resp.Payload = fallback
+				return nil
+			}}
+			client := newTestClient(transport, interceptor)
+			stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+			if method == "SubscribeToTask" {
+				stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+			}
+			var got []a2a.Event
+			for event, err := range stream {
+				if err != nil {
+					t.Fatalf("client.%s() error = %v, want nil", method, err)
+				}
+				got = append(got, event)
+			}
+			if diff := cmp.Diff([]a2a.Event{fallback}, got); diff != "" {
+				t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+			}
+		})
 	}
 }
