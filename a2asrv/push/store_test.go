@@ -381,7 +381,6 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 	var wg sync.WaitGroup
 	store := NewInMemoryStore()
 	taskID := a2a.TaskID("concurrent-task")
-	// Stay within the per-task config limit so every concurrent save succeeds.
 	numGoroutines := maxPushConfigsPerTask
 	created := make(chan *a2a.PushConfig, numGoroutines)
 
@@ -440,10 +439,6 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 	return result
 }
 
-// TestInMemoryPushConfigStore_MaxConfigsPerTask is a regression test for
-// the per-task push config limit: a task must not be able to register more than maxPushConfigsPerTask
-// push configs; exceeding the limit returns an error, while updating an
-// existing config at the limit is still allowed.
 func TestInMemoryPushConfigStore_MaxConfigsPerTask(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.TaskID("task")
@@ -456,18 +451,14 @@ func TestInMemoryPushConfigStore_MaxConfigsPerTask(t *testing.T) {
 		}
 	}
 
-	// A new config beyond the limit is rejected.
 	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{URL: "https://example.com/overflow"}); err == nil {
 		t.Fatal("Save() beyond the limit succeeded, want an error")
 	}
 
-	// Updating an existing config at the limit is still allowed.
 	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{ID: "config-000", URL: "https://example.com/updated"}); err != nil {
 		t.Fatalf("Save() update at limit failed: %v", err)
 	}
 
-	// Replacing the config keeps the count at the limit, so a new insert is
-	// still rejected.
 	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{URL: "https://example.com/overflow-2"}); err == nil {
 		t.Fatal("Save() beyond the limit succeeded after update, want an error")
 	}
