@@ -94,13 +94,13 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				if scheme == "" {
 					scheme = "Bearer"
 				}
-				req.ServiceParams["Authorization"] = []string{fmt.Sprintf("%s %s", scheme, credential)}
+				req.ServiceParams.set("Authorization", fmt.Sprintf("%s %s", scheme, credential))
 				return ctx, nil, nil
 			case a2a.OAuth2SecurityScheme:
-				req.ServiceParams["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
+				req.ServiceParams.set("Authorization", fmt.Sprintf("Bearer %s", credential))
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
-				req.ServiceParams[v.Name] = []string{string(credential)}
+				req.ServiceParams.set(v.Name, string(credential))
 				return ctx, nil, nil
 			}
 		}

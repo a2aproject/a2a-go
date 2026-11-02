@@ -127,7 +127,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.HTTPAuthSecurityScheme{},
 				},
 			},
-			want: ServiceParams{"Authorization": []string{"Bearer secret"}},
+			want: ServiceParams{"authorization": []string{"Bearer secret"}},
 		},
 		{
 			name: "ouath2",
@@ -143,7 +143,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.OAuth2SecurityScheme{},
 				},
 			},
-			want: ServiceParams{"Authorization": []string{"Bearer secret"}},
+			want: ServiceParams{"authorization": []string{"Bearer secret"}},
 		},
 		{
 			name: "api key",
@@ -159,7 +159,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: ServiceParams{"X-Custom-Auth": []string{"secret"}},
+			want: ServiceParams{"x-custom-auth": []string{"secret"}},
 		},
 		{
 			name: "first credential chosen",
@@ -188,7 +188,7 @@ func TestAuthInterceptor(t *testing.T) {
 					toSchemeName("test-3"): a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
 				},
 			},
-			want: ServiceParams{"Authorization": []string{"Bearer secret-2"}},
+			want: ServiceParams{"authorization": []string{"Bearer secret-2"}},
 		},
 		{
 			name: "no session",
