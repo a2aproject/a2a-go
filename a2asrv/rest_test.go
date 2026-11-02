@@ -516,6 +516,44 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 	}
 }
 
+func TestRESTTenantEscapedIdentifiers(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, template, path, tenant, taskID string
+	}{
+		{"task slash", "/{*}", "/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"tenant slash", "/{*}", "/tenant%2Fid/tasks/task", "tenant/id", "task"},
+		{"escaped percent", "/{*}", "/tenant%252Fid/tasks/task%252Fid", "tenant%2Fid", "task%2Fid"},
+		{"literal prefix", "/my location/{*}", "/my%20location/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"multi-segment tenant", "/{locations/*/projects/*}", "/locations/us%2Feast/projects/project/tasks/task%2Fid", "locations/us/east/projects/project", "task/id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got *a2a.GetTaskRequest
+			handler := &mockRequestHandler{
+				getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+					got = req
+					return &a2a.Task{ID: req.ID}, nil
+				},
+			}
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			originalURL := *req.URL
+			recorder := httptest.NewRecorder()
+			NewTenantRESTHandler(tt.template, handler).ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GetTask() status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body)
+			}
+			want := &a2a.GetTaskRequest{ID: a2a.TaskID(tt.taskID), Tenant: tt.tenant}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("GetTask() wrong request (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(originalURL, *req.URL); diff != "" {
+				t.Fatalf("request URL changed (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestRESTTenant(t *testing.T) {
 	tid := a2a.NewTaskID()
 	tests := []struct {
