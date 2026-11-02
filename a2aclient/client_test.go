@@ -1117,7 +1117,7 @@ func TestClient_StreamingInterceptorCachedEvents(t *testing.T) {
 				}
 			})
 		}
-  }
+	}
 }
 
 func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
