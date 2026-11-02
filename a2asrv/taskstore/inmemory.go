@@ -322,7 +322,7 @@ func decodePageToken(nextPageToken string) (time.Time, a2a.TaskID, error) {
 		return time.Time{}, "", a2a.ErrParseError
 	}
 
-	parts := strings.Split(string(decoded), "_")
+	parts := strings.SplitN(string(decoded), "_", 2)
 	if len(parts) != 2 {
 		return time.Time{}, "", a2a.ErrParseError
 	}

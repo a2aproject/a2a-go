@@ -369,6 +369,43 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 	}
 }
 
+func TestInMemoryTaskStore_List_TaskIDWithUnderscores(t *testing.T) {
+	t.Parallel()
+	for _, sameTime := range []bool{false, true} {
+		t.Run(fmt.Sprintf("same timestamp %v", sameTime), func(t *testing.T) {
+			t.Parallel()
+			timeProvider := newIncreasingTimeProvider(startTime)
+			if sameTime {
+				timeProvider = func() time.Time { return startTime }
+			}
+			store := NewInMemory(&InMemoryStoreConfig{Authenticator: getAuthInfo, TimeProvider: timeProvider})
+			ids := []a2a.TaskID{"_first", "task_with__underscores", "trailing_"}
+			for _, id := range ids {
+				mustCreate(t, store, &a2a.Task{ID: id})
+			}
+			want := []a2a.TaskID{"trailing_", "task_with__underscores", "_first"}
+			var got []a2a.TaskID
+			var token string
+			for range len(ids) {
+				page, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: 1, PageToken: token})
+				if err != nil {
+					t.Fatalf("List() error = %v, want nil", err)
+				}
+				for _, task := range page.Tasks {
+					got = append(got, task.ID)
+				}
+				token = page.NextPageToken
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("List() wrong task IDs (-want +got) diff = %s", diff)
+			}
+			if token != "" {
+				t.Fatalf("List() final page token = %q, want empty", token)
+			}
+		})
+	}
+}
+
 func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 	id1, id2, id3, id4, id5 := a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()
 	testCases := []struct {
