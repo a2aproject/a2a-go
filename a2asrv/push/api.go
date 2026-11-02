@@ -27,6 +27,12 @@ type Sender interface {
 	SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error
 }
 
+// ConfigValidator is an optional interface a [Sender] can implement.
+// The handler calls it before a push config is saved.
+type ConfigValidator interface {
+	ValidateConfig(ctx context.Context, config *a2a.PushConfig) error
+}
+
 // ConfigStore manages push notification configurations for tasks.
 type ConfigStore interface {
 	// Save creates or updates a push notification configuration for a task. If no ID is set

@@ -17,8 +17,6 @@ package push
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/url"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -49,25 +47,9 @@ func newID() string {
 	return uuid.Must(uuid.NewV7()).String()
 }
 
-func validateConfig(config *a2a.PushConfig) error {
-	if config == nil {
-		return errors.New("push config cannot be nil")
-	}
-	if config.URL == "" {
-		return errors.New("push config endpoint cannot be empty")
-	}
-	if _, err := url.ParseRequestURI(config.URL); err != nil {
-		return fmt.Errorf("invalid push config endpoint URL: %w", err)
-	}
-	return nil
-}
-
 // Save adds a copy of push config to the store.
+// URL checks belong to a [ConfigValidator] on the sender, not this store.
 func (s *InMemoryPushConfigStore) Save(ctx context.Context, taskID a2a.TaskID, config *a2a.PushConfig) (*a2a.PushConfig, error) {
-	if err := validateConfig(config); err != nil {
-		return nil, fmt.Errorf("%w: %w", a2a.ErrInvalidParams, err)
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
