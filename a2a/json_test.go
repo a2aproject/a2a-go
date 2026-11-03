@@ -93,6 +93,11 @@ func TestPartJSONCodecEmptyContent(t *testing.T) {
 	}{
 		{name: "null data", part: NewDataPart(nil), json: `{"data":null}`, want: NewDataPart(nil)},
 		{name: "null data with metadata", part: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}, json: `{"data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}},
+		{name: "false data", part: NewDataPart(false), json: `{"data":false}`, want: NewDataPart(false)},
+		{name: "zero number data", part: NewDataPart(float64(0)), json: `{"data":0}`, want: NewDataPart(float64(0))},
+		{name: "empty string data", part: NewDataPart(""), json: `{"data":""}`, want: NewDataPart("")},
+		{name: "empty array data", part: NewDataPart([]any{}), json: `{"data":[]}`, want: NewDataPart([]any{})},
+		{name: "empty object data", part: NewDataPart(map[string]any{}), json: `{"data":{}}`, want: NewDataPart(map[string]any{})},
 		{name: "nil raw", part: NewRawPart(nil), json: `{"raw":""}`, want: NewRawPart([]byte{})},
 		{name: "empty raw", part: NewRawPart([]byte{}), json: `{"raw":""}`, want: NewRawPart([]byte{})},
 		{name: "empty text", part: NewTextPart(""), json: `{"text":""}`, want: NewTextPart("")},
