@@ -263,6 +263,11 @@ func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http
 }
 
 func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodHead {
+		rw.Header().Set("Allow", "GET, POST")
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	ctx := req.Context()
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
