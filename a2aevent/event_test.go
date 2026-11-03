@@ -528,8 +528,7 @@ func TestApplyUpdate_StatusMessageInHistory(t *testing.T) {
 			{name: "different IDs same content", statusID: "question", historyID: "earlier", historyText: "Q", wantAppend: true},
 			{name: "empty history ID", statusID: "question", historyText: "Q", wantAppend: true},
 			{name: "empty status ID", historyID: "earlier", historyText: "Q", wantAppend: true},
-			{name: "empty IDs same content", historyText: "Q"},
-			{name: "empty IDs different content", historyText: "earlier Q", wantAppend: true},
+			{name: "empty IDs same content", historyText: "Q", wantAppend: true},
 		} {
 			for _, statusUpdate := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/statusUpdate=%t%s", tc.name, statusUpdate, mode.suffix), func(t *testing.T) {

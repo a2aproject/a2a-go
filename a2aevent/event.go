@@ -18,7 +18,6 @@ package a2aevent
 import (
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -148,14 +147,11 @@ func applyShallowHistoryUpdate(src *a2a.Task, msg *a2a.Message) *a2a.Task {
 }
 
 func statusMessageInHistory(task *a2a.Task) bool {
+	if task.Status.Message.ID == "" {
+		return false
+	}
 	return slices.ContainsFunc(task.History, func(msg *a2a.Message) bool {
-		if msg == nil {
-			return false
-		}
-		if task.Status.Message.ID != "" {
-			return msg.ID == task.Status.Message.ID
-		}
-		return reflect.DeepEqual(msg, task.Status.Message)
+		return msg != nil && msg.ID == task.Status.Message.ID
 	})
 }
 
