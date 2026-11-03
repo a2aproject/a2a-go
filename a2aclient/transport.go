@@ -162,56 +162,78 @@ func (d *tenantTransportDecorator) updateTenant(ctx context.Context, current str
 }
 
 func (d *tenantTransportDecorator) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.GetTask(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) ListTasks(ctx context.Context, params ServiceParams, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.ListTasks(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.CancelTask(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) SendMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.SendMessage(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.SubscribeToTask(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) SendStreamingMessage(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.SendStreamingMessage(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) GetTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.GetTaskPushConfigRequest) (*a2a.PushConfig, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.GetTaskPushConfig(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.ListTaskPushConfigs(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) CreateTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.PushConfig) (*a2a.PushConfig, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.CreateTaskPushConfig(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) DeleteTaskPushConfig(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) error {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.DeleteTaskPushConfig(ctx, params, req)
 }
 
 func (d *tenantTransportDecorator) GetExtendedAgentCard(ctx context.Context, params ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
+	requestCopy := *req
+	req = &requestCopy
 	req.Tenant = d.updateTenant(ctx, req.Tenant)
 	return d.base.GetExtendedAgentCard(ctx, params, req)
 }

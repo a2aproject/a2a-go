@@ -49,7 +49,6 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 
 	mux := http.NewServeMux()
 
-	// TODO: handle tenant
 	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage)
 	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage)
 	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks)
@@ -264,6 +263,11 @@ func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http
 }
 
 func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodHead {
+		rw.Header().Set("Allow", "GET, POST")
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	ctx := req.Context()
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
