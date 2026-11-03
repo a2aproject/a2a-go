@@ -2286,6 +2286,10 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			name:           "succeeds when required extension is declared",
 			clientSupports: []string{extensionURI},
 		},
+		{
+			name:           "succeeds when required extension is in a comma-separated list",
+			clientSupports: []string{"other-ext, " + extensionURI},
+		},
 	}
 
 	for _, tt := range tests {
