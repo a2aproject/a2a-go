@@ -615,36 +615,80 @@ func TestManager_CancelWithoutActiveExecution(t *testing.T) {
 	}
 }
 
-func TestManager_ConcurrentExecutionCompletesBeforeCancel(t *testing.T) {
+func TestManager_ConcurrentExecutionFinishesBeforeCancel(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
 
-	executor, canceler := newExecutor(), newCanceler()
-	manager := newStaticExecutorManager(executor, canceler, nil)
-	executor.nextEventTerminal = true
-	subscription, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
-	_, _ = consumeEvents(t, subscription)
-	if err != nil {
-		t.Fatalf("manager.Execute() failed: %v", err)
+	cancelerErr := errors.New("canceler error")
+	tests := []struct {
+		name           string
+		executionState a2a.TaskState
+		cancelErr      error
+		wantErr        error
+	}{
+		{
+			name:           "execution completed",
+			executionState: a2a.TaskStateCompleted,
+			wantErr:        a2a.ErrTaskNotCancelable,
+		},
+		{
+			name:           "execution completed and closed the pipe",
+			executionState: a2a.TaskStateCompleted,
+			cancelErr:      eventqueue.ErrQueueClosed,
+			wantErr:        a2a.ErrTaskNotCancelable,
+		},
+		{
+			name:           "execution canceled and closed the pipe",
+			executionState: a2a.TaskStateCanceled,
+			cancelErr:      eventqueue.ErrQueueClosed,
+		},
+		{
+			name:           "canceler failed",
+			executionState: a2a.TaskStateCanceled,
+			cancelErr:      cancelerErr,
+			wantErr:        cancelerErr,
+		},
 	}
-	<-executor.executeCalled
 
-	canceler.block = make(chan struct{})
-	cancelErr := make(chan error)
-	go func() {
-		task, err := manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: subscription.TaskID()})
-		if task != nil || err == nil {
-			t.Errorf("manager.Cancel() = %v, expected to fail", task)
-		}
-		cancelErr <- err
-	}()
-	<-canceler.cancelCalled
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
 
-	executor.mustWrite(t, &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
-	close(canceler.block)
+			executor, canceler := newExecutor(), newCanceler()
+			manager := newStaticExecutorManager(executor, canceler, nil)
+			executor.nextEventTerminal = true
+			subscription, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+			_, _ = consumeEvents(t, subscription)
+			if err != nil {
+				t.Fatalf("manager.Execute() failed: %v", err)
+			}
+			<-executor.executeCalled
 
-	if got := <-cancelErr; !errors.Is(got, a2a.ErrTaskNotCancelable) {
-		t.Fatalf("manager.Cancel() = %v, want %v", got, a2a.ErrTaskNotCancelable)
+			canceler.block = make(chan struct{})
+			canceler.cancelErr = tc.cancelErr
+			type cancelResult struct {
+				task *a2a.Task
+				err  error
+			}
+			cancelResultChan := make(chan cancelResult, 1)
+			go func() {
+				task, err := manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: subscription.TaskID()})
+				cancelResultChan <- cancelResult{task: task, err: err}
+			}()
+			<-canceler.cancelCalled
+
+			executionResult := &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: tc.executionState}}
+			executor.mustWrite(t, executionResult)
+			close(canceler.block)
+
+			got := <-cancelResultChan
+			if !errors.Is(got.err, tc.wantErr) {
+				t.Fatalf("manager.Cancel() error = %v, want %v", got.err, tc.wantErr)
+			}
+			if tc.wantErr == nil && got.task != executionResult {
+				t.Fatalf("manager.Cancel() = %v, want %v", got.task, executionResult)
+			}
+		})
 	}
 }
 
