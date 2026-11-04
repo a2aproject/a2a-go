@@ -50,31 +50,38 @@ func newAgentCardHandlerConfig(opts []AgentCardHandlerOption) *agentCardHandlerC
 	return cfg
 }
 
-// cardETag computes a weak ETag for the given card, excluding signatures.
+// cardETag computes a weak ETag for the given card.
 //
-// Signatures are excluded and the tag is weak so that revalidation works for
-// cards signed per request (see [NewSignedCardProducer]): randomized signing
-// algorithms such as ES256 produce a different signature on every request, so
-// a strong tag over the full body would never match. A weak tag claims semantic
-// equivalence, which two signings of identical content have. On a 304 the client
-// keeps the signature it already holds, which remains valid because it covers
-// content that has not changed.
+// The randomized signature values are excluded and the tag is weak so that
+// revalidation works for cards signed per request (see [NewSignedCardProducer]):
+// randomized signing algorithms such as ES256 produce a different signature on
+// every request, so a strong tag over the full body would never match. Each
+// signature's protected header is still covered, because it is deterministic
+// per signing key and carries the key identity (kid/alg/jku): a key rotation
+// changes the protected headers, which changes the tag, so clients holding a
+// card signed by a retired key receive a 200 with fresh signatures instead of
+// a 304.
 //
 // Returns an empty string if the card cannot be marshaled; callers then omit
 // the ETag header.
 func cardETag(card *a2a.AgentCard) string {
 	unsigned := *card
+	signatures := unsigned.Signatures
 	unsigned.Signatures = nil
 	body, err := json.Marshal(&unsigned)
 	if err != nil {
 		return ""
 	}
-	return hashETag(body)
+	protected := make([]string, 0, len(signatures))
+	for _, sig := range signatures {
+		protected = append(protected, sig.Protected)
+	}
+	return hashETag(body, protected...)
 }
 
-// rawJSONETag computes a weak ETag from raw agent card JSON, excluding the
-// "signatures" member (see [cardETag] for why). Unmarshaling into a map and
-// re-marshaling normalizes member order, because encoding/json sorts map keys.
+// rawJSONETag computes a weak ETag from raw agent card JSON (see [cardETag]
+// for what is and is not covered). Unmarshaling into a map and re-marshaling
+// normalizes member order, because encoding/json sorts map keys.
 // RFC 8785 canonicalization is deliberately not used: an ETag is opaque and is
 // only ever compared against values produced by this same server, so
 // determinism is the whole requirement. If raw is not a valid JSON object,
@@ -82,17 +89,32 @@ func cardETag(card *a2a.AgentCard) string {
 func rawJSONETag(raw []byte) string {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err == nil {
+		var protected []string
+		if sigs, ok := m["signatures"].([]any); ok {
+			for _, sig := range sigs {
+				if sig, ok := sig.(map[string]any); ok {
+					if p, ok := sig["protected"].(string); ok {
+						protected = append(protected, p)
+					}
+				}
+			}
+		}
 		delete(m, "signatures")
 		if body, err := json.Marshal(m); err == nil {
-			return hashETag(body)
+			return hashETag(body, protected...)
 		}
 	}
 	return hashETag(raw)
 }
 
-func hashETag(body []byte) string {
-	sum := sha256.Sum256(body)
-	return `W/"` + hex.EncodeToString(sum[:]) + `"`
+func hashETag(body []byte, extra ...string) string {
+	h := sha256.New()
+	h.Write(body)
+	for _, e := range extra {
+		h.Write([]byte{0})
+		h.Write([]byte(e))
+	}
+	return `W/"` + hex.EncodeToString(h.Sum(nil)) + `"`
 }
 
 // ifNoneMatchHits reports whether an If-None-Match header value selects the

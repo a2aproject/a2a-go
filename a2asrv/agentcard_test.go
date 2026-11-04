@@ -397,6 +397,61 @@ func TestAgentCardHandler_SignedCardStableETag(t *testing.T) {
 	}
 }
 
+// rotatingKeyProducer mimics NewSignedCardProducer across a key rotation:
+// identical card content, but the signature's protected header (and value)
+// changes once the rotation happens.
+func rotatingKeyProducer(protected func() string) AgentCardProducer {
+	return AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+		return &a2a.AgentCard{
+			Name:        "Agent",
+			Description: "Test",
+			Signatures:  []a2a.AgentCardSignature{{Protected: protected(), Signature: "sig"}},
+		}, nil
+	})
+}
+
+func TestAgentCardHandler_KeyRotationInvalidatesETag(t *testing.T) {
+	kid := "kid-old"
+	srv := httptest.NewServer(NewAgentCardHandler(rotatingKeyProducer(func() string { return kid })))
+	defer srv.Close()
+	client := &http.Client{}
+
+	get := func(ifNoneMatch string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), "GET", srv.URL, nil)
+		if err != nil {
+			t.Fatalf("http.NewRequestWithContext() error = %v", err)
+		}
+		if ifNoneMatch != "" {
+			req.Header.Set("If-None-Match", ifNoneMatch)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("client.Do() error = %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		return resp
+	}
+
+	first := get("")
+	etag := first.Header.Get("ETag")
+	if first.StatusCode != http.StatusOK || etag == "" {
+		t.Fatalf("first status = %d, ETag = %q; want 200 with an ETag", first.StatusCode, etag)
+	}
+	if cond := get(etag); cond.StatusCode != http.StatusNotModified {
+		t.Errorf("conditional status before rotation = %d, want 304", cond.StatusCode)
+	}
+
+	kid = "kid-new"
+	rotated := get(etag)
+	if rotated.StatusCode != http.StatusOK {
+		t.Errorf("conditional status after rotation = %d, want 200 so clients refetch the new signature", rotated.StatusCode)
+	}
+	if got := rotated.Header.Get("ETag"); got == etag {
+		t.Errorf("ETag unchanged after key rotation: %q", got)
+	}
+}
+
 // rawJSONProducer implements both AgentCardProducer and AgentCardJSONProducer,
 // returning raw card JSON whose signatures member changes on every call.
 type rawJSONProducer struct {

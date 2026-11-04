@@ -112,8 +112,9 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard, opts ...AgentCardHandlerOpti
 // The information contained in this card can be queried from any origin.
 // Responses carry a weak ETag and honor If-None-Match with 304 responses,
 // as recommended by the A2A specification for agent card caching. The ETag
-// excludes card signatures, so revalidation works with per-request signing
-// (see [NewSignedCardProducer]).
+// ignores randomized signature values but covers the signing key identity, so
+// revalidation works with per-request signing (see [NewSignedCardProducer])
+// and a key rotation invalidates it.
 func NewAgentCardHandler(producer AgentCardProducer, opts ...AgentCardHandlerOption) http.Handler {
 	cfg := newAgentCardHandlerConfig(opts)
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {

@@ -21,17 +21,42 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
-func TestCardETag_ExcludesSignatures(t *testing.T) {
+func TestCardETag_Format(t *testing.T) {
+	tag := cardETag(&a2a.AgentCard{Name: "A", Description: "D"})
+	if !strings.HasPrefix(tag, `W/"`) || !strings.HasSuffix(tag, `"`) {
+		t.Fatalf("cardETag = %q, want weak ETag format W/\"...\"", tag)
+	}
+}
+
+func TestCardETag_IgnoresRandomizedSignatureValues(t *testing.T) {
+	first := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "sig-1"}}}
+	second := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "sig-2"}}}
+
+	if a, b := cardETag(first), cardETag(second); a != b {
+		t.Errorf("re-signing with the same key must keep the ETag stable: %q != %q", a, b)
+	}
+}
+
+func TestCardETag_KeyRotationChangesETag(t *testing.T) {
+	oldKey := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{{Protected: "kid-old", Signature: "s"}}}
+	newKey := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{{Protected: "kid-new", Signature: "s"}}}
+
+	if a, b := cardETag(oldKey), cardETag(newKey); a == b {
+		t.Errorf("rotating the signing key must change the ETag, got %q for both", a)
+	}
+}
+
+func TestCardETag_SignaturePresenceChangesETag(t *testing.T) {
 	plain := &a2a.AgentCard{Name: "A", Description: "D"}
 	signed := &a2a.AgentCard{Name: "A", Description: "D",
 		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "s"}}}
 
-	plainTag, signedTag := cardETag(plain), cardETag(signed)
-	if !strings.HasPrefix(plainTag, `W/"`) || !strings.HasSuffix(plainTag, `"`) {
-		t.Fatalf("cardETag(plain) = %q, want weak ETag format W/\"...\"", plainTag)
-	}
-	if plainTag != signedTag {
-		t.Errorf("signatures must not affect the ETag: %q != %q", plainTag, signedTag)
+	if a, b := cardETag(plain), cardETag(signed); a == b {
+		t.Errorf("signing a card must change the ETag, got %q for both", a)
 	}
 }
 
@@ -52,14 +77,30 @@ func TestCardETag_DoesNotMutateInput(t *testing.T) {
 	}
 }
 
-func TestRawJSONETag_ExcludesSignaturesAndKeyOrder(t *testing.T) {
-	withSig := rawJSONETag([]byte(`{"name":"A","description":"D","signatures":[{"protected":"p","signature":"s"}]}`))
-	withoutSig := rawJSONETag([]byte(`{"description":"D","name":"A"}`))
-	if !strings.HasPrefix(withSig, `W/"`) {
-		t.Fatalf("rawJSONETag = %q, want weak ETag format", withSig)
+func TestRawJSONETag_IgnoresKeyOrderAndRandomizedSignatureValues(t *testing.T) {
+	a := rawJSONETag([]byte(`{"name":"A","description":"D","signatures":[{"protected":"p","signature":"sig-1"}]}`))
+	b := rawJSONETag([]byte(`{"description":"D","name":"A","signatures":[{"protected":"p","signature":"sig-2"}]}`))
+	if !strings.HasPrefix(a, `W/"`) {
+		t.Fatalf("rawJSONETag = %q, want weak ETag format", a)
 	}
-	if withSig != withoutSig {
-		t.Errorf("signatures/key order must not affect the ETag: %q != %q", withSig, withoutSig)
+	if a != b {
+		t.Errorf("key order and re-signing must not affect the ETag: %q != %q", a, b)
+	}
+}
+
+func TestRawJSONETag_KeyRotationChangesETag(t *testing.T) {
+	oldKey := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"kid-old","signature":"s"}]}`))
+	newKey := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"kid-new","signature":"s"}]}`))
+	if oldKey == newKey {
+		t.Errorf("rotating the signing key must change the ETag, got %q for both", oldKey)
+	}
+}
+
+func TestRawJSONETag_SignaturePresenceChangesETag(t *testing.T) {
+	withSig := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"p","signature":"s"}]}`))
+	withoutSig := rawJSONETag([]byte(`{"name":"A"}`))
+	if withSig == withoutSig {
+		t.Errorf("signing a card must change the ETag, got %q for both", withSig)
 	}
 }
 
