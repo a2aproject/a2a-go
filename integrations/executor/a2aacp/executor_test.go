@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -866,6 +868,137 @@ func TestExecutor_AgentExitWhileInputRequired(t *testing.T) {
 	}
 	if got := h.agentCount(); got != 1 {
 		t.Fatalf("started agents = %d, want 1", got)
+	}
+}
+
+type turnRecorder struct {
+	mu  sync.Mutex
+	log []string
+}
+
+func (r *turnRecorder) turn(ctx context.Context, execCtx *a2asrv.ExecutorContext) func() {
+	text := messageText(execCtx.Message)
+	r.add("start " + text)
+	return func() {
+		if err := ctx.Err(); err != nil {
+			r.add(fmt.Sprintf("end %s: %v", text, err))
+			return
+		}
+		r.add("end " + text)
+	}
+}
+
+func (r *turnRecorder) add(s string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.log = append(r.log, s)
+}
+
+func (r *turnRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.log)
+}
+
+func TestExecutor_TurnSpansInputRequired(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		cfg    Config
+		resume func(t *testing.T, e *Executor, h *fakeHarness, execCtx *a2asrv.ExecutorContext)
+		want   []string
+	}{
+		{
+			name: "answer",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt"},
+		},
+		{
+			name: "interrupt",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, execute(e, followUp(execCtx, a2a.NewTextPart("rename it instead"))))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt", "start rename it instead", "end rename it instead"},
+		},
+		{
+			name: "cancel",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, cancelTask(e, execCtx))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt"},
+		},
+		{
+			name:   "question timeout",
+			cfg:    Config{QuestionTimeout: 10 * time.Millisecond},
+			resume: func(*testing.T, *Executor, *fakeHarness, *a2asrv.ExecutorContext) {},
+			want:   []string{"start delete x.txt", "end delete x.txt"},
+		},
+		{
+			name: "agent exit",
+			resume: func(_ *testing.T, _ *Executor, h *fakeHarness, _ *a2asrv.ExecutorContext) {
+				h.agent(0).crash()
+			},
+			want: []string{"start delete x.txt", "end delete x.txt"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scriptsDone := make(chan struct{}, 2)
+			h := &fakeHarness{onPrompt: func(s *promptScript) {
+				defer func() { scriptsDone <- struct{}{} }()
+				if s.promptText() != "delete x.txt" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				outcome := s.askPermission(rmToolCall)
+				if s.agent.isCrashed() {
+					return
+				}
+				if outcome.OptionID == "opt-allow" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				waitFor(t, func() bool { _, _, canceled, _ := s.agent.snapshot(); return len(canceled) > 0 })
+				s.end(acp.StopCancelled)
+			}}
+			rec := &turnRecorder{}
+			tc.cfg.Turn = rec.turn
+			e := newTestExecutor(t, h, tc.cfg)
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+			run(t, execute(e, execCtx))
+			if diff := cmp.Diff([]string{"start delete x.txt"}, rec.snapshot()); diff != "" {
+				t.Fatalf("Config.Turn calls while input-required wrong result (-want +got) diff = %s", diff)
+			}
+
+			tc.resume(t, e, h, execCtx)
+
+			waitFor(t, func() bool { return len(rec.snapshot()) >= len(tc.want) })
+			if diff := cmp.Diff(tc.want, rec.snapshot()); diff != "" {
+				t.Fatalf("Config.Turn calls wrong result (-want +got) diff = %s", diff)
+			}
+			for range len(tc.want) / 2 {
+				<-scriptsDone
+			}
+		})
+	}
+}
+
+func TestExecutor_TurnNotCalledWhenPromptNotSent(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	rec := &turnRecorder{}
+	e := newTestExecutor(t, h, Config{Turn: rec.turn})
+
+	got := run(t, execute(e, newExecCtx("ctx", a2a.NewRawPart([]byte("%PDF")))))
+
+	if got[len(got)-1].State != a2a.TaskStateFailed {
+		t.Fatalf("Executor.Execute() = %+v, want failed", got)
+	}
+	if got := rec.snapshot(); len(got) != 0 {
+		t.Fatalf("Config.Turn calls = %v, want none", got)
 	}
 }
 

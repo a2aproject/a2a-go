@@ -17,7 +17,9 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"mime"
 	"net/http"
@@ -287,12 +289,16 @@ func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWrite
 func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	id := &a2a.CancelTaskRequest{
-		ID: a2a.TaskID(taskID),
+	var params a2a.CancelTaskRequest
+	// io.EOF is returned for an empty body, which is a valid request without metadata.
+	if err := utils.DecodeJSON(req.Body, &params); err != nil && !errors.Is(err, io.EOF) {
+		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
+		return
 	}
-	fillTenant(ctx, &id.Tenant)
+	params.ID = a2a.TaskID(taskID)
+	fillTenant(ctx, &params.Tenant)
 
-	result, err := h.handler.CancelTask(ctx, id)
+	result, err := h.handler.CancelTask(ctx, &params)
 
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))

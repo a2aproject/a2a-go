@@ -136,6 +136,7 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case jsonrpc.MethodPushConfigDelete:
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
+		result = struct{}{}
 	case jsonrpc.MethodGetExtendedAgentCard:
 		result, err = h.onGetExtendedAgentCard(ctx, req.Params)
 	case "":
