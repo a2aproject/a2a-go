@@ -850,16 +850,7 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 	if len(card.Skills) > 0 {
 		res.Skills = make([]a2alegacy.AgentSkill, len(card.Skills))
 		for i, s := range card.Skills {
-			res.Skills[i] = a2alegacy.AgentSkill{
-				Description: s.Description,
-				Examples:    s.Examples,
-				ID:          s.ID,
-				InputModes:  s.InputModes,
-				Name:        s.Name,
-				OutputModes: s.OutputModes,
-				Security:    fromV1SecurityRequirements(s.SecurityRequirements),
-				Tags:        s.Tags,
-			}
+			res.Skills[i] = fromV1Skill(s)
 		}
 	}
 	if len(card.Capabilities.Extensions) > 0 {
@@ -911,16 +902,7 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 	if len(card.Skills) > 0 {
 		res.Skills = make([]a2a.AgentSkill, len(card.Skills))
 		for i, s := range card.Skills {
-			res.Skills[i] = a2a.AgentSkill{
-				Description:          s.Description,
-				Examples:             s.Examples,
-				ID:                   s.ID,
-				InputModes:           s.InputModes,
-				Name:                 s.Name,
-				OutputModes:          s.OutputModes,
-				SecurityRequirements: toV1SecurityRequirements(s.Security),
-				Tags:                 s.Tags,
-			}
+			res.Skills[i] = toV1Skill(s)
 		}
 	}
 	if len(card.Capabilities.Extensions) > 0 {
@@ -963,6 +945,32 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 	}
 	res.SupportedInterfaces = ifaces
 	return res
+}
+
+func toV1Skill(s a2alegacy.AgentSkill) a2a.AgentSkill {
+	return a2a.AgentSkill{
+		Description:          s.Description,
+		Examples:             s.Examples,
+		ID:                   s.ID,
+		InputModes:           s.InputModes,
+		Name:                 s.Name,
+		OutputModes:          s.OutputModes,
+		SecurityRequirements: toV1SecurityRequirements(s.Security),
+		Tags:                 s.Tags,
+	}
+}
+
+func fromV1Skill(s a2a.AgentSkill) a2alegacy.AgentSkill {
+	return a2alegacy.AgentSkill{
+		Description: s.Description,
+		Examples:    s.Examples,
+		ID:          s.ID,
+		InputModes:  s.InputModes,
+		Name:        s.Name,
+		OutputModes: s.OutputModes,
+		Security:    fromV1SecurityRequirements(s.SecurityRequirements),
+		Tags:        s.Tags,
+	}
 }
 
 func toV1SecurityRequirements(reqs []a2alegacy.SecurityRequirements) a2a.SecurityRequirementsOptions {

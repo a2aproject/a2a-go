@@ -160,4 +160,12 @@ func TestAgentCardSkillsConversion(t *testing.T) {
 			t.Fatalf("FromV1AgentCard() wrong result (-want +got) diff = %s", diff)
 		}
 	})
+
+	t.Run("RoundTrip", func(t *testing.T) {
+		t.Parallel()
+		got := ToV1AgentCard(FromV1AgentCard(v1Card))
+		if diff := cmp.Diff(v1Card.Skills, got.Skills); diff != "" {
+			t.Fatalf("ToV1AgentCard(FromV1AgentCard()) wrong result (-want +got) diff = %s", diff)
+		}
+	})
 }
