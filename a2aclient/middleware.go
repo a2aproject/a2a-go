@@ -16,6 +16,7 @@ package a2aclient
 
 import (
 	"context"
+	"iter"
 	"slices"
 	"strings"
 
@@ -99,6 +100,9 @@ type Response struct {
 	// Payload is the response. It is nil if method doesn't return anything or Err was returned. Otherwise, it is one of a2a package core types otherwise.
 	Payload any
 }
+
+// callHandler sends a call. A unary call yields one value, a streaming call yields one value per event.
+type callHandler func(ctx context.Context, req Request) iter.Seq2[any, error]
 
 // CallInterceptor can be attached to a [Client].
 // If multiple interceptors are added:
