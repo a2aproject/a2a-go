@@ -84,9 +84,15 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 	}
 	restHandler := NewRESTHandler(handler, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		matchResult, ok := compiledTemplate.Match(r.URL.Path)
+		matchResult, ok := compiledTemplate.MatchEscaped(r.URL.EscapedPath())
 		if !ok {
 			http.NotFound(w, r)
+			return
+		}
+
+		path, err := url.PathUnescape(matchResult.Rest)
+		if err != nil {
+			http.Error(w, "invalid URL path", http.StatusBadRequest)
 			return
 		}
 
@@ -95,8 +101,8 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 		r2 = r2.WithContext(attachTenant(r.Context(), matchResult.Captured))
 		r2.URL = new(url.URL)
 		*r2.URL = *r.URL
-		r2.URL.Path = matchResult.Rest
-		r2.URL.RawPath = ""
+		r2.URL.Path = path
+		r2.URL.RawPath = matchResult.Rest
 		restHandler.ServeHTTP(w, r2)
 	})
 }
