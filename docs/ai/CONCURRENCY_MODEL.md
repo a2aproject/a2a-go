@@ -178,7 +178,9 @@ There are three distinct cancellation scenarios, all handled by `localManager.Ca
 4. Waits for the execution's promise to resolve: `run.result.wait(ctx)`.
 5. Copies the execution result to the cancelation result.
 
-The cancelation result is the same as the execution result. If the execution was already completing with a different state, the cancellation might not take effect (see TODO comment at line 329-334).
+The cancelation result is the same as the execution result. If the execution was already completing with a different state, the cancellation might not take effect (see the TODO comment in `handleCancelWithConcurrentRun`).
+
+`AgentExecutor.Cancel` implementations often stop the running work before yielding their `CANCELED` event (e.g. `a2aacp` cancels the ACP turn first). The agent can then end the execution with its own terminal event, and `cleanupExecution` closes the pipe before the canceler writes. The write fails with `eventqueue.ErrQueueClosed`, which `handleCancelWithConcurrentRun` treats as "the execution already finished" and resolves the cancelation to the execution result instead of failing. Any other canceler error fails the cancelation.
 
 **Scenario 3: Duplicate Cancel (Cancelation Already in Progress)**
 

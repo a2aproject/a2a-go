@@ -395,9 +395,14 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
 	if err := canceler.Cancel(ctx, run.pipe.Writer); err != nil {
-		cleaner.Cleanup(ctx, nil, err)
-		cancel.result.setError(err)
-		return
+		// The pipe is closed after the execution finishes. This happens when the agent ends the execution in
+		// response to the cancelation before the canceler writes its events, so we resolve to the execution result.
+		if !errors.Is(err, eventqueue.ErrQueueClosed) {
+			cleaner.Cleanup(ctx, nil, err)
+			cancel.result.setError(err)
+			return
+		}
+		log.Debug(ctx, "execution finished before the cancelation was written")
 	}
 
 	log.Debug(ctx, "waiting for concurrent cancelation result")
