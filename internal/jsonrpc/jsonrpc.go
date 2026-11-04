@@ -207,7 +207,7 @@ func IsValidID(id any) bool {
 		return true
 	}
 	switch id.(type) {
-	case string, float64:
+	case string, float64, json.Number:
 		return true
 	default:
 		return false
