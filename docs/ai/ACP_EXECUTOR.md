@@ -33,7 +33,8 @@ The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and
   `ConverterFunc`; `SessionStore`), and plain funcs otherwise (`Config.Session`,
   `Config.Settings`, `Config.Prompt`, `PoolConfig.Key`).
 - Config durations: zero means the default, negative disables (`duration` in `executor.go`).
-- "Turn" (one `session/prompt`) is internal; public docs speak of tasks and messages.
+- "Turn" (one `session/prompt`) is internal; public docs speak of tasks and messages. The one
+  exception is `Config.Turn`, whose name was agreed in issue #529; its doc still speaks of messages.
 - Not exposed on purpose: question outcome callbacks (a question that times out or is abandoned
   is discovered when someone replies: the task fails with `errQuestionGone`), a configurable
   invalid-reply policy, prompt-part converters, agent profiles.
@@ -107,6 +108,13 @@ notifications (`agent.sessions`).
   executor restarted) fails the task with `errQuestionGone`; it is never sent as a new prompt.
 - Timed-out and abandoned questions produce no task event (an executor can only emit from
   `Execute` / `Cancel`), so the task stays input-required until the next reply fails it.
+- `Config.Turn` spans the prompt, since the `Execute` stream ends at input-required while the
+  agent can keep working in parallel tool calls, and some endings (question timeout, agent exit
+  while waiting) produce no task event. `promptAgent` calls it after registering the turn, with
+  `context.WithoutCancel` of the starting message's context (the `startTurn` context is canceled
+  when it returns); the prompt goroutine calls `end` after pushing the result and before
+  unregistering the turn, so `Shutdown` waits for it and the context lock is released after it.
+  An interrupt's next turn therefore calls `Turn` after the canceled turn's `end`.
 - `cancelTurn` stops the agent (`stopAgent`) if the turn hasn't ended within `CancelTimeout`
   (default 1m), failing all its turns; a canceled turn whose prompt fails reports `canceled`.
 
