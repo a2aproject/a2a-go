@@ -267,6 +267,10 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 // CancelTask implements [a2a.Transport].
 func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	path := rest.MakeCancelTaskPath(string(req.ID))
+	var payload any
+	if len(req.Metadata) > 0 {
+		payload = map[string]any{"metadata": req.Metadata}
+	}
 	var result a2a.Task
 
 	if err := t.doRequest(ctx, &restRequest{
@@ -274,7 +278,7 @@ func (t *RESTTransport) CancelTask(ctx context.Context, params ServiceParams, re
 		params:  params,
 		path:    path,
 		tenant:  req.Tenant,
-		payload: nil,
+		payload: payload,
 	}, &result); err != nil {
 		return nil, err
 	}

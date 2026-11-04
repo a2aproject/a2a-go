@@ -2569,13 +2569,13 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 
 func newAgentMessage(text string) *a2a.Message {
 	m := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "agent-" + text
 	return m
 }
 
 func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	m := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "user-" + text
 	return m
 }
 
