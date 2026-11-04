@@ -178,40 +178,60 @@ func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
 }
 
 func TestRESTTransport_CancelTask(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("expected method POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/tasks/task-123:cancel" {
-			t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("io.ReadAll(r.Body) error = %v, want nil", err)
-		}
-		if len(body) != 0 {
-			t.Errorf("request body = %q, want empty", string(body))
-		}
-		if ct := r.Header.Get("Content-Type"); ct != "" {
-			t.Errorf("Content-Type = %q, want unset for empty-body request", ct)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`))
-	}))
-	defer server.Close()
-	transport := newRESTTransport(t, server)
-
-	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.CancelTaskRequest{
-		ID: "task-123",
-	})
-
-	if err != nil {
-		t.Fatalf("CancelTask failed: %v", err)
+	tests := []struct {
+		name            string
+		req             *a2a.CancelTaskRequest
+		wantBody        string
+		wantContentType string
+	}{
+		{
+			name: "without metadata",
+			req:  &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:            "with metadata",
+			req:             &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+			wantBody:        `{"metadata":{"reason":"rest"}}`,
+			wantContentType: "application/json",
+		},
 	}
 
-	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("expected method POST, got %s", r.Method)
+				}
+				if r.URL.Path != "/tasks/task-123:cancel" {
+					t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("io.ReadAll(r.Body) error = %v, want nil", err)
+				}
+				if string(body) != tc.wantBody {
+					t.Errorf("request body = %q, want %q", string(body), tc.wantBody)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != tc.wantContentType {
+					t.Errorf("Content-Type = %q, want %q", ct, tc.wantContentType)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`))
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+
+			task, err := transport.CancelTask(t.Context(), ServiceParams{}, tc.req)
+
+			if err != nil {
+				t.Fatalf("CancelTask failed: %v", err)
+			}
+
+			if task.Status.State != a2a.TaskStateCanceled {
+				t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
+			}
+		})
 	}
 }
 

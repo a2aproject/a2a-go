@@ -713,13 +713,13 @@ type Data struct {
 }
 
 type part struct {
-	Text      *Text          `json:"text,omitempty"`
-	Raw       *Raw           `json:"raw,omitempty"`
-	Data      *any           `json:"data,omitempty"`
-	URL       *URL           `json:"url,omitempty"`
-	Filename  string         `json:"filename,omitempty"`
-	MediaType string         `json:"mediaType,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Text      *Text           `json:"text,omitempty"`
+	Raw       *Raw            `json:"raw,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	URL       *URL            `json:"url,omitempty"`
+	Filename  string          `json:"filename,omitempty"`
+	MediaType string          `json:"mediaType,omitempty"`
+	Metadata  map[string]any  `json:"metadata,omitempty"`
 }
 
 // MarshalJSON custom serializer that flattens Content into the Part object.
@@ -733,9 +733,16 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	case Text:
 		wrapper.Text = &v
 	case Raw:
+		if v == nil {
+			v = Raw{}
+		}
 		wrapper.Raw = &v
 	case Data:
-		wrapper.Data = &v.Value
+		data, err := json.Marshal(v.Value)
+		if err != nil {
+			return nil, err
+		}
+		wrapper.Data = data
 	case URL:
 		if v != "" {
 			wrapper.URL = &v
@@ -766,8 +773,12 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		content = *wrapper.Raw
 		n++
 	}
-	if wrapper.Data != nil {
-		content = Data{Value: *wrapper.Data}
+	if len(wrapper.Data) > 0 {
+		var data any
+		if err := json.Unmarshal(wrapper.Data, &data); err != nil {
+			return err
+		}
+		content = Data{Value: data}
 		n++
 	}
 	if wrapper.URL != nil && *wrapper.URL != "" {

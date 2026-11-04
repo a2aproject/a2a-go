@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
@@ -745,5 +747,49 @@ func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
 	if !reflect.DeepEqual(callOrder, wantCallOrder) {
 		t.Errorf("Call order = %v, want %v", callOrder, wantCallOrder)
+	}
+}
+
+func TestInterceptedHandler_StreamingInterceptorCachedEvents(t *testing.T) {
+	t.Parallel()
+	task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: "task", ContextID: "context"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("request")))
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		for _, event := range []a2a.Event{task, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("cached")), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), a2a.NewArtifactEvent(task, a2a.NewTextPart("cached"))} {
+			t.Run(fmt.Sprintf("%s/%T", method, event), func(t *testing.T) {
+				t.Parallel()
+				delegate := &mockHandler{}
+				var afterPayload any
+				interceptor := &mockInterceptor{
+					beforeFn: func(ctx context.Context, _ *CallContext, _ *Request) (context.Context, any, error) {
+						return ctx, event, nil
+					},
+					afterFn: func(_ context.Context, _ *CallContext, resp *Response) error {
+						afterPayload = resp.Payload
+						return nil
+					},
+				}
+				handler := &InterceptedHandler{Handler: delegate, Interceptors: []CallInterceptor{interceptor}}
+				stream := handler.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+				if method == "SubscribeToTask" {
+					stream = handler.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+				}
+				var got []a2a.Event
+				for e, err := range stream {
+					if err != nil {
+						t.Fatalf("handler.%s() error = %v, want nil", method, err)
+					}
+					got = append(got, e)
+				}
+				if diff := cmp.Diff([]a2a.Event{event}, got); diff != "" {
+					t.Fatalf("handler.%s() wrong result (-want +got) diff = %s", method, diff)
+				}
+				if diff := cmp.Diff(event, afterPayload); diff != "" {
+					t.Fatalf("After() wrong result (-want +got) diff = %s", diff)
+				}
+				if delegate.lastCallContext != nil {
+					t.Fatal("handler called delegate, want interceptor early return")
+				}
+			})
+		}
 	}
 }

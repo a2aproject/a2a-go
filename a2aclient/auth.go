@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -89,7 +90,17 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				continue
 			}
 			switch v := scheme.(type) {
-			case a2a.HTTPAuthSecurityScheme, a2a.OAuth2SecurityScheme:
+			case a2a.HTTPAuthSecurityScheme:
+				authScheme := strings.TrimSpace(v.Scheme)
+				switch {
+				case authScheme == "", strings.EqualFold(authScheme, "bearer"):
+					authScheme = "Bearer"
+				case strings.EqualFold(authScheme, "basic"):
+					authScheme = "Basic"
+				}
+				req.ServiceParams.set("Authorization", fmt.Sprintf("%s %s", authScheme, credential))
+				return ctx, nil, nil
+			case a2a.OAuth2SecurityScheme:
 				req.ServiceParams.set("Authorization", fmt.Sprintf("Bearer %s", credential))
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:

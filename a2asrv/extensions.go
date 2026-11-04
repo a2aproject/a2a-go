@@ -17,6 +17,7 @@ package a2asrv
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
@@ -61,10 +62,19 @@ func (e *Extensions) Requested(extension *a2a.AgentExtension) bool {
 }
 
 // RequestedURIs returns URIs of all extensions requested by the client.
+// Each [a2a.SvcParamExtensions] value is treated as a comma-separated list of URIs.
 func (e *Extensions) RequestedURIs() []string {
-	requested, ok := e.callCtx.ServiceParams().Get(a2a.SvcParamExtensions)
+	values, ok := e.callCtx.ServiceParams().Get(a2a.SvcParamExtensions)
 	if !ok {
 		return []string{}
 	}
-	return slices.Clone(requested)
+	uris := make([]string, 0, len(values))
+	for _, value := range values {
+		for uri := range strings.SplitSeq(value, ",") {
+			if uri = strings.Trim(uri, " \t"); uri != "" {
+				uris = append(uris, uri)
+			}
+		}
+	}
+	return uris
 }
