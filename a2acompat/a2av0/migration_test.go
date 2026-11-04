@@ -148,6 +148,29 @@ func TestToV1Payload(t *testing.T) {
 	}
 }
 
+func TestServerInterceptor_KeepsAgentCardSkills(t *testing.T) {
+	t.Parallel()
+	card := &a2a.AgentCard{
+		Name:        "agent",
+		Description: "desc",
+		Skills: []a2a.AgentSkill{
+			{ID: "search", Name: "Search", Description: "Searches the web", Tags: []string{"web"}},
+		},
+	}
+	interceptor := NewServerInterceptor(legacysrv.PassthroughCallInterceptor{})
+	resp := &a2asrv.Response{Payload: card}
+	if err := interceptor.After(t.Context(), nil, resp); err != nil {
+		t.Fatalf("interceptor.After() error = %v, want nil", err)
+	}
+	got, ok := resp.Payload.(*a2a.AgentCard)
+	if !ok {
+		t.Fatalf("interceptor.After() payload = %T, want *a2a.AgentCard", resp.Payload)
+	}
+	if diff := cmp.Diff(card.Skills, got.Skills); diff != "" {
+		t.Fatalf("interceptor.After() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestFromV1Payload(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -287,28 +310,5 @@ func TestFromV1Payload(t *testing.T) {
 				t.Fatalf("fromV1Payload() wrong result (+got,-want) diff = %s", diff)
 			}
 		})
-	}
-}
-
-func TestServerInterceptor_KeepsAgentCardSkills(t *testing.T) {
-	t.Parallel()
-	card := &a2a.AgentCard{
-		Name:        "agent",
-		Description: "desc",
-		Skills: []a2a.AgentSkill{
-			{ID: "search", Name: "Search", Description: "Searches the web", Tags: []string{"web"}},
-		},
-	}
-	interceptor := NewServerInterceptor(legacysrv.PassthroughCallInterceptor{})
-	resp := &a2asrv.Response{Payload: card}
-	if err := interceptor.After(t.Context(), nil, resp); err != nil {
-		t.Fatalf("interceptor.After() error = %v, want nil", err)
-	}
-	got, ok := resp.Payload.(*a2a.AgentCard)
-	if !ok {
-		t.Fatalf("interceptor.After() payload = %T, want *a2a.AgentCard", resp.Payload)
-	}
-	if diff := cmp.Diff(card.Skills, got.Skills); diff != "" {
-		t.Fatalf("interceptor.After() wrong result (-want +got) diff = %s", diff)
 	}
 }
