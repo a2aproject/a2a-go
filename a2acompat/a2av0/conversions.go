@@ -775,15 +775,19 @@ func ToV1ListTasksRequest(req *a2alegacy.ListTasksRequest) *a2a.ListTasksRequest
 	if req == nil {
 		return nil
 	}
-	return &a2a.ListTasksRequest{
+	res := &a2a.ListTasksRequest{
 		ContextID:            req.ContextID,
 		Status:               ToV1TaskState(req.Status),
 		PageSize:             req.PageSize,
 		PageToken:            req.PageToken,
-		HistoryLength:        &req.HistoryLength,
 		StatusTimestampAfter: req.LastUpdatedAfter,
 		IncludeArtifacts:     req.IncludeArtifacts,
 	}
+	// A zero legacy HistoryLength means the field was not set, while a zero v1 HistoryLength strips the history.
+	if req.HistoryLength != 0 {
+		res.HistoryLength = new(req.HistoryLength)
+	}
+	return res
 }
 
 // ToV1ListTasksResponse converts a legacy list tasks response to a v1 response.
