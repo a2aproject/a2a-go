@@ -67,6 +67,7 @@ itk/instruction.proto
 itk/pb
 itk/a2a-itk
 itk/logs
+itk/raw_results.json
 
 # ACTS conformance run output
 itk/acts-report-*.json

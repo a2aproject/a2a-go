@@ -41,6 +41,23 @@ type Manager struct {
 	state a2a.TaskState
 	// version is the last known stored version.
 	version taskstore.TaskVersion
+
+	// OnWrite, if set, is called after every successful task store write made by the manager.
+	OnWrite func(ctx context.Context, w Write)
+}
+
+// Write describes a successful task store write.
+type Write struct {
+	// TaskID is the ID of the written task.
+	TaskID a2a.TaskID
+	// Event is the event which caused the write.
+	Event a2a.Event
+	// Task is the task state passed to the store. It must not be modified.
+	Task *a2a.Task
+	// PrevState is the task state before the write, or [a2a.TaskStateUnspecified] if the write created the task.
+	PrevState a2a.TaskState
+	// State is the task state after the write.
+	State a2a.TaskState
 }
 
 // NewManager is a [Manager] constructor function.
@@ -170,6 +187,7 @@ func (mgr *Manager) create(ctx context.Context, task *a2a.Task) (taskstore.TaskV
 		return taskstore.TaskVersionMissing, fmt.Errorf("failed to create task: %w", err)
 	}
 	mgr.track(created, version, created.Status.State)
+	mgr.notifyWrite(ctx, task, a2a.TaskStateUnspecified)
 	return version, nil
 }
 
@@ -197,6 +215,7 @@ func (mgr *Manager) apply(ctx context.Context, event a2a.Event) (taskstore.TaskV
 		return taskstore.TaskVersionMissing, fmt.Errorf("failed to save task state: %w", err)
 	}
 
+	prevState := mgr.state
 	state := mgr.state
 	switch v := event.(type) {
 	case *a2a.Task:
@@ -205,6 +224,7 @@ func (mgr *Manager) apply(ctx context.Context, event a2a.Event) (taskstore.TaskV
 		state = v.Status.State
 	}
 	mgr.track(task, version, state)
+	mgr.notifyWrite(ctx, event, prevState)
 
 	return version, nil
 }
@@ -213,6 +233,20 @@ func (mgr *Manager) track(t *a2a.Task, v taskstore.TaskVersion, state a2a.TaskSt
 	mgr.tracked = t
 	mgr.version = v
 	mgr.state = state
+}
+
+// notifyWrite calls OnWrite with the tracked state. It must be called after track.
+func (mgr *Manager) notifyWrite(ctx context.Context, event a2a.Event, prevState a2a.TaskState) {
+	if mgr.OnWrite == nil {
+		return
+	}
+	mgr.OnWrite(ctx, Write{
+		TaskID:    mgr.taskInfo.TaskID,
+		Event:     event,
+		Task:      mgr.tracked,
+		PrevState: prevState,
+		State:     mgr.state,
+	})
 }
 
 func (mgr *Manager) validate(provider a2a.TaskInfoProvider) error {
