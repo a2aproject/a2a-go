@@ -154,7 +154,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	return newRemoteSubscription(queue, m.taskStore, taskID), nil
 }
 
-// Cancel 等待真实取消结果，不将取消前的输入等待快照误判为拒绝。
+// Cancel waits for the cancellation result without treating an old input-required snapshot as a refusal.
 func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	storedTask, err := m.taskStore.Get(ctx, req.ID)
 	if err != nil {
@@ -196,15 +196,15 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("bug: work-queue task id override is only allowed for executions")
 	}
 
-	// 取消前的非终态快照只提供事件水位，不能作为本次取消结果。
-	// Send/Subscribe仍使用原remoteSubscription；此处只消费实际取消后的事件。
+	// The old nonterminal snapshot provides an event watermark, not a cancellation result.
+	// Send and Subscribe retain remoteSubscription behavior. Cancel consumes subsequent worker events.
 	defer safeCloseReader(ctx, queue)
 	var subscriptionErr error
 	snapshot, snapshotErr := m.taskStore.Get(ctx, req.ID)
 	if snapshotErr != nil && !errors.Is(snapshotErr, a2a.ErrTaskNotFound) {
 		subscriptionErr = fmt.Errorf("task snapshot loading failed: %w", snapshotErr)
 	} else {
-		// 水位取排队取消前版本，避免快worker的真实拒绝事件被排队后的快照吞掉。
+		// Use the version before enqueueing so a fast worker refusal is not hidden by the later snapshot.
 		snapshotVersion := storedTask.Version
 		if snapshot != nil {
 			if snapshot.Task.Status.State.Terminal() {
@@ -220,7 +220,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 			if msg.TaskVersion != taskstore.TaskVersionMissing && !msg.TaskVersion.After(snapshotVersion) {
 				continue
 			}
-			// 后续真正的INPUT_REQUIRED事件仍是拒绝取消，不能按类型一概过滤。
+			// A subsequent INPUT_REQUIRED event still indicates refusal and must remain observable.
 			if a2aevent.IsFinal(msg.Event) {
 				if result, ok := msg.Event.(*a2a.Task); ok {
 					return convertToCancelationResult(ctx, result, nil)

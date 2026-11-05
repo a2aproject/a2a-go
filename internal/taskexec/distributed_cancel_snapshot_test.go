@@ -53,7 +53,7 @@ type cancelSnapshotRuntime struct {
 	writes         *atomic.Int32
 }
 
-// newCancelSnapshotRuntime 复用SDK实际Handler、内存存储和执行器，只用channel固定取消worker的先后顺序。
+// newCancelSnapshotRuntime uses the real handler, in-memory store, and executor, with channels controlling worker ordering.
 func newCancelSnapshotRuntime(t *testing.T, initial, final a2a.TaskState, fullTask, fast, replayOld bool) *cancelSnapshotRuntime {
 	t.Helper()
 	seed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: initial}, History: []*a2a.Message{a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("retained message"))}}
@@ -63,7 +63,7 @@ func newCancelSnapshotRuntime(t *testing.T, initial, final a2a.TaskState, fullTa
 	var reads, writes atomic.Int32
 	store.GetFunc = func(ctx context.Context, id a2a.TaskID) (*taskstore.StoredTask, error) {
 		value, err := store.InMemory.Get(ctx, id)
-		// Cancel首次读取用于准入，第二次读取初始快照；worker不继承测试私有标记。
+		// Cancel uses the first read for admission and the second for the initial snapshot. The worker does not inherit the test marker.
 		if ctx.Value(cancelSnapshotContextKey{}) == true && reads.Add(1) == 2 {
 			close(snapshotRead)
 		}
@@ -100,7 +100,7 @@ func newCancelSnapshotRuntime(t *testing.T, initial, final a2a.TaskState, fullTa
 	queue.WriteFunc = func(ctx context.Context, p *workqueue.Payload) (a2a.TaskID, error) {
 		writes.Add(1)
 		if fast {
-			// 固定快worker在Write回执前完成；上下文与SDK内存队列一样从后台开始。
+			// Complete the fast worker before Write returns, using a background context as the in-memory queue does.
 			if _, err := run(context.Background(), p); err != nil {
 				t.Logf("worker.Handle() error = %v", err)
 			}
@@ -127,7 +127,7 @@ func newCancelSnapshotRuntime(t *testing.T, initial, final a2a.TaskState, fullTa
 			replay.ReadFunc = func(ctx context.Context) (*eventqueue.Message, error) {
 				if !observed {
 					observed = true
-					// reader在取消排队前建立；重放的旧版本不能当成本次worker的拒绝结果。
+					// The reader is created before cancellation is queued. A replayed old version must not count as the worker refusing cancellation.
 					var event a2a.Event = seed
 					if !fullTask {
 						event = a2a.NewStatusUpdateEvent(seed, initial, nil)
@@ -154,7 +154,7 @@ func newCancelSnapshotRuntime(t *testing.T, initial, final a2a.TaskState, fullTa
 	return &cancelSnapshotRuntime{handler: handler, store: store, seed: seed, snapshotRead: snapshotRead, workerEntered: entered, workerFinished: finished, release: unblock, writes: &writes}
 }
 
-// waitCancelSnapshotSignal 用实际阶段信号同步测试，不用sleep推测取消或持久化时序。
+// waitCancelSnapshotSignal synchronizes on execution signals without timing assumptions.
 func waitCancelSnapshotSignal(t *testing.T, ctx context.Context, ch <-chan struct{}, name string) {
 	t.Helper()
 	select {
@@ -164,7 +164,7 @@ func waitCancelSnapshotSignal(t *testing.T, ctx context.Context, ch <-chan struc
 	}
 }
 
-// TestDistributedCancelSnapshotWaitsForWorker 验证初始非终态快照不能冒充本次取消结果。
+// TestDistributedCancelSnapshotWaitsForWorker verifies that a nonterminal snapshot cannot substitute for the cancellation result.
 func TestDistributedCancelSnapshotWaitsForWorker(t *testing.T) {
 	t.Parallel()
 	for _, state := range []a2a.TaskState{a2a.TaskStateInputRequired, a2a.TaskStateWorking, a2a.TaskStateAuthRequired} {
@@ -187,7 +187,7 @@ func TestDistributedCancelSnapshotWaitsForWorker(t *testing.T) {
 			}()
 			waitCancelSnapshotSignal(t, ctx, runtime.workerEntered, "cancel worker entry")
 			waitCancelSnapshotSignal(t, ctx, runtime.snapshotRead, "cancel snapshot read")
-			// 取消快照已经读取，但实际worker尚未处理；Get必须仍返回完整原任务。
+			// The snapshot has been read, but the worker has not run. Get must still return the complete original task.
 			pending, err := runtime.handler.GetTask(ctx, &a2a.GetTaskRequest{ID: runtime.seed.ID})
 			if err != nil {
 				t.Fatalf("handler.GetTask() error = %v, want nil", err)
@@ -229,7 +229,7 @@ func TestDistributedCancelSnapshotWaitsForWorker(t *testing.T) {
 	}
 }
 
-// TestDistributedCancelSnapshotPreservesRefusal 区分初始快照与真正worker的Task或Status拒绝事件。
+// TestDistributedCancelSnapshotPreservesRefusal distinguishes the initial snapshot from a worker refusal expressed as a Task or Status event.
 func TestDistributedCancelSnapshotPreservesRefusal(t *testing.T) {
 	t.Parallel()
 	for _, fullTask := range []bool{true, false} {
@@ -277,7 +277,7 @@ func TestDistributedCancelSnapshotPreservesRefusal(t *testing.T) {
 	}
 }
 
-// TestDistributedCancelSnapshotIgnoresOlderEvents 验证旧Task和Status事件不会在真正取消事件之前误终止请求。
+// TestDistributedCancelSnapshotIgnoresOlderEvents verifies that old Task and Status events cannot terminate cancellation early.
 func TestDistributedCancelSnapshotIgnoresOlderEvents(t *testing.T) {
 	t.Parallel()
 	for _, fullTask := range []bool{true, false} {
@@ -318,7 +318,7 @@ func TestDistributedCancelSnapshotIgnoresOlderEvents(t *testing.T) {
 	}
 }
 
-// TestDistributedCancelSnapshotDeadline 验证取消请求会等待真实结果，并在预算耗尽时保持失败而非伪造成功。
+// TestDistributedCancelSnapshotDeadline verifies that cancellation waits for a real result and fails when its deadline expires.
 func TestDistributedCancelSnapshotDeadline(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
