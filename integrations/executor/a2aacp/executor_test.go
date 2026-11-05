@@ -549,6 +549,23 @@ func TestExecutor_RestartsAgent(t *testing.T) {
 	}
 }
 
+func TestExecutor_RestartsAgentThatExitedUnnoticed(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{})
+	run(t, execute(e, newExecCtx("ctx1", a2a.NewTextPart("one"))))
+	h.agent(0).exitUnnoticed()
+
+	got := run(t, execute(e, newExecCtx("ctx2", a2a.NewTextPart("two"))))
+
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	if got := h.agentCount(); got != 2 {
+		t.Fatalf("started agents = %d, want 2", got)
+	}
+}
+
 func TestExecutor_AgentExitFailsTurn(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
