@@ -154,9 +154,7 @@ func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers 
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct a request: %w", err)
 	}
-	// Announce the SDK's native protocol version on discovery requests,
-	// matching the behavior of the other A2A SDKs. A caller-provided
-	// A2A-Version header (via WithRequestHeader) takes precedence.
+	// Servers with v0.3 compatibility pick the card format based on this header and assume v0.3 when it is missing.
 	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	for h, val := range headers {
 		req.Header.Set(h, val)
