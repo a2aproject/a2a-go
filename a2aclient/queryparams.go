@@ -23,13 +23,9 @@ import (
 
 type httpQueryParamsKeyType struct{}
 
-// AttachHTTPQueryParams returns a context carrying HTTP query parameters that
-// HTTP-based transports append to the request URL. The built-in JSON-RPC and
-// REST transports (including the v0.3 compatibility transports in
-// a2acompat/a2av0) support these parameters. Custom [Transport]
-// implementations should read them using [HTTPQueryParamsFrom] and apply them
-// according to their protocol binding; parameters are dropped by transports
-// that do not. Query parameters attached to the context earlier are preserved.
+// AttachHTTPQueryParams returns a context with query parameters which the built-in JSON-RPC and REST
+// transports append to request URLs. Custom [Transport] implementations need to apply them using
+// [HTTPQueryParamsFrom]. Parameters attached earlier are preserved.
 func AttachHTTPQueryParams(ctx context.Context, params url.Values) context.Context {
 	if len(params) == 0 {
 		return ctx
@@ -40,8 +36,7 @@ func AttachHTTPQueryParams(ctx context.Context, params url.Values) context.Conte
 	return context.WithValue(ctx, httpQueryParamsKeyType{}, merged)
 }
 
-// HTTPQueryParamsFrom returns HTTP query parameters previously attached to the
-// context using [AttachHTTPQueryParams]. Returns nil if there are none.
+// HTTPQueryParamsFrom returns query parameters attached using [AttachHTTPQueryParams].
 func HTTPQueryParamsFrom(ctx context.Context) url.Values {
 	params, _ := ctx.Value(httpQueryParamsKeyType{}).(url.Values)
 	return params

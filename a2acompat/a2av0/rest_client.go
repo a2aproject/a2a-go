@@ -132,8 +132,6 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 
 	resp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		// The error carries the full request URL; strip the query so that
-		// credentials passed as query parameters do not leak into logs.
 		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {

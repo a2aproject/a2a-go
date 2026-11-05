@@ -29,9 +29,8 @@ func MergeQueryParams(dst, src url.Values) {
 	}
 }
 
-// RedactURLError strips the query part from [*url.Error] values so that
-// credentials carried in URL query parameters do not leak into error
-// messages and logs. Errors of other types are returned unchanged.
+// RedactURLError strips the query from [*url.Error] so that credentials passed as query parameters
+// don't leak into error messages and logs.
 func RedactURLError(err error) error {
 	var urlErr *url.Error
 	if !errors.As(err, &urlErr) {

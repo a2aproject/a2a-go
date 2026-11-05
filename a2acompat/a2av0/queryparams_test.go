@@ -107,7 +107,6 @@ func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
 		gotQuery = r.URL.Query()
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		// v0.3 REST bodies are proto-JSON of google.a2a.v1.
 		_, _ = w.Write([]byte(`{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`))
 	}))
 	t.Cleanup(server.Close)

@@ -69,7 +69,6 @@ func TestRedactURLError(t *testing.T) {
 			if got.Error() != tc.want {
 				t.Errorf("RedactURLError() = %q, want %q", got.Error(), tc.want)
 			}
-			// Wrapping a redacted *url.Error must keep it matchable with errors.As.
 			var origURLErr *url.Error
 			if errors.As(tc.err, &origURLErr) {
 				wrapped := fmt.Errorf("failed to send HTTP request: %w", got)

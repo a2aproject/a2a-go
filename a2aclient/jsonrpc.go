@@ -128,8 +128,6 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		// The error carries the full request URL; strip the query so that
-		// credentials passed as query parameters do not leak into logs.
 		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	defer func() {
@@ -164,8 +162,6 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		// The error carries the full request URL; strip the query so that
-		// credentials passed as query parameters do not leak into logs.
 		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 

@@ -105,21 +105,12 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				req.ServiceParams.set("Authorization", fmt.Sprintf("Bearer %s", credential))
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
-				// Only the HTTP-based protocol bindings have a notion of query
-				// and cookie locations. Other transports (gRPC, custom) convey
-				// ServiceParams according to their protocol binding, so for
-				// them the credential is attached to ServiceParams under the
-				// scheme name regardless of the declared location.
 				if !isHTTPProtocolBinding(req) {
 					req.ServiceParams.set(v.Name, string(credential))
 					return ctx, nil, nil
 				}
 				switch v.Location {
 				case a2a.APIKeySecuritySchemeLocationQuery:
-					// Query parameters cannot be expressed via ServiceParams
-					// (they become HTTP headers in the HTTP protocol bindings).
-					// Attach them to the context instead; HTTP transports append
-					// them to the request URL.
 					ctx = AttachHTTPQueryParams(ctx, url.Values{v.Name: {string(credential)}})
 					return ctx, nil, nil
 				case a2a.APIKeySecuritySchemeLocationCookie:
@@ -127,21 +118,16 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 						return ctx, nil, err
 					}
 					pair := v.Name + "=" + string(credential)
-					// Clients must not send more than one Cookie header
-					// (RFC 6265 §5.4), so merge with any existing cookies
-					// into a single header value.
+					// RFC 6265 section 5.4 forbids sending more than one Cookie header.
 					if existing := req.ServiceParams.Get("Cookie"); len(existing) > 0 {
 						pair = strings.Join(existing, "; ") + "; " + pair
 					}
 					req.ServiceParams.set("Cookie", pair)
 					return ctx, nil, nil
 				case a2a.APIKeySecuritySchemeLocationHeader, "":
-					// An unset location is treated as header for backward compatibility.
 					req.ServiceParams.set(v.Name, string(credential))
 					return ctx, nil, nil
 				default:
-					// Do not inject the credential at an unknown location to
-					// avoid leaking it to the wrong place on the wire.
 					log.Warn(ctx, "unsupported API key security scheme location, credential not attached", "location", v.Location)
 				}
 			}
@@ -151,27 +137,18 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 	return ctx, nil, nil
 }
 
-// isHTTPProtocolBinding reports whether the request will be sent over one of
-// the HTTP-based protocol bindings (JSON-RPC or REST). The binding of the
-// interface selected by the Client is used; requests with an unset or unknown
-// binding are treated as non-HTTP so that transports conveying [ServiceParams]
-// (gRPC, custom) keep receiving credentials the way they always did.
 func isHTTPProtocolBinding(req *Request) bool {
 	return req.ProtocolBinding == a2a.TransportProtocolJSONRPC ||
 		req.ProtocolBinding == a2a.TransportProtocolHTTPJSON
 }
 
-// validateCookiePair checks that the cookie name and credential can be safely
-// embedded into a Cookie header value. Values containing cookie separators
-// (";" or ","), whitespace, quotes or control characters are rejected because
-// they would corrupt the header or allow injecting additional cookies.
-// The error message must not include the credential.
 func validateCookiePair(name, credential string) error {
 	switch {
 	case name == "":
 		return errors.New("API key cookie name is empty")
 	case strings.ContainsAny(name, "=;,\"\\ \t\r\n") || containsControlChars(name):
 		return fmt.Errorf("API key cookie name %q contains invalid characters", name)
+	// The error must not include the credential.
 	case strings.ContainsAny(credential, ";,\"\\ \t\r\n") || containsControlChars(credential):
 		return errors.New("API key credential contains characters that are invalid for a cookie value")
 	}

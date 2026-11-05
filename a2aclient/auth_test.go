@@ -55,10 +55,8 @@ func TestAuthInterceptor_APIKeyLocation(t *testing.T) {
 	sid := SessionID("123")
 
 	testCases := []struct {
-		name string
-		// binding is the protocol binding of the interface selected by the Client.
-		binding a2a.TransportProtocol
-		// cardBindings are the bindings declared in the agent card. Defaults to [binding].
+		name         string
+		binding      a2a.TransportProtocol
 		cardBindings []a2a.TransportProtocol
 		scheme       a2a.APIKeySecurityScheme
 		cred         string
