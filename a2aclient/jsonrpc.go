@@ -98,14 +98,14 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 			return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
 		}
 		query := u.Query()
-		mergeQueryParams(query, extraQuery)
+		utils.MergeQueryParams(query, extraQuery)
 		u.RawQuery = query.Encode()
 		requestURL = u.String()
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", redactURLError(err))
+		return nil, fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
@@ -130,7 +130,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	if err != nil {
 		// The error carries the full request URL; strip the query so that
 		// credentials passed as query parameters do not leak into logs.
-		return nil, fmt.Errorf("failed to send HTTP request: %w", redactURLError(err))
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	defer func() {
 		if err := httpResp.Body.Close(); err != nil {
@@ -166,7 +166,7 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if err != nil {
 		// The error carries the full request URL; strip the query so that
 		// credentials passed as query parameters do not leak into logs.
-		return nil, fmt.Errorf("failed to send HTTP request: %w", redactURLError(err))
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {

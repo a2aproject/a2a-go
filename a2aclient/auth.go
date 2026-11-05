@@ -152,22 +152,13 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 }
 
 // isHTTPProtocolBinding reports whether the request will be sent over one of
-// the HTTP-based protocol bindings (JSON-RPC or REST) declared in the agent
-// card. Requests that cannot be matched to a declared interface are treated
-// as non-HTTP so that transports conveying [ServiceParams] (gRPC, custom)
-// keep receiving credentials the way they always did.
+// the HTTP-based protocol bindings (JSON-RPC or REST). The binding of the
+// interface selected by the Client is used; requests with an unset or unknown
+// binding are treated as non-HTTP so that transports conveying [ServiceParams]
+// (gRPC, custom) keep receiving credentials the way they always did.
 func isHTTPProtocolBinding(req *Request) bool {
-	if req.Card == nil {
-		return false
-	}
-	for _, iface := range req.Card.SupportedInterfaces {
-		if iface == nil || iface.URL != req.BaseURL {
-			continue
-		}
-		return iface.ProtocolBinding == a2a.TransportProtocolJSONRPC ||
-			iface.ProtocolBinding == a2a.TransportProtocolHTTPJSON
-	}
-	return false
+	return req.ProtocolBinding == a2a.TransportProtocolJSONRPC ||
+		req.ProtocolBinding == a2a.TransportProtocolHTTPJSON
 }
 
 // validateCookiePair checks that the cookie name and credential can be safely

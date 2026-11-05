@@ -31,6 +31,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2apb/v0/pbjson"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -104,13 +105,16 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 		return nil, fmt.Errorf("failed to parse path: %w", err)
 	}
 	u := t.base.JoinPath(rel.EscapedPath())
-	if len(req.query) > 0 {
-		u.RawQuery = req.query.Encode()
+	query := u.Query()
+	utils.MergeQueryParams(query, req.query)
+	utils.MergeQueryParams(query, a2aclient.HTTPQueryParamsFrom(ctx))
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.method, u.String(), bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
 	}
 	if len(req.body) > 0 {
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -128,7 +132,9 @@ func (t *restCompatTransport) sendRequest(ctx context.Context, req *compatRestRe
 
 	resp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		// The error carries the full request URL; strip the query so that
+		// credentials passed as query parameters do not leak into logs.
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		defer func() {

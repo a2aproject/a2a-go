@@ -34,12 +34,14 @@ import (
 
 const apiKeyTestBaseURL = "https://agent.example.com/a2a"
 
-func apiKeyCard(scheme a2a.APIKeySecurityScheme, binding a2a.TransportProtocol) *a2a.AgentCard {
+func apiKeyCard(scheme a2a.APIKeySecurityScheme, bindings ...a2a.TransportProtocol) *a2a.AgentCard {
 	schemeName := a2a.SecuritySchemeName("api-key")
+	interfaces := make([]*a2a.AgentInterface, 0, len(bindings))
+	for _, binding := range bindings {
+		interfaces = append(interfaces, &a2a.AgentInterface{URL: apiKeyTestBaseURL, ProtocolBinding: binding})
+	}
 	return &a2a.AgentCard{
-		SupportedInterfaces: []*a2a.AgentInterface{
-			{URL: apiKeyTestBaseURL, ProtocolBinding: binding},
-		},
+		SupportedInterfaces:  interfaces,
 		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
 		SecuritySchemes: a2a.NamedSecuritySchemes{
 			schemeName: scheme,
@@ -53,15 +55,18 @@ func TestAuthInterceptor_APIKeyLocation(t *testing.T) {
 	sid := SessionID("123")
 
 	testCases := []struct {
-		name       string
-		scheme     a2a.APIKeySecurityScheme
-		binding    a2a.TransportProtocol
-		cred       string
-		baseURL    string
-		initParams ServiceParams
-		wantParams ServiceParams
-		wantQuery  url.Values
-		wantErr    bool
+		name string
+		// binding is the protocol binding of the interface selected by the Client.
+		binding a2a.TransportProtocol
+		// cardBindings are the bindings declared in the agent card. Defaults to [binding].
+		cardBindings []a2a.TransportProtocol
+		scheme       a2a.APIKeySecurityScheme
+		cred         string
+		baseURL      string
+		initParams   ServiceParams
+		wantParams   ServiceParams
+		wantQuery    url.Values
+		wantErr      bool
 	}{
 		{
 			name:       "header location",
@@ -139,11 +144,19 @@ func TestAuthInterceptor_APIKeyLocation(t *testing.T) {
 			wantParams: ServiceParams{"session_key": []string{"secret"}},
 		},
 		{
-			name:       "unknown binding falls back to service params",
+			name:         "grpc binding selected with http interface first in card",
+			scheme:       a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+			binding:      a2a.TransportProtocolGRPC,
+			cardBindings: []a2a.TransportProtocol{a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolGRPC},
+			cred:         "secret",
+			baseURL:      apiKeyTestBaseURL,
+			wantParams:   ServiceParams{"api_key": []string{"secret"}},
+		},
+		{
+			name:       "unset binding falls back to service params",
 			scheme:     a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
-			binding:    a2a.TransportProtocolJSONRPC,
 			cred:       "secret",
-			baseURL:    "https://other.example.com/a2a",
+			baseURL:    apiKeyTestBaseURL,
 			wantParams: ServiceParams{"api_key": []string{"secret"}},
 		},
 	}
@@ -160,10 +173,15 @@ func TestAuthInterceptor_APIKeyLocation(t *testing.T) {
 			maps.Copy(params, tc.initParams)
 			ctx := AttachSessionID(t.Context(), sid)
 
+			cardBindings := tc.cardBindings
+			if cardBindings == nil {
+				cardBindings = []a2a.TransportProtocol{tc.binding}
+			}
 			gotCtx, _, err := interceptor.Before(ctx, &Request{
-				BaseURL:       tc.baseURL,
-				ServiceParams: params,
-				Card:          apiKeyCard(tc.scheme, tc.binding),
+				BaseURL:         tc.baseURL,
+				ProtocolBinding: tc.binding,
+				ServiceParams:   params,
+				Card:            apiKeyCard(tc.scheme, cardBindings...),
 			})
 			if tc.wantErr {
 				if err == nil {

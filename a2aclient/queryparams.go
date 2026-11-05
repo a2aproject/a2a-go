@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,26 +16,27 @@ package a2aclient
 
 import (
 	"context"
-	"errors"
 	"net/url"
-	"strings"
+
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 type httpQueryParamsKeyType struct{}
 
 // AttachHTTPQueryParams returns a context carrying HTTP query parameters that
 // HTTP-based transports append to the request URL. The built-in JSON-RPC and
-// REST transports support these parameters. Custom [Transport] implementations
-// should read them using [HTTPQueryParamsFrom] and apply them according to
-// their protocol binding; parameters are dropped by transports that do not.
-// Query parameters attached to the context earlier are preserved.
+// REST transports (including the v0.3 compatibility transports in
+// a2acompat/a2av0) support these parameters. Custom [Transport]
+// implementations should read them using [HTTPQueryParamsFrom] and apply them
+// according to their protocol binding; parameters are dropped by transports
+// that do not. Query parameters attached to the context earlier are preserved.
 func AttachHTTPQueryParams(ctx context.Context, params url.Values) context.Context {
 	if len(params) == 0 {
 		return ctx
 	}
 	merged := make(url.Values)
-	mergeQueryParams(merged, HTTPQueryParamsFrom(ctx))
-	mergeQueryParams(merged, params)
+	utils.MergeQueryParams(merged, HTTPQueryParamsFrom(ctx))
+	utils.MergeQueryParams(merged, params)
 	return context.WithValue(ctx, httpQueryParamsKeyType{}, merged)
 }
 
@@ -44,30 +45,4 @@ func AttachHTTPQueryParams(ctx context.Context, params url.Values) context.Conte
 func HTTPQueryParamsFrom(ctx context.Context) url.Values {
 	params, _ := ctx.Value(httpQueryParamsKeyType{}).(url.Values)
 	return params
-}
-
-// mergeQueryParams appends all key-value pairs from src to dst.
-func mergeQueryParams(dst, src url.Values) {
-	for k, vals := range src {
-		for _, v := range vals {
-			dst.Add(k, v)
-		}
-	}
-}
-
-// redactURLError strips the query part from [*url.Error] values so that
-// credentials carried in URL query parameters do not leak into error
-// messages and logs. Errors of other types are returned unchanged.
-func redactURLError(err error) error {
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
-		return err
-	}
-	i := strings.Index(urlErr.URL, "?")
-	if i < 0 {
-		return err
-	}
-	redacted := *urlErr
-	redacted.URL = urlErr.URL[:i]
-	return &redacted
 }
