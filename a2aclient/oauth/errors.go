@@ -15,9 +15,51 @@
 package oauth
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+var (
+	// ErrNoAuthorizationEndpoint is returned when the authorization code flow is
+	// started with an authorization server that has no authorization endpoint.
+	// The device authorization grant may still be available.
+	ErrNoAuthorizationEndpoint = errors.New("the authorization server has no authorization endpoint")
+	// ErrNoDeviceAuthorizationEndpoint is returned when the device authorization
+	// grant is started with an authorization server that does not support it.
+	ErrNoDeviceAuthorizationEndpoint = errors.New("the authorization server has no device authorization endpoint")
+	// ErrNoRevocationEndpoint is returned when a grant is revoked at an
+	// authorization server that has no revocation endpoint.
+	ErrNoRevocationEndpoint = errors.New("the authorization server has no revocation endpoint")
+	// ErrGrantNotFound is returned by [Store.Get] when no grant is stored for the
+	// key.
+	ErrGrantNotFound = errors.New("grant not found")
+)
+
+// Error is an OAuth error response from an authorization server (RFC 6749 §5.2,
+// RFC 8628 §3.5), or an error returned to the redirect URI (RFC 6749 §4.1.2.1).
+type Error struct {
+	// Code is the error code, such as "invalid_grant" or "access_denied".
+	Code string `json:"error"`
+	// Description is the optional human-readable error_description.
+	Description string `json:"error_description,omitempty"`
+}
+
+// Error implements the error interface.
+func (e *Error) Error() string {
+	code := cmp.Or(e.Code, "OAuth error response without an error code")
+	if e.Description != "" {
+		return fmt.Sprintf("%s: %s", code, e.Description)
+	}
+	return code
+}
+
+// isOAuthError reports whether err is an OAuth error response with the given code.
+func isOAuthError(err error, code string) bool {
+	var oe *Error
+	return errors.As(err, &oe) && oe.Code == code
+}
 
 // NoClientError reports that no client registration can be used with an
 // authorization server.

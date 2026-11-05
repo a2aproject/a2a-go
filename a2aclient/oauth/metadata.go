@@ -15,6 +15,7 @@
 package oauth
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/log"
@@ -40,6 +42,7 @@ type authServerMetadata struct {
 	RevocationEndpoint                string   `json:"revocation_endpoint,omitempty"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported,omitempty"`
 	ClientIDMetadataDocumentSupported bool     `json:"client_id_metadata_document_supported,omitempty"`
+	AuthorizationResponseIssSupported bool     `json:"authorization_response_iss_parameter_supported,omitempty"`
 }
 
 // protectedResourceMetadata is the subset of RFC 9728 Protected Resource Metadata the client uses.
@@ -68,18 +71,43 @@ type Endpoints struct {
 	Revocation string `json:"revocation,omitempty"`
 	// CIMDSupported reports that the server accepts Client ID Metadata Document URLs as client IDs.
 	CIMDSupported bool `json:"cimd_supported,omitempty"`
+	// AuthorizationResponseIss reports that the server adds the iss parameter to
+	// its authorization responses (RFC 9207), so a response without it is rejected.
+	AuthorizationResponseIss bool `json:"authorization_response_iss,omitempty"`
 }
 
 // Endpoints returns the endpoints the metadata lists.
 func (m *authServerMetadata) Endpoints() Endpoints {
 	return Endpoints{
-		Issuer:              m.Issuer,
-		Authorization:       m.AuthorizationEndpoint,
-		Token:               m.TokenEndpoint,
-		DeviceAuthorization: m.DeviceAuthorizationEndpoint,
-		Revocation:          m.RevocationEndpoint,
-		CIMDSupported:       m.ClientIDMetadataDocumentSupported,
+		Issuer:                   m.Issuer,
+		Authorization:            m.AuthorizationEndpoint,
+		Token:                    m.TokenEndpoint,
+		DeviceAuthorization:      m.DeviceAuthorizationEndpoint,
+		Revocation:               m.RevocationEndpoint,
+		CIMDSupported:            m.ClientIDMetadataDocumentSupported,
+		AuthorizationResponseIss: m.AuthorizationResponseIssSupported,
 	}
+}
+
+// supportsS256 reports whether the server accepts PKCE with S256, which the
+// client always uses. A server that lists no methods is taken to, since many
+// leave the list out.
+func (m *authServerMetadata) supportsS256() bool {
+	return len(m.CodeChallengeMethodsSupported) == 0 || slices.Contains(m.CodeChallengeMethodsSupported, "S256")
+}
+
+// usableEndpoints returns the endpoints the client can use, validated. Without
+// PKCE S256 support the authorization endpoint is left out, and a server without
+// a device authorization endpoint either is refused.
+func (m *authServerMetadata) usableEndpoints() (Endpoints, error) {
+	e := m.Endpoints()
+	if !m.supportsS256() {
+		if e.DeviceAuthorization == "" {
+			return Endpoints{}, fmt.Errorf("authorization server %s does not support PKCE with S256", m.Issuer)
+		}
+		e.Authorization = ""
+	}
+	return e, e.Validate()
 }
 
 // Validate checks that the endpoints name an issuer and include a token endpoint
@@ -200,13 +228,16 @@ func (f fetcher) getJSON(ctx context.Context, rawURL string, sameOrigin bool, ou
 	return nil
 }
 
+// statusError is a response with an unexpected HTTP status to a request the
+// client makes itself. An empty method means GET.
 type statusError struct {
+	method string
 	url    string
 	status int
 }
 
 func (e *statusError) Error() string {
-	return fmt.Sprintf("GET %s: HTTP %d", e.url, e.status)
+	return fmt.Sprintf("%s %s: HTTP %d", cmp.Or(e.method, http.MethodGet), e.url, e.status)
 }
 
 type parseError struct {

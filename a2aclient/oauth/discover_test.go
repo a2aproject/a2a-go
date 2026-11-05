@@ -614,6 +614,31 @@ func TestResourceMetadataGuessedLocations(t *testing.T) {
 	}
 }
 
+func TestServerMetadataEndpoints(t *testing.T) {
+	t.Parallel()
+	body := `{
+		"issuer": "https://login.example.com",
+		"authorization_endpoint": "https://login.example.com/authorize",
+		"token_endpoint": "https://login.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"authorization_response_iss_parameter_supported": true
+	}`
+	var m authServerMetadata
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	want := Endpoints{
+		Issuer:                   "https://login.example.com",
+		Authorization:            "https://login.example.com/authorize",
+		Token:                    "https://login.example.com/token",
+		CIMDSupported:            true,
+		AuthorizationResponseIss: true,
+	}
+	if diff := cmp.Diff(want, m.Endpoints()); diff != "" {
+		t.Fatalf("authServerMetadata.Endpoints() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestServerMetadata(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1242,4 +1267,62 @@ func TestServerMetadataNotPublished(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUsableEndpointsPKCE(t *testing.T) {
+	t.Parallel()
+	const issuer = "https://as.example.com"
+	tests := []struct {
+		name    string
+		methods []string
+		device  bool
+		want    Endpoints
+		wantErr bool
+	}{
+		{name: "no methods listed", want: Endpoints{Issuer: issuer, Authorization: issuer + "/authorize", Token: issuer + "/token"}},
+		{name: "S256 listed", methods: []string{"plain", "S256"}, want: Endpoints{Issuer: issuer, Authorization: issuer + "/authorize", Token: issuer + "/token"}},
+		{name: "only plain, with a device endpoint", methods: []string{"plain"}, device: true, want: Endpoints{Issuer: issuer, Token: issuer + "/token", DeviceAuthorization: issuer + "/device"}},
+		{name: "only plain", methods: []string{"plain"}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := &authServerMetadata{Issuer: issuer, AuthorizationEndpoint: issuer + "/authorize", TokenEndpoint: issuer + "/token", CodeChallengeMethodsSupported: tc.methods}
+			if tc.device {
+				m.DeviceAuthorizationEndpoint = issuer + "/device"
+			}
+			got, err := m.usableEndpoints()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "S256") {
+					t.Fatalf("usableEndpoints() = %+v, %v, want PKCE S256 refused", got, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("usableEndpoints() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("usableEndpoints() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+
+	t.Run("card scheme prefers the device flow", func(t *testing.T) {
+		t.Parallel()
+		metadata := fmt.Sprintf(`{"issuer":%q,"authorization_endpoint":%q,"token_endpoint":%q,"device_authorization_endpoint":%q,"code_challenge_methods_supported":["plain"]}`, issuer, issuer+"/authorize", issuer+"/token", issuer+"/device")
+		hosts := remoteHosts{"as.example.com": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if _, err := w.Write([]byte(metadata)); err != nil {
+				t.Errorf("writing the response error = %v", err)
+			}
+		})}
+		f := fetcher{client: &http.Client{Transport: hosts}}
+		card := &a2a.AgentCard{
+			SecuritySchemes:      a2a.NamedSecuritySchemes{"oidc": a2a.OpenIDConnectSecurityScheme{OpenIDConnectURL: issuer + "/.well-known/openid-configuration"}},
+			SecurityRequirements: a2a.SecurityRequirementsOptions{{"oidc": nil}},
+		}
+		r, err := f.requirementFromCard(t.Context(), card, "https://agent.example.com", nil)
+		if err != nil || r == nil || !r.PreferDevice || r.Endpoints.Authorization != "" {
+			t.Fatalf("requirementFromCard() = %+v, %v, want the device flow only", r, err)
+		}
+	})
 }
