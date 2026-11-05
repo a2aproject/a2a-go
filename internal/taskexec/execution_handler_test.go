@@ -27,6 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestRunProducerConsumer(t *testing.T) {
@@ -162,6 +163,47 @@ func TestRunProducerConsumer_CausePropagation(t *testing.T) {
 	)
 	if gotProducerErr != consumerErr {
 		t.Fatalf("expected producer error = %s, got %s", consumerErr, gotProducerErr)
+	}
+}
+
+func TestRunProducerConsumer_NonPositiveHeartbeatInterval(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		interval time.Duration
+	}{
+		{name: "zero interval", interval: 0},
+		{name: "negative interval", interval: -time.Second},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			msg := a2a.NewMessage(a2a.MessageRoleAgent)
+			heartbeater := &testHeartbeater{
+				interval: tc.interval,
+				onHeartbeat: func(ctx context.Context) error {
+					return fmt.Errorf("unexpected heartbeat")
+				},
+			}
+
+			got, err := runProducerConsumer(
+				t.Context(),
+				func(ctx context.Context) error { return nil },
+				func(ctx context.Context) (a2a.SendMessageResult, error) { return msg, nil },
+				heartbeater,
+				nil,
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("runProducerConsumer() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(a2a.SendMessageResult(msg), got); diff != "" {
+				t.Fatalf("runProducerConsumer() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 
