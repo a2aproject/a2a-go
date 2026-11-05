@@ -362,23 +362,24 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 // Then waits for the execution to complete and resolves cancelation to the same result.
 func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
+		m.mu.Lock()
+		delete(m.cancelations, cancel.req.ID)
+		cancel.result.signalDone()
+		m.mu.Unlock()
+	}()
+
+	// Deferred after signalDone so that it runs first and the error is set before waiters are unblocked.
+	defer func() {
 		if r := recover(); r != nil {
 			var err error
 			if m.panicHandler != nil {
 				err = m.panicHandler(r)
 			} else {
-				err := fmt.Errorf("task cancelation panicked: %v\n%s", r, debug.Stack())
+				err = fmt.Errorf("task cancelation panicked: %v\n%s", r, debug.Stack())
 				log.Warn(ctx, "cancelation panicked", "error", err)
 			}
 			cancel.result.setError(err)
 		}
-	}()
-
-	defer func() {
-		m.mu.Lock()
-		delete(m.cancelations, cancel.req.ID)
-		cancel.result.signalDone()
-		m.mu.Unlock()
 	}()
 
 	canceler, _, cleaner, err := m.factory.CreateCanceler(ctx, cancel.req)

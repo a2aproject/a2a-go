@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -181,6 +182,7 @@ type testCanceler struct {
 	contextCanceled bool
 	block           chan struct{}
 	emitTask        *a2a.Task
+	panicValue      any
 }
 
 var _ Canceler = (*testCanceler)(nil)
@@ -192,6 +194,10 @@ func newCanceler() *testCanceler {
 func (c *testCanceler) Cancel(ctx context.Context, queue eventpipe.Writer) error {
 	c.queue = queue
 	close(c.cancelCalled)
+
+	if c.panicValue != nil {
+		panic(c.panicValue)
+	}
 
 	if c.block != nil {
 		select {
@@ -688,6 +694,61 @@ func TestManager_ConcurrentExecutionFinishesBeforeCancel(t *testing.T) {
 			if tc.wantErr == nil && got.task != executionResult {
 				t.Fatalf("manager.Cancel() = %v, want %v", got.task, executionResult)
 			}
+		})
+	}
+}
+
+func TestManager_CancelerPanicFailsConcurrentCancelation(t *testing.T) {
+	t.Parallel()
+
+	panicHandlerErr := errors.New("handled panic")
+	tests := []struct {
+		name         string
+		panicHandler PanicHandlerFn
+		wantErr      error
+		wantErrText  string
+	}{
+		{
+			name:        "default panic handling",
+			wantErrText: "task cancelation panicked: canceler panic",
+		},
+		{
+			name:         "custom panic handler",
+			panicHandler: func(r any) error { return panicHandlerErr },
+			wantErr:      panicHandlerErr,
+			wantErrText:  panicHandlerErr.Error(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			executor, canceler := newExecutor(), newCanceler()
+			executor.nextEventTerminal = true
+			canceler.panicValue = "canceler panic"
+			manager := NewLocalManager(LocalManagerConfig{
+				Factory:      newStaticFactory(executor, canceler),
+				TaskStore:    testutil.NewTestTaskStore(),
+				PanicHandler: tc.panicHandler,
+			})
+			subscription, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+			_, _ = consumeEvents(t, subscription)
+			if err != nil {
+				t.Fatalf("manager.Execute() failed: %v", err)
+			}
+			<-executor.executeCalled
+
+			_, err = manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: subscription.TaskID()})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrText) {
+				t.Fatalf("manager.Cancel() error = %v, want %q", err, tc.wantErrText)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("manager.Cancel() error = %v, want %v", err, tc.wantErr)
+			}
+
+			executor.mustWrite(t, &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
 		})
 	}
 }
