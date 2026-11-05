@@ -718,12 +718,20 @@ func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 	var result []*a2apb.OAuthFlows
 
 	switch f := flows.(type) {
+	case a2a.AuthorizationCodeOAuthFlow:
+		result = append(result, toProtoAuthzOAuthCodeFlow(&f))
 	case *a2a.AuthorizationCodeOAuthFlow:
 		result = append(result, toProtoAuthzOAuthCodeFlow(f))
+	case a2a.ClientCredentialsOAuthFlow:
+		result = append(result, toProtoCredentialsOAuthFlow(&f))
 	case *a2a.ClientCredentialsOAuthFlow:
 		result = append(result, toProtoCredentialsOAuthFlow(f))
+	case a2a.ImplicitOAuthFlow:
+		result = append(result, toProtoImplicitOAuthFlow(&f))
 	case *a2a.ImplicitOAuthFlow:
 		result = append(result, toProtoImplicitOAuthFlow(f))
+	case a2a.PasswordOAuthFlow:
+		result = append(result, toProtoPasswordOAuthFlows(&f))
 	case *a2a.PasswordOAuthFlow:
 		result = append(result, toProtoPasswordOAuthFlows(f))
 	default:
