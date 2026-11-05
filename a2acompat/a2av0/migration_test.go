@@ -18,8 +18,10 @@ import (
 	"testing"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
+	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
 	legacysrv "github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -46,12 +48,11 @@ func TestToV1Payload(t *testing.T) {
 		{
 			name:  "ListTasksRequest",
 			input: &a2alegacy.ListTasksRequest{ContextID: "ctx1", PageSize: 10},
-			want:  &a2a.ListTasksRequest{ContextID: "ctx1", PageSize: 10},
-		},
-		{
-			name:  "ListTasksRequest with history length",
-			input: &a2alegacy.ListTasksRequest{ContextID: "ctx1", HistoryLength: 3},
-			want:  &a2a.ListTasksRequest{ContextID: "ctx1", HistoryLength: new(3)},
+			want: &a2a.ListTasksRequest{
+				ContextID:     "ctx1",
+				PageSize:      10,
+				HistoryLength: new(0),
+			},
 		},
 		{
 			name:  "TaskIDParams",
@@ -302,6 +303,10 @@ func TestServerInterceptor_ListTasksHistoryLength(t *testing.T) {
 			req:  &a2a.ListTasksRequest{ContextID: "ctx1"},
 		},
 		{
+			name: "explicit zero",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx1", HistoryLength: new(0)},
+		},
+		{
 			name: "positive",
 			req:  &a2a.ListTasksRequest{ContextID: "ctx1", HistoryLength: new(3)},
 		},
@@ -313,6 +318,41 @@ func TestServerInterceptor_ListTasksHistoryLength(t *testing.T) {
 			interceptor := NewServerInterceptor(legacysrv.PassthroughCallInterceptor{})
 			req := &a2asrv.Request{Payload: tc.req}
 			if _, _, err := interceptor.Before(t.Context(), nil, req); err != nil {
+				t.Fatalf("interceptor.Before() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.req, req.Payload); diff != "" {
+				t.Fatalf("interceptor.Before() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestClientInterceptor_ListTasksHistoryLength(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		req  *a2a.ListTasksRequest
+	}{
+		{
+			name: "unset",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx1"},
+		},
+		{
+			name: "explicit zero",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx1", HistoryLength: new(0)},
+		},
+		{
+			name: "positive",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx1", HistoryLength: new(3)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			interceptor := NewClientInterceptor(legacyclient.PassthroughInterceptor{})
+			req := &a2aclient.Request{Payload: tc.req}
+			if _, _, err := interceptor.Before(t.Context(), req); err != nil {
 				t.Fatalf("interceptor.Before() error = %v, want nil", err)
 			}
 			if diff := cmp.Diff(tc.req, req.Payload); diff != "" {
