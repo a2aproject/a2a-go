@@ -32,7 +32,7 @@ func init() {
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.
-// 保留显式空切片与 nil 的区别，避免元数据数组被复制为 null。
+// Preserve explicit empty slices so metadata arrays do not become null.
 func DeepCopy[T any](task *T) (*T, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -98,7 +98,7 @@ func FromMapStruct[T any](value map[string]any) (*T, error) {
 }
 
 // MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.
-// 仅供诊断展示结构化值，编码失败时保留显式失败，避免输出误导性内容。
+// Print structured diagnostic values, failing explicitly if encoding fails.
 func MustPrettyPrint(value any) {
 	raw, err := json.MarshalIndent(value, "", " ")
 	if err != nil {
@@ -107,12 +107,12 @@ func MustPrettyPrint(value any) {
 	fmt.Println(string(raw))
 }
 
-// restoreEmptySlices 仅恢复 gob 丢失的空切片形状，保留原 nil 和 gob 的类型及深复制语义。
+// restoreEmptySlices restores empty slices lost by gob while preserving nil values, types, and deep-copy semantics.
 func restoreEmptySlices(source, target reflect.Value) {
 	if !source.IsValid() || !target.IsValid() || source.Type() != target.Type() {
 		return
 	}
-	// 自定义 gob 编解码器拥有该类型的表示，不覆盖其有意执行的转换。
+	// Custom gob codecs own their representation. Preserve their intentional transformations.
 	encoder := reflect.TypeFor[gob.GobEncoder]()
 	if source.Type().Implements(encoder) || (source.Kind() != reflect.Pointer && reflect.PointerTo(source.Type()).Implements(encoder)) {
 		return

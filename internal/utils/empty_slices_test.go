@@ -20,7 +20,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// TestDeepCopyPreservesEmptyCollections 验证复制保持空数组、显式 null、嵌套元数据及写入隔离。
+// TestDeepCopyPreservesEmptyCollections verifies empty arrays, explicit null, nested metadata, and write isolation.
 func TestDeepCopyPreservesEmptyCollections(t *testing.T) {
 	t.Parallel()
 	source := map[string]any{"empty": []any{}, "null": nil, "nested": map[string]any{"items": []any{}, "body": []any{"正文"}}, "metadata": []any{map[string]any{"empty": []any{}}}}
@@ -37,7 +37,7 @@ func TestDeepCopyPreservesEmptyCollections(t *testing.T) {
 	}
 }
 
-// TestDeepCopyPreservesNonJSONTypes 验证数组、指针、字节和 nil 切片不因 JSON 场景修复改变语义。
+// TestDeepCopyPreservesNonJSONTypes verifies arrays, pointers, bytes, and nil slices retain their semantics.
 func TestDeepCopyPreservesNonJSONTypes(t *testing.T) {
 	t.Parallel()
 	type sample struct {
@@ -61,23 +61,23 @@ func TestDeepCopyPreservesNonJSONTypes(t *testing.T) {
 	}
 }
 
-// emptySliceCodec 验证自定义 gob 编码类型保留自身定义的空值语义。
+// emptySliceCodec exercises a custom gob type with its own empty-value representation.
 type emptySliceCodec struct {
 	Values []string
 }
 
-// GobEncode 使用固定有效载荷模拟拥有私有表示的类型。
+// GobEncode returns a fixed payload representing a custom encoding.
 func (emptySliceCodec) GobEncode() ([]byte, error) {
 	return []byte{1}, nil
 }
 
-// GobDecode 有意将空切片归一化为 nil，深复制不能覆盖此约定。
+// GobDecode intentionally normalizes empty slices to nil. DeepCopy must respect that choice.
 func (v *emptySliceCodec) GobDecode([]byte) error {
 	v.Values = nil
 	return nil
 }
 
-// TestDeepCopyRespectsCustomGobCodec 验证反射恢复不改变自定义编码器的结果。
+// TestDeepCopyRespectsCustomGobCodec verifies reflection preserves custom codec results.
 func TestDeepCopyRespectsCustomGobCodec(t *testing.T) {
 	t.Parallel()
 	source := emptySliceCodec{Values: []string{}}
