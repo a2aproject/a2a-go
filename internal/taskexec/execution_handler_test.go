@@ -23,7 +23,10 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
 
 func TestRunProducerConsumer(t *testing.T) {
@@ -328,6 +331,60 @@ func TestActivityTrackingWriter(t *testing.T) {
 			t.Fatalf("Write() blocked when signal channel was full")
 		}
 	})
+}
+
+func TestExecutionHandler_BroadcastFailure(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("broadcast failed")
+	cancelCause := errors.New("execution canceled")
+	tests := []struct {
+		name    string
+		writeFn func(ctx context.Context, cancel context.CancelCauseFunc) error
+		wantErr error
+	}{
+		{
+			name:    "queue write error",
+			writeFn: func(context.Context, context.CancelCauseFunc) error { return writeErr },
+			wantErr: writeErr,
+		},
+		{
+			name: "context canceled",
+			writeFn: func(ctx context.Context, cancel context.CancelCauseFunc) error {
+				cancel(cancelCause)
+				return ctx.Err()
+			},
+			wantErr: cancelCause,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+
+			pipe := eventpipe.NewLocal()
+			defer pipe.Close()
+			if err := pipe.Writer.Write(ctx, a2a.NewMessage(a2a.MessageRoleAgent)); err != nil {
+				t.Fatalf("pipe.Writer.Write() error = %v, want nil", err)
+			}
+			queue := testutil.NewTestEventQueue()
+			queue.WriteFunc = func(ctx context.Context, _ *eventqueue.Message) error { return tc.writeFn(ctx, cancel) }
+			handler := &executionHandler{
+				agentEvents:       pipe.Reader,
+				handledEventQueue: queue,
+				handleEventFn: func(context.Context, a2a.Event) (*ProcessorResult, error) {
+					return &ProcessorResult{}, nil
+				},
+				handleErrorFn: func(_ context.Context, err error) (a2a.SendMessageResult, error) { return nil, err },
+			}
+
+			if _, err := handler.processEvents(ctx); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("handler.processEvents() error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
 }
 
 type fakeWriter struct {
