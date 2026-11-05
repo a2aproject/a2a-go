@@ -79,6 +79,16 @@ type Config struct {
 	// RejectBusyContext fails a new task in a context which has a task in
 	// progress, including one waiting for an answer, instead of queueing it.
 	RejectBusyContext bool
+	// Turn is called when the agent starts working on a message, right before
+	// the message is sent to the agent. The returned end is called when the agent
+	// stops working on it: when it finishes, fails or stops after a
+	// cancellation, a question timeout, a reply which interrupts it, or when
+	// the agent exits. The agent may still work while the task waits for an
+	// answer in input-required, and end of a message is called before Turn of
+	// the next message in the context. ctx carries the values of the message's
+	// request but isn't canceled when the request ends. If nil, nothing is
+	// called.
+	Turn func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (end func())
 
 	// Converter decides how the agent's session updates appear in the task.
 	// Defaults to [ConvertUpdate].
@@ -621,14 +631,22 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 	e.turns[execCtx.TaskID] = t
 	e.mu.Unlock()
 
+	promptCtx := context.WithoutCancel(ctx)
+	endTurn := func() {}
+	if e.cfg.Turn != nil {
+		if end := e.cfg.Turn(promptCtx, execCtx); end != nil {
+			endTurn = end
+		}
+	}
 	go func() {
-		resp, err := ag.client.Prompt(context.WithoutCancel(ctx), acp.PromptRequest{SessionID: sessionID, Prompt: prompt})
+		resp, err := ag.client.Prompt(promptCtx, acp.PromptRequest{SessionID: sessionID, Prompt: prompt})
 		result := &promptResult{err: err, canceled: t.isCanceled()}
 		if err == nil {
 			result.reason = resp.StopReason
 		}
 		t.end()
 		t.events.push(turnEvent{result: result})
+		endTurn()
 		e.mu.Lock()
 		if e.routes[route] == t {
 			delete(e.routes, route)

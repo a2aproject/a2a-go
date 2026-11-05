@@ -381,7 +381,7 @@ func TestInMemoryPushConfigStore_ConcurrenctCreation(t *testing.T) {
 	var wg sync.WaitGroup
 	store := NewInMemoryStore()
 	taskID := a2a.TaskID("concurrent-task")
-	numGoroutines := 100
+	numGoroutines := maxPushConfigsPerTask
 	created := make(chan *a2a.PushConfig, numGoroutines)
 
 	for i := range numGoroutines {
@@ -437,4 +437,37 @@ func toConfigList(storeConfigs map[a2a.TaskID]map[string]*a2a.PushConfig) map[a2
 		result[taskID] = sortConfigList(configs)
 	}
 	return result
+}
+
+func TestInMemoryPushConfigStore_MaxConfigsPerTask(t *testing.T) {
+	ctx := t.Context()
+	taskID := a2a.TaskID("task")
+
+	store := NewInMemoryStore()
+	for i := range maxPushConfigsPerTask {
+		_, err := store.Save(ctx, taskID, &a2a.PushConfig{ID: fmt.Sprintf("config-%03d", i), URL: "https://example.com/push"})
+		if err != nil {
+			t.Fatalf("Save() %d failed: %v", i, err)
+		}
+	}
+
+	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{URL: "https://example.com/overflow"}); err == nil {
+		t.Fatal("Save() beyond the limit succeeded, want an error")
+	}
+
+	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{ID: "config-000", URL: "https://example.com/updated"}); err != nil {
+		t.Fatalf("Save() update at limit failed: %v", err)
+	}
+
+	if _, err := store.Save(ctx, taskID, &a2a.PushConfig{URL: "https://example.com/overflow-2"}); err == nil {
+		t.Fatal("Save() beyond the limit succeeded after update, want an error")
+	}
+
+	configs, err := store.List(ctx, taskID)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(configs) != maxPushConfigsPerTask {
+		t.Fatalf("stored %d configs, want %d", len(configs), maxPushConfigsPerTask)
+	}
 }

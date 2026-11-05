@@ -18,6 +18,7 @@ package pathtemplate
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -79,6 +80,16 @@ func New(raw string) (*Template, error) {
 // If the path matches, it returns the MatchResult and true.
 // Otherwise, it returns nil and false.
 func (c *Template) Match(path string) (*MatchResult, bool) {
+	return c.match(path, false)
+}
+
+// MatchEscaped matches an escaped URL path one segment at a time. Captured is
+// decoded, while Rest retains its escaping for further HTTP routing.
+func (c *Template) MatchEscaped(path string) (*MatchResult, bool) {
+	return c.match(path, true)
+}
+
+func (c *Template) match(path string, escaped bool) (*MatchResult, bool) {
 	segments := strings.Split(trimSlash(path), "/")
 	capturedParts, inCapture := []string{}, false
 	pathIdx := 0
@@ -92,7 +103,14 @@ func (c *Template) Match(path string) (*MatchResult, bool) {
 			return nil, false
 		}
 		pSegment := segments[pathIdx]
-		if tSegment != "*" && tSegment != segments[pathIdx] {
+		if escaped {
+			var err error
+			pSegment, err = url.PathUnescape(pSegment)
+			if err != nil {
+				return nil, false
+			}
+		}
+		if tSegment != "*" && tSegment != pSegment {
 			return nil, false
 		}
 		if inCapture {

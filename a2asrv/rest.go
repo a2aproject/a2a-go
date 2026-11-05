@@ -17,7 +17,9 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"mime"
 	"net/http"
@@ -82,9 +84,15 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 	}
 	restHandler := NewRESTHandler(handler, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		matchResult, ok := compiledTemplate.Match(r.URL.Path)
+		matchResult, ok := compiledTemplate.MatchEscaped(r.URL.EscapedPath())
 		if !ok {
 			http.NotFound(w, r)
+			return
+		}
+
+		path, err := url.PathUnescape(matchResult.Rest)
+		if err != nil {
+			http.Error(w, "invalid URL path", http.StatusBadRequest)
 			return
 		}
 
@@ -93,8 +101,8 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 		r2 = r2.WithContext(attachTenant(r.Context(), matchResult.Captured))
 		r2.URL = new(url.URL)
 		*r2.URL = *r.URL
-		r2.URL.Path = matchResult.Rest
-		r2.URL.RawPath = ""
+		r2.URL.Path = path
+		r2.URL.RawPath = matchResult.Rest
 		restHandler.ServeHTTP(w, r2)
 	})
 }
@@ -281,12 +289,16 @@ func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWrite
 func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	id := &a2a.CancelTaskRequest{
-		ID: a2a.TaskID(taskID),
+	var params a2a.CancelTaskRequest
+	// io.EOF is returned for an empty body, which is a valid request without metadata.
+	if err := utils.DecodeJSON(req.Body, &params); err != nil && !errors.Is(err, io.EOF) {
+		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
+		return
 	}
-	fillTenant(ctx, &id.Tenant)
+	params.ID = a2a.TaskID(taskID)
+	fillTenant(ctx, &params.Tenant)
 
-	result, err := h.handler.CancelTask(ctx, id)
+	result, err := h.handler.CancelTask(ctx, &params)
 
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))

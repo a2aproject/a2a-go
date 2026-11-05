@@ -413,6 +413,16 @@ func TestREST_InvalidPayloads(t *testing.T) {
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 			payload: `{"url":"https://example.com/push"}}`,
 		},
+		{
+			name:    "CancelTask with invalid payload",
+			path:    "/tasks/" + string(taskID) + ":cancel",
+			payload: "[]",
+		},
+		{
+			name:    "CancelTask with trailing data",
+			path:    "/tasks/" + string(taskID) + ":cancel",
+			payload: emptyRequest + "TRAILING_GARBAGE",
+		},
 	}
 
 	reqHandler := NewHandler(&mockAgentExecutor{})
@@ -511,6 +521,44 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			gotErr := rest.FromRESTError(resp)
 			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
 				t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+			}
+		})
+	}
+}
+
+func TestRESTTenantEscapedIdentifiers(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, template, path, tenant, taskID string
+	}{
+		{"task slash", "/{*}", "/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"tenant slash", "/{*}", "/tenant%2Fid/tasks/task", "tenant/id", "task"},
+		{"escaped percent", "/{*}", "/tenant%252Fid/tasks/task%252Fid", "tenant%2Fid", "task%2Fid"},
+		{"literal prefix", "/my location/{*}", "/my%20location/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"multi-segment tenant", "/{locations/*/projects/*}", "/locations/us%2Feast/projects/project/tasks/task%2Fid", "locations/us/east/projects/project", "task/id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got *a2a.GetTaskRequest
+			handler := &mockRequestHandler{
+				getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+					got = req
+					return &a2a.Task{ID: req.ID}, nil
+				},
+			}
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			originalURL := *req.URL
+			recorder := httptest.NewRecorder()
+			NewTenantRESTHandler(tt.template, handler).ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GetTask() status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body)
+			}
+			want := &a2a.GetTaskRequest{ID: a2a.TaskID(tt.taskID), Tenant: tt.tenant}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("GetTask() wrong request (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(originalURL, *req.URL); diff != "" {
+				t.Fatalf("request URL changed (-want +got) diff = %s", diff)
 			}
 		})
 	}
@@ -658,6 +706,7 @@ type mockRequestHandler struct {
 	RequestHandler
 	listTasksFunc       func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	cancelTaskFunc      func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error)
 	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
@@ -673,6 +722,13 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 		return m.getTaskFunc(ctx, req)
 	}
 	return &a2a.Task{ID: req.ID}, nil
+}
+
+func (m *mockRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	if m.cancelTaskFunc != nil {
+		return m.cancelTaskFunc(ctx, req)
+	}
+	return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
 }
 
 func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
@@ -775,6 +831,104 @@ func TestREST_ListTasks_ClientRoundtrip(t *testing.T) {
 	}
 	if diff := cmp.Diff(req, capturedReq); diff != "" {
 		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestREST_CancelTask_Success(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		tenant  string
+		body    string
+		wantReq *a2a.CancelTaskRequest
+	}{
+		{
+			name:    "empty body",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "null body",
+			body:    "null",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "empty object",
+			body:    "{}",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "metadata",
+			body:    `{"metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+		},
+		{
+			name:    "id from path wins",
+			body:    `{"id":"task-456","metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+		},
+		{
+			name:    "tenant from path wins",
+			tenant:  "my-tenant",
+			body:    `{"tenant":"other-tenant","metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Tenant: "my-tenant", Metadata: map[string]any{"reason": "rest"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var capturedReq *a2a.CancelTaskRequest
+			mock := &mockRequestHandler{
+				cancelTaskFunc: func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+					capturedReq = req
+					return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
+				},
+			}
+			handler, path := NewRESTHandler(mock), rest.MakeCancelTaskPath("task-123")
+			if tc.tenant != "" {
+				handler, path = NewTenantRESTHandler("/{*}", mock), "/"+tc.tenant+path
+			}
+
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(tc.body))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			if rw.Code != http.StatusOK {
+				t.Fatalf("POST %s status = %d, want %d, body: %s", path, rw.Code, http.StatusOK, rw.Body.String())
+			}
+			if diff := cmp.Diff(tc.wantReq, capturedReq); diff != "" {
+				t.Fatalf("CancelTask() wrong request (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestREST_CancelTask_ClientRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	var capturedReq *a2a.CancelTaskRequest
+	mock := &mockRequestHandler{
+		cancelTaskFunc: func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+			capturedReq = req
+			return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
+		},
+	}
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+	client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+	}
+
+	req := &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}}
+	if _, err := client.CancelTask(t.Context(), req); err != nil {
+		t.Fatalf("client.CancelTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(req, capturedReq); diff != "" {
+		t.Fatalf("CancelTask() wrong result (-want +got) diff = %s", diff)
 	}
 }
 

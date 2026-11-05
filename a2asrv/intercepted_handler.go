@@ -103,7 +103,7 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
+		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.Event](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return
@@ -134,7 +134,7 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			return
 		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
+		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.Event](ctx, h, callCtx, req)
 		if res.earlyErr != nil {
 			yield(nil, res.earlyErr)
 			return
