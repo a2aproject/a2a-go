@@ -361,6 +361,16 @@ func (t *RESTTransport) GetTaskPushConfig(ctx context.Context, params ServicePar
 // ListTaskPushConfigs implements [a2a.Transport].
 func (t *RESTTransport) ListTaskPushConfigs(ctx context.Context, params ServiceParams, req *a2a.ListTaskPushConfigRequest) ([]*a2a.PushConfig, error) {
 	path := rest.MakeListPushConfigsPath(url.PathEscape(string(req.TaskID)))
+	query := url.Values{}
+	if req.PageSize != 0 {
+		query.Add(rest.QueryPageSize, strconv.Itoa(req.PageSize))
+	}
+	if req.PageToken != "" {
+		query.Add(rest.QueryPageToken, req.PageToken)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
 	var resp a2a.ListTaskPushConfigResponse
 
 	if err := t.doRequest(ctx, &restRequest{

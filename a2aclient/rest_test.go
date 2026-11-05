@@ -488,6 +488,36 @@ func TestRESTTransport_ListTaskPushConfigs(t *testing.T) {
 	}
 }
 
+func TestRESTTransport_ListTaskPushConfigs_QueryParams(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"configs":[]}`))
+	}))
+	defer server.Close()
+
+	transport := newRESTTransport(t, server)
+	_, err := transport.ListTaskPushConfigs(t.Context(), ServiceParams{}, &a2a.ListTaskPushConfigRequest{
+		TaskID:    "task-123",
+		PageSize:  10,
+		PageToken: "next-page",
+	})
+	if err != nil {
+		t.Fatalf("ListTaskPushConfigs() error = %v, want nil", err)
+	}
+
+	want := url.Values{
+		"pageSize":  []string{"10"},
+		"pageToken": []string{"next-page"},
+	}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Fatalf("ListTaskPushConfigs() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestRESTTransport_CreateTaskPushConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

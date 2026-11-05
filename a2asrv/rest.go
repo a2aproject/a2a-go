@@ -513,8 +513,17 @@ func (h *restHandler) handleListTaskPushConfigs(rw http.ResponseWriter, req *htt
 		return
 	}
 
+	query := req.URL.Query()
+	pageSize, err := parseInt(query, rest.QueryPageSize)
+	if err != nil {
+		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
+		return
+	}
+
 	params := &a2a.ListTaskPushConfigRequest{
-		TaskID: a2a.TaskID(taskID),
+		TaskID:    a2a.TaskID(taskID),
+		PageSize:  pageSize,
+		PageToken: query.Get(rest.QueryPageToken),
 	}
 	fillTenant(ctx, &params.Tenant)
 

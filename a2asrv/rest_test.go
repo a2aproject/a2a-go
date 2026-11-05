@@ -708,6 +708,14 @@ type mockRequestHandler struct {
 	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
 	cancelTaskFunc      func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error)
 	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
+	listPushConfigsFunc func(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error)
+}
+
+func (m *mockRequestHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
+	if m.listPushConfigsFunc != nil {
+		return m.listPushConfigsFunc(ctx, req)
+	}
+	return &a2a.ListTaskPushConfigResponse{}, nil
 }
 
 func (m *mockRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
@@ -831,6 +839,86 @@ func TestREST_ListTasks_ClientRoundtrip(t *testing.T) {
 	}
 	if diff := cmp.Diff(req, capturedReq); diff != "" {
 		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestREST_ListTaskPushConfigs_Pagination(t *testing.T) {
+	t.Parallel()
+
+	var capturedReq *a2a.ListTaskPushConfigRequest
+	mock := &mockRequestHandler{
+		listPushConfigsFunc: func(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
+			capturedReq = req
+			return &a2a.ListTaskPushConfigResponse{}, nil
+		},
+	}
+	handler := NewRESTHandler(mock)
+
+	query := url.Values{}
+	query.Set("pageSize", "10")
+	query.Set("pageToken", "next-page-token")
+	req := httptest.NewRequest(http.MethodGet, rest.MakeListPushConfigsPath("task-1")+"?"+query.Encode(), nil)
+	rw := httptest.NewRecorder()
+
+	handler.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("handler.ServeHTTP() status = %d, want %d, body: %s", rw.Code, http.StatusOK, rw.Body.String())
+	}
+	want := &a2a.ListTaskPushConfigRequest{
+		TaskID:    "task-1",
+		PageSize:  10,
+		PageToken: "next-page-token",
+	}
+	if diff := cmp.Diff(want, capturedReq); diff != "" {
+		t.Fatalf("ListTaskPushConfigs() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestREST_ListTaskPushConfigs_InvalidPageSize(t *testing.T) {
+	t.Parallel()
+
+	handler := NewRESTHandler(&mockRequestHandler{})
+	req := httptest.NewRequest(http.MethodGet, rest.MakeListPushConfigsPath("task-1")+"?pageSize=abc", nil)
+	rw := httptest.NewRecorder()
+
+	handler.ServeHTTP(rw, req)
+
+	gotErr := rest.FromRESTError(rw.Result())
+	if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
+		t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+	}
+}
+
+func TestREST_ListTaskPushConfigs_ClientRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	var capturedReq *a2a.ListTaskPushConfigRequest
+	mock := &mockRequestHandler{
+		listPushConfigsFunc: func(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
+			capturedReq = req
+			return &a2a.ListTaskPushConfigResponse{}, nil
+		},
+	}
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+	client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+	}
+
+	req := &a2a.ListTaskPushConfigRequest{
+		TaskID:    "task-1",
+		PageSize:  10,
+		PageToken: "next-page-token",
+	}
+	if _, err := client.ListTaskPushConfigs(t.Context(), req); err != nil {
+		t.Fatalf("client.ListTaskPushConfigs() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(req, capturedReq); diff != "" {
+		t.Fatalf("ListTaskPushConfigs() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
