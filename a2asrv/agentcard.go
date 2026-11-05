@@ -199,7 +199,9 @@ func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
 	// Vary is set unconditionally, including on responses without an Origin:
 	// a shared cache must never serve a stored no-Origin response
 	// (Access-Control-Allow-Origin: *) to a credentialed cross-origin request.
-	rw.Header().Set("Vary", "Origin")
+	// Add is used instead of Set to preserve Vary values contributed by outer
+	// middleware (e.g. gzhttp adds "Vary: Accept-Encoding").
+	rw.Header().Add("Vary", "Origin")
 	origin := req.Header.Get("Origin")
 	if origin != "" {
 		rw.Header().Set("Access-Control-Allow-Origin", origin)

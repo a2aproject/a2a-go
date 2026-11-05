@@ -208,6 +208,8 @@ func TestStaticAgentCardHandler_PanicWithMalformedCard(t *testing.T) {
 }
 
 func TestAgentCardHandler_ETagAnd304(t *testing.T) {
+	t.Parallel()
+
 	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
 	servers := map[string]http.Handler{
 		"static": NewStaticAgentCardHandler(card),
@@ -250,11 +252,33 @@ func TestAgentCardHandler_ETagAnd304(t *testing.T) {
 	}
 }
 
+func TestAgentCardHandler_VaryPreservesMiddlewareValues(t *testing.T) {
+	t.Parallel()
+
+	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
+	inner := NewStaticAgentCardHandler(card)
+	// Simulate outer middleware (e.g. gzhttp) contributing its own Vary
+	// value before the card handler runs.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		inner.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	resp := get(t, srv.URL, "")
+	defer func() { _ = resp.Body.Close() }()
+
+	want := []string{"Accept-Encoding", "Origin"}
+	if diff := cmp.Diff(want, resp.Header.Values("Vary")); diff != "" {
+		t.Errorf("wrong Vary header values (-want +got) diff = %s", diff)
+	}
+}
+
 func TestAgentCardHandler_IfNoneMatchForms(t *testing.T) {
 	t.Parallel()
 	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
 	srv := httptest.NewServer(NewStaticAgentCardHandler(card))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	resp := get(t, srv.URL, "")
 	defer func() { _ = resp.Body.Close() }()
@@ -273,9 +297,9 @@ func TestAgentCardHandler_IfNoneMatchForms(t *testing.T) {
 		{name: "list without tag", ifNoneMatch: `"other", W/"deadbeef"`, wantStatus: http.StatusOK},
 	}
 	for _, tc := range tests {
-		// Subtests share the parent's server, which the parent closes on
-		// return, so they must not run in parallel with it.
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := get(t, srv.URL, tc.ifNoneMatch)
 			defer func() { _ = got.Body.Close() }()
 			if got.StatusCode != tc.wantStatus {
@@ -302,7 +326,7 @@ func TestAgentCardHandler_CacheControl(t *testing.T) {
 
 	t.Run("passthrough when configured", func(t *testing.T) {
 		t.Parallel()
-		srv := httptest.NewServer(NewStaticAgentCardHandler(card, WithCacheControl("public, max-age=60")))
+		srv := httptest.NewServer(NewStaticAgentCardHandler(card, WithAgentCardCacheControl("public, max-age=60")))
 		defer srv.Close()
 		resp := get(t, srv.URL, "")
 		if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {

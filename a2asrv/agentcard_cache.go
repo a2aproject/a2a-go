@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -31,12 +32,13 @@ type agentCardHandlerConfig struct {
 	cacheControl string
 }
 
-// WithCacheControl sets the Cache-Control response header value for agent card
-// responses, e.g. "public, max-age=3600". An appropriate max-age depends on how
-// often the agent card is expected to change, which only the deployment knows,
-// so no Cache-Control header is sent unless this option is used. Revalidation
-// against the ETag works either way and costs a single 304 round trip.
-func WithCacheControl(value string) AgentCardHandlerOption {
+// WithAgentCardCacheControl sets the Cache-Control response header value for
+// agent card responses, e.g. "public, max-age=3600". An appropriate max-age
+// depends on how often the agent card is expected to change, which only the
+// deployment knows, so no Cache-Control header is sent unless this option is
+// used. Revalidation against the ETag works either way and costs a single 304
+// round trip.
+func WithAgentCardCacheControl(value string) AgentCardHandlerOption {
 	return func(c *agentCardHandlerConfig) {
 		c.cacheControl = value
 	}
@@ -76,6 +78,9 @@ func cardETag(card *a2a.AgentCard) string {
 	for _, sig := range signatures {
 		protected = append(protected, sig.Protected)
 	}
+	// Sort so that a resolver returning signatures in a varying order
+	// still produces a stable tag between requests.
+	slices.Sort(protected)
 	return hashETag(body, protected...)
 }
 
@@ -101,6 +106,9 @@ func rawJSONETag(raw []byte) string {
 		}
 		delete(m, "signatures")
 		if body, err := json.Marshal(m); err == nil {
+			// Sort so that signatures in a varying order still produce a
+			// stable tag between requests.
+			slices.Sort(protected)
 			return hashETag(body, protected...)
 		}
 	}

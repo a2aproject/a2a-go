@@ -73,6 +73,33 @@ func TestCardETag_DifferentCardsDiffer(t *testing.T) {
 	}
 }
 
+func TestCardETag_SignatureOrderDoesNotAffectETag(t *testing.T) {
+	t.Parallel()
+	first := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{
+			{Protected: "p1", Signature: "s1"},
+			{Protected: "p2", Signature: "s2"},
+		}}
+	second := &a2a.AgentCard{Name: "A", Description: "D",
+		Signatures: []a2a.AgentCardSignature{
+			{Protected: "p2", Signature: "s2"},
+			{Protected: "p1", Signature: "s1"},
+		}}
+
+	if a, b := cardETag(first), cardETag(second); a != b {
+		t.Errorf("signature order must not affect the ETag: %q != %q", a, b)
+	}
+}
+
+func TestRawJSONETag_SignatureOrderDoesNotAffectETag(t *testing.T) {
+	t.Parallel()
+	a := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"p1","signature":"s"},{"protected":"p2","signature":"s"}]}`))
+	b := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"p2","signature":"s"},{"protected":"p1","signature":"s"}]}`))
+	if a != b {
+		t.Errorf("signature order must not affect the ETag: %q != %q", a, b)
+	}
+}
+
 func TestCardETag_DoesNotMutateInput(t *testing.T) {
 	t.Parallel()
 	card := &a2a.AgentCard{Name: "A",
@@ -146,6 +173,8 @@ func TestIfNoneMatchHits(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := ifNoneMatchHits(tc.header, etag); got != tc.want {
 				t.Errorf("ifNoneMatchHits(%q, %q) = %v, want %v", tc.header, etag, got, tc.want)
 			}
