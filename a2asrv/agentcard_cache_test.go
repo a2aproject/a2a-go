@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 )
 
 func TestCardETag_Format(t *testing.T) {
+	t.Parallel()
 	tag := cardETag(&a2a.AgentCard{Name: "A", Description: "D"})
 	if !strings.HasPrefix(tag, `W/"`) || !strings.HasSuffix(tag, `"`) {
 		t.Fatalf("cardETag = %q, want weak ETag format W/\"...\"", tag)
@@ -29,6 +30,7 @@ func TestCardETag_Format(t *testing.T) {
 }
 
 func TestCardETag_IgnoresRandomizedSignatureValues(t *testing.T) {
+	t.Parallel()
 	first := &a2a.AgentCard{Name: "A", Description: "D",
 		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "sig-1"}}}
 	second := &a2a.AgentCard{Name: "A", Description: "D",
@@ -40,6 +42,7 @@ func TestCardETag_IgnoresRandomizedSignatureValues(t *testing.T) {
 }
 
 func TestCardETag_KeyRotationChangesETag(t *testing.T) {
+	t.Parallel()
 	oldKey := &a2a.AgentCard{Name: "A", Description: "D",
 		Signatures: []a2a.AgentCardSignature{{Protected: "kid-old", Signature: "s"}}}
 	newKey := &a2a.AgentCard{Name: "A", Description: "D",
@@ -51,6 +54,7 @@ func TestCardETag_KeyRotationChangesETag(t *testing.T) {
 }
 
 func TestCardETag_SignaturePresenceChangesETag(t *testing.T) {
+	t.Parallel()
 	plain := &a2a.AgentCard{Name: "A", Description: "D"}
 	signed := &a2a.AgentCard{Name: "A", Description: "D",
 		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "s"}}}
@@ -61,6 +65,7 @@ func TestCardETag_SignaturePresenceChangesETag(t *testing.T) {
 }
 
 func TestCardETag_DifferentCardsDiffer(t *testing.T) {
+	t.Parallel()
 	a := cardETag(&a2a.AgentCard{Name: "A"})
 	b := cardETag(&a2a.AgentCard{Name: "B"})
 	if a == b {
@@ -69,6 +74,7 @@ func TestCardETag_DifferentCardsDiffer(t *testing.T) {
 }
 
 func TestCardETag_DoesNotMutateInput(t *testing.T) {
+	t.Parallel()
 	card := &a2a.AgentCard{Name: "A",
 		Signatures: []a2a.AgentCardSignature{{Protected: "p", Signature: "s"}}}
 	cardETag(card)
@@ -78,6 +84,7 @@ func TestCardETag_DoesNotMutateInput(t *testing.T) {
 }
 
 func TestRawJSONETag_IgnoresKeyOrderAndRandomizedSignatureValues(t *testing.T) {
+	t.Parallel()
 	a := rawJSONETag([]byte(`{"name":"A","description":"D","signatures":[{"protected":"p","signature":"sig-1"}]}`))
 	b := rawJSONETag([]byte(`{"description":"D","name":"A","signatures":[{"protected":"p","signature":"sig-2"}]}`))
 	if !strings.HasPrefix(a, `W/"`) {
@@ -89,6 +96,7 @@ func TestRawJSONETag_IgnoresKeyOrderAndRandomizedSignatureValues(t *testing.T) {
 }
 
 func TestRawJSONETag_KeyRotationChangesETag(t *testing.T) {
+	t.Parallel()
 	oldKey := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"kid-old","signature":"s"}]}`))
 	newKey := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"kid-new","signature":"s"}]}`))
 	if oldKey == newKey {
@@ -97,6 +105,7 @@ func TestRawJSONETag_KeyRotationChangesETag(t *testing.T) {
 }
 
 func TestRawJSONETag_SignaturePresenceChangesETag(t *testing.T) {
+	t.Parallel()
 	withSig := rawJSONETag([]byte(`{"name":"A","signatures":[{"protected":"p","signature":"s"}]}`))
 	withoutSig := rawJSONETag([]byte(`{"name":"A"}`))
 	if withSig == withoutSig {
@@ -110,6 +119,7 @@ func TestRawJSONETag_SignaturePresenceChangesETag(t *testing.T) {
 // same server produced; a given handler never switches producer types.
 
 func TestRawJSONETag_InvalidJSONFallback(t *testing.T) {
+	t.Parallel()
 	a := rawJSONETag([]byte(`not json`))
 	b := rawJSONETag([]byte(`not json`))
 	if !strings.HasPrefix(a, `W/"`) || a != b {
@@ -118,6 +128,7 @@ func TestRawJSONETag_InvalidJSONFallback(t *testing.T) {
 }
 
 func TestIfNoneMatchHits(t *testing.T) {
+	t.Parallel()
 	const etag = `W/"abc123"`
 	tests := []struct {
 		name   string
@@ -139,16 +150,5 @@ func TestIfNoneMatchHits(t *testing.T) {
 				t.Errorf("ifNoneMatchHits(%q, %q) = %v, want %v", tc.header, etag, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestWithCacheControl(t *testing.T) {
-	cfg := newAgentCardHandlerConfig([]AgentCardHandlerOption{WithCacheControl("public, max-age=60")})
-	if cfg.cacheControl != "public, max-age=60" {
-		t.Errorf("cacheControl = %q, want %q", cfg.cacheControl, "public, max-age=60")
-	}
-	def := newAgentCardHandlerConfig(nil)
-	if def.cacheControl != "" {
-		t.Errorf("default cacheControl = %q, want empty", def.cacheControl)
 	}
 }

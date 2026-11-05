@@ -196,11 +196,14 @@ func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *ht
 }
 
 func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
+	// Vary is set unconditionally, including on responses without an Origin:
+	// a shared cache must never serve a stored no-Origin response
+	// (Access-Control-Allow-Origin: *) to a credentialed cross-origin request.
+	rw.Header().Set("Vary", "Origin")
 	origin := req.Header.Get("Origin")
 	if origin != "" {
 		rw.Header().Set("Access-Control-Allow-Origin", origin)
 		rw.Header().Set("Access-Control-Allow-Credentials", "true")
-		rw.Header().Set("Vary", "Origin")
 	} else {
 		rw.Header().Set("Access-Control-Allow-Origin", "*")
 	}
