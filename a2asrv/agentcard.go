@@ -83,8 +83,7 @@ func WithExtendedAgentCardProducer(cardProducer ExtendedAgentCardProducer) Reque
 // NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard]
 // which is not expected to change while the program is running.
 // The information contained in this card can be queried from any origin.
-// Responses carry a weak ETag and honor If-None-Match with 304 responses,
-// as recommended by the A2A specification for agent card caching.
+// Responses carry a weak ETag and honor If-None-Match.
 // The method panics if the argument json marhsaling fails.
 func NewStaticAgentCardHandler(card *a2a.AgentCard, opts ...AgentCardHandlerOption) http.Handler {
 	bytes, err := json.Marshal(card)
@@ -110,11 +109,7 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard, opts ...AgentCardHandlerOpti
 
 // NewAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard].
 // The information contained in this card can be queried from any origin.
-// Responses carry a weak ETag and honor If-None-Match with 304 responses,
-// as recommended by the A2A specification for agent card caching. The ETag
-// ignores randomized signature values but covers the signing key identity, so
-// revalidation works with per-request signing (see [NewSignedCardProducer])
-// and a key rotation invalidates it.
+// Responses carry a weak ETag and honor If-None-Match.
 func NewAgentCardHandler(producer AgentCardProducer, opts ...AgentCardHandlerOption) http.Handler {
 	cfg := newAgentCardHandlerConfig(opts)
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -173,10 +168,6 @@ func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-// writeAgentCardResponse writes the agent card body with caching metadata.
-// When etag is non-empty it is sent as a weak ETag and an If-None-Match
-// request header selecting it is answered with 304 Not Modified and no body
-// (304 responses deliberately omit Content-Type).
 func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *http.Request, body []byte, etag string, cfg *agentCardHandlerConfig) {
 	writeCORSHeaders(rw, req)
 	if cfg.cacheControl != "" {
@@ -196,11 +187,7 @@ func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *ht
 }
 
 func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
-	// Vary is set unconditionally, including on responses without an Origin:
-	// a shared cache must never serve a stored no-Origin response
-	// (Access-Control-Allow-Origin: *) to a credentialed cross-origin request.
-	// Add is used instead of Set to preserve Vary values contributed by outer
-	// middleware (e.g. gzhttp adds "Vary: Accept-Encoding").
+	// Sent without Origin too, so that shared caches don't serve the "*" response to credentialed requests.
 	rw.Header().Add("Vary", "Origin")
 	origin := req.Header.Get("Origin")
 	if origin != "" {

@@ -29,8 +29,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// get performs a GET against url, setting If-None-Match when non-empty, and
-// returns the response. Callers close the body.
 func get(t *testing.T, url, ifNoneMatch string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), "GET", url, nil)
@@ -257,8 +255,6 @@ func TestAgentCardHandler_VaryPreservesMiddlewareValues(t *testing.T) {
 
 	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
 	inner := NewStaticAgentCardHandler(card)
-	// Simulate outer middleware (e.g. gzhttp) contributing its own Vary
-	// value before the card handler runs.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Accept-Encoding")
 		inner.ServeHTTP(w, r)
@@ -346,8 +342,6 @@ func TestAgentCardHandler_CacheControl(t *testing.T) {
 	})
 }
 
-// changingSignatureProducer mimics NewSignedCardProducer: identical card
-// content, but a different signature on every request.
 func changingSignatureProducer(counter func() int) AgentCardProducer {
 	return AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
 		return &a2a.AgentCard{
@@ -387,9 +381,6 @@ func TestAgentCardHandler_SignedCardStableETag(t *testing.T) {
 	}
 }
 
-// rotatingKeyProducer mimics NewSignedCardProducer across a key rotation:
-// identical card content, but the signature's protected header (and value)
-// changes once the rotation happens.
 func rotatingKeyProducer(protected func() string) AgentCardProducer {
 	return AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
 		return &a2a.AgentCard{
@@ -429,8 +420,6 @@ func TestAgentCardHandler_KeyRotationInvalidatesETag(t *testing.T) {
 	}
 }
 
-// rawJSONProducer implements both AgentCardProducer and AgentCardJSONProducer,
-// returning raw card JSON whose signatures member changes on every call.
 type rawJSONProducer struct {
 	n int
 }

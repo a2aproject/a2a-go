@@ -140,11 +140,6 @@ func TestRawJSONETag_SignaturePresenceChangesETag(t *testing.T) {
 	}
 }
 
-// Note: the raw-JSON path (map re-marshal, sorted keys) and the struct path
-// (field-declaration order) intentionally do NOT produce identical tags for
-// the same card content. An ETag is opaque and only compared against tags this
-// same server produced; a given handler never switches producer types.
-
 func TestRawJSONETag_InvalidJSONFallback(t *testing.T) {
 	t.Parallel()
 	a := rawJSONETag([]byte(`not json`))

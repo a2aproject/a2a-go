@@ -32,12 +32,8 @@ type agentCardHandlerConfig struct {
 	cacheControl string
 }
 
-// WithAgentCardCacheControl sets the Cache-Control response header value for
-// agent card responses, e.g. "public, max-age=3600". An appropriate max-age
-// depends on how often the agent card is expected to change, which only the
-// deployment knows, so no Cache-Control header is sent unless this option is
-// used. Revalidation against the ETag works either way and costs a single 304
-// round trip.
+// WithAgentCardCacheControl sets the Cache-Control header of agent card responses,
+// e.g. "public, max-age=3600". The header is not sent by default.
 func WithAgentCardCacheControl(value string) AgentCardHandlerOption {
 	return func(c *agentCardHandlerConfig) {
 		c.cacheControl = value
@@ -52,20 +48,8 @@ func newAgentCardHandlerConfig(opts []AgentCardHandlerOption) *agentCardHandlerC
 	return cfg
 }
 
-// cardETag computes a weak ETag for the given card.
-//
-// The randomized signature values are excluded and the tag is weak so that
-// revalidation works for cards signed per request (see [NewSignedCardProducer]):
-// randomized signing algorithms such as ES256 produce a different signature on
-// every request, so a strong tag over the full body would never match. Each
-// signature's protected header is still covered, because it is deterministic
-// per signing key and carries the key identity (kid/alg/jku): a key rotation
-// changes the protected headers, which changes the tag, so clients holding a
-// card signed by a retired key receive a 200 with fresh signatures instead of
-// a 304.
-//
-// Returns an empty string if the card cannot be marshaled; callers then omit
-// the ETag header.
+// cardETag excludes signature values, which randomized algorithms like ES256 change on every
+// request, but covers protected headers, so that a signing key rotation changes the tag.
 func cardETag(card *a2a.AgentCard) string {
 	unsigned := *card
 	signatures := unsigned.Signatures
@@ -78,19 +62,11 @@ func cardETag(card *a2a.AgentCard) string {
 	for _, sig := range signatures {
 		protected = append(protected, sig.Protected)
 	}
-	// Sort so that a resolver returning signatures in a varying order
-	// still produces a stable tag between requests.
 	slices.Sort(protected)
 	return hashETag(body, protected...)
 }
 
-// rawJSONETag computes a weak ETag from raw agent card JSON (see [cardETag]
-// for what is and is not covered). Unmarshaling into a map and re-marshaling
-// normalizes member order, because encoding/json sorts map keys.
-// RFC 8785 canonicalization is deliberately not used: an ETag is opaque and is
-// only ever compared against values produced by this same server, so
-// determinism is the whole requirement. If raw is not a valid JSON object,
-// the tag degrades to a hash of the raw bytes.
+// rawJSONETag is [cardETag] for raw JSON. Re-marshaling through a map normalizes member order.
 func rawJSONETag(raw []byte) string {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err == nil {
@@ -106,8 +82,6 @@ func rawJSONETag(raw []byte) string {
 		}
 		delete(m, "signatures")
 		if body, err := json.Marshal(m); err == nil {
-			// Sort so that signatures in a varying order still produce a
-			// stable tag between requests.
 			slices.Sort(protected)
 			return hashETag(body, protected...)
 		}
@@ -125,10 +99,7 @@ func hashETag(body []byte, extra ...string) string {
 	return `W/"` + hex.EncodeToString(h.Sum(nil)) + `"`
 }
 
-// ifNoneMatchHits reports whether an If-None-Match header value selects the
-// given entity tag, using the weak comparison function of RFC 9110 8.2.2:
-// "*" matches unconditionally, and W/"x" and "x" denote the same entity on
-// either side of the comparison.
+// ifNoneMatchHits uses the weak comparison function from RFC 9110 section 8.8.3.2.
 func ifNoneMatchHits(header, etag string) bool {
 	if header == "" || etag == "" {
 		return false
