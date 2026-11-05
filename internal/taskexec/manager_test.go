@@ -698,6 +698,23 @@ func TestManager_ConcurrentExecutionFinishesBeforeCancel(t *testing.T) {
 	}
 }
 
+type recordingCleaner struct {
+	mu  sync.Mutex
+	err error
+}
+
+func (c *recordingCleaner) Cleanup(_ context.Context, _ a2a.SendMessageResult, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.err = err
+}
+
+func (c *recordingCleaner) lastErr() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
 func TestManager_CancelerPanicFailsConcurrentCancelation(t *testing.T) {
 	t.Parallel()
 
@@ -728,8 +745,17 @@ func TestManager_CancelerPanicFailsConcurrentCancelation(t *testing.T) {
 			executor, canceler := newExecutor(), newCanceler()
 			executor.nextEventTerminal = true
 			canceler.panicValue = "canceler panic"
+			cleaner := &recordingCleaner{}
+			factory := &testFactory{
+				CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
+					return executor, executor, executor, nil
+				},
+				CreateCancelerFn: func(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
+					return canceler, canceler, cleaner, nil
+				},
+			}
 			manager := NewLocalManager(LocalManagerConfig{
-				Factory:      newStaticFactory(executor, canceler),
+				Factory:      factory,
 				TaskStore:    testutil.NewTestTaskStore(),
 				PanicHandler: tc.panicHandler,
 			})
@@ -746,6 +772,9 @@ func TestManager_CancelerPanicFailsConcurrentCancelation(t *testing.T) {
 			}
 			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
 				t.Fatalf("manager.Cancel() error = %v, want %v", err, tc.wantErr)
+			}
+			if cleanupErr := cleaner.lastErr(); cleanupErr == nil || !errors.Is(err, cleanupErr) {
+				t.Fatalf("cleaner.Cleanup() error = %v, want %v", cleanupErr, err)
 			}
 
 			executor.mustWrite(t, &a2a.Task{ID: subscription.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}})
