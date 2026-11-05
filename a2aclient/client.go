@@ -87,14 +87,14 @@ func (c *Client) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (
 func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		req = c.withDefaultSendConfig(req)
-		c.streamCall(ctx, "SendStreamingMessage", req, c.sendStreamingMessage, yield)
+		streamCall(ctx, c, "SendStreamingMessage", req, sendStreamingMessage(c), yield)
 	}
 }
 
 // SubscribeToTask implements the `SubscribeToTask` protocol method.
 func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		c.streamCall(ctx, "SubscribeToTask", req, streamHandler(c.transport.SubscribeToTask), yield)
+		streamCall(ctx, c, "SubscribeToTask", req, streamHandler(c.transport.SubscribeToTask), yield)
 	}
 }
 
@@ -195,19 +195,19 @@ func (c *Client) newRequest(ctx context.Context, method string, payload any) Req
 }
 
 // interceptCalls returns a callHandler which runs the interceptors around next.
-func (c *Client) interceptCalls(next callHandler) callHandler {
+func interceptCalls(c *Client, next callHandler) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			for i, interceptor := range c.interceptors {
 				localCtx, result, err := interceptor.Before(ctx, &req)
 				ctx = localCtx
 				if err != nil || result != nil {
-					yield(c.interceptAfter(ctx, c.interceptors[:i+1], req, result, err))
+					yield(interceptAfter(ctx, c, c.interceptors[:i+1], req, result, err))
 					return
 				}
 			}
 			for payload, err := range next(ctx, req) {
-				if !yield(c.interceptAfter(ctx, c.interceptors, req, payload, err)) {
+				if !yield(interceptAfter(ctx, c, c.interceptors, req, payload, err)) {
 					return
 				}
 			}
@@ -215,7 +215,7 @@ func (c *Client) interceptCalls(next callHandler) callHandler {
 	}
 }
 
-func (c *Client) interceptAfter(ctx context.Context, interceptors []CallInterceptor, req Request, payload any, err error) (any, error) {
+func interceptAfter(ctx context.Context, c *Client, interceptors []CallInterceptor, req Request, payload any, err error) (any, error) {
 	resp := Response{
 		BaseURL:       c.endpoint.URL,
 		Method:        req.Method,
@@ -264,19 +264,22 @@ func streamHandler[Req any](transportCall func(context.Context, ServiceParams, R
 	}
 }
 
-// sendStreamingMessage is a callHandler which falls back to a unary call if the agent card doesn't declare streaming support.
-func (c *Client) sendStreamingMessage(ctx context.Context, req Request) iter.Seq2[any, error] {
-	if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
-		return unaryHandler(c.transport.SendMessage)(ctx, req)
+// sendStreamingMessage returns a callHandler which falls back to a unary call
+// if the agent card doesn't declare streaming support.
+func sendStreamingMessage(c *Client) callHandler {
+	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
+		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
+			return unaryHandler(c.transport.SendMessage)(ctx, req)
+		}
+		return streamHandler(c.transport.SendStreamingMessage)(ctx, req)
 	}
-	return streamHandler(c.transport.SendStreamingMessage)(ctx, req)
 }
 
 func doCall[Req any, Resp any](
 	ctx context.Context, c *Client, method string, req Req,
 	transportCall func(context.Context, ServiceParams, Req) (Resp, error),
 ) (Resp, error) {
-	for payload, err := range c.interceptCalls(unaryHandler(transportCall))(ctx, c.newRequest(ctx, method, req)) {
+	for payload, err := range interceptCalls(c, unaryHandler(transportCall))(ctx, c.newRequest(ctx, method, req)) {
 		return utils.CastResult[Resp](payload, err)
 	}
 	var zero Resp
@@ -284,8 +287,8 @@ func doCall[Req any, Resp any](
 }
 
 // streamCall runs a streaming call through the interceptors and passes the results to yield.
-func (c *Client) streamCall(ctx context.Context, method string, req any, handler callHandler, yield func(a2a.Event, error) bool) {
-	for payload, err := range c.interceptCalls(handler)(ctx, c.newRequest(ctx, method, req)) {
+func streamCall(ctx context.Context, c *Client, method string, req any, handler callHandler, yield func(a2a.Event, error) bool) {
+	for payload, err := range interceptCalls(c, handler)(ctx, c.newRequest(ctx, method, req)) {
 		event, err := utils.CastResult[a2a.Event](payload, err)
 		if err != nil {
 			yield(nil, err)
