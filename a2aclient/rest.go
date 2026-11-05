@@ -187,6 +187,10 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 				yield(nil, err)
 				return
 			}
+			if event == nil {
+				log.Debug(ctx, "skipping unknown REST stream response")
+				continue
+			}
 
 			if !yield(event, nil) {
 				return

@@ -842,17 +842,6 @@ func TestParseStreamResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown type", func(t *testing.T) {
-		data := []byte(`{"foo":"bar"}`)
-		event, err := ParseStreamResponse(data)
-		if event != nil {
-			t.Fatalf("got event %v, want nil", event)
-		}
-		if err == nil {
-			t.Fatal("ParseStreamResponse() returned nil error, want error")
-		}
-	})
-
 	t.Run("multiple discriminators", func(t *testing.T) {
 		data := []byte(`{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}},"message":{"messageId":"m1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
 		event, err := ParseStreamResponse(data)
@@ -927,5 +916,54 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
+	}
+}
+
+func TestParseStreamResponse_UnknownPayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		data    string
+		wantErr bool
+	}{
+		{name: "unknown object", data: `{"futureEvent":{"taskId":"t1"}}`},
+		{name: "unknown scalar", data: `{"futureEvent":42}`},
+		{name: "unknown array", data: `{"futureEvent":[1,2]}`},
+		{name: "unknown string", data: `{"foo":"bar"}`},
+		{name: "unknown boolean", data: `{"futureEvent":false}`},
+		{name: "unknown empty object", data: `{"futureEvent":{}}`},
+		{name: "unknown with extra fields", data: `{"futureEvent":{},"metadata":{},"optional":null}`},
+		{name: "empty object", data: `{}`, wantErr: true},
+		{name: "null", data: `null`, wantErr: true},
+		{name: "unknown null", data: `{"futureEvent":null}`, wantErr: true},
+		{name: "task null", data: `{"task":null}`, wantErr: true},
+		{name: "message null", data: `{"message":null}`, wantErr: true},
+		{name: "status null", data: `{"statusUpdate":null}`, wantErr: true},
+		{name: "artifact null", data: `{"artifactUpdate":null}`, wantErr: true},
+		{name: "error null", data: `{"error":null}`, wantErr: true},
+		{name: "known null with unknown", data: `{"task":null,"futureEvent":{}}`, wantErr: true},
+		{name: "case insensitive known null", data: `{"TASK":null,"futureEvent":{}}`, wantErr: true},
+		{name: "unicode case insensitive task null", data: `{"taſk":null,"futureEvent":{}}`, wantErr: true},
+		{name: "unicode case insensitive status null", data: `{"ſtatusUpdate":null}`, wantErr: true},
+		{name: "case insensitive status null", data: `{"StatusUpdate":null}`, wantErr: true},
+		{name: "malformed known with unknown", data: `{"statusUpdate":{"status":42},"futureEvent":{}}`, wantErr: true},
+		{name: "invalid JSON", data: `{"futureEvent":`, wantErr: true},
+		{name: "trailing JSON", data: `{"futureEvent":{}} {}`, wantErr: true},
+		{name: "array", data: `[]`, wantErr: true},
+		{name: "number", data: `42`, wantErr: true},
+		{name: "string", data: `"futureEvent"`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			event, err := ParseStreamResponse([]byte(tt.data))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseStreamResponse() error = %v, want error %v", err, tt.wantErr)
+			}
+			if event != nil {
+				t.Fatalf("ParseStreamResponse() = %v, want nil", event)
+			}
+		})
 	}
 }
