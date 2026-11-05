@@ -15,6 +15,7 @@
 package a2aclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -736,5 +738,164 @@ func TestRESTTransport_EscapedPathSegments(t *testing.T) {
 				t.Fatalf("GetTask().ID = %q, want task/a?b#c%%20", task.ID)
 			}
 		})
+	}
+}
+
+func TestRESTTransport_UnknownStreamResponses(t *testing.T) {
+	t.Parallel()
+	task := &a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+	working := a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil)
+	working.Status.Timestamp = nil
+	completed := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil)
+	encode := func(event a2a.Event) string {
+		t.Helper()
+		data, err := json.Marshal(a2a.StreamResponse{Event: event})
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v, want nil", err)
+		}
+		return string(data)
+	}
+	taskJSON, workingJSON, completedJSON := encode(task), encode(working), encode(completed)
+	unknown := `{"futureEvent":{"taskId":"task-123","generation":42}}`
+	serverError := `{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad request","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"INVALID_REQUEST","domain":"a2a-protocol.org"}]}}`
+	cases := []struct {
+		name        string
+		payloads    []string
+		want        []a2a.Event
+		wantErr     error
+		wantErrText string
+		truncated   bool
+	}{
+		{name: "known events", payloads: []string{taskJSON, workingJSON, workingJSON, completedJSON}, want: []a2a.Event{task, working, working, completed}},
+		{name: "known event with unknown fields", payloads: []string{taskJSON, `{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"},"futureField":42},"futureEvent":{}}`, completedJSON}, want: []a2a.Event{task, working, completed}},
+		{name: "unknown between updates", payloads: []string{taskJSON, workingJSON, unknown, workingJSON, completedJSON}, want: []a2a.Event{task, working, working, completed}},
+		{name: "unknown first consecutive and last", payloads: []string{unknown, `{"futureScalar":false}`, taskJSON, unknown, unknown, completedJSON, unknown}, want: []a2a.Event{task, completed}},
+		{name: "unknown only", payloads: []string{unknown, unknown}},
+		{name: "malformed known after unknown", payloads: []string{taskJSON, unknown, `{"statusUpdate":{"status":42}}`, completedJSON}, want: []a2a.Event{task}, wantErrText: "failed to unmarshal stream response"},
+		{name: "invalid JSON after unknown", payloads: []string{taskJSON, unknown, `{"futureEvent":`, completedJSON}, want: []a2a.Event{task}, wantErrText: "failed to unmarshal stream response"},
+		{name: "empty wrapper after unknown", payloads: []string{taskJSON, unknown, `{}`, completedJSON}, want: []a2a.Event{task}, wantErrText: "unknown stream response type"},
+		{name: "null known after unknown", payloads: []string{taskJSON, unknown, `{"task":null}`, completedJSON}, want: []a2a.Event{task}, wantErrText: "unknown stream response type"},
+		{name: "multiple known after unknown", payloads: []string{taskJSON, unknown, `{"task":{},"statusUpdate":{}}`, completedJSON}, want: []a2a.Event{task}, wantErrText: "expected exactly one stream response type"},
+		{name: "server error after unknown", payloads: []string{taskJSON, unknown, serverError, completedJSON}, want: []a2a.Event{task}, wantErr: a2a.ErrInvalidRequest},
+		{name: "transport error after unknown", payloads: []string{taskJSON, unknown}, want: []a2a.Event{task}, wantErr: io.ErrUnexpectedEOF, truncated: true},
+	}
+	for _, subscribe := range []bool{false, true} {
+		for _, tc := range cases {
+			t.Run(fmt.Sprintf("subscribe=%t/%s", subscribe, tc.name), func(t *testing.T) {
+				t.Parallel()
+				var body strings.Builder
+				for _, payload := range tc.payloads {
+					fmt.Fprintf(&body, "data: %s\n\n", payload)
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if got := r.Header.Get("A2A-Version"); got != "1.0" {
+						t.Errorf("A2A-Version = %q, want 1.0", got)
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					if tc.truncated {
+						w.Header().Set("Content-Length", fmt.Sprint(body.Len()+1))
+					}
+					if _, err := io.WriteString(w, body.String()); err != nil {
+						t.Errorf("io.WriteString() error = %v, want nil", err)
+					}
+				}))
+				defer server.Close()
+				transport := newRESTTransport(t, server)
+				params := ServiceParams{"A2A-Version": {"1.0"}}
+				stream := transport.SendStreamingMessage(t.Context(), params, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+				if subscribe {
+					stream = transport.SubscribeToTask(t.Context(), params, &a2a.SubscribeToTaskRequest{ID: task.ID})
+				}
+				var got []a2a.Event
+				var gotErr error
+				for event, err := range stream {
+					if err != nil {
+						if event != nil || gotErr != nil {
+							t.Fatalf("stream = (%v, %v), want a single error with no event", event, err)
+						}
+						gotErr = err
+						continue
+					}
+					got = append(got, event)
+				}
+				if tc.wantErrText != "" {
+					if gotErr == nil || !strings.Contains(gotErr.Error(), tc.wantErrText) {
+						t.Fatalf("stream error = %v, want %q", gotErr, tc.wantErrText)
+					}
+				} else if !errors.Is(gotErr, tc.wantErr) {
+					t.Fatalf("stream error = %v, want %v", gotErr, tc.wantErr)
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Fatalf("stream wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
+func TestRESTTransport_UnknownStreamResponseStop(t *testing.T) {
+	t.Parallel()
+	for _, subscribe := range []bool{false, true} {
+		for _, cancelRequest := range []bool{false, true} {
+			t.Run(fmt.Sprintf("subscribe=%t/cancel=%t", subscribe, cancelRequest), func(t *testing.T) {
+				t.Parallel()
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				disconnected := make(chan struct{})
+				release := make(chan struct{})
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer close(disconnected)
+					w.Header().Set("Content-Type", "text/event-stream")
+					if _, err := io.WriteString(w, "data: {\"futureEvent\":{}}\n\ndata: {\"task\":{\"id\":\"task-123\",\"contextId\":\"ctx-123\",\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}\n\n"); err != nil {
+						t.Errorf("io.WriteString() error = %v, want nil", err)
+						return
+					}
+					w.(http.Flusher).Flush()
+					select {
+					case <-r.Context().Done():
+					case <-release:
+					}
+				}))
+				defer server.Close()
+				defer close(release)
+				transport := newRESTTransport(t, server)
+				stream := transport.SendStreamingMessage(ctx, nil, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+				if subscribe {
+					stream = transport.SubscribeToTask(ctx, nil, &a2a.SubscribeToTaskRequest{ID: "task-123"})
+				}
+				var got []a2a.Event
+				var gotErr error
+				for event, err := range stream {
+					if err != nil {
+						gotErr = err
+						break
+					}
+					got = append(got, event)
+					if !cancelRequest {
+						break
+					}
+					cancel()
+				}
+				var wantErr error
+				if cancelRequest {
+					wantErr = context.Canceled
+				}
+				if !errors.Is(gotErr, wantErr) {
+					t.Fatalf("stream error = %v, want %v", gotErr, wantErr)
+				}
+				want := []a2a.Event{&a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Fatalf("stream wrong result (-want +got) diff = %s", diff)
+				}
+				select {
+				case <-disconnected:
+					if !cancelRequest && ctx.Err() != nil {
+						t.Fatalf("stream cleanup context error = %v, want nil", ctx.Err())
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("stream did not close the response body")
+				}
+			})
+		}
 	}
 }
