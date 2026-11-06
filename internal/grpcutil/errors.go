@@ -82,7 +82,7 @@ func ToGRPCError(err error) error {
 		}
 	}
 
-	st := status.New(code, err.Error())
+	st := status.New(code, utils.ErrorMessage(err))
 	var errInfoMeta map[string]string
 	var a2aErr *a2a.Error
 	var messages []protoadapt.MessageV1

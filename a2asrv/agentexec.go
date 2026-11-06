@@ -219,7 +219,7 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("task loading failed: %w", err)
+		return nil, taskexec.TaskLoadError(err)
 	}
 
 	storedTask, lastVersion := taskStoreTask.Task, taskStoreTask.Version
@@ -232,11 +232,11 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 	}
 
 	if message.ContextID != "" && message.ContextID != storedTask.ContextID {
-		return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+		return nil, taskexec.ErrContextMismatch
 	}
 
 	if storedTask.Status.State.Terminal() {
-		return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrUnsupportedOperation)
+		return nil, taskexec.TerminalTaskError(storedTask.Status.State)
 	}
 
 	updateHistory := !slices.ContainsFunc(storedTask.History, func(m *a2a.Message) bool {
@@ -315,12 +315,12 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMess
 func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Canceler, taskexec.Processor, taskexec.Cleaner, error) {
 	storedTask, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to load a task: %w", err)
+		return nil, nil, nil, taskexec.TaskLoadError(err)
 	}
 
 	task, version := storedTask.Task, storedTask.Version
 	if task.Status.State.Terminal() && task.Status.State != a2a.TaskStateCanceled {
-		return nil, nil, nil, fmt.Errorf("task in non-cancelable state %s: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+		return nil, nil, nil, taskexec.NotCancelableError(task.Status.State)
 	}
 
 	execCtx := &ExecutorContext{

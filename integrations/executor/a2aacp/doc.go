@@ -40,8 +40,11 @@
 // # Translation
 //
 // Message parts become prompt content: text as text, data parts as JSON text,
-// file URLs as resource links, and raw files as images, audio or embedded
-// resources, depending on what the agent accepts. [Config.Prompt] changes what
+// file URLs as resource links, and raw files as images or audio if the agent
+// accepts them. Agents with embedded context get text and PDF files as
+// embedded resources; other files fail the task before they reach the agent,
+// since agents keep embedded files in the session and a type the model rejects
+// would fail every later message. [Config.Prompt] changes what
 // is sent and [Config.Settings] selects the session's mode, model or other
 // config options before each message.
 //
@@ -67,6 +70,8 @@
 // instruction, like typing instead of approving does in coding agents; an invalid
 // answer is asked again. Unanswered questions are rejected after [Config.QuestionTimeout]
 // and the agent stops working on the task; a later reply to the task fails it.
+// [Config.Abandoned] reports such tasks, and those whose agent exited while
+// they waited, so that the host can fail them right away.
 //
 // Questions are tied to the agent process which asked them, so in a cluster
 // every message of a context must reach the node which runs its agent. See

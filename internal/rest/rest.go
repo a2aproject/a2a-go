@@ -465,7 +465,7 @@ func ToRESTError(err error, taskID a2a.TaskID) *Error {
 		Err: StatusError{
 			Code:    httpStatus,
 			Status:  grpcStatus,
-			Message: err.Error(),
+			Message: utils.ErrorMessage(err),
 			Details: details,
 		},
 	}

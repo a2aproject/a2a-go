@@ -97,6 +97,18 @@ type Config struct {
 	// request but isn't canceled when the request ends. If nil, nothing is
 	// called.
 	Turn func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (end func())
+	// Abandoned is called when the agent stops working on a task which waits
+	// for an answer in input-required, without the caller answering, replying
+	// or canceling: for example because the agent exited or the question
+	// timed out. event is the status update which ends the task, usually
+	// failed. An executor can only emit events while it runs a request, so
+	// the task stays input-required unless Abandoned stores event, for
+	// example with Update of the server's taskstore.Store. A reply racing
+	// with the call may end the task first, so skip tasks in a terminal state.
+	// ctx is the ctx of [Config.Turn], and Abandoned is called before the end
+	// returned by Turn. If nil, the task stays input-required and the next
+	// reply fails it.
+	Abandoned func(ctx context.Context, event *a2a.TaskStatusUpdateEvent)
 
 	// Converter decides how the agent's session updates appear in the task.
 	// Defaults to [ConvertUpdate].
@@ -401,6 +413,7 @@ func (e *Executor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) 
 			stopWaiting(errTaskCanceled)
 		}
 		if t != nil {
+			t.resume()
 			e.cancelTurn(t)
 		}
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
@@ -422,6 +435,7 @@ func (e *Executor) answer(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	case ans == nil:
 		return e.interrupt(ctx, execCtx, t, p, yield)
 	}
+	t.resume()
 	if t.agent.exited() || !t.takePending(p) {
 		yield(e.fail(ctx, execCtx, errQuestionGone), nil)
 		return nil, false
@@ -527,6 +541,7 @@ func messageText(msg *a2a.Message) string {
 // interrupt rejects the pending question, cancels its turn and starts a new
 // turn with the caller's message once the agent ended the canceled one.
 func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQuestion, yield func(a2a.Event, error) bool) (*turn, bool) {
+	t.resume()
 	if t.takePending(p) {
 		if err := p.reject(t.agent); err != nil {
 			log.Warn(ctx, "failed to reject acp request", "cause", err)
@@ -677,8 +692,11 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		if err == nil {
 			result.reason = resp.StopReason
 		}
-		t.end()
+		paused, expired := t.end()
 		t.events.push(turnEvent{result: result})
+		if paused != nil {
+			e.abandon(promptCtx, paused, result, expired)
+		}
 		endTurn()
 		e.mu.Lock()
 		if e.routes[route] == t {
@@ -857,7 +875,7 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 			if decided {
 				continue
 			}
-			if !t.setPending(p, e.questionTimeout, func() { e.expire(t, p) }) {
+			if !t.setPending(execCtx, p, e.questionTimeout, func() { e.expire(t, p) }) {
 				p.in.cancel(t.agent)
 				continue
 			}
@@ -910,7 +928,7 @@ func (e *Executor) autoAnswer(ctx context.Context, execCtx *a2asrv.ExecutorConte
 // expire rejects a question nobody answered in time and cancels its turn,
 // since nobody would see what the agent does next.
 func (e *Executor) expire(t *turn, p *pendingQuestion) {
-	if !t.takePending(p) {
+	if !t.expire(p) {
 		return
 	}
 	ctx := context.Background()
@@ -919,6 +937,26 @@ func (e *Executor) expire(t *turn, p *pendingQuestion) {
 		log.Warn(ctx, "failed to reject acp request", "cause", err)
 	}
 	e.cancelTurn(t)
+}
+
+// abandon reports the end of a turn whose task waits for an answer, since
+// no request runs which could emit the event.
+func (e *Executor) abandon(ctx context.Context, execCtx *a2asrv.ExecutorContext, result *promptResult, expired bool) {
+	state, err := result.outcome()
+	switch {
+	case expired:
+		err = errors.New("nobody answered the question in time, send a new message to continue")
+	case result.canceled && result.failure == nil:
+		err = errors.New("the agent stopped working on the task, send a new message to continue")
+	}
+	event := a2a.NewStatusUpdateEvent(execCtx, state, nil)
+	if err != nil {
+		event = e.fail(ctx, execCtx, err)
+	}
+	log.Info(ctx, "acp turn of a task waiting for input ended", "task", event.TaskID, "state", event.Status.State)
+	if e.cfg.Abandoned != nil {
+		e.cfg.Abandoned(ctx, event)
+	}
 }
 
 // cancelTurn asks the agent to stop the turn and cancels its open questions,

@@ -98,7 +98,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 	if !isNewTask {
 		taskStoreTask, err := m.taskStore.Get(ctx, msg.TaskID)
 		if err != nil {
-			return nil, fmt.Errorf("task loading failed: %w", err)
+			return nil, TaskLoadError(err)
 		}
 		storedTask := taskStoreTask.Task
 		if storedTask == nil {
@@ -106,11 +106,11 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 
 		if msg.ContextID != "" && msg.ContextID != storedTask.ContextID {
-			return nil, fmt.Errorf("message contextID different from task contextID: %w", a2a.ErrInvalidParams)
+			return nil, ErrContextMismatch
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+			return nil, TerminalTaskError(storedTask.Status.State)
 		}
 	}
 
@@ -157,7 +157,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
 	storedTask, err := m.taskStore.Get(ctx, req.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load a task: %w", err)
+		return nil, TaskLoadError(err)
 	}
 
 	task := storedTask.Task
@@ -166,7 +166,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 	}
 
 	if task.Status.State.Terminal() {
-		return nil, fmt.Errorf("task in non-cancelable state %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
+		return nil, NotCancelableError(task.Status.State)
 	}
 
 	queue, err := m.queueManager.CreateReader(ctx, req.ID)

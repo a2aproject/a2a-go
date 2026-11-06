@@ -16,6 +16,7 @@ package taskexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -146,7 +147,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 		{
 			name:    "task in terminal state",
 			req:     &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: terminalStateTaskSeed.ID}},
-			wantErr: a2a.ErrInvalidParams,
+			wantErr: a2a.ErrUnsupportedOperation,
 		},
 		{
 			name:        "queue creation error",
@@ -199,7 +200,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 				if tc.wantErr == nil {
 					t.Fatalf("Execute() error = %v, want nil", err)
 				}
-				if !strings.Contains(err.Error(), tc.wantErr.Error()) {
+				if !errors.Is(err, tc.wantErr) && !strings.Contains(err.Error(), tc.wantErr.Error()) {
 					t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
 				}
 				if tc.queueClosed && !queueClosed {
@@ -363,7 +364,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				TaskID:        tid,
 				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
 			},
-			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
+			wantErrContain: "can't be canceled",
 		},
 		{
 			name:           "already canceled",
@@ -373,7 +374,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		{
 			name:           "non-cancelable state",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
-			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
+			wantErrContain: "can't be canceled",
 		},
 		{
 			name:           "task not found",

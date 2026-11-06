@@ -20,14 +20,27 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 func init() {
 	gob.Register(map[string]any{})
 	gob.Register([]any{})
+}
+
+// ErrorMessage returns the message of err for clients: the message of the
+// [a2a.Error] in its chain, without the context added while it was returned,
+// or the whole message if there is none.
+func ErrorMessage(err error) string {
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) {
+		return a2aErr.Error()
+	}
+	return err.Error()
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.

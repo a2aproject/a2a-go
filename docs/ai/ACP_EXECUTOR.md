@@ -35,9 +35,8 @@ The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and
 - Config durations: zero means the default, negative disables (`duration` in `executor.go`).
 - "Turn" (one `session/prompt`) is internal; public docs speak of tasks and messages. The one
   exception is `Config.Turn`, whose name was agreed in issue #529; its doc still speaks of messages.
-- Not exposed on purpose: question outcome callbacks (a question that times out or is abandoned
-  is discovered when someone replies: the task fails with `errQuestionGone`), a configurable
-  invalid-reply policy, prompt-part converters, agent profiles.
+- Not exposed on purpose: a configurable invalid-reply policy, prompt-part converters, agent
+  profiles. The one question outcome reported is `Config.Abandoned` (see Turn lifecycle).
 
 ## Mapping
 
@@ -130,7 +129,15 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
 - A message on an input-required task with no pending question (expired, agent restarted,
   executor restarted) fails the task with `errQuestionGone`; it is never sent as a new prompt.
 - Timed-out and abandoned questions produce no task event (an executor can only emit from
-  `Execute` / `Cancel`), so the task stays input-required until the next reply fails it.
+  `Execute` / `Cancel`). `turn.paused` holds the `ExecutorContext` from `setPending` until a
+  request continues or cancels the turn (`turn.resume` in `answer`, `interrupt` and `Cancel`).
+  If the prompt ends while it is set (agent exit, question timeout via `turn.expire`,
+  shutdown), `turn.end` returns it and `Executor.abandon` builds the ending event (through
+  `Executor.fail`, so `Config.Failure` applies) and passes it to `Config.Abandoned` before the
+  `Turn` end, so the host can store it (a2a-serve writes it to its task store).
+  Without the hook the task stays input-required until the next reply fails it with
+  `errQuestionGone`. A reply racing the agent exit can report the failure too; the host skips
+  tasks already in a terminal state.
 - `Config.Turn` spans the prompt, since the `Execute` stream ends at input-required while the
   agent can keep working in parallel tool calls, and some endings (question timeout, agent exit
   while waiting) produce no task event. `promptAgent` calls it after registering the turn, with
@@ -175,6 +182,18 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
   context (cancels included, via the task's context) to the node owning the key, `Agent.Start`
   claims the key's lease and restores its sandbox (returning `ErrNotOwner` if another node
   holds it), and the `WithCleanup` callback snapshots and releases it.
+
+## Prompt content (`toPrompt`, `rawBlock` in `turn.go`)
+
+Text and data parts become text blocks, file URLs resource links. Raw files become `image` /
+`audio` blocks only when the agent advertises `promptCapabilities.image` / `audio`. With
+`embeddedContext`, text-like files (`text/*`, JSON, XML, YAML, scripts, `+json`/`+xml`
+suffixes; untyped or `application/octet-stream` files that sniff as UTF-8 text) are embedded
+as text resources and PDFs as blob resources. Every other file fails the task before the
+prompt is sent, because opencode stores embedded resources in the session and replays them
+to the model on every later turn: a type the model rejects (e.g. Gemini and
+`application/octet-stream`) would fail the rest of the conversation. Hosts that want other
+types can rewrite parts in `Config.Prompt`.
 
 ## Conversion (`convert.go`)
 

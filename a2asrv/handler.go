@@ -287,7 +287,7 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 
 	storedTask, err := h.taskStore.Get(ctx, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get task: %w", err)
+		return nil, taskexec.TaskLoadError(err)
 	}
 
 	task := storedTask.Task
@@ -397,7 +397,7 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 				return
 			}
 			if storedTask.Task.Status.State.Terminal() {
-				yield(nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Task.Status.State, a2a.ErrUnsupportedOperation))
+				yield(nil, a2a.NewError(a2a.ErrUnsupportedOperation, fmt.Sprintf("task is in a terminal state (%s)", storedTask.Task.Status.State)))
 				return
 			}
 			yield(storedTask.Task, nil)

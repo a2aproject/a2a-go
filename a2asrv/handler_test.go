@@ -266,7 +266,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				input: &a2a.SendMessageRequest{
 					Message: newUserMessage(completedTaskSeed, "Test"),
 				},
-				wantErr: fmt.Errorf("executor setup failed: failed to load exec ctx: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrUnsupportedOperation),
+				wantErr: a2a.ErrUnsupportedOperation,
 			},
 		}
 	}
@@ -1369,7 +1369,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 		{
 			name:    "task not found",
 			query:   &a2a.GetTaskRequest{ID: a2a.NewTaskID()},
-			wantErr: fmt.Errorf("failed to get task: %w", a2a.ErrTaskNotFound),
+			wantErr: a2a.ErrTaskNotFound,
 		},
 		{
 			name:  "get task with limited HistoryLength",
@@ -1547,12 +1547,12 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 		{
 			name:    "task not found",
 			params:  &a2a.CancelTaskRequest{ID: a2a.NewTaskID()},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
+			wantErr: a2a.ErrTaskNotFound,
 		},
 		{
 			name:    "task already completed",
 			params:  &a2a.CancelTaskRequest{ID: completedTask.ID},
-			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
+			wantErr: a2a.ErrTaskNotCancelable,
 		},
 		{
 			name:   "task already canceled",
@@ -1613,7 +1613,7 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 						t.Errorf("CancelTask() error = nil, wantErr %q", tt.wantErr)
 						return
 					}
-					if err.Error() != tt.wantErr.Error() {
+					if err.Error() != tt.wantErr.Error() && !errors.Is(err, tt.wantErr) {
 						t.Errorf("CancelTask() error = %v, wantErr %v", err, tt.wantErr)
 					}
 				}

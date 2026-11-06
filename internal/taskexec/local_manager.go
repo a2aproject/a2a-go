@@ -31,15 +31,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
-var (
-	// ErrExecutionInProgress is returned when a caller attempts to start an execution for
-	// a Task concurrently with another execution.
-	ErrExecutionInProgress = errors.New("task execution is already in progress")
-	// ErrCancelationInProgress is returned when a caller attempts to start an execution for
-	// a Task concurrently with its cancelation.
-	ErrCancelationInProgress = errors.New("task cancelation is in progress")
-)
-
 // localManager provides an API for executing and canceling tasks in a way that ensures
 // concurrent calls don't interfere with one another in unexpected ways.
 // The following guarantees are provided:
@@ -215,7 +206,8 @@ func (m *localManager) createExecution(ctx context.Context, tid a2a.TaskID, req 
 	}
 
 	if err := m.limiter.acquireQuotaLocked(ctx); err != nil {
-		return nil, fmt.Errorf("concurrency quota exceeded: %w", err)
+		log.Info(ctx, "execution rejected", "cause", err)
+		return nil, ErrQuotaExceeded
 	}
 
 	execution := newLocalExecution(m.queueManager, m.store, tid, req)
