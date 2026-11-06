@@ -18,6 +18,7 @@ package subprocess
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -168,6 +169,36 @@ func TestClose_TerminatesChildrenAfterCleanExit(t *testing.T) {
 	for syscall.Kill(child, 0) == nil {
 		if time.Now().After(deadline) {
 			t.Fatalf("child process %d is alive after Close(), want it terminated", child)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestClose_KillsChildrenIgnoringSigterm(t *testing.T) {
+	t.Parallel()
+	p := start(t, Command{Argv: []string{"sh", "-c", `sh -c 'trap "" TERM; echo $$; while :; do sleep 0.1; done' & cat >/dev/null`}})
+	line, err := bufio.NewReader(p).ReadString('\n')
+	if err != nil {
+		t.Fatalf("ReadString() error = %v", err)
+	}
+	child, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil {
+		t.Fatalf("strconv.Atoi(%q) error = %v", line, err)
+	}
+	t.Cleanup(func() {
+		if err := syscall.Kill(child, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			t.Errorf("syscall.Kill(%d) error = %v", child, err)
+		}
+	})
+
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for syscall.Kill(child, 0) == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("child process %d ignoring SIGTERM is alive after Close(), want it killed", child)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -266,8 +266,9 @@ closed `outputGrace` after exit in case a child inherited it; reads then report 
 write waits briefly for the reader to report why the agent stopped (`acp.Conn.writeErr`).
 
 The agent runs in its own process group. `Close` closes stdin, sends SIGTERM to the group after
-`closeGrace`, SIGKILL after another `closeGrace`, and always sends SIGTERM to the group once the
-agent exited, so children such as MCP servers don't outlive it.
+`closeGrace`, SIGKILL after another `closeGrace`, and once the agent exited always sends SIGTERM to
+the group and SIGKILL if any process remains in it after `closeGrace` (`stopProcessGroup`, which
+polls the group with signal 0), so children such as MCP servers don't outlive it.
 
 `acp.Conn.Call` checks for a delivered response before reporting `done`, because the reader
 delivers a response and then fails when the agent exits right after responding.
