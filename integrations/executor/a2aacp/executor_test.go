@@ -549,6 +549,23 @@ func TestExecutor_RestartsAgent(t *testing.T) {
 	}
 }
 
+func TestExecutor_RestartsAgentThatExitedUnnoticed(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{})
+	run(t, execute(e, newExecCtx("ctx1", a2a.NewTextPart("one"))))
+	h.agent(0).exitUnnoticed()
+
+	got := run(t, execute(e, newExecCtx("ctx2", a2a.NewTextPart("two"))))
+
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	if got := h.agentCount(); got != 2 {
+		t.Fatalf("started agents = %d, want 2", got)
+	}
+}
+
 func TestExecutor_AgentExitFailsTurn(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
@@ -844,7 +861,7 @@ func TestExecutor_QuestionTimeout(t *testing.T) {
 	waitFor(t, func() bool { _, _, canceled, _ := h.agent(0).snapshot(); return len(canceled) == 1 })
 
 	got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
-	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone)}, got); diff != "" {
+	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone.Error())}, got); diff != "" {
 		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 	}
 	<-scriptDone
@@ -863,7 +880,7 @@ func TestExecutor_AgentExitWhileInputRequired(t *testing.T) {
 
 	got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
 
-	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone)}, got); diff != "" {
+	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone.Error())}, got); diff != "" {
 		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 	}
 	if got := h.agentCount(); got != 1 {
@@ -1009,10 +1026,7 @@ func withSettings(execCtx *a2asrv.ExecutorContext, settings map[string]any) *a2a
 
 func TestExecutor_Settings(t *testing.T) {
 	t.Parallel()
-	configOptions := acp.SessionState{ConfigOptions: []acp.SessionConfigOption{
-		{ID: "model", Name: "Model", Type: "select"},
-		{ID: "fast", Name: "Fast", Type: "boolean"},
-	}}
+	configOptions := acp.SessionState{ConfigOptions: testConfigOptions}
 	modesAndModels := acp.SessionState{Modes: &struct{}{}, Models: &struct{}{}}
 	tests := []struct {
 		name         string
@@ -1032,9 +1046,24 @@ func TestExecutor_Settings(t *testing.T) {
 			wantSettings: []string{
 				"session/set_config_option fast=true boolean",
 				"session/set_config_option model=m1 ",
-				"session/set_config_option model=m1 ",
 			},
 			wantLast: completed,
+		},
+		{
+			name:     "current value not sent",
+			state:    configOptions,
+			defaults: map[string]any{"model": "m0", "fast": false},
+			allowed:  []string{"*"},
+			messages: []map[string]any{nil},
+			wantLast: completed,
+		},
+		{
+			name:         "value refused",
+			state:        configOptions,
+			allowed:      []string{"*"},
+			messages:     []map[string]any{{"model": "m9"}},
+			wantSettings: []string{"session/set_config_option model=m9 "},
+			wantLast:     failedWith(`configuring acp session: setting "model": Invalid params: model not found: m9 (code -32602)`),
 		},
 		{
 			name:     "message overrides defaults",
@@ -1114,6 +1143,176 @@ func TestExecutor_Settings(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantSettings, h.agent(0).recordedSettings()); diff != "" {
 				t.Fatalf("session settings wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+var testConfigOptions = []acp.SessionConfigOption{
+	{
+		ID: "model", Name: "Model", Type: "select", CurrentValue: "m0",
+		Options: []acp.SessionConfigSelectOption{
+			{Group: "small", Name: "Small", Options: []acp.SessionConfigSelectOption{
+				{Value: "m0", Name: "Model 0"},
+				{Value: "m1", Name: "Model 1", Description: "Faster"},
+			}},
+			{Group: "large", Name: "Large", Options: []acp.SessionConfigSelectOption{{Value: "m2", Name: "Model 2"}}},
+		},
+	},
+	{ID: "fast", Name: "Fast", Type: "boolean", CurrentValue: false},
+}
+
+func TestExecutor_SettingsFollowAgentChanges(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{state: acp.SessionState{ConfigOptions: testConfigOptions}}
+	h.onPrompt = func(s *promptScript) {
+		fellBack := slices.Clone(testConfigOptions)
+		fellBack[0].CurrentValue = "m2"
+		s.update(map[string]any{"sessionUpdate": acp.UpdateConfigOption, "configOptions": fellBack})
+		s.end(acp.StopEndTurn)
+	}
+	settings := func(context.Context, *a2asrv.ExecutorContext) (map[string]any, error) {
+		return map[string]any{"model": "m1"}, nil
+	}
+	e := newTestExecutor(t, h, Config{Settings: settings})
+
+	for range 2 {
+		got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+		if diff := cmp.Diff(completed, got[len(got)-1]); diff != "" {
+			t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
+		}
+	}
+
+	want := []string{"session/set_config_option model=m1 ", "session/set_config_option model=m1 "}
+	if diff := cmp.Diff(want, h.agent(0).recordedSettings()); diff != "" {
+		t.Fatalf("session settings wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_Failure(t *testing.T) {
+	t.Parallel()
+	suggest := func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+		var settingErr *SettingError
+		if !errors.As(err, &settingErr) {
+			return nil
+		}
+		var values []string
+		for _, o := range settingErr.Options {
+			values = append(values, fmt.Sprintf("%s (%s/%s)", o.Value, o.Group, o.Name))
+		}
+		return []*a2a.Part{a2a.NewTextPart(fmt.Sprintf("unknown %s %v, try: %s", settingErr.ID, settingErr.Value, strings.Join(values, ", ")))}
+	}
+	tests := []struct {
+		name     string
+		settings map[string]any
+		want     eventSummary
+	}{
+		{
+			name:     "setting error",
+			settings: map[string]any{"model": "m9"},
+			want:     failedWith("unknown model m9, try: m0 (Small/Model 0), m1 (Small/Model 1), m2 (Large/Model 2)"),
+		},
+		{
+			name:     "other error",
+			settings: map[string]any{"temperature": 1},
+			want:     failedWith(`configuring acp session: the agent has no session setting "temperature"`),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{state: acp.SessionState{ConfigOptions: testConfigOptions}, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+			settings := func(context.Context, *a2asrv.ExecutorContext) (map[string]any, error) { return tc.settings, nil }
+			e := newTestExecutor(t, h, Config{Settings: settings, Failure: suggest})
+
+			got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+
+			if diff := cmp.Diff(tc.want, got[len(got)-1]); diff != "" {
+				t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestExecutor_InactivityTimeout(t *testing.T) {
+	t.Parallel()
+	const timeout = 200 * time.Millisecond
+	waitForCancel := func(s *promptScript) {
+		waitFor(s.t, func() bool {
+			_, _, canceled, _ := s.agent.snapshot()
+			return len(canceled) > 0
+		})
+	}
+	tests := []struct {
+		name     string
+		onPrompt func(*promptScript)
+		// answerAfter answers the question the agent asks after this long.
+		answerAfter time.Duration
+		want        eventSummary
+	}{
+		{
+			name: "silent agent",
+			onPrompt: func(s *promptScript) {
+				waitForCancel(s)
+				s.end(acp.StopCancelled)
+			},
+			want: failedWith("the agent sent no updates for 200ms"),
+		},
+		{
+			name: "silent after an update",
+			onPrompt: func(s *promptScript) {
+				s.update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "hmm"}})
+				waitForCancel(s)
+				s.end(acp.StopEndTurn)
+			},
+			want: failedWith("the agent sent no updates for 200ms"),
+		},
+		{
+			name: "updates keep the task going",
+			onPrompt: func(s *promptScript) {
+				for range 10 {
+					s.update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "hmm"}})
+					time.Sleep(timeout / 5)
+				}
+				s.end(acp.StopEndTurn)
+			},
+			want: completed,
+		},
+		{
+			name: "waiting for an answer doesn't count",
+			onPrompt: func(s *promptScript) {
+				s.askPermission(rmToolCall)
+				s.end(acp.StopEndTurn)
+			},
+			answerAfter: 3 * timeout,
+			want:        completed,
+		},
+		{
+			name: "silent after an answer",
+			onPrompt: func(s *promptScript) {
+				s.askPermission(rmToolCall)
+				waitForCancel(s)
+				s.end(acp.StopCancelled)
+			},
+			answerAfter: 3 * timeout,
+			want:        failedWith("the agent sent no updates for 200ms"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{onPrompt: tc.onPrompt}
+			e := newTestExecutor(t, h, Config{InactivityTimeout: timeout})
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+
+			got := run(t, execute(e, execCtx))
+			if tc.answerAfter > 0 {
+				time.Sleep(tc.answerAfter)
+				got = run(t, execute(e, followUp(execCtx, a2a.NewTextPart("yes"))))
+			}
+
+			if diff := cmp.Diff(tc.want, got[len(got)-1]); diff != "" {
+				t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
 			}
 		})
 	}

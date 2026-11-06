@@ -7,6 +7,11 @@ issue to discuss your proposed approach with the maintainers. This helps ensure
 your contribution aligns with the project's goals and prevents duplicated effort
 or wasted work.
 
+Please do not open pull requests for made-up issues or unrealistic use cases.
+A bug report or fix should describe a scenario that a realistic, correctly
+configured deployment can run into. Maintainers reserve the right to close such
+pull requests without explanation.
+
 ## Contribution process
 
 ### Code reviews

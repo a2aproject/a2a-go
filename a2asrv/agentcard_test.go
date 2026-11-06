@@ -455,3 +455,23 @@ func TestAgentCardHandler_RawJSONProducer(t *testing.T) {
 		t.Errorf("conditional status = %d, want 304 despite changing raw signatures", condResp.StatusCode)
 	}
 }
+
+func TestRawJSONETag_NumericPrecision(t *testing.T) {
+	t.Parallel()
+	card := func(number string) []byte {
+		return fmt.Appendf(nil, `{"name":"agent","capabilities":{"extensions":[{"uri":"urn:example:revision","params":{"revision":%s}}]}}`, number)
+	}
+	for _, tc := range []struct{ name, before, after string }{
+		{name: "positive integer", before: "9007199254740992", after: "9007199254740993"},
+		{name: "negative integer", before: "-9007199254740992", after: "-9007199254740993"},
+		{name: "decimal", before: "1.00000000000000001", after: "1.00000000000000002"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			before, after := rawJSONETag(card(tc.before)), rawJSONETag(card(tc.after))
+			if before == after {
+				t.Fatalf("rawJSONETag() = %q for both %s and %s, want different tags", before, tc.before, tc.after)
+			}
+		})
+	}
+}
