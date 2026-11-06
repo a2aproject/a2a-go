@@ -109,7 +109,10 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
   interrupting reply always waits, since it waits for its own canceled turn.
 - From `startTurn` until the turn is registered in `Executor.turns`, the task is in
   `Executor.waiting` with a cancel func. `Cancel` calls it with `errTaskCanceled`; `Execute`
-  then returns without an event, since `Cancel` emits `canceled`. Registration checks the cause
+  then yields its own `canceled` (`startFailed`) although `Cancel` emits one too: in cluster mode
+  the cancel runs as a separate execution, and an `Execute` ending without a terminal event would
+  hang its execution. In local mode both write to the same pipe; the second write gets
+  `ErrQueueClosed`, which a2asrv treats as already finished. Registration checks the cause
   under `Executor.mu`, so a canceled task never starts a prompt. In local mode the a2asrv also
   cancels the producer context, but in cluster mode `Cancel` may be the only signal.
 - `Config.Prompt` replaces the message parts sent as the prompt; the task history keeps the

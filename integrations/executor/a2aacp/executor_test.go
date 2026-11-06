@@ -30,7 +30,11 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -493,7 +497,7 @@ func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
 		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
 	}
-	if diff := cmp.Diff([]eventSummary{submitted}, <-queuedResult); diff != "" {
+	if diff := cmp.Diff([]eventSummary{submitted, canceled}, <-queuedResult); diff != "" {
 		t.Fatalf("Executor.Execute() queued turn wrong result (-want +got) diff = %s", diff)
 	}
 	close(release)
@@ -501,6 +505,108 @@ func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	if _, _, _, p := h.agent(0).snapshot(); len(p) != 1 {
 		t.Fatalf("session/prompt count = %d, want 1", len(p))
 	}
+}
+
+func TestExecutor_CancelQueuedTurnInClusterMode(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "first" {
+			<-release
+		}
+		s.end(acp.StopEndTurn)
+	}}
+	e := newTestExecutor(t, h, Config{})
+	var handle workqueue.HandlerFn
+	handled := make(chan *workqueue.Payload, 3)
+	queue := testutil.NewTestWorkQueue()
+	queue.RegisterHandlerFunc = func(_ workqueue.HandlerConfig, fn workqueue.HandlerFn) { handle = fn }
+	queue.WriteFunc = func(ctx context.Context, p *workqueue.Payload) (a2a.TaskID, error) {
+		go func() {
+			if _, err := handle(context.WithoutCancel(ctx), p); err != nil {
+				t.Errorf("workqueue.HandlerFn() error = %v", err)
+			}
+			handled <- p
+		}()
+		return p.TaskID, nil
+	}
+	handler := a2asrv.NewHandler(e, a2asrv.WithClusterMode(a2asrv.ClusterConfig{
+		QueueManager: eventqueue.NewInMemoryManager(),
+		WorkQueue:    queue,
+		TaskStore:    taskstore.NewInMemory(nil),
+	}))
+	send := func(text string) *a2a.Task {
+		msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(text))
+		msg.ContextID = "ctx"
+		req := &a2a.SendMessageRequest{Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true}}
+		res, err := handler.SendMessage(t.Context(), req)
+		if err != nil {
+			t.Fatalf("handler.SendMessage() error = %v", err)
+		}
+		task, ok := res.(*a2a.Task)
+		if !ok {
+			t.Fatalf("handler.SendMessage() = %T, want *a2a.Task", res)
+		}
+		return task
+	}
+	waitHandled := func(typ workqueue.PayloadType, taskID a2a.TaskID) {
+		timeout := time.After(testTimeout)
+		for {
+			select {
+			case p := <-handled:
+				if p.Type == typ && p.TaskID == taskID {
+					return
+				}
+			case <-timeout:
+				t.Fatalf("%s payload of task %s not handled", typ, taskID)
+			}
+		}
+	}
+
+	first := send("first")
+	waitFor(t, func() bool { _, _, _, p := h.agent(0).snapshot(); return len(p) == 1 })
+	queued := send("second")
+	waitFor(t, func() bool { return e.isWaiting(queued.ID) })
+
+	got, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: queued.ID})
+
+	if err != nil {
+		t.Fatalf("handler.CancelTask() error = %v", err)
+	}
+	if got.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("handler.CancelTask() state = %v, want %v", got.Status.State, a2a.TaskStateCanceled)
+	}
+	waitHandled(workqueue.PayloadTypeExecute, queued.ID)
+	close(release)
+	waitHandled(workqueue.PayloadTypeExecute, first.ID)
+}
+
+func TestExecutor_CancelInterruptingReply(t *testing.T) {
+	t.Parallel()
+	release, ended := make(chan struct{}), make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		defer close(ended)
+		s.askPermission(rmToolCall)
+		<-release
+		s.end(acp.StopCancelled)
+	}}
+	e := newTestExecutor(t, h, Config{})
+	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+	run(t, execute(e, execCtx))
+	replyResult := make(chan []eventSummary, 1)
+	go func() { replyResult <- run(t, execute(e, followUp(execCtx, a2a.NewTextPart("rename it instead")))) }()
+	waitFor(t, func() bool { return e.isWaiting(execCtx.TaskID) })
+
+	got := run(t, cancelTask(e, execCtx))
+
+	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
+		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]eventSummary{canceled}, <-replyResult); diff != "" {
+		t.Fatalf("Executor.Execute() interrupting reply wrong result (-want +got) diff = %s", diff)
+	}
+	close(release)
+	<-ended
 }
 
 func agentExited(e *Executor) bool {
