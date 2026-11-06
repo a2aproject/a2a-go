@@ -67,7 +67,7 @@ func convertToCancelationResult(ctx context.Context, result a2a.SendMessageResul
 	}
 
 	if task.Status.State != a2a.TaskStateCanceled {
-		return nil, NotCancelableError(task.Status.State)
+		return nil, fmt.Errorf("task was in non-cancelable state: %q: %w", task.Status.State, a2a.ErrTaskNotCancelable)
 	}
 
 	return task, nil

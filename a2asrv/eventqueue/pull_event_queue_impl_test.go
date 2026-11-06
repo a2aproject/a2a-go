@@ -337,7 +337,6 @@ func setupTest(t *testing.T, opts *testEnvOptions) *testEnv {
 				WorkQueue:    wq,
 				TaskStore:    store,
 			}),
-		a2asrv.WithVerboseErrors(),
 	)
 	return &testEnv{
 		handler: &reqHandler,

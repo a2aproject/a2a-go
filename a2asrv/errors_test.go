@@ -48,93 +48,67 @@ func (b *syncBuffer) String() string {
 func TestErrorSanitizer(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		storeErr    error
-		verbose     bool
-		wantErr     error
-		wantMsg     string
-		wantLogLine string
+		name      string
+		storeErr  error
+		wantErr   error
+		wantMsg   string
+		wantLevel string
 	}{
 		{
-			name:        "a2a error loses its wrapping",
-			storeErr:    fmt.Errorf("db: %w", a2a.NewError(a2a.ErrUnauthorized, "no access")),
-			wantErr:     a2a.ErrUnauthorized,
-			wantMsg:     "no access",
-			wantLogLine: "level=INFO",
+			name:      "a2a error loses its wrapping",
+			storeErr:  fmt.Errorf("db: %w", a2a.NewError(a2a.ErrUnauthorized, "no access")),
+			wantErr:   a2a.ErrUnauthorized,
+			wantMsg:   "no access",
+			wantLevel: "level=INFO",
 		},
 		{
-			name:        "a2a error with verbose errors",
-			storeErr:    fmt.Errorf("db: %w", a2a.NewError(a2a.ErrUnauthorized, "no access")),
-			verbose:     true,
-			wantErr:     a2a.ErrUnauthorized,
-			wantMsg:     "failed to load a task: db: no access",
-			wantLogLine: "level=INFO",
+			name:      "wrapped caller error",
+			storeErr:  fmt.Errorf("bad id: %w", a2a.ErrInvalidParams),
+			wantErr:   a2a.ErrInvalidParams,
+			wantMsg:   "invalid params",
+			wantLevel: "level=INFO",
 		},
 		{
-			name:        "caller error sentinel",
-			storeErr:    fmt.Errorf("bad id: %w", a2a.ErrInvalidParams),
-			wantErr:     a2a.ErrInvalidParams,
-			wantMsg:     "failed to load a task: bad id: invalid params",
-			wantLogLine: "level=INFO",
+			name:      "task not found",
+			storeErr:  a2a.ErrTaskNotFound,
+			wantErr:   a2a.ErrTaskNotFound,
+			wantMsg:   "task not found",
+			wantLevel: "level=INFO",
 		},
 		{
-			name:        "context error",
-			storeErr:    context.Canceled,
-			wantErr:     context.Canceled,
-			wantMsg:     "failed to load a task: context canceled",
-			wantLogLine: "level=INFO",
+			name:      "context error",
+			storeErr:  context.Canceled,
+			wantErr:   context.Canceled,
+			wantMsg:   "context canceled",
+			wantLevel: "level=INFO",
 		},
 		{
-			name:        "internal error",
-			storeErr:    errors.New("db down"),
-			wantErr:     a2a.ErrInternalError,
-			wantMsg:     "internal error",
-			wantLogLine: "level=ERROR",
-		},
-		{
-			name:        "internal error with verbose errors",
-			storeErr:    errors.New("db down"),
-			verbose:     true,
-			wantMsg:     "failed to load a task: db down",
-			wantLogLine: "level=ERROR",
+			name:      "internal error",
+			storeErr:  errors.New("db down"),
+			wantErr:   a2a.ErrInternalError,
+			wantMsg:   "internal error",
+			wantLevel: "level=ERROR",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			logs := &syncBuffer{}
-			opts := []RequestHandlerOption{
+			handler := newTestHandler(
 				WithTaskStore(testutil.NewTestTaskStore().SetGetOverride(nil, tc.storeErr)),
 				WithLogger(slog.New(slog.NewTextHandler(logs, nil))),
-			}
-			if tc.verbose {
-				opts = append(opts, WithVerboseErrors())
-			}
-			handler := newTestHandler(opts...)
+				WithCallInterceptors(NewErrorSanitizer()),
+			)
 
 			_, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: a2a.NewTaskID()})
 
-			if err == nil || err.Error() != tc.wantMsg {
-				t.Fatalf("GetTask() error = %v, want %q", err, tc.wantMsg)
-			}
-			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
-				t.Fatalf("GetTask() error = %v, want %v", err, tc.wantErr)
+			if !errors.Is(err, tc.wantErr) || err.Error() != tc.wantMsg {
+				t.Fatalf("GetTask() error = %v, want %q wrapping %v", err, tc.wantMsg, tc.wantErr)
 			}
 			logged := logs.String()
-			if !strings.Contains(logged, tc.wantLogLine) || !strings.Contains(logged, tc.storeErr.Error()) || !strings.Contains(logged, "failed to load a task") {
-				t.Fatalf("GetTask() logs = %q, want a %s line with the full error", logged, tc.wantLogLine)
+			if wantLogged := "failed to get task: " + tc.storeErr.Error(); !strings.Contains(logged, tc.wantLevel) || !strings.Contains(logged, wantLogged) {
+				t.Fatalf("GetTask() logs = %q, want a %s line with %q", logged, tc.wantLevel, wantLogged)
 			}
 		})
-	}
-}
-
-func TestErrorSanitizer_VerboseErrorsEnv(t *testing.T) {
-	t.Setenv(VerboseErrorsEnv, "true")
-	handler := newTestHandler(WithTaskStore(testutil.NewTestTaskStore().SetGetOverride(nil, errors.New("db down"))))
-
-	_, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: a2a.NewTaskID()})
-
-	if want := "failed to load a task: db down"; err == nil || err.Error() != want {
-		t.Fatalf("GetTask() error = %v, want %q", err, want)
 	}
 }

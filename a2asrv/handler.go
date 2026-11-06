@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -216,13 +214,11 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{agentExecutor: executor}
-	verboseErrors, _ := strconv.ParseBool(os.Getenv(VerboseErrorsEnv))
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), verboseErrors: verboseErrors}
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
 
 	for _, option := range options {
 		option(ih, h)
 	}
-	ih.Interceptors = append([]CallInterceptor{&errorSanitizer{verbose: ih.verboseErrors}}, ih.Interceptors...)
 	for _, interceptor := range ih.Interceptors {
 		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {
 			panic("push notifications are enforced and supported but push config store or sender are not configured")
@@ -291,7 +287,7 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 
 	storedTask, err := h.taskStore.Get(ctx, taskID)
 	if err != nil {
-		return nil, taskexec.TaskLoadError(err)
+		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
 	task := storedTask.Task
@@ -401,7 +397,7 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 				return
 			}
 			if storedTask.Task.Status.State.Terminal() {
-				yield(nil, a2a.NewError(a2a.ErrUnsupportedOperation, fmt.Sprintf("task is in a terminal state (%s)", storedTask.Task.Status.State)))
+				yield(nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Task.Status.State, a2a.ErrUnsupportedOperation))
 				return
 			}
 			yield(storedTask.Task, nil)

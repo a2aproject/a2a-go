@@ -30,7 +30,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
@@ -253,27 +252,21 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 						Role:   a2a.MessageRoleUser,
 					},
 				},
-				wantErr: a2a.NewError(a2a.ErrTaskNotFound, "task not found"),
+				wantErr: a2a.ErrTaskNotFound,
 			},
 			{
 				name: "fails if contextID not equal to task contextID",
 				input: &a2a.SendMessageRequest{
-					Message: &a2a.Message{
-						TaskID:    taskSeed.ID,
-						ContextID: taskSeed.ContextID + "1",
-						ID:        "test-message",
-						Parts:     a2a.ContentParts{a2a.NewTextPart("Test")},
-						Role:      a2a.MessageRoleUser,
-					},
+					Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: taskSeed.ContextID + "1", ID: "test-message"},
 				},
-				wantErr: taskexec.ErrContextMismatch,
+				wantErr: a2a.ErrInvalidParams,
 			},
 			{
 				name: "fails if message references completed task",
 				input: &a2a.SendMessageRequest{
 					Message: newUserMessage(completedTaskSeed, "Test"),
 				},
-				wantErr: taskexec.TerminalTaskError(a2a.TaskStateCompleted),
+				wantErr: fmt.Errorf("executor setup failed: failed to load exec ctx: task in a terminal state %q: %w", a2a.TaskStateCompleted, a2a.ErrUnsupportedOperation),
 			},
 		}
 	}
@@ -305,7 +298,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					t.Errorf("SendMessage() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
-				if gotErr.Error() != tt.wantErr.Error() || a2a.ErrorReason(gotErr) != a2a.ErrorReason(tt.wantErr) {
+				if gotErr.Error() != tt.wantErr.Error() && !errors.Is(gotErr, tt.wantErr) {
 					t.Errorf("SendMessage() error = %v, wantErr %v", gotErr, tt.wantErr)
 				}
 			}
@@ -360,7 +353,7 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				t.Errorf("SendStreamingMessage() error = nil, want %v", tt.wantErr)
 				return
 			}
-			if tt.wantErr != nil && (streamErr.Error() != tt.wantErr.Error() || a2a.ErrorReason(streamErr) != a2a.ErrorReason(tt.wantErr)) {
+			if tt.wantErr != nil && (streamErr.Error() != tt.wantErr.Error() && !errors.Is(streamErr, tt.wantErr)) {
 				t.Errorf("SendStreamingMessage() error = %v, wantErr %v", streamErr, tt.wantErr)
 			}
 		})
@@ -765,7 +758,7 @@ func TestRequestHandler_SendMessage_PushMessageFailure_ReturnsError(t *testing.T
 
 	agentMsg := newAgentMessage("test message")
 	executor := newEventReplayAgent([]a2a.Event{agentMsg}, nil)
-	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn), WithVerboseErrors())
+	handler := NewHandler(executor, WithTaskStore(store), WithPushNotifications(ps, pn))
 
 	result, err := handler.SendMessage(ctx, input)
 	if err == nil {
@@ -910,7 +903,7 @@ func TestRequestHandler_SendMessage_FailsToStoreFailedState(t *testing.T) {
 	input := &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")}
 
 	executor := newEventReplayAgent([]a2a.Event{&a2a.Task{ID: "wrong id", ContextID: a2a.NewContextID()}}, nil)
-	handler := NewHandler(executor, WithTaskStore(store), WithVerboseErrors())
+	handler := NewHandler(executor, WithTaskStore(store))
 
 	wantErr := "wrong id"
 	_, err := handler.SendMessage(ctx, input)
@@ -1165,7 +1158,7 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			handler := newTestHandler(append([]RequestHandlerOption{WithVerboseErrors()}, tt.options...)...)
+			handler := newTestHandler(tt.options...)
 
 			result, gotErr := handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 
@@ -1194,7 +1187,7 @@ func TestRequestHandler_SendMessage_QueueCreationFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
 	qm := testutil.NewTestQueueManager().SetError(wantErr)
-	handler := newTestHandler(WithEventQueueManager(qm), WithVerboseErrors())
+	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
 		Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Work")),
@@ -1210,7 +1203,7 @@ func TestRequestHandler_SendMessage_QueueReadFails(t *testing.T) {
 	wantErr := errors.New("Read() failed")
 	queue := testutil.NewTestEventQueue().SetReadOverride(nil, wantErr)
 	qm := testutil.NewTestQueueManager().SetQueue(queue)
-	handler := newTestHandler(WithEventQueueManager(qm), WithVerboseErrors())
+	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
@@ -1250,7 +1243,7 @@ func TestRequestHandler_SendMessage_AgentExecutionFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to create a queue")
 	executor := newEventReplayAgent([]a2a.Event{}, wantErr)
-	handler := NewHandler(executor, WithVerboseErrors())
+	handler := NewHandler(executor)
 
 	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
@@ -1376,7 +1369,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 		{
 			name:    "task not found",
 			query:   &a2a.GetTaskRequest{ID: a2a.NewTaskID()},
-			wantErr: a2a.NewError(a2a.ErrTaskNotFound, "task not found"),
+			wantErr: fmt.Errorf("failed to get task: %w", a2a.ErrTaskNotFound),
 		},
 		{
 			name:  "get task with limited HistoryLength",
@@ -1419,7 +1412,7 @@ func TestRequestHandler_GetTask(t *testing.T) {
 					t.Errorf("GetTask() error = nil, wantErr %q", tt.wantErr)
 					return
 				}
-				if err.Error() != tt.wantErr.Error() || a2a.ErrorReason(err) != a2a.ErrorReason(tt.wantErr) {
+				if err.Error() != tt.wantErr.Error() {
 					t.Errorf("GetTask() error = %v, wantErr %v", err, tt.wantErr)
 				}
 			}
@@ -1431,7 +1424,7 @@ func TestRequestHandler_GetTask_StoreGetFails(t *testing.T) {
 	ctx := t.Context()
 	wantErr := errors.New("failed to get task: store get failed")
 	ts := testutil.NewTestTaskStore().SetGetOverride(nil, wantErr)
-	handler := newTestHandler(WithTaskStore(ts), WithVerboseErrors())
+	handler := newTestHandler(WithTaskStore(ts))
 
 	result, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: a2a.NewTaskID()})
 	if result != nil || !errors.Is(err, wantErr) {
@@ -1554,12 +1547,12 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 		{
 			name:    "task not found",
 			params:  &a2a.CancelTaskRequest{ID: a2a.NewTaskID()},
-			wantErr: a2a.NewError(a2a.ErrTaskNotFound, "task not found"),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: failed to load a task: %w", a2a.ErrTaskNotFound),
 		},
 		{
 			name:    "task already completed",
 			params:  &a2a.CancelTaskRequest{ID: completedTask.ID},
-			wantErr: taskexec.NotCancelableError(a2a.TaskStateCompleted),
+			wantErr: fmt.Errorf("failed to cancel: cancelation failed: canceler setup failed: task in non-cancelable state %s: %w", a2a.TaskStateCompleted, a2a.ErrTaskNotCancelable),
 		},
 		{
 			name:   "task already canceled",
@@ -1620,7 +1613,7 @@ func TestRequestHandler_CancelTask(t *testing.T) {
 						t.Errorf("CancelTask() error = nil, wantErr %q", tt.wantErr)
 						return
 					}
-					if err.Error() != tt.wantErr.Error() || a2a.ErrorReason(err) != a2a.ErrorReason(tt.wantErr) {
+					if err.Error() != tt.wantErr.Error() {
 						t.Errorf("CancelTask() error = %v, wantErr %v", err, tt.wantErr)
 					}
 				}
@@ -1724,7 +1717,7 @@ func TestRequestHandler_CancelTask_AgentCancelFails(t *testing.T) {
 			return func(yield func(a2a.Event, error) bool) { yield(nil, fmt.Errorf("agent cancel error")) }
 		},
 	}
-	handler := NewHandler(executor, WithTaskStore(store), WithVerboseErrors())
+	handler := NewHandler(executor, WithTaskStore(store))
 
 	result, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
 	if result != nil || err.Error() != wantErr.Error() {
@@ -1751,7 +1744,7 @@ func TestRequestHandler_CancelTask_ConcurrentModificationExhaustsRetries(t *test
 			}
 		},
 	}
-	handler := NewHandler(executor, WithTaskStore(store), WithVerboseErrors())
+	handler := NewHandler(executor, WithTaskStore(store))
 
 	_, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
 
@@ -1802,7 +1795,7 @@ func TestRequestHandler_RequestContextInterceptorRejectsRequest(t *testing.T) {
 	interceptor := interceptExecCtxFn(func(ctx context.Context, execCtx *ExecutorContext) (context.Context, error) {
 		return ctx, wantErr
 	})
-	handler := NewHandler(executor, WithExecutorContextInterceptor(interceptor), WithVerboseErrors())
+	handler := NewHandler(executor, WithExecutorContextInterceptor(interceptor))
 
 	_, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
 		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
@@ -2066,7 +2059,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHandler(append([]RequestHandlerOption{WithVerboseErrors()}, tc.options...)...)
+			handler := newTestHandler(tc.options...)
 			got, err := handler.GetTaskPushConfig(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetTaskPushConfig() error = %v, want %v", err, tc.wantErr)

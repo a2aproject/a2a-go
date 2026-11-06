@@ -27,7 +27,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 )
 
-func TestCallerMistakeErrors(t *testing.T) {
+func TestErrorSanitizer(t *testing.T) {
 	t.Parallel()
 	completedTask := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 	send := func(ctx context.Context, client *a2aclient.Client, taskID a2a.TaskID, contextID string) error {
@@ -50,7 +50,7 @@ func TestCallerMistakeErrors(t *testing.T) {
 				return send(ctx, client, completedTask.ID, "")
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
-			wantMsg: "task is in a terminal state (TASK_STATE_COMPLETED) and accepts no more messages",
+			wantMsg: "this operation is not supported",
 		},
 		{
 			name: "send to an unknown task",
@@ -66,7 +66,7 @@ func TestCallerMistakeErrors(t *testing.T) {
 				return send(ctx, client, completedTask.ID, "other")
 			},
 			wantErr: a2a.ErrInvalidParams,
-			wantMsg: "message contextId differs from the contextId of the task",
+			wantMsg: "invalid params",
 		},
 		{
 			name: "cancel an unknown task",
@@ -84,7 +84,7 @@ func TestCallerMistakeErrors(t *testing.T) {
 				return err
 			},
 			wantErr: a2a.ErrTaskNotCancelable,
-			wantMsg: "task is in a terminal state (TASK_STATE_COMPLETED) and can't be canceled",
+			wantMsg: "task cannot be canceled",
 		},
 		{
 			name: "get an unknown task",
@@ -110,7 +110,7 @@ func TestCallerMistakeErrors(t *testing.T) {
 				return send(ctx, client, "", "")
 			},
 			wantErr: a2a.ErrInternalError,
-			wantMsg: "too many tasks in progress, try again later",
+			wantMsg: "internal error",
 		},
 	}
 	transports := []a2a.TransportProtocol{a2a.TransportProtocolJSONRPC, a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolGRPC}
@@ -121,7 +121,7 @@ func TestCallerMistakeErrors(t *testing.T) {
 				ctx := t.Context()
 				store := testutil.NewTestTaskStore().WithTasks(t, completedTask)
 				executor, execChannels := testexecutor.NewWithControlChannels()
-				opts := append([]a2asrv.RequestHandlerOption{a2asrv.WithTaskStore(store)}, tc.opts...)
+				opts := append([]a2asrv.RequestHandlerOption{a2asrv.WithTaskStore(store), a2asrv.WithCallInterceptors(a2asrv.NewErrorSanitizer())}, tc.opts...)
 				client := startTransportServer(t, a2asrv.NewHandler(executor, opts...), transport)
 
 				events, drain := sendMessageInBackground(t, client)
