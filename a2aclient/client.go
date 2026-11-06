@@ -259,11 +259,12 @@ func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method s
 	serviceParams := serviceParamsCloneFrom(ctx)
 	serviceParams.set(a2a.SvcParamVersion, string(c.protocolVersion))
 	req := Request{
-		Method:        method,
-		BaseURL:       c.endpoint.URL,
-		ServiceParams: serviceParams,
-		Card:          c.card.Load(),
-		Payload:       payload,
+		Method:          method,
+		BaseURL:         c.endpoint.URL,
+		ProtocolBinding: c.endpoint.ProtocolBinding,
+		ServiceParams:   serviceParams,
+		Card:            c.card.Load(),
+		Payload:         payload,
 	}
 
 	var zeroReq Req

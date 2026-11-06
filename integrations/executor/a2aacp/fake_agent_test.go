@@ -17,10 +17,12 @@ package a2aacp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,9 +48,10 @@ type fakeHarness struct {
 }
 
 type fakeAgent struct {
-	h    *fakeHarness
-	key  string
-	conn *acp.Conn
+	h      *fakeHarness
+	key    string
+	conn   *acp.Conn
+	client *exitingRWC
 
 	mu         sync.Mutex
 	nextID     int
@@ -65,13 +68,13 @@ type fakeAgent struct {
 func (h *fakeHarness) start(_ context.Context, key string) (io.ReadWriteCloser, error) {
 	clientR, agentW := io.Pipe()
 	agentR, clientW := io.Pipe()
-	f := &fakeAgent{h: h, key: key}
+	f := &fakeAgent{h: h, key: key, client: &exitingRWC{pipeRWC: pipeRWC{r: clientR, w: clientW}}}
 	f.conn = acp.NewConn(pipeRWC{r: agentR, w: agentW}, f.handle)
 	f.conn.Start()
 	h.mu.Lock()
 	h.agents = append(h.agents, f)
 	h.mu.Unlock()
-	return pipeRWC{r: clientR, w: clientW}, nil
+	return f.client, nil
 }
 
 func (h *fakeHarness) agent(i int) *fakeAgent {
@@ -98,6 +101,20 @@ func (p pipeRWC) Close() error {
 		return err
 	}
 	return p.r.Close()
+}
+
+// exitingRWC is the client side of a fake agent, which can exit with its
+// output ending only when the client writes next.
+type exitingRWC struct {
+	pipeRWC
+	exited atomic.Bool
+}
+
+func (c *exitingRWC) Write(b []byte) (int, error) {
+	if c.exited.Load() {
+		return 0, errors.Join(io.ErrClosedPipe, c.Close())
+	}
+	return c.pipeRWC.Write(b)
 }
 
 func (f *fakeAgent) handle(m *acp.Message) {
@@ -202,6 +219,12 @@ func (f *fakeAgent) crash() {
 	if err := f.conn.Close(); err != nil {
 		f.h.t.Errorf("fake agent Close() error = %v", err)
 	}
+}
+
+// exitUnnoticed makes the agent exit while the client still reads from it,
+// as when the agent process is gone and the client hasn't read its EOF yet.
+func (f *fakeAgent) exitUnnoticed() {
+	f.client.exited.Store(true)
 }
 
 func mustUnmarshal(t *testing.T, data json.RawMessage, v any) {
