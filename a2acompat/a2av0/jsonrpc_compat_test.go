@@ -162,3 +162,34 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONRPC_ClientNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusUnauthorized)
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+
+	_, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if !errors.Is(err, a2a.ErrUnauthenticated) || !strings.Contains(err.Error(), "the token was revoked") {
+		t.Fatalf("GetTask() error = %v, want %v with the server message", err, a2a.ErrUnauthenticated)
+	}
+
+	var streamErr error
+	for _, err := range transport.SendStreamingMessage(t.Context(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+	}) {
+		if err != nil {
+			streamErr = err
+			break
+		}
+	}
+	if !errors.Is(streamErr, a2a.ErrUnauthenticated) || !strings.Contains(streamErr.Error(), "the token was revoked") {
+		t.Fatalf("SendStreamingMessage() error = %v, want %v with the server message", streamErr, a2a.ErrUnauthenticated)
+	}
+}
