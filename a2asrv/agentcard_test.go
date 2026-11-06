@@ -455,3 +455,62 @@ func TestAgentCardHandler_RawJSONProducer(t *testing.T) {
 		t.Errorf("conditional status = %d, want 304 despite changing raw signatures", condResp.StatusCode)
 	}
 }
+
+type numericRawCardProducer struct {
+	AgentCardProducer
+	body string
+}
+
+func (p *numericRawCardProducer) CardJSON(context.Context) ([]byte, error) {
+	return []byte(p.body), nil
+}
+
+func TestAgentCardHandler_RawJSONNumericChangesInvalidateETag(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, before, after string }{
+		{"positive integer", "9007199254740992", "9007199254740993"},
+		{"negative integer", "-9007199254740992", "-9007199254740993"},
+		{"decimal", "1.00000000000000001", "1.00000000000000002"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			card := func(number string) string {
+				return fmt.Sprintf(`{"name":"agent","capabilities":{"extensions":[{"uri":"urn:example:revision","params":{"revision":%s}}]}}`, number)
+			}
+			producer := &numericRawCardProducer{body: card(tc.before)}
+			handler := NewAgentCardHandler(producer)
+			request := func(etag string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodGet, WellKnownAgentCardPath, nil)
+				if etag != "" {
+					req.Header.Set("If-None-Match", etag)
+				}
+				rw := httptest.NewRecorder()
+				handler.ServeHTTP(rw, req)
+				return rw
+			}
+			first := request("")
+			if first.Code != http.StatusOK {
+				t.Fatalf("handler.ServeHTTP() status = %d, want 200", first.Code)
+			}
+			etag := first.Header().Get("ETag")
+			if etag == "" {
+				t.Fatal("handler.ServeHTTP() ETag is empty")
+			}
+			unchanged := request(etag)
+			if unchanged.Code != http.StatusNotModified {
+				t.Fatalf("unchanged handler.ServeHTTP() status = %d, want 304", unchanged.Code)
+			}
+			producer.body = card(tc.after)
+			changed := request(etag)
+			if changed.Code != http.StatusOK {
+				t.Fatalf("changed handler.ServeHTTP() status = %d, want 200", changed.Code)
+			}
+			if got := changed.Header().Get("ETag"); got == etag {
+				t.Fatalf("changed handler.ServeHTTP() ETag = %q, want a new tag", got)
+			}
+			if diff := cmp.Diff(producer.body, changed.Body.String()); diff != "" {
+				t.Fatalf("handler.ServeHTTP() body wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
