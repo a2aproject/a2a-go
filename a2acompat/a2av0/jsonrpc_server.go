@@ -381,12 +381,12 @@ func (h *jsonrpcHandler) onDeleteTaskPushConfig(ctx context.Context, raw json.Ra
 	return h.handler.DeleteTaskPushConfig(ctx, ToV1DeleteTaskPushConfigRequest(&params))
 }
 
-func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*a2alegacy.AgentCard, error) {
+func (h *jsonrpcHandler) onGetAgentCard(ctx context.Context) (*agentCardCompat, error) {
 	card, err := h.handler.GetExtendedAgentCard(ctx, &a2a.GetExtendedAgentCardRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return FromV1AgentCard(card), nil
+	return toCompatCard(card), nil
 }
 
 func marshalJSONRPCError(req *jsonrpc.ServerRequest, err error) ([]byte, bool) {
