@@ -841,7 +841,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			},
 			"oauth2": a2a.OAuth2SecurityScheme{
 				Description: "OAuth2",
-				Flows: &a2a.AuthorizationCodeOAuthFlow{
+				Flows: a2a.AuthorizationCodeOAuthFlow{
 					AuthorizationURL: "https://example.com/auth",
 					TokenURL:         "https://example.com/token",
 					Scopes:           map[string]string{"read": "read scope"},
@@ -1017,7 +1017,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 	}{
 		{
 			name: "authorization code flow",
-			flows: &a2a.AuthorizationCodeOAuthFlow{
+			flows: a2a.AuthorizationCodeOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				TokenURL:         "https://auth.com/token",
 				RefreshURL:       "https://auth.com/refresh",
@@ -1036,7 +1036,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "client credentials flow",
-			flows: &a2a.ClientCredentialsOAuthFlow{
+			flows: a2a.ClientCredentialsOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"write": "write data"},
@@ -1053,7 +1053,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "implicit flow",
-			flows: &a2a.ImplicitOAuthFlow{
+			flows: a2a.ImplicitOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				RefreshURL:       "https://auth.com/refresh",
 				Scopes:           map[string]string{"profile": "read profile"},
@@ -1070,7 +1070,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "password flow",
-			flows: &a2a.PasswordOAuthFlow{
+			flows: a2a.PasswordOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"user": "user info"},
@@ -1081,6 +1081,23 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 						TokenUrl:   "https://auth.com/token",
 						RefreshUrl: "https://auth.com/refresh",
 						Scopes:     map[string]string{"user": "user info"},
+					},
+				},
+			},
+		},
+		{
+			name: "pointer flow",
+			flows: &a2a.DeviceCodeOAuthFlow{
+				DeviceAuthorizationURL: "https://auth.com/device",
+				TokenURL:               "https://auth.com/token",
+				Scopes:                 map[string]string{"user": "user info"},
+			},
+			want: &a2apb.OAuthFlows{
+				Flow: &a2apb.OAuthFlows_DeviceCode{
+					DeviceCode: &a2apb.DeviceCodeOAuthFlow{
+						DeviceAuthorizationUrl: "https://auth.com/device",
+						TokenUrl:               "https://auth.com/token",
+						Scopes:                 map[string]string{"user": "user info"},
 					},
 				},
 			},
