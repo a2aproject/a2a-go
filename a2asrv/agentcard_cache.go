@@ -15,6 +15,7 @@
 package a2asrv
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // AgentCardHandlerOption customizes the behavior of the agent card HTTP handlers
@@ -69,7 +71,9 @@ func cardETag(card *a2a.AgentCard) string {
 // rawJSONETag is [cardETag] for raw JSON. Re-marshaling through a map normalizes member order.
 func rawJSONETag(raw []byte) string {
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err == nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&m); err == nil && utils.ExpectEOF(dec) == nil {
 		var protected []string
 		if sigs, ok := m["signatures"].([]any); ok {
 			for _, sig := range sigs {
