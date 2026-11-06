@@ -445,7 +445,7 @@ func TestInterceptedHandler_TypeSafety(t *testing.T) {
 	if err == nil {
 		t.Fatal("got nil error, want error due to payload type mismatch")
 	}
-	expectedErrorFragment := "payload type changed"
+	expectedErrorFragment := "type changed"
 	if !strings.Contains(err.Error(), expectedErrorFragment) {
 		t.Errorf("Error = %q, want it to contain %q", err.Error(), expectedErrorFragment)
 	}

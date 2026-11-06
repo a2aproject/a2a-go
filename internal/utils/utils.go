@@ -102,7 +102,7 @@ func CastPayload[T any](payload any) (T, error) {
 	}
 	typed, ok := payload.(T)
 	if !ok {
-		return zero, fmt.Errorf("payload type changed from %v to %T", reflect.TypeFor[T](), payload)
+		return zero, fmt.Errorf("type changed from %v to %T", reflect.TypeFor[T](), payload)
 	}
 	return typed, nil
 }
