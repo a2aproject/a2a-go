@@ -591,19 +591,27 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 			return nil, fmt.Errorf("selecting the agent: %w", err)
 		}
 	}
-	ag, release, err := e.acquireAgent(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	t, err := e.promptAgent(ctx, execCtx, ag, parts, settings, stored, hasSession, func() {
+	for attempt := 0; ; attempt++ {
+		ag, release, err := e.acquireAgent(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		t, err := e.promptAgent(ctx, execCtx, ag, parts, settings, stored, hasSession, func() {
+			release()
+			done()
+		})
+		if err == nil {
+			return t, nil
+		}
 		release()
-		done()
-	})
-	if err != nil {
-		release()
-		return nil, err
+		// The pool notices that an agent exited only once its output ends,
+		// which can come after the process is gone. promptAgent fails before
+		// it sends the prompt, so the turn runs once on a new agent.
+		if attempt > 0 || !errors.Is(err, acp.ErrAgentExited) {
+			return nil, err
+		}
+		log.Warn(ctx, "acp agent exited before the prompt, restarting", "key", key, "cause", err)
 	}
-	return t, nil
 }
 
 func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorContext, ag *agent, parts []*a2a.Part, settings map[string]any, stored Session, hasSession bool, done func()) (*turn, error) {

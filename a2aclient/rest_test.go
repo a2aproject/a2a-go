@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -736,6 +737,115 @@ func TestRESTTransport_EscapedPathSegments(t *testing.T) {
 				t.Fatalf("GetTask().ID = %q, want task/a?b#c%%20", task.ID)
 			}
 		})
+	}
+}
+
+func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	transport := newRESTTransport(t, server)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"secret"}})
+
+	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err != nil {
+		t.Fatalf("transport.GetTask() error = %v", err)
+	}
+
+	want := url.Values{"api_key": []string{"secret"}}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Errorf("wrong query params (-want +got) diff = %s", diff)
+	}
+}
+
+func TestRESTTransport_ErrorRedactsQueryParams(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", serverURL, err)
+	}
+	transport := NewRESTTransport(u, nil)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
+
+	_, err = transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err == nil {
+		t.Fatalf("transport.GetTask() error = nil, want non-nil")
+	}
+	if strings.Contains(err.Error(), "super-secret") {
+		t.Errorf("transport.GetTask() error = %v, must not contain query params", err)
+	}
+}
+
+func TestAuth_APIKeyQueryLocation_REST(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		if got := r.Header.Get("api_key"); got != "" {
+			t.Errorf("credential leaked into header api_key = %q, want empty", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	schemeName := a2a.SecuritySchemeName("api-key")
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolHTTPJSON,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			schemeName: a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+		},
+	}
+
+	credStore := NewInMemoryCredentialsStore()
+	client, err := NewFromCard(
+		ctx,
+		card,
+		WithRESTTransport(nil),
+		WithCallInterceptors(&AuthInterceptor{Service: credStore}),
+	)
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Destroy(); err != nil {
+			t.Errorf("client.Destroy() error = %v", err)
+		}
+	})
+
+	sessionID := SessionID("abcd")
+	credStore.Set(sessionID, schemeName, AuthCredential("secret"))
+
+	ctx = AttachSessionID(ctx, sessionID)
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v", err)
+	}
+
+	if got := gotQuery.Get("api_key"); got != "secret" {
+		t.Errorf("query param api_key = %q, want %q", got, "secret")
 	}
 }
 
