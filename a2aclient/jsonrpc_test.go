@@ -999,3 +999,96 @@ func TestAuth_APIKeyCookieLocation_JSONRPC(t *testing.T) {
 		t.Errorf("Cookie header = %q, want %q", gotCookie, "session_key=secret")
 	}
 }
+
+func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		status      int
+		contentType string
+		body        string
+		wantErr     error
+		wantMsg     string
+	}{
+		{
+			name:        "JSON-RPC error from auth middleware",
+			status:      http.StatusUnauthorized,
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantErr:     a2a.ErrUnauthenticated,
+			wantMsg:     "the token was revoked",
+		},
+		{
+			name:        "JSON-RPC error with content type parameters",
+			status:      http.StatusRequestEntityTooLarge,
+			contentType: "application/json; charset=utf-8",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"payload too large"}}`,
+			wantErr:     a2a.ErrInvalidRequest,
+			wantMsg:     "payload too large",
+		},
+		{
+			name:        "non-JSON body",
+			status:      http.StatusUnauthorized,
+			contentType: "text/plain",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
+		},
+		{
+			name:        "JSON body without error",
+			status:      http.StatusBadGateway,
+			contentType: "application/json",
+			body:        `{"message":"upstream unavailable"}`,
+			wantMsg:     "unexpected HTTP status: 502 Bad Gateway",
+		},
+		{
+			name:        "malformed JSON body",
+			status:      http.StatusForbidden,
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","error":{"code":-31403`,
+			wantMsg:     "unexpected HTTP status: 403 Forbidden",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+
+			checkErr := func(op string, err error) {
+				t.Helper()
+				if err == nil {
+					t.Fatalf("transport.%s() error = nil, want non-nil", op)
+				}
+				if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+					t.Fatalf("transport.%s() error = %v, want %v", op, err, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantMsg) {
+					t.Fatalf("transport.%s() error = %v, want message containing %q", op, err, tc.wantMsg)
+				}
+			}
+
+			_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+			checkErr("GetTask", err)
+
+			var streamErr error
+			for _, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+			}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			checkErr("SendStreamingMessage", streamErr)
+		})
+	}
+}

@@ -20,10 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +47,14 @@ type Config struct {
 	// before it is stopped, which fails all its tasks. Meanwhile the context
 	// accepts no new tasks. Defaults to one minute.
 	CancelTimeout time.Duration
+	// InactivityTimeout fails a task with [ErrAgentInactive] if the agent
+	// sends no session update or question for this long while it works on a
+	// message, for example while it retries a model provider which hit a
+	// usage limit. The agent is asked to stop, as for a canceled task. Time
+	// spent waiting for an answer doesn't count. Agents can send nothing for
+	// a minute or more while the model thinks, so set it well above that.
+	// Zero or negative means no limit.
+	InactivityTimeout time.Duration
 
 	// AutoAnswer answers questions without asking the caller, for example
 	// [ToolRules]. If nil, every question is asked.
@@ -70,7 +76,9 @@ type Config struct {
 	// the config IDs the agent reports in configOptions; "mode" and "model"
 	// also work with agents which only support session/set_mode and
 	// session/set_model. Settings stay in effect for later messages of the
-	// session. See [MetadataSettings].
+	// session, and a config option which already has the value isn't set
+	// again. A setting the agent refuses fails the task with a
+	// [SettingError]. See [MetadataSettings].
 	Settings func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (map[string]any, error)
 	// Prompt returns the parts sent to the agent for a message, for example to
 	// add context the caller didn't write. The task keeps the original
@@ -89,10 +97,27 @@ type Config struct {
 	// request but isn't canceled when the request ends. If nil, nothing is
 	// called.
 	Turn func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (end func())
+	// Abandoned is called when the agent stops working on a task which waits
+	// for an answer in input-required, without the caller answering, replying
+	// or canceling: for example because the agent exited or the question
+	// timed out. event is the status update which ends the task, usually
+	// failed. An executor can only emit events while it runs a request, so
+	// the task stays input-required unless Abandoned stores event, for
+	// example with Update of the server's taskstore.Store. A reply racing
+	// with the call may end the task first, so skip tasks in a terminal state.
+	// ctx is the ctx of [Config.Turn], and Abandoned is called before the end
+	// returned by Turn. If nil, the task stays input-required and the next
+	// reply fails it.
+	Abandoned func(ctx context.Context, event *a2a.TaskStatusUpdateEvent)
 
 	// Converter decides how the agent's session updates appear in the task.
 	// Defaults to [ConvertUpdate].
 	Converter Converter
+	// Failure returns the parts of the status message of a task which fails
+	// with err, for example to suggest valid values for a [SettingError]
+	// found with [errors.As]. If it is nil or returns no parts, the message
+	// is the error text.
+	Failure func(ctx context.Context, execCtx *a2asrv.ExecutorContext, err error) []*a2a.Part
 }
 
 // PoolConfig configures agent processes per key. See [Config.Pool].
@@ -140,11 +165,12 @@ type Executor struct {
 	processor    *structuredinput.Processor
 	agentKey     func(ctx context.Context, contextID string) (string, error)
 
-	startTimeout    time.Duration
-	cancelTimeout   time.Duration
-	questionTimeout time.Duration
-	idleTimeout     time.Duration
-	maxAgents       int
+	startTimeout      time.Duration
+	cancelTimeout     time.Duration
+	questionTimeout   time.Duration
+	inactivityTimeout time.Duration
+	idleTimeout       time.Duration
+	maxAgents         int
 
 	elicitations atomic.Int64
 
@@ -176,8 +202,12 @@ const (
 
 var errClosed = errors.New("acp executor is closed")
 
+// ErrAgentInactive is the error, wrapped, of a task whose agent sent nothing
+// for [Config.InactivityTimeout].
+var ErrAgentInactive = errors.New("the agent sent no updates")
+
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
-const errQuestionGone = "the question is no longer pending: it timed out or the agent restarted. Send a new message to continue"
+var errQuestionGone = errors.New("the question is no longer pending: it timed out or the agent restarted. Send a new message to continue")
 
 // errTaskCanceled interrupts starting a turn whose task was canceled.
 var errTaskCanceled = errors.New("the task was canceled")
@@ -218,19 +248,20 @@ func NewExecutor(ctx context.Context, agent Agent, cfg *Config) (*Executor, erro
 		c.SessionStore = newMemorySessions()
 	}
 	e := &Executor{
-		cfg:             c,
-		agentStarter:    agent,
-		dir:             dir,
-		converter:       c.Converter,
-		startTimeout:    duration(c.StartTimeout, defaultStartTimeout),
-		cancelTimeout:   duration(c.CancelTimeout, defaultCancelTimeout),
-		questionTimeout: duration(c.QuestionTimeout, defaultQuestionTimeout),
-		agents:          map[string]*agentSlot{},
-		drained:         make(chan struct{}),
-		routes:          map[routeKey]*turn{},
-		turns:           map[a2a.TaskID]*turn{},
-		waiting:         map[a2a.TaskID]context.CancelCauseFunc{},
-		locks:           map[string]*ctxLock{},
+		cfg:               c,
+		agentStarter:      agent,
+		dir:               dir,
+		converter:         c.Converter,
+		startTimeout:      duration(c.StartTimeout, defaultStartTimeout),
+		cancelTimeout:     duration(c.CancelTimeout, defaultCancelTimeout),
+		questionTimeout:   duration(c.QuestionTimeout, defaultQuestionTimeout),
+		inactivityTimeout: max(c.InactivityTimeout, 0),
+		agents:            map[string]*agentSlot{},
+		drained:           make(chan struct{}),
+		routes:            map[routeKey]*turn{},
+		turns:             map[a2a.TaskID]*turn{},
+		waiting:           map[a2a.TaskID]context.CancelCauseFunc{},
+		locks:             map[string]*ctxLock{},
 	}
 	if e.converter == nil {
 		e.converter = ConverterFunc(ConvertUpdate)
@@ -295,6 +326,7 @@ func (h *agentHandler) SessionUpdate(n *acp.SessionNotification) {
 		h.ag.setOptions(n.SessionID, n.Update.ConfigOptions)
 	}
 	if t := h.e.route(h.ag, n.SessionID); t != nil {
+		t.touch()
 		t.events.push(turnEvent{update: &n.Update})
 	}
 }
@@ -320,6 +352,7 @@ func (h *agentHandler) ask(sessionID string, in *incomingQuestion) {
 		in.cancel(h.ag)
 		return
 	}
+	t.touch()
 	t.events.push(turnEvent{question: in})
 }
 
@@ -349,13 +382,13 @@ func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 				return
 			}
 		case execCtx.StoredTask != nil && execCtx.StoredTask.Status.State == a2a.TaskStateInputRequired:
-			yield(failed(execCtx, errQuestionGone), nil)
+			yield(e.fail(ctx, execCtx, errQuestionGone), nil)
 			return
 		default:
 			var err error
 			if t, err = e.startTurn(ctx, execCtx, !e.cfg.RejectBusyContext); err != nil {
 				if !errors.Is(err, errTaskCanceled) {
-					yield(failed(execCtx, err.Error()), nil)
+					yield(e.fail(ctx, execCtx, err), nil)
 				}
 				return
 			}
@@ -380,6 +413,7 @@ func (e *Executor) Cancel(ctx context.Context, execCtx *a2asrv.ExecutorContext) 
 			stopWaiting(errTaskCanceled)
 		}
 		if t != nil {
+			t.resume()
 			e.cancelTurn(t)
 		}
 		yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
@@ -393,7 +427,7 @@ func (e *Executor) answer(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	ans, retry, err := e.parseReply(ctx, execCtx, p)
 	switch {
 	case err != nil:
-		yield(failed(execCtx, fmt.Sprintf("processing the reply: %v", err)), nil)
+		yield(e.fail(ctx, execCtx, fmt.Errorf("processing the reply: %w", err)), nil)
 		return nil, false
 	case retry != nil:
 		yield(retry, nil)
@@ -401,19 +435,21 @@ func (e *Executor) answer(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 	case ans == nil:
 		return e.interrupt(ctx, execCtx, t, p, yield)
 	}
+	t.resume()
 	if t.agent.exited() || !t.takePending(p) {
-		yield(failed(execCtx, errQuestionGone), nil)
+		yield(e.fail(ctx, execCtx, errQuestionGone), nil)
 		return nil, false
 	}
 	if err := p.reply(t.agent, *ans); err != nil {
 		e.cancelTurn(t)
-		msg := fmt.Sprintf("forwarding answer to acp agent: %v", err)
+		err = fmt.Errorf("forwarding answer to acp agent: %w", err)
 		if t.agent.exited() {
-			msg = errQuestionGone
+			err = errQuestionGone
 		}
-		yield(failed(execCtx, msg), nil)
+		yield(e.fail(ctx, execCtx, err), nil)
 		return nil, false
 	}
+	t.touch()
 	return t, true
 }
 
@@ -505,6 +541,7 @@ func messageText(msg *a2a.Message) string {
 // interrupt rejects the pending question, cancels its turn and starts a new
 // turn with the caller's message once the agent ended the canceled one.
 func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContext, t *turn, p *pendingQuestion, yield func(a2a.Event, error) bool) (*turn, bool) {
+	t.resume()
 	if t.takePending(p) {
 		if err := p.reject(t.agent); err != nil {
 			log.Warn(ctx, "failed to reject acp request", "cause", err)
@@ -514,7 +551,7 @@ func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContex
 	next, err := e.startTurn(ctx, execCtx, true)
 	if err != nil {
 		if !errors.Is(err, errTaskCanceled) {
-			yield(failed(execCtx, err.Error()), nil)
+			yield(e.fail(ctx, execCtx, err), nil)
 		}
 		return nil, false
 	}
@@ -591,19 +628,27 @@ func (e *Executor) prompt(ctx context.Context, execCtx *a2asrv.ExecutorContext, 
 			return nil, fmt.Errorf("selecting the agent: %w", err)
 		}
 	}
-	ag, release, err := e.acquireAgent(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	t, err := e.promptAgent(ctx, execCtx, ag, parts, settings, stored, hasSession, func() {
+	for attempt := 0; ; attempt++ {
+		ag, release, err := e.acquireAgent(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		t, err := e.promptAgent(ctx, execCtx, ag, parts, settings, stored, hasSession, func() {
+			release()
+			done()
+		})
+		if err == nil {
+			return t, nil
+		}
 		release()
-		done()
-	})
-	if err != nil {
-		release()
-		return nil, err
+		// The pool notices that an agent exited only once its output ends,
+		// which can come after the process is gone. promptAgent fails before
+		// it sends the prompt, so the turn runs once on a new agent.
+		if attempt > 0 || !errors.Is(err, acp.ErrAgentExited) {
+			return nil, err
+		}
+		log.Warn(ctx, "acp agent exited before the prompt, restarting", "key", key, "cause", err)
 	}
-	return t, nil
 }
 
 func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorContext, ag *agent, parts []*a2a.Part, settings map[string]any, stored Session, hasSession bool, done func()) (*turn, error) {
@@ -638,14 +683,20 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 			endTurn = end
 		}
 	}
+	if e.inactivityTimeout > 0 {
+		t.watchInactivity(e.inactivityTimeout, func() { e.cancelTurn(t) })
+	}
 	go func() {
 		resp, err := ag.client.Prompt(promptCtx, acp.PromptRequest{SessionID: sessionID, Prompt: prompt})
-		result := &promptResult{err: err, canceled: t.isCanceled()}
+		result := &promptResult{err: err, canceled: t.isCanceled(), failure: t.failure()}
 		if err == nil {
 			result.reason = resp.StopReason
 		}
-		t.end()
+		paused, expired := t.end()
 		t.events.push(turnEvent{result: result})
+		if paused != nil {
+			e.abandon(promptCtx, paused, result, expired)
+		}
 		endTurn()
 		e.mu.Lock()
 		if e.routes[route] == t {
@@ -729,43 +780,6 @@ func (e *Executor) sessionParams(ctx context.Context, execCtx *a2asrv.ExecutorCo
 	return params, nil
 }
 
-// configure applies session settings in a stable order.
-func configure(ctx context.Context, ag *agent, sessionID string, settings map[string]any) error {
-	for _, id := range slices.Sorted(maps.Keys(settings)) {
-		value := settings[id]
-		method, typ, ok := ag.configMethod(sessionID, id)
-		if !ok {
-			return fmt.Errorf("the agent has no session setting %q", id)
-		}
-		var err error
-		switch method {
-		case acp.MethodSetConfigOption:
-			req := acp.SetConfigOptionRequest{SessionID: sessionID, ConfigID: id, Value: value}
-			if typ == "boolean" {
-				req.Type = typ
-			}
-			var resp *acp.SetConfigOptionResponse
-			if resp, err = ag.client.SetConfigOption(ctx, req); err == nil {
-				ag.setOptions(sessionID, resp.ConfigOptions)
-			}
-		case acp.MethodSetMode, acp.MethodSetModel:
-			s, isText := value.(string)
-			if !isText {
-				return fmt.Errorf("the session setting %q must be a string", id)
-			}
-			if method == acp.MethodSetMode {
-				err = ag.client.SetMode(ctx, acp.SetModeRequest{SessionID: sessionID, ModeID: s})
-			} else {
-				err = ag.client.SetModel(ctx, acp.SetModelRequest{SessionID: sessionID, ModelID: s})
-			}
-		}
-		if err != nil {
-			return fmt.Errorf("setting %q: %w", id, err)
-		}
-	}
-	return nil
-}
-
 // lockContext takes the turn lock of the context for the task. If wait is
 // false and the lock is held, it fails with [busyError].
 func (e *Executor) lockContext(ctx context.Context, contextID string, taskID a2a.TaskID, wait bool) (func(), error) {
@@ -837,7 +851,7 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 			res, err := e.converter.Convert(ctx, execCtx, t.update(ev.update))
 			if err != nil {
 				e.cancelTurn(t)
-				yield(failed(execCtx, fmt.Sprintf("converting acp update: %v", err)), nil)
+				yield(e.fail(ctx, execCtx, fmt.Errorf("converting acp update: %w", err)), nil)
 				return
 			}
 			if out := t.out.emit(execCtx, ev.update.MessageID, res); out != nil && !yield(out, nil) {
@@ -855,27 +869,32 @@ func (e *Executor) pump(ctx context.Context, execCtx *a2asrv.ExecutorContext, t 
 			decided, err := e.autoAnswer(ctx, execCtx, t.agent, p)
 			if err != nil {
 				e.cancelTurn(t)
-				yield(failed(execCtx, fmt.Sprintf("forwarding answer to acp agent: %v", err)), nil)
+				yield(e.fail(ctx, execCtx, fmt.Errorf("forwarding answer to acp agent: %w", err)), nil)
 				return
 			}
 			if decided {
 				continue
 			}
-			if !t.setPending(p, e.questionTimeout, func() { e.expire(t, p) }) {
+			if !t.setPending(execCtx, p, e.questionTimeout, func() { e.expire(t, p) }) {
 				p.in.cancel(t.agent)
 				continue
 			}
 			evt, err := structuredinput.NewRequestEvent(execCtx, p.q.Request, p.parts("")...)
 			if err != nil {
 				e.cancelTurn(t)
-				yield(failed(execCtx, fmt.Sprintf("asking the question: %v", err)), nil)
+				yield(e.fail(ctx, execCtx, fmt.Errorf("asking the question: %w", err)), nil)
 				return
 			}
 			yield(evt, nil)
 			return
 
 		case ev.result != nil:
-			yield(ev.result.event(execCtx), nil)
+			state, err := ev.result.outcome()
+			if err != nil {
+				yield(e.fail(ctx, execCtx, err), nil)
+				return
+			}
+			yield(a2a.NewStatusUpdateEvent(execCtx, state, nil), nil)
 			return
 		}
 	}
@@ -909,7 +928,7 @@ func (e *Executor) autoAnswer(ctx context.Context, execCtx *a2asrv.ExecutorConte
 // expire rejects a question nobody answered in time and cancels its turn,
 // since nobody would see what the agent does next.
 func (e *Executor) expire(t *turn, p *pendingQuestion) {
-	if !t.takePending(p) {
+	if !t.expire(p) {
 		return
 	}
 	ctx := context.Background()
@@ -918,6 +937,26 @@ func (e *Executor) expire(t *turn, p *pendingQuestion) {
 		log.Warn(ctx, "failed to reject acp request", "cause", err)
 	}
 	e.cancelTurn(t)
+}
+
+// abandon reports the end of a turn whose task waits for an answer, since
+// no request runs which could emit the event.
+func (e *Executor) abandon(ctx context.Context, execCtx *a2asrv.ExecutorContext, result *promptResult, expired bool) {
+	state, err := result.outcome()
+	switch {
+	case expired:
+		err = errors.New("nobody answered the question in time, send a new message to continue")
+	case result.canceled && result.failure == nil:
+		err = errors.New("the agent stopped working on the task, send a new message to continue")
+	}
+	event := a2a.NewStatusUpdateEvent(execCtx, state, nil)
+	if err != nil {
+		event = e.fail(ctx, execCtx, err)
+	}
+	log.Info(ctx, "acp turn of a task waiting for input ended", "task", event.TaskID, "state", event.Status.State)
+	if e.cfg.Abandoned != nil {
+		e.cfg.Abandoned(ctx, event)
+	}
 }
 
 // cancelTurn asks the agent to stop the turn and cancels its open questions,
@@ -948,7 +987,16 @@ func (e *Executor) cancelTurn(t *turn) {
 	}
 }
 
-func failed(info a2a.TaskInfoProvider, text string) *a2a.TaskStatusUpdateEvent {
-	msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, info, a2a.NewTextPart(text))
-	return a2a.NewStatusUpdateEvent(info, a2a.TaskStateFailed, msg)
+// fail returns the event which fails the task with err, with the status
+// message from Config.Failure.
+func (e *Executor) fail(ctx context.Context, execCtx *a2asrv.ExecutorContext, err error) *a2a.TaskStatusUpdateEvent {
+	var parts []*a2a.Part
+	if e.cfg.Failure != nil {
+		parts = e.cfg.Failure(ctx, execCtx, err)
+	}
+	if len(parts) == 0 {
+		parts = []*a2a.Part{a2a.NewTextPart(err.Error())}
+	}
+	msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, parts...)
+	return a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateFailed, msg)
 }

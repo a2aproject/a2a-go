@@ -31,13 +31,12 @@ The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and
 - Hooks are interfaces when the package ships an implementation (`Agent`: `Process`,
   `AgentFunc`; `AutoAnswerer`: `ToolRules`, `AutoAnswerFunc`; `Converter`: `ConvertUpdate`,
   `ConverterFunc`; `SessionStore`), and plain funcs otherwise (`Config.Session`,
-  `Config.Settings`, `Config.Prompt`, `PoolConfig.Key`).
+  `Config.Settings`, `Config.Prompt`, `Config.Failure`, `PoolConfig.Key`).
 - Config durations: zero means the default, negative disables (`duration` in `executor.go`).
 - "Turn" (one `session/prompt`) is internal; public docs speak of tasks and messages. The one
   exception is `Config.Turn`, whose name was agreed in issue #529; its doc still speaks of messages.
-- Not exposed on purpose: question outcome callbacks (a question that times out or is abandoned
-  is discovered when someone replies: the task fails with `errQuestionGone`), a configurable
-  invalid-reply policy, prompt-part converters, agent profiles.
+- Not exposed on purpose: a configurable invalid-reply policy, prompt-part converters, agent
+  profiles. The one question outcome reported is `Config.Abandoned` (see Turn lifecycle).
 
 ## Mapping
 
@@ -65,9 +64,32 @@ ACP fixes `cwd` and MCP servers for the session's lifetime in a process, so call
 map. Callers can't change settings unless `Settings` lets them: metadata is ignored by default,
 because some agents have modes which skip permission requests (e.g. `bypassPermissions`).
 `MetadataSettings(patterns...)` fails a message that sets an ID matching none of the `*` glob
-patterns. The executor tracks the
-settable IDs per session from `session/new` / `session/load` responses and `config_option_update`
-notifications (`agent.sessions`).
+patterns. The executor tracks the config options per session, with their `currentValue` and
+`options` (flat or grouped), from `session/new` / `session/load` responses,
+`session/set_config_option` responses and `config_option_update` notifications
+(`agent.sessions`). `configure` (`settings.go`) skips a config option whose `currentValue` already
+equals the setting, so a constant setting costs no round trip per message; `set_mode` /
+`set_model` are always sent, since their current values aren't decoded. A refused setting fails
+the task with `*SettingError{ID, Value, Options, Err}`; `Options` are the flattened values the
+agent offered, and a2aacp never validates values itself.
+
+Every task failure goes through `Executor.fail(ctx, execCtx, err)`, which takes the status message
+parts from `Config.Failure` (default: `err.Error()` as text). Callers find typed errors there with
+`errors.As` (`*SettingError`, `ErrAgentInactive`). A Go error can't reach callers any other way:
+an error yielded from `Execute` makes a2asrv fail the task without a status message, and
+`AgentExecutionCleaner.Cleanup` gets `err == nil` because the failed result wins
+(`internal/taskexec/execution_handler.go`).
+
+`Config.InactivityTimeout` (off by default) arms `turn.inactivity` when the prompt is sent.
+`agentHandler` calls `turn.touch` for every session update and agent request of the turn, and
+`answer` calls it after forwarding an answer. When the timer fires with no pending question,
+the turn is marked `inactive` and canceled like a canceled task; the prompt result then fails the
+task with `ErrAgentInactive` whatever stop reason the agent sends, including after `CancelTimeout`
+stops it. A timer that fires while a question is pending does nothing and is re-armed by the
+answer. It complements `a2asrv.WithAgentInactivityTimeout`, which counts only events the executor
+writes (dropped updates such as thought chunks don't reset it) and fails the task without a
+message. Measured with opencode and `google/gemini-flash-latest` through a2a-serve: 45-60s without any
+`session/update` before the first update of a normal turn, so useful values are minutes.
 
 ## Turn lifecycle (`executor.go`, `turn.go`)
 
@@ -107,7 +129,15 @@ notifications (`agent.sessions`).
 - A message on an input-required task with no pending question (expired, agent restarted,
   executor restarted) fails the task with `errQuestionGone`; it is never sent as a new prompt.
 - Timed-out and abandoned questions produce no task event (an executor can only emit from
-  `Execute` / `Cancel`), so the task stays input-required until the next reply fails it.
+  `Execute` / `Cancel`). `turn.paused` holds the `ExecutorContext` from `setPending` until a
+  request continues or cancels the turn (`turn.resume` in `answer`, `interrupt` and `Cancel`).
+  If the prompt ends while it is set (agent exit, question timeout via `turn.expire`,
+  shutdown), `turn.end` returns it and `Executor.abandon` builds the ending event (through
+  `Executor.fail`, so `Config.Failure` applies) and passes it to `Config.Abandoned` before the
+  `Turn` end, so the host can store it (a2a-serve writes it to its task store).
+  Without the hook the task stays input-required until the next reply fails it with
+  `errQuestionGone`. A reply racing the agent exit can report the failure too; the host skips
+  tasks already in a terminal state.
 - `Config.Turn` spans the prompt, since the `Execute` stream ends at input-required while the
   agent can keep working in parallel tool calls, and some endings (question timeout, agent exit
   while waiting) produce no task event. `promptAgent` calls it after registering the turn, with
@@ -152,6 +182,18 @@ notifications (`agent.sessions`).
   context (cancels included, via the task's context) to the node owning the key, `Agent.Start`
   claims the key's lease and restores its sandbox (returning `ErrNotOwner` if another node
   holds it), and the `WithCleanup` callback snapshots and releases it.
+
+## Prompt content (`toPrompt`, `rawBlock` in `turn.go`)
+
+Text and data parts become text blocks, file URLs resource links. Raw files become `image` /
+`audio` blocks only when the agent advertises `promptCapabilities.image` / `audio`. With
+`embeddedContext`, text-like files (`text/*`, JSON, XML, YAML, scripts, `+json`/`+xml`
+suffixes; untyped or `application/octet-stream` files that sniff as UTF-8 text) are embedded
+as text resources and PDFs as blob resources. Every other file fails the task before the
+prompt is sent, because opencode stores embedded resources in the session and replays them
+to the model on every later turn: a type the model rejects (e.g. Gemini and
+`application/octet-stream`) would fail the rest of the conversation. Hosts that want other
+types can rewrite parts in `Config.Prompt`.
 
 ## Conversion (`convert.go`)
 

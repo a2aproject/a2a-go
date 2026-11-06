@@ -21,6 +21,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -91,6 +92,29 @@ func FromMapStruct[T any](value map[string]any) (*T, error) {
 		return nil, err
 	}
 	return &zero, nil
+}
+
+// CastPayload converts a call payload to T. A nil payload is converted to the zero value of T.
+func CastPayload[T any](payload any) (T, error) {
+	var zero T
+	if payload == nil {
+		return zero, nil
+	}
+	typed, ok := payload.(T)
+	if !ok {
+		return zero, fmt.Errorf("type changed from %v to %T", reflect.TypeFor[T](), payload)
+	}
+	return typed, nil
+}
+
+// CastResult converts a call result payload to T and returns it with err. A type mismatch error
+// takes precedence over err.
+func CastResult[T any](payload any, err error) (T, error) {
+	typed, castErr := CastPayload[T](payload)
+	if castErr != nil {
+		return typed, castErr
+	}
+	return typed, err
 }
 
 // MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.

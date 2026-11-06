@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -825,12 +826,12 @@ func FromV1ListTasksResponse(resp *a2a.ListTasksResponse) *a2alegacy.ListTasksRe
 }
 
 // FromV1AgentCard converts a v1 agent card to a legacy agent card.
+// The first v0.3 interface becomes the preferred one, falling back to the first interface if there are none.
+// Additional interfaces include only interfaces with the same protocol version as the preferred one.
 func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 	if card == nil {
 		return nil
 	}
-	// Simplified conversion, focusing on common fields.
-	// For full conversion, more complex mapping of interfaces/security is needed.
 	res := &a2alegacy.AgentCard{
 		DefaultInputModes:                 card.DefaultInputModes,
 		DefaultOutputModes:                card.DefaultOutputModes,
@@ -846,6 +847,8 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 			PushNotifications: card.Capabilities.PushNotifications,
 			Streaming:         card.Capabilities.Streaming,
 		},
+		Security:        fromV1SecurityRequirements(card.SecurityRequirements),
+		SecuritySchemes: fromV1SecuritySchemes(card.SecuritySchemes),
 	}
 	if len(card.Skills) > 0 {
 		res.Skills = make([]a2alegacy.AgentSkill, len(card.Skills))
@@ -857,6 +860,7 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 				InputModes:  s.InputModes,
 				Name:        s.Name,
 				OutputModes: s.OutputModes,
+				Security:    fromV1SecurityRequirements(s.SecurityRequirements),
 				Tags:        s.Tags,
 			}
 		}
@@ -870,18 +874,27 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 	for i, s := range card.Signatures {
 		res.Signatures[i] = a2alegacy.AgentCardSignature(s)
 	}
-	if len(card.SupportedInterfaces) > 0 {
-		res.URL = card.SupportedInterfaces[0].URL
-		res.PreferredTransport = a2alegacy.TransportProtocol(card.SupportedInterfaces[0].ProtocolBinding)
-		res.ProtocolVersion = string(card.SupportedInterfaces[0].ProtocolVersion)
-
-		res.AdditionalInterfaces = make([]a2alegacy.AgentInterface, len(card.SupportedInterfaces))
-		for i, iface := range card.SupportedInterfaces {
-			res.AdditionalInterfaces[i] = a2alegacy.AgentInterface{
-				URL:       iface.URL,
-				Transport: a2alegacy.TransportProtocol(iface.ProtocolBinding),
-			}
+	if len(card.SupportedInterfaces) == 0 {
+		return res
+	}
+	preferredIdx := slices.IndexFunc(card.SupportedInterfaces, func(i *a2a.AgentInterface) bool {
+		return i.ProtocolVersion == Version
+	})
+	if preferredIdx == -1 {
+		preferredIdx = 0
+	}
+	preferred := card.SupportedInterfaces[preferredIdx]
+	res.URL = preferred.URL
+	res.PreferredTransport = a2alegacy.TransportProtocol(preferred.ProtocolBinding)
+	res.ProtocolVersion = string(preferred.ProtocolVersion)
+	for i, iface := range card.SupportedInterfaces {
+		if i == preferredIdx || iface.ProtocolVersion != preferred.ProtocolVersion {
+			continue
 		}
+		res.AdditionalInterfaces = append(res.AdditionalInterfaces, a2alegacy.AgentInterface{
+			URL:       iface.URL,
+			Transport: a2alegacy.TransportProtocol(iface.ProtocolBinding),
+		})
 	}
 	return res
 }
@@ -906,6 +919,23 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			Streaming:         card.Capabilities.Streaming,
 			ExtendedAgentCard: card.SupportsAuthenticatedExtendedCard,
 		},
+		SecurityRequirements: toV1SecurityRequirements(card.Security),
+		SecuritySchemes:      toV1SecuritySchemes(card.SecuritySchemes),
+	}
+	if len(card.Skills) > 0 {
+		res.Skills = make([]a2a.AgentSkill, len(card.Skills))
+		for i, s := range card.Skills {
+			res.Skills[i] = a2a.AgentSkill{
+				Description:          s.Description,
+				Examples:             s.Examples,
+				ID:                   s.ID,
+				InputModes:           s.InputModes,
+				Name:                 s.Name,
+				OutputModes:          s.OutputModes,
+				SecurityRequirements: toV1SecurityRequirements(s.Security),
+				Tags:                 s.Tags,
+			}
+		}
 	}
 	if len(card.Capabilities.Extensions) > 0 {
 		res.Capabilities.Extensions = make([]a2a.AgentExtension, len(card.Capabilities.Extensions))
@@ -916,35 +946,166 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 	for i, s := range card.Signatures {
 		res.Signatures[i] = a2a.AgentCardSignature(s)
 	}
+	version := a2a.ProtocolVersion(card.ProtocolVersion)
+	if version == "" {
+		version = Version
+	}
 	var ifaces []*a2a.AgentInterface
 	if card.URL != "" || card.PreferredTransport != "" {
-		iface := &a2a.AgentInterface{
+		ifaces = append(ifaces, &a2a.AgentInterface{
 			URL:             card.URL,
 			ProtocolBinding: a2a.TransportProtocol(card.PreferredTransport),
-			ProtocolVersion: a2a.ProtocolVersion(card.ProtocolVersion),
-		}
-		if iface.ProtocolVersion == "" {
-			iface.ProtocolVersion = Version
-		}
-		ifaces = append(ifaces, iface)
+			ProtocolVersion: version,
+		})
 	}
 	for _, ai := range card.AdditionalInterfaces {
-		// Avoid duplicates if main URL is also in AdditionalInterfaces
-		exists := false
-		for _, existing := range ifaces {
-			if existing.URL == ai.URL && string(existing.ProtocolBinding) == string(ai.Transport) {
-				exists = true
-				break
-			}
+		exists := slices.ContainsFunc(ifaces, func(existing *a2a.AgentInterface) bool {
+			return existing.URL == ai.URL && string(existing.ProtocolBinding) == string(ai.Transport)
+		})
+		if exists {
+			continue
 		}
-		if !exists {
-			ifaces = append(ifaces, &a2a.AgentInterface{
-				URL:             ai.URL,
-				ProtocolBinding: a2a.TransportProtocol(ai.Transport),
-				ProtocolVersion: Version,
-			})
-		}
+		ifaces = append(ifaces, &a2a.AgentInterface{
+			URL:             ai.URL,
+			ProtocolBinding: a2a.TransportProtocol(ai.Transport),
+			ProtocolVersion: version,
+		})
 	}
 	res.SupportedInterfaces = ifaces
 	return res
+}
+
+func fromV1SecurityRequirements(reqs a2a.SecurityRequirementsOptions) []a2alegacy.SecurityRequirements {
+	if len(reqs) == 0 {
+		return nil
+	}
+	res := make([]a2alegacy.SecurityRequirements, len(reqs))
+	for i, req := range reqs {
+		res[i] = make(a2alegacy.SecurityRequirements, len(req))
+		for name, scopes := range req {
+			res[i][a2alegacy.SecuritySchemeName(name)] = a2alegacy.SecuritySchemeScopes(scopes)
+		}
+	}
+	return res
+}
+
+func toV1SecurityRequirements(reqs []a2alegacy.SecurityRequirements) a2a.SecurityRequirementsOptions {
+	if len(reqs) == 0 {
+		return nil
+	}
+	res := make(a2a.SecurityRequirementsOptions, len(reqs))
+	for i, req := range reqs {
+		res[i] = make(a2a.SecurityRequirements, len(req))
+		for name, scopes := range req {
+			res[i][a2a.SecuritySchemeName(name)] = a2a.SecuritySchemeScopes(scopes)
+		}
+	}
+	return res
+}
+
+// fromV1SecuritySchemes converts v1 security schemes to legacy ones. Legacy OAuth flows have no
+// equivalent of the device code flow and PKCE requirement, so these are dropped.
+func fromV1SecuritySchemes(schemes a2a.NamedSecuritySchemes) a2alegacy.NamedSecuritySchemes {
+	if len(schemes) == 0 {
+		return nil
+	}
+	res := make(a2alegacy.NamedSecuritySchemes, len(schemes))
+	for name, scheme := range schemes {
+		legacyName := a2alegacy.SecuritySchemeName(name)
+		switch v := scheme.(type) {
+		case a2a.APIKeySecurityScheme:
+			res[legacyName] = a2alegacy.APIKeySecurityScheme{
+				Description: v.Description,
+				In:          a2alegacy.APIKeySecuritySchemeIn(v.Location),
+				Name:        v.Name,
+			}
+		case a2a.HTTPAuthSecurityScheme:
+			res[legacyName] = a2alegacy.HTTPAuthSecurityScheme(v)
+		case a2a.OpenIDConnectSecurityScheme:
+			res[legacyName] = a2alegacy.OpenIDConnectSecurityScheme(v)
+		case a2a.MutualTLSSecurityScheme:
+			res[legacyName] = a2alegacy.MutualTLSSecurityScheme(v)
+		case a2a.OAuth2SecurityScheme:
+			res[legacyName] = a2alegacy.OAuth2SecurityScheme{
+				Description:       v.Description,
+				Flows:             fromV1OAuthFlows(v.Flows),
+				Oauth2MetadataURL: v.Oauth2MetadataURL,
+			}
+		}
+	}
+	return res
+}
+
+func fromV1OAuthFlows(flows a2a.OAuthFlows) a2alegacy.OAuthFlows {
+	switch v := flows.(type) {
+	case a2a.AuthorizationCodeOAuthFlow:
+		return a2alegacy.OAuthFlows{AuthorizationCode: &a2alegacy.AuthorizationCodeOAuthFlow{
+			AuthorizationURL: v.AuthorizationURL,
+			RefreshURL:       v.RefreshURL,
+			Scopes:           v.Scopes,
+			TokenURL:         v.TokenURL,
+		}}
+	case a2a.ClientCredentialsOAuthFlow:
+		return a2alegacy.OAuthFlows{ClientCredentials: (*a2alegacy.ClientCredentialsOAuthFlow)(&v)}
+	case a2a.ImplicitOAuthFlow:
+		return a2alegacy.OAuthFlows{Implicit: (*a2alegacy.ImplicitOAuthFlow)(&v)}
+	case a2a.PasswordOAuthFlow:
+		return a2alegacy.OAuthFlows{Password: (*a2alegacy.PasswordOAuthFlow)(&v)}
+	default:
+		return a2alegacy.OAuthFlows{}
+	}
+}
+
+func toV1SecuritySchemes(schemes a2alegacy.NamedSecuritySchemes) a2a.NamedSecuritySchemes {
+	if len(schemes) == 0 {
+		return nil
+	}
+	res := make(a2a.NamedSecuritySchemes, len(schemes))
+	for name, scheme := range schemes {
+		v1Name := a2a.SecuritySchemeName(name)
+		switch v := scheme.(type) {
+		case a2alegacy.APIKeySecurityScheme:
+			res[v1Name] = a2a.APIKeySecurityScheme{
+				Description: v.Description,
+				Location:    a2a.APIKeySecuritySchemeLocation(v.In),
+				Name:        v.Name,
+			}
+		case a2alegacy.HTTPAuthSecurityScheme:
+			res[v1Name] = a2a.HTTPAuthSecurityScheme(v)
+		case a2alegacy.OpenIDConnectSecurityScheme:
+			res[v1Name] = a2a.OpenIDConnectSecurityScheme(v)
+		case a2alegacy.MutualTLSSecurityScheme:
+			res[v1Name] = a2a.MutualTLSSecurityScheme(v)
+		case a2alegacy.OAuth2SecurityScheme:
+			res[v1Name] = a2a.OAuth2SecurityScheme{
+				Description:       v.Description,
+				Flows:             toV1OAuthFlows(v.Flows),
+				Oauth2MetadataURL: v.Oauth2MetadataURL,
+			}
+		}
+	}
+	return res
+}
+
+// toV1OAuthFlows converts legacy OAuth flows to a v1 flow. A v1 scheme declares a single flow,
+// so only the first one set is kept.
+func toV1OAuthFlows(flows a2alegacy.OAuthFlows) a2a.OAuthFlows {
+	switch {
+	case flows.AuthorizationCode != nil:
+		f := flows.AuthorizationCode
+		return a2a.AuthorizationCodeOAuthFlow{
+			AuthorizationURL: f.AuthorizationURL,
+			RefreshURL:       f.RefreshURL,
+			Scopes:           f.Scopes,
+			TokenURL:         f.TokenURL,
+		}
+	case flows.ClientCredentials != nil:
+		return a2a.ClientCredentialsOAuthFlow(*flows.ClientCredentials)
+	case flows.Implicit != nil:
+		return a2a.ImplicitOAuthFlow(*flows.Implicit)
+	case flows.Password != nil:
+		return a2a.PasswordOAuthFlow(*flows.Password)
+	default:
+		return nil
+	}
 }

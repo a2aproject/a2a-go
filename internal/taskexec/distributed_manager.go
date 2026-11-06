@@ -110,7 +110,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrUnsupportedOperation)
 		}
 	}
 

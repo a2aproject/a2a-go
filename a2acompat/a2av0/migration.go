@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"reflect"
 
 	legacya2a "github.com/a2aproject/a2a-go/a2a"
 	legacyclient "github.com/a2aproject/a2a-go/a2aclient"
@@ -91,7 +92,7 @@ func (s *srvInterceptorAdapter) After(ctx context.Context, callCtx *a2asrv.CallC
 	}
 
 	if legacyResp.Payload != nil {
-		v1Payload, v1Err := toV1Payload(legacyResp.Payload)
+		v1Payload, v1Err := toV1ResponsePayload(resp.Payload, legacyResp.Payload)
 		if v1Err != nil {
 			return v1Err
 		}
@@ -142,7 +143,7 @@ func (s *clientInterceptorAdapter) After(ctx context.Context, resp *a2aclient.Re
 	}
 	resp.Err = legacyResp.Err
 	if legacyResp.Payload != nil {
-		v1Payload, v1Err := toV1Payload(legacyResp.Payload)
+		v1Payload, v1Err := toV1ResponsePayload(resp.Payload, legacyResp.Payload)
 		if v1Err != nil {
 			return v1Err
 		}
@@ -352,6 +353,15 @@ func toV1Payload(legacyPayload any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported legacy payload type %T", legacyPayload)
 	}
+}
+
+// toV1ResponsePayload keeps the original v1 agent card if a legacy interceptor left its legacy version unchanged,
+// because the legacy card can't represent all v1 fields (e.g. interface tenants or v1.0 interfaces).
+func toV1ResponsePayload(v1Payload, legacyPayload any) (any, error) {
+	if card, ok := v1Payload.(*a2a.AgentCard); ok && reflect.DeepEqual(FromV1AgentCard(card), legacyPayload) {
+		return card, nil
+	}
+	return toV1Payload(legacyPayload)
 }
 
 func fromV1Payload(payload any) (any, error) {
