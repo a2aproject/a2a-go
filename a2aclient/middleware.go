@@ -102,6 +102,8 @@ type Response struct {
 }
 
 // callHandler sends a call. A unary call yields one value, a streaming call yields one value per event.
+// It must not modify data shared with the caller's req, such as ServiceParams or Payload, so that a
+// middleware can call next again with the original request. Changes are made on a copy.
 type callHandler func(ctx context.Context, req Request) iter.Seq2[any, error]
 
 // CallInterceptor can be attached to a [Client].

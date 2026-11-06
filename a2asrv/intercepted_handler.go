@@ -159,6 +159,7 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 func interceptCalls(h *InterceptedHandler, next callHandler) callHandler {
 	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
+			ctx, req := ctx, req
 			for i, interceptor := range h.Interceptors {
 				localCtx, result, err := interceptor.Before(ctx, callCtx, &req)
 				if err != nil || result != nil {

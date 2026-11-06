@@ -198,6 +198,8 @@ func (c *Client) newRequest(ctx context.Context, method string, payload any) Req
 func interceptCalls(c *Client, next callHandler) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
+			ctx, req := ctx, req
+			req.ServiceParams = req.ServiceParams.clone()
 			for i, interceptor := range c.interceptors {
 				localCtx, result, err := interceptor.Before(ctx, &req)
 				ctx = localCtx
