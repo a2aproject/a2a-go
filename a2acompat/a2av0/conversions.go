@@ -850,15 +850,7 @@ func FromV1AgentCard(card *a2a.AgentCard) *a2alegacy.AgentCard {
 	if len(card.Skills) > 0 {
 		res.Skills = make([]a2alegacy.AgentSkill, len(card.Skills))
 		for i, s := range card.Skills {
-			res.Skills[i] = a2alegacy.AgentSkill{
-				Description: s.Description,
-				Examples:    s.Examples,
-				ID:          s.ID,
-				InputModes:  s.InputModes,
-				Name:        s.Name,
-				OutputModes: s.OutputModes,
-				Tags:        s.Tags,
-			}
+			res.Skills[i] = fromV1Skill(s)
 		}
 	}
 	if len(card.Capabilities.Extensions) > 0 {
@@ -907,6 +899,12 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 			ExtendedAgentCard: card.SupportsAuthenticatedExtendedCard,
 		},
 	}
+	if len(card.Skills) > 0 {
+		res.Skills = make([]a2a.AgentSkill, len(card.Skills))
+		for i, s := range card.Skills {
+			res.Skills[i] = toV1Skill(s)
+		}
+	}
 	if len(card.Capabilities.Extensions) > 0 {
 		res.Capabilities.Extensions = make([]a2a.AgentExtension, len(card.Capabilities.Extensions))
 		for i, e := range card.Capabilities.Extensions {
@@ -946,5 +944,59 @@ func ToV1AgentCard(card *a2alegacy.AgentCard) *a2a.AgentCard {
 		}
 	}
 	res.SupportedInterfaces = ifaces
+	return res
+}
+
+func toV1Skill(s a2alegacy.AgentSkill) a2a.AgentSkill {
+	return a2a.AgentSkill{
+		Description:          s.Description,
+		Examples:             s.Examples,
+		ID:                   s.ID,
+		InputModes:           s.InputModes,
+		Name:                 s.Name,
+		OutputModes:          s.OutputModes,
+		SecurityRequirements: toV1SecurityRequirements(s.Security),
+		Tags:                 s.Tags,
+	}
+}
+
+func fromV1Skill(s a2a.AgentSkill) a2alegacy.AgentSkill {
+	return a2alegacy.AgentSkill{
+		Description: s.Description,
+		Examples:    s.Examples,
+		ID:          s.ID,
+		InputModes:  s.InputModes,
+		Name:        s.Name,
+		OutputModes: s.OutputModes,
+		Security:    fromV1SecurityRequirements(s.SecurityRequirements),
+		Tags:        s.Tags,
+	}
+}
+
+func toV1SecurityRequirements(reqs []a2alegacy.SecurityRequirements) a2a.SecurityRequirementsOptions {
+	if reqs == nil {
+		return nil
+	}
+	res := make(a2a.SecurityRequirementsOptions, len(reqs))
+	for i, r := range reqs {
+		res[i] = make(a2a.SecurityRequirements, len(r))
+		for name, scopes := range r {
+			res[i][a2a.SecuritySchemeName(name)] = a2a.SecuritySchemeScopes(scopes)
+		}
+	}
+	return res
+}
+
+func fromV1SecurityRequirements(reqs a2a.SecurityRequirementsOptions) []a2alegacy.SecurityRequirements {
+	if reqs == nil {
+		return nil
+	}
+	res := make([]a2alegacy.SecurityRequirements, len(reqs))
+	for i, r := range reqs {
+		res[i] = make(a2alegacy.SecurityRequirements, len(r))
+		for name, scopes := range r {
+			res[i][a2alegacy.SecuritySchemeName(name)] = a2alegacy.SecuritySchemeScopes(scopes)
+		}
+	}
 	return res
 }
