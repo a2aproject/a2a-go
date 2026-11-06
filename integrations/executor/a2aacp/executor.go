@@ -51,8 +51,9 @@ type Config struct {
 	// sends no session update or question for this long while it works on a
 	// message, for example while it retries a model provider which hit a
 	// usage limit. The agent is asked to stop, as for a canceled task. Time
-	// spent waiting for an answer doesn't count. Zero or negative means no
-	// limit.
+	// spent waiting for an answer doesn't count. Agents can send nothing for
+	// a minute or more while the model thinks, so set it well above that.
+	// Zero or negative means no limit.
 	InactivityTimeout time.Duration
 
 	// AutoAnswer answers questions without asking the caller, for example

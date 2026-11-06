@@ -89,7 +89,8 @@ task with `ErrAgentInactive` whatever stop reason the agent sends, including aft
 stops it. A timer that fires while a question is pending does nothing and is re-armed by the
 answer. It complements `a2asrv.WithAgentInactivityTimeout`, which counts only events the executor
 writes (dropped updates such as thought chunks don't reset it) and fails the task without a
-message.
+message. Measured with opencode and `google/gemini-flash-latest` through a2a-serve: 45-60s without any
+`session/update` before the first update of a normal turn, so useful values are minutes.
 
 ## Turn lifecycle (`executor.go`, `turn.go`)
 
