@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -40,10 +41,13 @@ type turn struct {
 	tools map[string]*acp.ToolCall
 	out   *taskOutput
 
-	mu       sync.Mutex
-	pending  *pendingQuestion
-	canceled bool
-	ended    bool
+	mu         sync.Mutex
+	pending    *pendingQuestion
+	canceled   bool
+	ended      bool
+	inactivity *time.Timer
+	timeout    time.Duration // of inactivity
+	inactive   bool          // the inactivity timeout expired
 }
 
 type turnEvent struct {
@@ -58,6 +62,9 @@ type promptResult struct {
 	// canceled reports that the turn was canceled, so that an agent stopped
 	// for not ending a canceled turn doesn't fail the task.
 	canceled bool
+	// failure fails the task whatever the agent responded, because the turn
+	// was canceled for it.
+	failure error
 }
 
 func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
@@ -134,6 +141,48 @@ func (t *turn) end() {
 	defer t.mu.Unlock()
 	t.ended = true
 	t.clearPendingLocked()
+	if t.inactivity != nil {
+		t.inactivity.Stop()
+	}
+}
+
+// watchInactivity calls cancel once the agent sends nothing for the turn
+// for timeout, except while a question waits for an answer.
+func (t *turn) watchInactivity(timeout time.Duration, cancel func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.timeout = timeout
+	t.inactivity = time.AfterFunc(timeout, func() {
+		t.mu.Lock()
+		expired := !t.canceled && !t.ended && t.pending == nil
+		t.inactive = t.inactive || expired
+		t.mu.Unlock()
+		if expired {
+			cancel()
+		}
+	})
+}
+
+// touch restarts the inactivity timeout, also after it expired while a
+// question was pending.
+func (t *turn) touch() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.inactivity == nil || t.canceled || t.ended {
+		return
+	}
+	t.inactivity.Reset(t.timeout)
+}
+
+// failure returns the error which fails the task whatever the agent
+// responds to the prompt, if any.
+func (t *turn) failure() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.inactive {
+		return fmt.Errorf("%w for %s", ErrAgentInactive, t.timeout)
+	}
+	return nil
 }
 
 func (t *turn) hasEnded() bool {
@@ -148,26 +197,29 @@ func (t *turn) isCanceled() bool {
 	return t.canceled
 }
 
-func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
-	if r.err != nil && r.canceled {
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
-	}
-	if r.err != nil {
-		return failed(info, fmt.Sprintf("acp agent error: %v", r.err))
+// outcome returns the state the task ends in, or the error which fails it.
+func (r *promptResult) outcome() (a2a.TaskState, error) {
+	switch {
+	case r.failure != nil:
+		return "", r.failure
+	case r.err != nil && r.canceled:
+		return a2a.TaskStateCanceled, nil
+	case r.err != nil:
+		return "", fmt.Errorf("acp agent error: %w", r.err)
 	}
 	switch r.reason {
 	case acp.StopEndTurn:
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCompleted, nil)
+		return a2a.TaskStateCompleted, nil
 	case acp.StopCancelled:
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
+		return a2a.TaskStateCanceled, nil
 	case acp.StopMaxTokens:
-		return failed(info, "the agent reached its token limit")
+		return "", errors.New("the agent reached its token limit")
 	case acp.StopMaxTurnRequests:
-		return failed(info, "the agent reached its request limit for the turn")
+		return "", errors.New("the agent reached its request limit for the turn")
 	case acp.StopRefusal:
-		return failed(info, "the agent refused to continue")
+		return "", errors.New("the agent refused to continue")
 	default:
-		return failed(info, fmt.Sprintf("the agent stopped: %s", r.reason))
+		return "", fmt.Errorf("the agent stopped: %s", r.reason)
 	}
 }
 

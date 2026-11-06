@@ -20,8 +20,10 @@ import (
 	"iter"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/mod/semver"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/log"
@@ -324,7 +326,7 @@ func doCall[Req any, Resp any](
 }
 
 // checkProtocolVersion checks if the client's protocol version is compatible with the server's.
-// Unset or empty A2A-Version values are treated as "0.3".
+// Unset or empty A2A-Version values are treated as "0.3". Only Major.Minor are compared.
 func checkProtocolVersion(callCtx *CallContext) error {
 	if callCtx.ProtocolVersion == "" {
 		return nil
@@ -337,8 +339,16 @@ func checkProtocolVersion(callCtx *CallContext) error {
 	if len(versions) == 1 && versions[0] != "" {
 		clientVersion = a2a.ProtocolVersion(versions[0])
 	}
-	if clientVersion != callCtx.ProtocolVersion {
+	if mm := majorMinor(clientVersion); mm == "" || mm != majorMinor(callCtx.ProtocolVersion) {
 		return fmt.Errorf("%w: requested %q, served %q", a2a.ErrVersionNotSupported, clientVersion, callCtx.ProtocolVersion)
 	}
 	return nil
+}
+
+func majorMinor(v a2a.ProtocolVersion) string {
+	s := string(v)
+	if !strings.HasPrefix(s, "v") {
+		s = "v" + s
+	}
+	return semver.MajorMinor(s)
 }

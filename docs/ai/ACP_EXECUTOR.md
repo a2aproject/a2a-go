@@ -31,7 +31,7 @@ The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and
 - Hooks are interfaces when the package ships an implementation (`Agent`: `Process`,
   `AgentFunc`; `AutoAnswerer`: `ToolRules`, `AutoAnswerFunc`; `Converter`: `ConvertUpdate`,
   `ConverterFunc`; `SessionStore`), and plain funcs otherwise (`Config.Session`,
-  `Config.Settings`, `Config.Prompt`, `PoolConfig.Key`).
+  `Config.Settings`, `Config.Prompt`, `Config.Failure`, `PoolConfig.Key`).
 - Config durations: zero means the default, negative disables (`duration` in `executor.go`).
 - "Turn" (one `session/prompt`) is internal; public docs speak of tasks and messages. The one
   exception is `Config.Turn`, whose name was agreed in issue #529; its doc still speaks of messages.
@@ -65,9 +65,32 @@ ACP fixes `cwd` and MCP servers for the session's lifetime in a process, so call
 map. Callers can't change settings unless `Settings` lets them: metadata is ignored by default,
 because some agents have modes which skip permission requests (e.g. `bypassPermissions`).
 `MetadataSettings(patterns...)` fails a message that sets an ID matching none of the `*` glob
-patterns. The executor tracks the
-settable IDs per session from `session/new` / `session/load` responses and `config_option_update`
-notifications (`agent.sessions`).
+patterns. The executor tracks the config options per session, with their `currentValue` and
+`options` (flat or grouped), from `session/new` / `session/load` responses,
+`session/set_config_option` responses and `config_option_update` notifications
+(`agent.sessions`). `configure` (`settings.go`) skips a config option whose `currentValue` already
+equals the setting, so a constant setting costs no round trip per message; `set_mode` /
+`set_model` are always sent, since their current values aren't decoded. A refused setting fails
+the task with `*SettingError{ID, Value, Options, Err}`; `Options` are the flattened values the
+agent offered, and a2aacp never validates values itself.
+
+Every task failure goes through `Executor.fail(ctx, execCtx, err)`, which takes the status message
+parts from `Config.Failure` (default: `err.Error()` as text). Callers find typed errors there with
+`errors.As` (`*SettingError`, `ErrAgentInactive`). A Go error can't reach callers any other way:
+an error yielded from `Execute` makes a2asrv fail the task without a status message, and
+`AgentExecutionCleaner.Cleanup` gets `err == nil` because the failed result wins
+(`internal/taskexec/execution_handler.go`).
+
+`Config.InactivityTimeout` (off by default) arms `turn.inactivity` when the prompt is sent.
+`agentHandler` calls `turn.touch` for every session update and agent request of the turn, and
+`answer` calls it after forwarding an answer. When the timer fires with no pending question,
+the turn is marked `inactive` and canceled like a canceled task; the prompt result then fails the
+task with `ErrAgentInactive` whatever stop reason the agent sends, including after `CancelTimeout`
+stops it. A timer that fires while a question is pending does nothing and is re-armed by the
+answer. It complements `a2asrv.WithAgentInactivityTimeout`, which counts only events the executor
+writes (dropped updates such as thought chunks don't reset it) and fails the task without a
+message. Measured with opencode and `google/gemini-flash-latest` through a2a-serve: 45-60s without any
+`session/update` before the first update of a normal turn, so useful values are minutes.
 
 ## Turn lifecycle (`executor.go`, `turn.go`)
 

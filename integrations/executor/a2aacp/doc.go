@@ -50,8 +50,9 @@
 // [ResponseArtifact] artifact, tool calls become working status updates with a
 // "toolCall" data part, and other updates are dropped. The stop reason of the
 // prompt ends the task: end_turn completes it, cancelled cancels it, and
-// anything else, or an agent error, fails it. Canceling a task sends
-// session/cancel.
+// anything else, or an agent error, fails it. [Config.Failure] can change the
+// status message of a failed task. Canceling a task sends session/cancel, and
+// [Config.InactivityTimeout] fails a task whose agent goes silent.
 //
 // # Questions
 //

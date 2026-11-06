@@ -70,6 +70,8 @@ type Request struct {
 	Method string
 	// BaseURL is the URL of the agent interface to which the Client is connected.
 	BaseURL string
+	// ProtocolBinding is the protocol binding of the agent interface to which the Client is connected.
+	ProtocolBinding a2a.TransportProtocol
 	// ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.
 	// The transmission mechanism for these service parameter key-value pairs is defined by the specific protocol binding
 	ServiceParams ServiceParams

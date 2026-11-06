@@ -19,8 +19,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"iter"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -28,6 +31,176 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
+
+const apiKeyTestBaseURL = "https://agent.example.com/a2a"
+
+func apiKeyCard(scheme a2a.APIKeySecurityScheme, bindings ...a2a.TransportProtocol) *a2a.AgentCard {
+	schemeName := a2a.SecuritySchemeName("api-key")
+	interfaces := make([]*a2a.AgentInterface, 0, len(bindings))
+	for _, binding := range bindings {
+		interfaces = append(interfaces, &a2a.AgentInterface{URL: apiKeyTestBaseURL, ProtocolBinding: binding})
+	}
+	return &a2a.AgentCard{
+		SupportedInterfaces:  interfaces,
+		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			schemeName: scheme,
+		},
+	}
+}
+
+func TestAuthInterceptor_APIKeyLocation(t *testing.T) {
+	t.Parallel()
+
+	sid := SessionID("123")
+
+	testCases := []struct {
+		name         string
+		binding      a2a.TransportProtocol
+		cardBindings []a2a.TransportProtocol
+		scheme       a2a.APIKeySecurityScheme
+		cred         string
+		baseURL      string
+		initParams   ServiceParams
+		wantParams   ServiceParams
+		wantQuery    url.Values
+		wantErr      bool
+	}{
+		{
+			name:       "header location",
+			scheme:     a2a.APIKeySecurityScheme{Name: "X-Custom-Auth", Location: a2a.APIKeySecuritySchemeLocationHeader},
+			binding:    a2a.TransportProtocolJSONRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"x-custom-auth": []string{"secret"}},
+		},
+		{
+			name:       "unspecified location defaults to header",
+			scheme:     a2a.APIKeySecurityScheme{Name: "X-Custom-Auth"},
+			binding:    a2a.TransportProtocolJSONRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"x-custom-auth": []string{"secret"}},
+		},
+		{
+			name:       "cookie location",
+			scheme:     a2a.APIKeySecurityScheme{Name: "session_key", Location: a2a.APIKeySecuritySchemeLocationCookie},
+			binding:    a2a.TransportProtocolHTTPJSON,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"cookie": []string{"session_key=secret"}},
+		},
+		{
+			name:       "cookie location merges with existing cookies",
+			scheme:     a2a.APIKeySecurityScheme{Name: "session_key", Location: a2a.APIKeySecuritySchemeLocationCookie},
+			binding:    a2a.TransportProtocolHTTPJSON,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			initParams: ServiceParams{"cookie": []string{"other=1"}},
+			wantParams: ServiceParams{"cookie": []string{"other=1; session_key=secret"}},
+		},
+		{
+			name:       "cookie location rejects credential with separator",
+			scheme:     a2a.APIKeySecurityScheme{Name: "session_key", Location: a2a.APIKeySecuritySchemeLocationCookie},
+			binding:    a2a.TransportProtocolHTTPJSON,
+			cred:       "bad; value",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{},
+			wantErr:    true,
+		},
+		{
+			name:       "query location",
+			scheme:     a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+			binding:    a2a.TransportProtocolJSONRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{},
+			wantQuery:  url.Values{"api_key": []string{"secret"}},
+		},
+		{
+			name:       "unknown location is not injected",
+			scheme:     a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocation("body")},
+			binding:    a2a.TransportProtocolJSONRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{},
+		},
+		{
+			name:       "grpc query location falls back to service params",
+			scheme:     a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+			binding:    a2a.TransportProtocolGRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"api_key": []string{"secret"}},
+		},
+		{
+			name:       "grpc cookie location falls back to service params",
+			scheme:     a2a.APIKeySecurityScheme{Name: "session_key", Location: a2a.APIKeySecuritySchemeLocationCookie},
+			binding:    a2a.TransportProtocolGRPC,
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"session_key": []string{"secret"}},
+		},
+		{
+			name:         "grpc binding selected with http interface first in card",
+			scheme:       a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+			binding:      a2a.TransportProtocolGRPC,
+			cardBindings: []a2a.TransportProtocol{a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolGRPC},
+			cred:         "secret",
+			baseURL:      apiKeyTestBaseURL,
+			wantParams:   ServiceParams{"api_key": []string{"secret"}},
+		},
+		{
+			name:       "unset binding falls back to service params",
+			scheme:     a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+			cred:       "secret",
+			baseURL:    apiKeyTestBaseURL,
+			wantParams: ServiceParams{"api_key": []string{"secret"}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			credStore := NewInMemoryCredentialsStore()
+			credStore.Set(sid, a2a.SecuritySchemeName("api-key"), AuthCredential(tc.cred))
+
+			interceptor := &AuthInterceptor{Service: credStore}
+			params := ServiceParams{}
+			maps.Copy(params, tc.initParams)
+			ctx := AttachSessionID(t.Context(), sid)
+
+			cardBindings := tc.cardBindings
+			if cardBindings == nil {
+				cardBindings = []a2a.TransportProtocol{tc.binding}
+			}
+			gotCtx, _, err := interceptor.Before(ctx, &Request{
+				BaseURL:         tc.baseURL,
+				ProtocolBinding: tc.binding,
+				ServiceParams:   params,
+				Card:            apiKeyCard(tc.scheme, cardBindings...),
+			})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("interceptor.Before() error = nil, want non-nil")
+				}
+				if strings.Contains(err.Error(), tc.cred) {
+					t.Errorf("interceptor.Before() error = %v, must not contain the credential", err)
+				}
+			} else if err != nil {
+				t.Fatalf("interceptor.Before() error = %v", err)
+			}
+
+			if diff := cmp.Diff(tc.wantParams, params); diff != "" {
+				t.Errorf("wrong ServiceParams (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(tc.wantQuery, HTTPQueryParamsFrom(gotCtx)); diff != "" {
+				t.Errorf("wrong HTTP query params (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
 
 // JSONRPC
 func startJSONRPCTestServer(t *testing.T, handler a2asrv.RequestHandler) *httptest.Server {
