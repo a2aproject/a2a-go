@@ -1200,6 +1200,31 @@ func TestToProto_toProtoSecurityScheme(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "oauth2 scheme with PKCE required",
+			scheme: a2a.OAuth2SecurityScheme{
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
+					AuthorizationURL: "https://auth.com/auth",
+					TokenURL:         "https://auth.com/token",
+					PKCERequired:     true,
+				},
+			},
+			want: &a2apb.SecurityScheme{
+				Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
+					Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{
+						Flows: &a2apb.OAuthFlows{
+							Flow: &a2apb.OAuthFlows_AuthorizationCode{
+								AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+									AuthorizationUrl: "https://auth.com/auth",
+									TokenUrl:         "https://auth.com/token",
+									PkceRequired:     true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
