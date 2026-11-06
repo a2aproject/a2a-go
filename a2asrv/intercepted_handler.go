@@ -155,7 +155,6 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
-// interceptCalls returns a callHandler which runs the interceptors around next.
 func interceptCalls(h *InterceptedHandler, next callHandler) callHandler {
 	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -187,7 +186,6 @@ func interceptAfter(ctx context.Context, interceptors []CallInterceptor, callCtx
 	return response.Payload, response.Err
 }
 
-// unaryHandler returns a callHandler which invokes a unary [RequestHandler] method.
 func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) callHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -201,7 +199,6 @@ func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, e
 	}
 }
 
-// streamHandler returns a callHandler which invokes a streaming [RequestHandler] method.
 func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) callHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -265,7 +262,6 @@ func doCall[Req any, Resp any](
 	return zero, fmt.Errorf("%s produced no result", callCtx.Method())
 }
 
-// streamCall runs a streaming call through the interceptors and passes the results to yield.
 func streamCall[Req any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error], yield func(a2a.Event, error) bool,

@@ -194,7 +194,6 @@ func (c *Client) newRequest(ctx context.Context, method string, payload any) Req
 	}
 }
 
-// interceptCalls returns a callHandler which runs the interceptors around next.
 func interceptCalls(c *Client, next callHandler) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -234,7 +233,6 @@ func interceptAfter(ctx context.Context, c *Client, interceptors []CallIntercept
 	return resp.Payload, resp.Err
 }
 
-// unaryHandler returns a callHandler which invokes a unary [Transport] method.
 func unaryHandler[Req, Resp any](transportCall func(context.Context, ServiceParams, Req) (Resp, error)) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -248,7 +246,6 @@ func unaryHandler[Req, Resp any](transportCall func(context.Context, ServicePara
 	}
 }
 
-// streamHandler returns a callHandler which invokes a streaming [Transport] method.
 func streamHandler[Req any](transportCall func(context.Context, ServiceParams, Req) iter.Seq2[a2a.Event, error]) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -266,8 +263,6 @@ func streamHandler[Req any](transportCall func(context.Context, ServiceParams, R
 	}
 }
 
-// sendStreamingMessage returns a callHandler which falls back to a unary call
-// if the agent card doesn't declare streaming support.
 func sendStreamingMessage(c *Client) callHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
@@ -288,7 +283,6 @@ func doCall[Req any, Resp any](
 	return zero, fmt.Errorf("%s produced no result", method)
 }
 
-// streamCall runs a streaming call through the interceptors and passes the results to yield.
 func streamCall(ctx context.Context, c *Client, method string, req any, handler callHandler, yield func(a2a.Event, error) bool) {
 	for payload, err := range interceptCalls(c, handler)(ctx, c.newRequest(ctx, method, req)) {
 		event, err := utils.CastResult[a2a.Event](payload, err)
