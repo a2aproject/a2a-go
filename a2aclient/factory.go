@@ -59,6 +59,13 @@ type transportCandidate struct {
 	semver string
 }
 
+func (tc *transportCandidate) headerVersion() a2a.ProtocolVersion {
+	if mm := semver.MajorMinor(tc.semver); mm != "" {
+		return a2a.ProtocolVersion(mm[1:])
+	}
+	return a2a.ProtocolVersion(strings.TrimPrefix(tc.semver, "v"))
+}
+
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
 // Transport ordering matches other A2A SDKs (Python, Java, JavaScript): JSON-RPC first (primary/fallback), then REST.
 var defaultOptions = []FactoryOption{WithJSONRPCTransport(nil), WithRESTTransport(nil)}
@@ -110,7 +117,7 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		transport:       conn,
 		interceptors:    f.interceptors,
 		endpoint:        *selected.endpoint,
-		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		protocolVersion: selected.headerVersion(),
 	}
 	client.card.Store(card)
 	return client, nil
@@ -137,7 +144,7 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
-		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		protocolVersion: selected.headerVersion(),
 		endpoint:        *selected.endpoint,
 	}, nil
 }
