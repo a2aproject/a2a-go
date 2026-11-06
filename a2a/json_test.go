@@ -121,17 +121,51 @@ func TestPartJSONCodecEmptyContent(t *testing.T) {
 	}
 }
 
-func TestPartJSONUnmarshalNullDataWithOtherContent(t *testing.T) {
+func TestPartJSONUnmarshalNullContentFields(t *testing.T) {
 	t.Parallel()
 
-	input := `{"text":"hello","data":null}`
-	var got Part
-	err := json.Unmarshal([]byte(input), &got)
-	if err == nil {
-		t.Fatalf("json.Unmarshal(%s) error = nil, want error", input)
+	tests := []struct {
+		name    string
+		json    string
+		want    *Part
+		wantErr string
+	}{
+		{name: "text with null data", json: `{"text":"hello","data":null}`, want: NewTextPart("hello")},
+		{name: "raw with null data", json: `{"raw":"//4=","data":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "url with null data", json: `{"url":"https://cats.com/1.png","data":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "url with null data and null text", json: `{"url":"https://cats.com/1.png","data":null,"text":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "text with null data and metadata", json: `{"text":"hello","data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Text("hello"), Metadata: map[string]any{"k": "v"}}},
+		{name: "data with null text", json: `{"data":{"a":1},"text":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null raw", json: `{"data":{"a":1},"raw":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null url", json: `{"data":{"a":1},"url":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "text with null raw and url", json: `{"text":"hello","raw":null,"url":null}`, want: NewTextPart("hello")},
+		{name: "raw with null text", json: `{"raw":"//4=","text":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "null data with null text", json: `{"data":null,"text":null}`, want: NewDataPart(nil)},
+		{name: "null data with null raw and url", json: `{"data":null,"raw":null,"url":null}`, want: NewDataPart(nil)},
+		{name: "only null text", json: `{"text":null}`, wantErr: "unknown part content type: [text]"},
+		{name: "text with non-null data", json: `{"text":"hello","data":{"a":1}}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
+		{name: "text with raw and null data", json: `{"text":"hello","raw":"//4=","data":null}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
 	}
-	if want := "expected exactly one of text, raw, data, or url, got 2"; err.Error() != want {
-		t.Fatalf("json.Unmarshal(%s) error = %v, want %v", input, err, want)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got Part
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("json.Unmarshal(%s) error = %v, want %v", tc.json, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
 	}
 }
 
