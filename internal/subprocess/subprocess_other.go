@@ -26,6 +26,8 @@ func configureProcessGroup(*exec.Cmd) {}
 
 func terminateProcessGroup(c *exec.Cmd) error { return killProcessGroup(c) }
 
+func processGroupAlive(*exec.Cmd) bool { return false }
+
 func killProcessGroup(c *exec.Cmd) error {
 	err := c.Process.Kill()
 	if errors.Is(err, os.ErrProcessDone) {

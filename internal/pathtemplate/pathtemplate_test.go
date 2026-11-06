@@ -191,3 +191,105 @@ func TestMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchEscaped(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		template string
+		path     string
+		want     *MatchResult
+	}{
+		{
+			name:     "escaped rest is preserved",
+			template: "/{*}",
+			path:     "/tenant/tasks/task%2Fid",
+			want:     &MatchResult{Captured: "tenant", Rest: "/tasks/task%2Fid"},
+		},
+		{
+			name:     "escaped slash in single segment capture",
+			template: "/{*}",
+			path:     "/locations%2Fx%2Fprojects%2Fy/message:send",
+			want:     &MatchResult{Captured: "locations/x/projects/y", Rest: "/message:send"},
+		},
+		{
+			name:     "escaped percent is decoded once",
+			template: "/{*}",
+			path:     "/tenant%252Fid/tasks/task%252Fid",
+			want:     &MatchResult{Captured: "tenant%2Fid", Rest: "/tasks/task%252Fid"},
+		},
+		{
+			name:     "multi-segment capture unescaped",
+			template: "/{locations/*/projects/*}",
+			path:     "/locations/x/projects/y/message:send",
+			want:     &MatchResult{Captured: "locations/x/projects/y", Rest: "/message:send"},
+		},
+		{
+			name:     "multi-segment capture escaped as single segment",
+			template: "/{locations/*/projects/*}",
+			path:     "/locations%2Fx%2Fprojects%2Fy/tasks/task%2Fid",
+			want:     &MatchResult{Captured: "locations/x/projects/y", Rest: "/tasks/task%2Fid"},
+		},
+		{
+			name:     "multi-segment capture with escaped slash in component",
+			template: "/{locations/*/projects/*}",
+			path:     "/locations/us%2Feast/projects/y/tasks/task",
+			want:     &MatchResult{Captured: "locations/us/east/projects/y", Rest: "/tasks/task"},
+		},
+		{
+			name:     "single segment form preferred for wildcard-first capture",
+			template: "/{*/*}",
+			path:     "/x%2Fy/tasks/task",
+			want:     &MatchResult{Captured: "x/y", Rest: "/tasks/task"},
+		},
+		{
+			name:     "per-segment form used when single segment form fails suffix",
+			template: "/{*/*}/tasks",
+			path:     "/x%2Fy/z/tasks/task",
+			want:     &MatchResult{Captured: "x/y/z", Rest: "/task"},
+		},
+		{
+			name:     "escaped capture with literal prefix and suffix",
+			template: "/v1/{locations/*}/agents",
+			path:     "/v1/locations%2Fx/agents/message:send",
+			want:     &MatchResult{Captured: "locations/x", Rest: "/message:send"},
+		},
+		{
+			name:     "escaped capture with too many segments",
+			template: "/{locations/*/projects/*}",
+			path:     "/locations%2Fx%2Fprojects%2Fy%2Fz/message:send",
+		},
+		{
+			name:     "escaped capture with too few segments",
+			template: "/{locations/*/projects/*}",
+			path:     "/locations%2Fx%2Fprojects/message:send",
+		},
+		{
+			name:     "escaped capture with literal mismatch",
+			template: "/{locations/*/projects/*}",
+			path:     "/regions%2Fx%2Fprojects%2Fy/message:send",
+		},
+		{
+			name:     "invalid escape",
+			template: "/{*}",
+			path:     "/tenant%zz/message:send",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tpl, err := New(tt.template)
+			if err != nil {
+				t.Fatalf("New(%q) error = %v", tt.template, err)
+			}
+			got, ok := tpl.MatchEscaped(tt.path)
+			if wantOk := tt.want != nil; ok != wantOk {
+				t.Fatalf("Template(%q).MatchEscaped(%q) ok = %v, want %v", tt.template, tt.path, ok, wantOk)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("Template(%q).MatchEscaped(%q) wrong result (-want +got) diff = %s", tt.template, tt.path, diff)
+			}
+		})
+	}
+}

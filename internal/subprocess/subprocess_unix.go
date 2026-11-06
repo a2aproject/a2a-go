@@ -37,6 +37,11 @@ func killProcessGroup(c *exec.Cmd) error {
 	return signalProcessGroup(c, syscall.SIGKILL)
 }
 
+// processGroupAlive reports whether any process in the group of c runs.
+func processGroupAlive(c *exec.Cmd) bool {
+	return !errors.Is(syscall.Kill(-c.Process.Pid, 0), syscall.ESRCH)
+}
+
 // signalProcessGroup signals every process in the group of c. The group
 // outlives the process of c while any of its children run.
 func signalProcessGroup(c *exec.Cmd, sig syscall.Signal) error {

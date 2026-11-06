@@ -18,12 +18,15 @@
 package acp
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +36,7 @@ import (
 
 // JSON-RPC error codes.
 const (
+	CodeInvalidRequest = -32600
 	CodeMethodNotFound = -32601
 	CodeInvalidParams  = -32602
 )
@@ -65,6 +69,7 @@ type Message struct {
 }
 
 // Conn is a JSON-RPC 2.0 connection over newline-delimited JSON, the ACP stdio transport.
+// Lines which are not JSON-RPC messages are logged and skipped.
 // Requests and notifications from the peer are passed to handle on the read goroutine,
 // in order, so handle must not block.
 type Conn struct {
@@ -77,7 +82,7 @@ type Conn struct {
 	nextID atomic.Int64
 
 	mu      sync.Mutex
-	pending map[int64]chan *Message
+	pending map[int64]chan *wireMessage
 	err     error
 	done    chan struct{}
 }
@@ -88,7 +93,7 @@ func NewConn(rwc io.ReadWriteCloser, handle func(*Message)) *Conn {
 		rwc:     rwc,
 		handle:  handle,
 		enc:     json.NewEncoder(rwc),
-		pending: map[int64]chan *Message{},
+		pending: map[int64]chan *wireMessage{},
 		done:    make(chan struct{}),
 	}
 	return c
@@ -98,35 +103,90 @@ func NewConn(rwc io.ReadWriteCloser, handle func(*Message)) *Conn {
 func (c *Conn) Start() { go c.read() }
 
 func (c *Conn) read() {
-	dec := json.NewDecoder(c.rwc)
+	r := bufio.NewReader(c.rwc)
 	for {
-		var m Message
-		if err := dec.Decode(&m); err != nil {
+		line, err := r.ReadBytes('\n')
+		if len(bytes.TrimSpace(line)) > 0 {
+			c.receive(line)
+		}
+		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
 				err = ErrAgentExited
 			}
 			c.fail(err)
 			return
 		}
-		if m.Method != "" {
-			c.handle(&m)
-			continue
-		}
-		var id int64
-		if err := json.Unmarshal(m.ID, &id); err != nil {
-			log.Warn(context.Background(), "dropped acp response with unknown id", "id", string(m.ID), "cause", err)
-			continue
-		}
-		c.mu.Lock()
-		ch := c.pending[id]
-		delete(c.pending, id)
-		c.mu.Unlock()
-		if ch == nil {
-			log.Debug(context.Background(), "dropped acp response nobody waits for", "id", id)
-			continue
-		}
-		ch <- &m
 	}
+}
+
+// wireMessage is a received message with members decoded separately, so that
+// a mistyped member fails only the request it belongs to.
+type wireMessage struct {
+	ID     json.RawMessage `json:"id"`
+	Method json.RawMessage `json:"method"`
+	Params json.RawMessage `json:"params"`
+	Result json.RawMessage `json:"result"`
+	Error  json.RawMessage `json:"error"`
+}
+
+// receive handles a line of agent output. Lines which are not JSON-RPC
+// messages, such as logs of wrapper scripts, are skipped.
+func (c *Conn) receive(line []byte) {
+	ctx := context.Background()
+	var m wireMessage
+	if err := json.Unmarshal(line, &m); err != nil {
+		log.Warn(ctx, "skipped acp agent output which is not a JSON-RPC message", "output", excerpt(line), "cause", err)
+		return
+	}
+	if m.Method != nil {
+		c.receiveRequest(&m)
+		return
+	}
+	if m.ID == nil {
+		log.Warn(ctx, "skipped acp agent output which is not a JSON-RPC message", "output", excerpt(line))
+		return
+	}
+	var id int64
+	if err := json.Unmarshal(m.ID, &id); err != nil {
+		log.Warn(ctx, "dropped acp response with unknown id", "id", string(m.ID), "cause", err)
+		return
+	}
+	c.mu.Lock()
+	ch := c.pending[id]
+	delete(c.pending, id)
+	c.mu.Unlock()
+	if ch == nil {
+		log.Debug(ctx, "dropped acp response nobody waits for", "id", id)
+		return
+	}
+	ch <- &m
+}
+
+func (c *Conn) receiveRequest(m *wireMessage) {
+	ctx := context.Background()
+	var method string
+	if err := json.Unmarshal(m.Method, &method); err != nil || method == "" {
+		if len(m.ID) == 0 {
+			log.Warn(ctx, "dropped acp notification with malformed method", "method", string(m.Method))
+			return
+		}
+		log.Warn(ctx, "rejected acp request with malformed method", "method", string(m.Method))
+		if err := c.RespondError(m.ID, &Error{Code: CodeInvalidRequest, Message: "method must be a non-empty string"}); err != nil {
+			log.Warn(ctx, "failed to respond to acp agent", "cause", err)
+		}
+		return
+	}
+	c.handle(&Message{ID: m.ID, Method: method, Params: m.Params})
+}
+
+const maxExcerpt = 200
+
+func excerpt(line []byte) string {
+	line = bytes.TrimSpace(line)
+	if len(line) > maxExcerpt {
+		return strings.ToValidUTF8(string(line[:maxExcerpt]), "") + "..."
+	}
+	return string(line)
 }
 
 func (c *Conn) fail(err error) {
@@ -158,7 +218,7 @@ func (c *Conn) Close() error {
 // Call sends a request and decodes the result of its response into result, if it is not nil.
 func (c *Conn) Call(ctx context.Context, method string, params, result any) error {
 	id := c.nextID.Add(1)
-	ch := make(chan *Message, 1)
+	ch := make(chan *wireMessage, 1)
 	c.mu.Lock()
 	if c.err != nil {
 		c.mu.Unlock()
@@ -201,9 +261,15 @@ func (c *Conn) Call(ctx context.Context, method string, params, result any) erro
 	}
 }
 
-func decodeResult(method string, m *Message, result any) error {
-	if m.Error != nil {
-		return m.Error
+func decodeResult(method string, m *wireMessage, result any) error {
+	if len(m.Error) > 0 {
+		var rpcErr *Error
+		if err := json.Unmarshal(m.Error, &rpcErr); err != nil {
+			return fmt.Errorf("decoding %s error: %w", method, err)
+		}
+		if rpcErr != nil {
+			return rpcErr
+		}
 	}
 	if result == nil || len(m.Result) == 0 {
 		return nil

@@ -25,6 +25,14 @@ delegates to it keeps the logging.
 ("method not found") and malformed ones ("invalid params") itself; `executor.agentHandler`
 routes the rest to turns.
 
+`Conn` reads stdout line by line, with no length limit, and keeps reading after bad input: lines
+which are not JSON-RPC messages (banners or logs of wrapper scripts, a notification with a
+mistyped `method`) are logged as warnings and skipped. Members are decoded separately
+(`wireMessage`), so a malformed member fails only its request: a request with a mistyped
+`method` gets "invalid request", a malformed `error` or `result` fails the pending call
+(`decodeResult`), and malformed `params` get "invalid params" from `Client`. Only the end of
+the output or a read error stops the connection.
+
 The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and `Executor`
 (with `Shutdown` and `Close`). Design rules, agreed in review:
 
@@ -101,7 +109,10 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
   interrupting reply always waits, since it waits for its own canceled turn.
 - From `startTurn` until the turn is registered in `Executor.turns`, the task is in
   `Executor.waiting` with a cancel func. `Cancel` calls it with `errTaskCanceled`; `Execute`
-  then returns without an event, since `Cancel` emits `canceled`. Registration checks the cause
+  then yields its own `canceled` (`startFailed`) although `Cancel` emits one too: in cluster mode
+  the cancel runs as a separate execution, and an `Execute` ending without a terminal event would
+  hang its execution. In local mode both write to the same pipe; the second write gets
+  `ErrQueueClosed`, which a2asrv treats as already finished. Registration checks the cause
   under `Executor.mu`, so a canceled task never starts a prompt. In local mode the a2asrv also
   cancels the producer context, but in cluster mode `Cancel` may be the only signal.
 - `Config.Prompt` replaces the message parts sent as the prompt; the task history keeps the
@@ -258,8 +269,9 @@ closed `outputGrace` after exit in case a child inherited it; reads then report 
 write waits briefly for the reader to report why the agent stopped (`acp.Conn.writeErr`).
 
 The agent runs in its own process group. `Close` closes stdin, sends SIGTERM to the group after
-`closeGrace`, SIGKILL after another `closeGrace`, and always sends SIGTERM to the group once the
-agent exited, so children such as MCP servers don't outlive it.
+`closeGrace`, SIGKILL after another `closeGrace`, and once the agent exited always sends SIGTERM to
+the group and SIGKILL if any process remains in it after `closeGrace` (`stopProcessGroup`, which
+polls the group with signal 0), so children such as MCP servers don't outlive it.
 
 `acp.Conn.Call` checks for a delivered response before reporting `done`, because the reader
 delivers a response and then fails when the agent exits right after responding.
