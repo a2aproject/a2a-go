@@ -196,7 +196,7 @@ func ToJSONRPCError(err error) *Error {
 
 	return &Error{
 		Code:    code,
-		Message: utils.ErrorMessage(err),
+		Message: err.Error(),
 		Data:    rawData,
 	}
 }

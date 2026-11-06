@@ -16,7 +16,6 @@ package taskexec
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -142,12 +141,12 @@ func TestClusterFrontend_Execute(t *testing.T) {
 			req: &a2a.SendMessageRequest{
 				Message: &a2a.Message{TaskID: taskSeed.ID, ContextID: "not-" + taskSeed.ContextID},
 			},
-			wantErr: a2a.ErrInvalidParams,
+			wantErr: ErrContextMismatch,
 		},
 		{
 			name:    "task in terminal state",
 			req:     &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: terminalStateTaskSeed.ID}},
-			wantErr: a2a.ErrUnsupportedOperation,
+			wantErr: TerminalTaskError(a2a.TaskStateCompleted),
 		},
 		{
 			name:        "queue creation error",
@@ -200,7 +199,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 				if tc.wantErr == nil {
 					t.Fatalf("Execute() error = %v, want nil", err)
 				}
-				if !errors.Is(err, tc.wantErr) && !strings.Contains(err.Error(), tc.wantErr.Error()) {
+				if !strings.Contains(err.Error(), tc.wantErr.Error()) || a2a.ErrorReason(err) != a2a.ErrorReason(tc.wantErr) {
 					t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
 				}
 				if tc.queueClosed && !queueClosed {
@@ -338,7 +337,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		writeQueueErr  error
 		wantQueueWrite *workqueue.Payload
 		wantResult     *a2a.Task
-		wantErrContain string
+		wantErr        error
 	}{
 		{
 			name: "cancel running task",
@@ -364,7 +363,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				TaskID:        tid,
 				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
 			},
-			wantErrContain: "can't be canceled",
+			wantErr: NotCancelableError(a2a.TaskStateCompleted),
 		},
 		{
 			name:           "already canceled",
@@ -374,23 +373,23 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		{
 			name:           "non-cancelable state",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}},
-			wantErrContain: "can't be canceled",
+			wantErr:        NotCancelableError(a2a.TaskStateCompleted),
 		},
 		{
-			name:           "task not found",
-			getTaskErr:     a2a.ErrTaskNotFound,
-			wantErrContain: a2a.ErrTaskNotFound.Error(),
+			name:       "task not found",
+			getTaskErr: a2a.ErrTaskNotFound,
+			wantErr:    a2a.ErrTaskNotFound,
 		},
 		{
-			name:           "store error",
-			getTaskErr:     fmt.Errorf("store failed"),
-			wantErrContain: "store failed",
+			name:       "store error",
+			getTaskErr: fmt.Errorf("store failed"),
+			wantErr:    fmt.Errorf("store failed"),
 		},
 		{
 			name:           "work queue write error",
 			getTaskResults: []*a2a.Task{{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}},
 			writeQueueErr:  fmt.Errorf("write failed"),
-			wantErrContain: "write failed",
+			wantErr:        fmt.Errorf("write failed"),
 		},
 	}
 
@@ -423,16 +422,16 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 
 			gotTask, err := frontend.Cancel(t.Context(), &a2a.CancelTaskRequest{ID: tid})
 			if err != nil {
-				if tc.wantErrContain == "" {
+				if tc.wantErr == nil {
 					t.Fatalf("Cancel() error = %v, want nil", err)
 				}
-				if !strings.Contains(err.Error(), tc.wantErrContain) {
-					t.Fatalf("Cancel() error = %v, want %v", err, tc.wantErrContain)
+				if !strings.Contains(err.Error(), tc.wantErr.Error()) || a2a.ErrorReason(err) != a2a.ErrorReason(tc.wantErr) {
+					t.Fatalf("Cancel() error = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
-			if tc.wantErrContain != "" {
-				t.Fatalf("Cancel() error = nil, want %v", tc.wantErrContain)
+			if tc.wantErr != nil {
+				t.Fatalf("Cancel() error = nil, want %v", tc.wantErr)
 			}
 			if tc.wantQueueWrite == nil && len(wq.Payloads) != 0 {
 				t.Fatalf("Cancel() wrote %d payloads, want 0", len(wq.Payloads))

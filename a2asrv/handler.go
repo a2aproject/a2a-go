@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"iter"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -214,11 +216,13 @@ func WithClusterMode(config ClusterConfig) RequestHandlerOption {
 // NewHandler creates a new request handler.
 func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) RequestHandler {
 	h := &defaultRequestHandler{agentExecutor: executor}
-	ih := &InterceptedHandler{Handler: h, Logger: slog.Default()}
+	verboseErrors, _ := strconv.ParseBool(os.Getenv(VerboseErrorsEnv))
+	ih := &InterceptedHandler{Handler: h, Logger: slog.Default(), verboseErrors: verboseErrors}
 
 	for _, option := range options {
 		option(ih, h)
 	}
+	ih.Interceptors = append([]CallInterceptor{&errorSanitizer{verbose: ih.verboseErrors}}, ih.Interceptors...)
 	for _, interceptor := range ih.Interceptors {
 		if enforcer, ok := interceptor.(*agentCardEnforcer); ok && enforcer.capabilities.PushNotifications && (h.pushConfigStore == nil || h.pushSender == nil) {
 			panic("push notifications are enforced and supported but push config store or sender are not configured")

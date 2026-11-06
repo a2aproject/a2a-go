@@ -37,6 +37,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+
+	verboseErrors bool
 }
 
 type interceptBeforeResult[Req any, Resp any] struct {
