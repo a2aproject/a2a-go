@@ -48,16 +48,27 @@ func TestServiceParams_With(t *testing.T) {
 			additional: map[string][]string{"b": {"3"}, "C": {"4"}},
 			want:       map[string][]string{"a": {"1"}, "b": {"3"}, "c": {"4"}},
 		},
+		{
+			name:       "existing params and no additional values",
+			params:     NewServiceParams(map[string][]string{"A": {"1"}}),
+			additional: nil,
+			want:       map[string][]string{"a": {"1"}},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			before := maps.Collect(tc.params.List())
+
 			got := tc.params.With(tc.additional)
 
 			if diff := cmp.Diff(tc.want, maps.Collect(got.List())); diff != "" {
 				t.Fatalf("ServiceParams.With() wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(before, maps.Collect(tc.params.List())); diff != "" {
+				t.Fatalf("ServiceParams.With() modified receiver (-want +got) diff = %s", diff)
 			}
 		})
 	}
