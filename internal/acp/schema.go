@@ -120,6 +120,20 @@ type SessionConfigOption struct {
 	Name string `json:"name"`
 	// Type is "select" or "boolean".
 	Type string `json:"type"`
+	// CurrentValue is a string for select options and a bool for boolean options.
+	CurrentValue any `json:"currentValue,omitempty"`
+	// Options are the values of a select option, either all values or all groups.
+	Options []SessionConfigSelectOption `json:"options,omitempty"`
+}
+
+// SessionConfigSelectOption is a value of a select option, or a group of
+// values if Group is set.
+type SessionConfigSelectOption struct {
+	Value       string                      `json:"value,omitempty"`
+	Name        string                      `json:"name"`
+	Description string                      `json:"description,omitempty"`
+	Group       string                      `json:"group,omitempty"`
+	Options     []SessionConfigSelectOption `json:"options,omitempty"`
 }
 
 // SetConfigOptionRequest changes a session setting. Type is "boolean" for boolean options.
