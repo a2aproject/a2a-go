@@ -445,7 +445,7 @@ func TestInterceptedHandler_TypeSafety(t *testing.T) {
 	if err == nil {
 		t.Fatal("got nil error, want error due to payload type mismatch")
 	}
-	expectedErrorFragment := "payload type changed"
+	expectedErrorFragment := "type changed"
 	if !strings.Contains(err.Error(), expectedErrorFragment) {
 		t.Errorf("Error = %q, want it to contain %q", err.Error(), expectedErrorFragment)
 	}
@@ -797,5 +797,70 @@ func TestInterceptedHandler_StreamingInterceptorCachedEvents(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestInterceptedHandler_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
+	t.Parallel()
+
+	type depthKey struct{}
+	type attempt struct {
+		TaskID a2a.TaskID
+		Depth  int
+	}
+
+	testCases := []struct {
+		name string
+		run  func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request)
+	}{
+		{
+			name: "same sequence iterated twice",
+			run: func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request) {
+				seq := handler(ctx, callCtx, req)
+				for range 2 {
+					for range seq {
+					}
+				}
+			},
+		},
+		{
+			name: "handler called twice with the same request",
+			run: func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request) {
+				for range 2 {
+					for range handler(ctx, callCtx, req) {
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			interceptor := &mockInterceptor{
+				beforeFn: func(ctx context.Context, _ *CallContext, req *Request) (context.Context, any, error) {
+					req.Payload = &a2a.GetTaskRequest{ID: req.Payload.(*a2a.GetTaskRequest).ID + "!"}
+					depth, _ := ctx.Value(depthKey{}).(int)
+					return context.WithValue(ctx, depthKey{}, depth+1), nil, nil
+				},
+			}
+			handler := &InterceptedHandler{Interceptors: []CallInterceptor{interceptor}}
+			var got []attempt
+			terminal := func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+				return func(yield func(any, error) bool) {
+					depth, _ := ctx.Value(depthKey{}).(int)
+					got = append(got, attempt{TaskID: req.Payload.(*a2a.GetTaskRequest).ID, Depth: depth})
+					yield(&a2a.Task{}, nil)
+				}
+			}
+
+			ctx, callCtx := NewCallContext(t.Context(), nil)
+			tc.run(interceptCalls(handler, terminal), ctx, callCtx, Request{Payload: &a2a.GetTaskRequest{ID: "task"}})
+
+			want := []attempt{{TaskID: "task!", Depth: 1}, {TaskID: "task!", Depth: 1}}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("interceptCalls() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

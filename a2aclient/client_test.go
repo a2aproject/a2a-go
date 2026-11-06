@@ -1161,3 +1161,79 @@ func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
+	t.Parallel()
+
+	type depthKey struct{}
+	type attempt struct {
+		RequestIDs []string
+		TaskID     a2a.TaskID
+		Depth      int
+	}
+
+	testCases := []struct {
+		name string
+		run  func(handler callHandler, ctx context.Context, req Request)
+	}{
+		{
+			name: "same sequence iterated twice",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				seq := handler(ctx, req)
+				for range 2 {
+					for range seq {
+					}
+				}
+			},
+		},
+		{
+			name: "handler called twice with the same request",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				for range 2 {
+					for range handler(ctx, req) {
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			requests := 0
+			interceptor := &testInterceptor{
+				BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) {
+					requests++
+					req.ServiceParams.Append("x-request-id", fmt.Sprintf("id-%d", requests))
+					req.Payload = &a2a.GetTaskRequest{ID: req.Payload.(*a2a.GetTaskRequest).ID + "!"}
+					depth, _ := ctx.Value(depthKey{}).(int)
+					return context.WithValue(ctx, depthKey{}, depth+1), nil, nil
+				},
+			}
+			client := &Client{interceptors: []CallInterceptor{interceptor}}
+			var got []attempt
+			terminal := func(ctx context.Context, req Request) iter.Seq2[any, error] {
+				return func(yield func(any, error) bool) {
+					depth, _ := ctx.Value(depthKey{}).(int)
+					got = append(got, attempt{
+						RequestIDs: req.ServiceParams.Get("x-request-id"),
+						TaskID:     req.Payload.(*a2a.GetTaskRequest).ID,
+						Depth:      depth,
+					})
+					yield(&a2a.Task{}, nil)
+				}
+			}
+
+			ctx := t.Context()
+			tc.run(interceptCalls(client, terminal), ctx, client.newRequest(ctx, "GetTask", &a2a.GetTaskRequest{ID: "task"}))
+
+			want := []attempt{
+				{RequestIDs: []string{"id-1"}, TaskID: "task!", Depth: 1},
+				{RequestIDs: []string{"id-2"}, TaskID: "task!", Depth: 1},
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("interceptCalls() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
