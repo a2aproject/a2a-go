@@ -44,7 +44,7 @@ type agent struct {
 }
 
 type sessionInfo struct {
-	options map[string]string // config option ID -> type
+	options map[string]acp.SessionConfigOption // config option ID -> option
 	modes   bool
 	models  bool
 }
@@ -84,31 +84,31 @@ func (a *agent) setOptionsLocked(sessionID string, opts []acp.SessionConfigOptio
 	if info == nil || opts == nil {
 		return
 	}
-	info.options = map[string]string{}
+	info.options = map[string]acp.SessionConfigOption{}
 	for _, o := range opts {
-		info.options[o.ID] = o.Type
+		info.options[o.ID] = o
 	}
 }
 
 // configMethod returns the ACP method which changes a session setting, and
-// the type of the config option for session/set_config_option.
-func (a *agent) configMethod(sessionID, configID string) (string, string, bool) {
+// the config option for session/set_config_option.
+func (a *agent) configMethod(sessionID, configID string) (string, acp.SessionConfigOption, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	info := a.sessions[sessionID]
 	if info == nil {
-		return "", "", false
+		return "", acp.SessionConfigOption{}, false
 	}
-	if typ, ok := info.options[configID]; ok {
-		return acp.MethodSetConfigOption, typ, true
+	if opt, ok := info.options[configID]; ok {
+		return acp.MethodSetConfigOption, opt, true
 	}
 	switch {
 	case configID == "mode" && info.modes:
-		return acp.MethodSetMode, "", true
+		return acp.MethodSetMode, acp.SessionConfigOption{}, true
 	case configID == "model" && info.models:
-		return acp.MethodSetModel, "", true
+		return acp.MethodSetModel, acp.SessionConfigOption{}, true
 	}
-	return "", "", false
+	return "", acp.SessionConfigOption{}, false
 }
 
 // ErrNotOwner is returned, wrapped, by [Agent.Start] when another node owns
