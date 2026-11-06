@@ -21,7 +21,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
-	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 const maxCancelationAttempts = 10
@@ -50,10 +49,7 @@ func NewManager(store taskstore.Store, info a2a.TaskInfo, task *taskstore.Stored
 		return nil, fmt.Errorf("materializer must be set")
 	}
 	if task != nil {
-		taskCopy, err := utils.DeepCopy(task.Task)
-		if err != nil {
-			return nil, err
-		}
+		taskCopy := a2a.CopyTask(task.Task)
 		mgr.track(taskCopy, task.Version, taskCopy.Status.State)
 	}
 	return mgr, nil
@@ -161,10 +157,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 }
 
 func (mgr *Manager) create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
-	created, err := utils.DeepCopy(task)
-	if err != nil {
-		return taskstore.TaskVersionMissing, fmt.Errorf("failed to copy task: %w", err)
-	}
+	created := a2a.CopyTask(task)
 	version, err := mgr.store.Create(ctx, created)
 	if err != nil {
 		return taskstore.TaskVersionMissing, fmt.Errorf("failed to create task: %w", err)
