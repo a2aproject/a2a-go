@@ -61,9 +61,9 @@
 //
 // Permission requests and form elicitations pause the task in input-required
 // with a [Question] asked as a request of the Structured Input extension (see
-// package [github.com/a2aproject/a2a-go/v2/structuredinput]; advertise it in
-// the agent card with structuredinput.NewExtension), unless [Config.AutoAnswer]
-// decides them, for example with [ToolRules].
+// package [github.com/a2aproject/a2a-go/v2/a2aext/structuredinput]; advertise
+// it in the agent card with structuredinput.NewExtension), unless
+// [Config.AutoAnswer] decides them, for example with [ToolRules].
 //
 // The caller answers with an [Answer] as structured input, or by typing an option.
 // A message which isn't an answer at all interrupts the agent and is sent as a new
