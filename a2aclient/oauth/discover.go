@@ -122,8 +122,21 @@ func (f fetcher) requirementFromCard(ctx context.Context, card *a2a.AgentCard, b
 		return nil, errors.Join(errs...)
 	}
 	logSkipped(ctx, errs)
+	if len(errs) > 0 {
+		return nil, &skippedOptionsError{err: errors.Join(errs...)}
+	}
 	return nil, nil
 }
+
+// skippedOptionsError reports that the OAuth options of a card that also
+// accepts other credentials could not be resolved. The card then requires
+// nothing, but that is the result of a failure, which callers should not keep
+// as the card's answer.
+type skippedOptionsError struct{ err error }
+
+func (e *skippedOptionsError) Error() string { return e.err.Error() }
+
+func (e *skippedOptionsError) Unwrap() error { return e.err }
 
 func logSkipped(ctx context.Context, errs []error) {
 	for _, err := range errs {

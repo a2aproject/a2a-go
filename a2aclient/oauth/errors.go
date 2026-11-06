@@ -61,6 +61,61 @@ func isOAuthError(err error, code string) bool {
 	return errors.As(err, &oe) && oe.Code == code
 }
 
+// InteractionRequiredError reports that a request needs a grant that has to be
+// obtained with user interaction first, for example with
+// [Manager.NewAuthorizationRequest] or [Manager.StartDeviceAuthorization].
+type InteractionRequiredError struct {
+	// Requirement describes where and for what to obtain the grant.
+	Requirement *Requirement
+	// Reason explains why a stored grant could not be used; empty when there was none.
+	Reason string
+	// Err is the error the agent's 401 response produced; nil when the request
+	// was not sent.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *InteractionRequiredError) Error() string {
+	if e.Requirement == nil {
+		return "authorization required"
+	}
+	msg := fmt.Sprintf("%s requires authorization at %s", e.Requirement.Resource, e.Requirement.Endpoints.Issuer)
+	if len(e.Requirement.Scopes) > 0 {
+		msg += " for scopes " + strings.Join(e.Requirement.Scopes, " ")
+	}
+	if e.Reason != "" {
+		msg += ": " + e.Reason
+	}
+	return msg
+}
+
+// Unwrap returns the error the agent's response produced, so that, for
+// example, errors.Is(err, a2a.ErrUnauthenticated) holds for a 401.
+func (e *InteractionRequiredError) Unwrap() error { return e.Err }
+
+// FailureError reports a failed step of the authorization process: discovery,
+// metadata validation, reading or writing the grant store, taking its lock, or
+// token refresh.
+type FailureError struct {
+	// Err is the cause.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *FailureError) Error() string {
+	if e.Err == nil {
+		return "OAuth authorization failed"
+	}
+	return e.Err.Error()
+}
+
+// Unwrap returns the cause.
+func (e *FailureError) Unwrap() error { return e.Err }
+
+func failure(format string, args ...any) error {
+	return &FailureError{Err: fmt.Errorf(format, args...)}
+}
+
 // NoClientError reports that no client registration can be used with an
 // authorization server.
 type NoClientError struct {

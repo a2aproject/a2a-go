@@ -12,7 +12,7 @@ The SDK employs a **layered, transport-agnostic architecture**:
 
 ## 3. Directory Map
 *   **`a2a/`**: **Core Domain.** Universal primitives (`Task`, `Message`, `Event`) and their constructors (e.g., `a2a.NewMessage(...)`). Single source of truth.
-*   **`a2aclient/`**: **Client SDK.** High-level API structs and interfaces to connect to and interact with A2A servers.
+*   **`a2aclient/`**: **Client SDK.** High-level API structs and interfaces to connect to and interact with A2A servers. `a2aclient/oauth` adds OAuth grants to calls (see `OAUTH_CLIENT.md`).
 *   **`a2asrv/`**: **Server SDK.** Interfaces for server execution (`AgentExecutor`), handler patterns, middleware, and non-gRPC transports (REST, JSON-RPC).
 *   **`a2agrpc/` & `a2apb/`**: **gRPC Transport.** Logic for A2A over gRPC and underlying Protobuf definitions (`v1/pbconv/` for type conversions).
 *   **`integrations/executor/`**: Ready-made `AgentExecutor` implementations, e.g. `a2aacp` for Agent Client Protocol agents (see `ACP_EXECUTOR.md`).
