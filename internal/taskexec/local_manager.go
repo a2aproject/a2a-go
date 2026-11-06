@@ -34,10 +34,10 @@ import (
 var (
 	// ErrExecutionInProgress is returned when a caller attempts to start an execution for
 	// a Task concurrently with another execution.
-	ErrExecutionInProgress = errors.New("task execution is already in progress")
+	ErrExecutionInProgress = a2a.NewError(a2a.ErrUnsupportedOperation, "task execution is already in progress")
 	// ErrCancelationInProgress is returned when a caller attempts to start an execution for
 	// a Task concurrently with its cancelation.
-	ErrCancelationInProgress = errors.New("task cancelation is in progress")
+	ErrCancelationInProgress = a2a.NewError(a2a.ErrUnsupportedOperation, "task cancelation is in progress")
 )
 
 // localManager provides an API for executing and canceling tasks in a way that ensures

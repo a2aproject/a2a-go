@@ -590,6 +590,17 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 	png := a2a.NewRawPart([]byte("png"))
 	png.MediaType = "image/png"
 	link := a2a.NewFileURLPart("https://example.com/a.txt", "text/plain")
+	blob := a2a.NewRawPart([]byte{0x00, 0xff, 0xfe, 0x01})
+	blob.Filename = "blob.bin"
+	untypedText := a2a.NewRawPart([]byte("log line"))
+	untypedText.Filename = "app.log"
+	jsonFile := a2a.NewRawPart([]byte(`{"a":1}`))
+	jsonFile.MediaType = "application/json; charset=utf-8"
+	jsonFile.Filename = "a.json"
+	zip := a2a.NewRawPart([]byte("PK"))
+	zip.MediaType = "application/zip"
+	invalidText := a2a.NewRawPart([]byte{0xff, 0xfe})
+	invalidText.MediaType = "text/plain"
 
 	tests := []struct {
 		name       string
@@ -630,6 +641,48 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 			name:       "unsupported file",
 			parts:      []*a2a.Part{pdf},
 			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/pdf attachments")},
+		},
+		{
+			name:  "embedded text-like file",
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
+			parts: []*a2a.Part{jsonFile},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:a.json", MimeType: "application/json; charset=utf-8", Text: `{"a":1}`,
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:  "untyped text file",
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
+			parts: []*a2a.Part{untypedText},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:app.log", MimeType: "text/plain", Text: "log line",
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:       "untyped binary file",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{blob},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/octet-stream attachments")},
+		},
+		{
+			name:       "binary type the model may reject",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{zip},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/zip attachments")},
+		},
+		{
+			name:       "image the agent does not advertise",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{png},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept image/png attachments")},
+		},
+		{
+			name:       "text file which is not UTF-8",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{invalidText},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept text/plain attachments which are not UTF-8")},
 		},
 	}
 	for _, tc := range tests {
@@ -920,10 +973,11 @@ func (r *turnRecorder) snapshot() []string {
 func TestExecutor_TurnSpansInputRequired(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		cfg    Config
-		resume func(t *testing.T, e *Executor, h *fakeHarness, execCtx *a2asrv.ExecutorContext)
-		want   []string
+		name      string
+		cfg       Config
+		resume    func(t *testing.T, e *Executor, h *fakeHarness, execCtx *a2asrv.ExecutorContext)
+		want      []string
+		abandoned []eventSummary
 	}{
 		{
 			name: "answer",
@@ -947,17 +1001,19 @@ func TestExecutor_TurnSpansInputRequired(t *testing.T) {
 			want: []string{"start delete x.txt", "end delete x.txt"},
 		},
 		{
-			name:   "question timeout",
-			cfg:    Config{QuestionTimeout: 10 * time.Millisecond},
-			resume: func(*testing.T, *Executor, *fakeHarness, *a2asrv.ExecutorContext) {},
-			want:   []string{"start delete x.txt", "end delete x.txt"},
+			name:      "question timeout",
+			cfg:       Config{QuestionTimeout: 200 * time.Millisecond},
+			resume:    func(*testing.T, *Executor, *fakeHarness, *a2asrv.ExecutorContext) {},
+			want:      []string{"start delete x.txt", "end delete x.txt"},
+			abandoned: []eventSummary{failedWith("nobody answered the question in time, send a new message to continue")},
 		},
 		{
 			name: "agent exit",
 			resume: func(_ *testing.T, _ *Executor, h *fakeHarness, _ *a2asrv.ExecutorContext) {
 				h.agent(0).crash()
 			},
-			want: []string{"start delete x.txt", "end delete x.txt"},
+			want:      []string{"start delete x.txt", "end delete x.txt"},
+			abandoned: []eventSummary{failedWith("acp agent error: acp agent exited")},
 		},
 	}
 	for _, tc := range tests {
@@ -983,6 +1039,15 @@ func TestExecutor_TurnSpansInputRequired(t *testing.T) {
 			}}
 			rec := &turnRecorder{}
 			tc.cfg.Turn = rec.turn
+			var abandonedMu sync.Mutex
+			var abandoned []eventSummary
+			var abandonedTasks []a2a.TaskID
+			tc.cfg.Abandoned = func(_ context.Context, ev *a2a.TaskStatusUpdateEvent) {
+				abandonedMu.Lock()
+				defer abandonedMu.Unlock()
+				abandoned = append(abandoned, summarize(ev))
+				abandonedTasks = append(abandonedTasks, ev.TaskID)
+			}
 			e := newTestExecutor(t, h, tc.cfg)
 			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
 			run(t, execute(e, execCtx))
@@ -995,6 +1060,17 @@ func TestExecutor_TurnSpansInputRequired(t *testing.T) {
 			waitFor(t, func() bool { return len(rec.snapshot()) >= len(tc.want) })
 			if diff := cmp.Diff(tc.want, rec.snapshot()); diff != "" {
 				t.Fatalf("Config.Turn calls wrong result (-want +got) diff = %s", diff)
+			}
+			abandonedMu.Lock()
+			gotAbandoned, gotTasks := abandoned, abandonedTasks
+			abandonedMu.Unlock()
+			if diff := cmp.Diff(tc.abandoned, gotAbandoned); diff != "" {
+				t.Fatalf("Config.Abandoned calls wrong result (-want +got) diff = %s", diff)
+			}
+			for _, id := range gotTasks {
+				if id != execCtx.TaskID {
+					t.Fatalf("Config.Abandoned() task = %s, want %s", id, execCtx.TaskID)
+				}
 			}
 			for range len(tc.want) / 2 {
 				<-scriptsDone
