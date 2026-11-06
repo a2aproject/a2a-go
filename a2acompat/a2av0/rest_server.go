@@ -438,7 +438,7 @@ func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	data, err := json.Marshal(FromV1AgentCard(result))
+	data, err := json.Marshal(toCompatCard(result))
 	if err != nil {
 		writeRESTCompatError(ctx, rw, fmt.Errorf("failed to marshal agent card: %w", err), a2a.TaskID(""))
 		return
