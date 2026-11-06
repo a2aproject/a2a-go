@@ -735,7 +735,7 @@ func TestNewExecutor_InvalidAgent(t *testing.T) {
 		{name: "no agent", agent: nil, want: "agent is required"},
 		{name: "no command", agent: Process{}, want: "Process.Argv is empty"},
 		{name: "agent exits", agent: Process{Argv: []string{"true"}}, want: "initializing acp agent: acp agent exited"},
-		{name: "agent prints non-json", agent: Process{Argv: []string{"echo", "hello"}}, want: "initializing acp agent: invalid character"},
+		{name: "agent prints non-json and exits", agent: Process{Argv: []string{"echo", "hello"}}, want: "initializing acp agent: acp agent exited"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

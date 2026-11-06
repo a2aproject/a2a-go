@@ -25,6 +25,14 @@ delegates to it keeps the logging.
 ("method not found") and malformed ones ("invalid params") itself; `executor.agentHandler`
 routes the rest to turns.
 
+`Conn` reads stdout line by line, with no length limit, and keeps reading after bad input: lines
+which are not JSON-RPC messages (banners or logs of wrapper scripts, a notification with a
+mistyped `method`) are logged as warnings and skipped. Members are decoded separately
+(`wireMessage`), so a malformed member fails only its request: a request with a mistyped
+`method` gets "invalid request", a malformed `error` or `result` fails the pending call
+(`decodeResult`), and malformed `params` get "invalid params" from `Client`. Only the end of
+the output or a read error stops the connection.
+
 The API is `NewExecutor(ctx, agent Agent, cfg *Config)` (nil `cfg` is valid) and `Executor`
 (with `Shutdown` and `Close`). Design rules, agreed in review:
 
