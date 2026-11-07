@@ -65,7 +65,13 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}()
 
 	var payload jsonrpc.ServerRequest
-	if err := utils.DecodeJSON(req.Body, &payload); err != nil {
+	dec := json.NewDecoder(req.Body)
+	dec.UseNumber()
+	if err := dec.Decode(&payload); err != nil {
+		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
+		return
+	}
+	if err := utils.ExpectEOF(dec); err != nil {
 		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
 		return
 	}
