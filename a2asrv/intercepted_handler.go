@@ -20,10 +20,13 @@ import (
 	"iter"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/mod/semver"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -37,12 +40,6 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
-}
-
-type interceptBeforeResult[Req any, Resp any] struct {
-	reqOverride   Req
-	earlyResponse *Resp
-	earlyErr      error
 }
 
 var _ RequestHandler = (*InterceptedHandler)(nil)
@@ -103,25 +100,7 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.Event](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-		for event, err := range h.Handler.SendStreamingMessage(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, callCtx, h, req, h.Handler.SendStreamingMessage, yield)
 	}
 }
 
@@ -134,25 +113,7 @@ func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.Subsc
 			return
 		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.Event](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-		for event, err := range h.Handler.SubscribeToTask(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, callCtx, h, req, h.Handler.SubscribeToTask, yield)
 	}
 }
 
@@ -181,20 +142,10 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig", req.Tenant)
 	ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
-	if err := checkProtocolVersion(callCtx); err != nil {
-		return err
-	}
-	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		return res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return nil
-	}
-	err := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
-	var emptyResponse struct{}
-	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
-	return errOverride
+	_, err := doCall(ctx, callCtx, h, req, func(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) (struct{}, error) {
+		return struct{}{}, h.Handler.DeleteTaskPushConfig(ctx, req)
+	})
+	return err
 }
 
 // GetExtendedAgentCard implements RequestHandler.
@@ -204,71 +155,65 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
-func interceptBefore[Req any, Resp any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
-	request := &Request{Payload: payload}
-
-	var zeroReq Req
-	outcome := interceptBeforeResult[Req, Resp]{
-		reqOverride:   zeroReq,
-		earlyResponse: nil,
-		earlyErr:      nil,
-	}
-
-	for i, interceptor := range h.Interceptors {
-		localCtx, result, err := interceptor.Before(ctx, callCtx, request)
-		if err != nil || result != nil {
-			var typedResult Resp
-			if result != nil {
-				r, ok := result.(Resp)
-				if !ok {
-					outcome.earlyErr = fmt.Errorf("result type changed from %T to %T", result, typedResult)
-					return ctx, outcome
+func interceptCalls(h *InterceptedHandler, next callHandler) callHandler {
+	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			ctx, req := ctx, req
+			for i, interceptor := range h.Interceptors {
+				localCtx, result, err := interceptor.Before(ctx, callCtx, &req)
+				if err != nil || result != nil {
+					yield(interceptAfter(ctx, h.Interceptors[:i+1], callCtx, result, err))
+					return
 				}
-				typedResult = r
+				ctx = localCtx
 			}
-			interceptors := h.Interceptors[:i+1]
-			resp, err := interceptAfter(ctx, interceptors, callCtx, typedResult, err)
-			outcome.earlyResponse = &resp
-			outcome.earlyErr = err
-			return ctx, outcome
+			for payload, err := range next(ctx, callCtx, req) {
+				if !yield(interceptAfter(ctx, h.Interceptors, callCtx, payload, err)) {
+					return
+				}
+			}
 		}
-		ctx = localCtx
 	}
-
-	if request.Payload == nil {
-		return ctx, outcome
-	}
-
-	typed, ok := request.Payload.(Req)
-	if !ok {
-		outcome.earlyErr = fmt.Errorf("payload type changed from %T to %T", payload, request.Payload)
-		return ctx, outcome
-	}
-
-	outcome.reqOverride = typed
-	return ctx, outcome
 }
 
-func interceptAfter[T any](ctx context.Context, interceptors []CallInterceptor, callCtx *CallContext, payload T, responseErr error) (T, error) {
+func interceptAfter(ctx context.Context, interceptors []CallInterceptor, callCtx *CallContext, payload any, responseErr error) (any, error) {
 	response := &Response{Payload: payload, Err: responseErr}
-
-	var zero T
 	for _, interceptor := range slices.Backward(interceptors) {
 		if err := interceptor.After(ctx, callCtx, response); err != nil {
-			return zero, err
+			return nil, err
 		}
 	}
+	return response.Payload, response.Err
+}
 
-	if response.Payload == nil {
-		return zero, response.Err
+func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) callHandler {
+	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			yield(handlerCall(ctx, typed))
+		}
 	}
+}
 
-	typed, ok := response.Payload.(T)
-	if !ok {
-		return zero, fmt.Errorf("payload type changed from %T to %T", payload, response.Payload)
+func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) callHandler {
+	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			for event, err := range handlerCall(ctx, typed) {
+				if !yield(event, err) {
+					return
+				}
+			}
+		}
 	}
-
-	return typed, response.Err
 }
 
 // withLoggerContext is a private utility function which attaches an slog.Logger with a2a-specific attributes
@@ -307,24 +252,34 @@ func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) (Resp, error),
 ) (Resp, error) {
+	var zero Resp
 	if err := checkProtocolVersion(callCtx); err != nil {
-		var zero Resp
 		return zero, err
 	}
-	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		var zero Resp
-		return zero, res.earlyErr
+	for payload, err := range interceptCalls(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+		return utils.CastResult[Resp](payload, err)
 	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
+	return zero, fmt.Errorf("%s produced no result", callCtx.Method())
+}
+
+func streamCall[Req any](
+	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
+	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error], yield func(a2a.Event, error) bool,
+) {
+	for payload, err := range interceptCalls(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+		event, err := utils.CastResult[a2a.Event](payload, err)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if !yield(event, nil) {
+			return
+		}
 	}
-	response, err := handlerCall(ctx, res.reqOverride)
-	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
 }
 
 // checkProtocolVersion checks if the client's protocol version is compatible with the server's.
-// Unset or empty A2A-Version values are treated as "0.3".
+// Unset or empty A2A-Version values are treated as "0.3". Only Major.Minor are compared.
 func checkProtocolVersion(callCtx *CallContext) error {
 	if callCtx.ProtocolVersion == "" {
 		return nil
@@ -337,8 +292,16 @@ func checkProtocolVersion(callCtx *CallContext) error {
 	if len(versions) == 1 && versions[0] != "" {
 		clientVersion = a2a.ProtocolVersion(versions[0])
 	}
-	if clientVersion != callCtx.ProtocolVersion {
+	if mm := majorMinor(clientVersion); mm == "" || mm != majorMinor(callCtx.ProtocolVersion) {
 		return fmt.Errorf("%w: requested %q, served %q", a2a.ErrVersionNotSupported, clientVersion, callCtx.ProtocolVersion)
 	}
 	return nil
+}
+
+func majorMinor(v a2a.ProtocolVersion) string {
+	s := string(v)
+	if !strings.HasPrefix(s, "v") {
+		s = "v" + s
+	}
+	return semver.MajorMinor(s)
 }

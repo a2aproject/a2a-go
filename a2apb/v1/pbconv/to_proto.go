@@ -628,6 +628,7 @@ func toProtoAuthzOAuthCodeFlow(f *a2a.AuthorizationCodeOAuthFlow) *a2apb.OAuthFl
 				TokenUrl:         f.TokenURL,
 				RefreshUrl:       f.RefreshURL,
 				Scopes:           f.Scopes,
+				PkceRequired:     f.PKCERequired,
 			},
 		},
 	}

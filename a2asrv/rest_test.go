@@ -536,6 +536,7 @@ func TestRESTTenantEscapedIdentifiers(t *testing.T) {
 		{"escaped percent", "/{*}", "/tenant%252Fid/tasks/task%252Fid", "tenant%2Fid", "task%2Fid"},
 		{"literal prefix", "/my location/{*}", "/my%20location/tenant/tasks/task%2Fid", "tenant", "task/id"},
 		{"multi-segment tenant", "/{locations/*/projects/*}", "/locations/us%2Feast/projects/project/tasks/task%2Fid", "locations/us/east/projects/project", "task/id"},
+		{"multi-segment tenant escaped as single segment", "/{locations/*/projects/*}", "/locations%2Fus%2Fprojects%2Fproject/tasks/task%2Fid", "locations/us/projects/project", "task/id"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

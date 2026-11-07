@@ -773,16 +773,17 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		content = *wrapper.Raw
 		n++
 	}
-	if len(wrapper.Data) > 0 {
+	if wrapper.URL != nil && *wrapper.URL != "" {
+		content = *wrapper.URL
+		n++
+	}
+	// An explicit null data value is content only when no other field is set.
+	if len(wrapper.Data) > 0 && (n == 0 || string(wrapper.Data) != "null") {
 		var data any
 		if err := json.Unmarshal(wrapper.Data, &data); err != nil {
 			return err
 		}
 		content = Data{Value: data}
-		n++
-	}
-	if wrapper.URL != nil && *wrapper.URL != "" {
-		content = *wrapper.URL
 		n++
 	}
 

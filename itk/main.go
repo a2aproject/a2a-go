@@ -575,7 +575,8 @@ func run() error {
 	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
 	cardProducer := a2av0.NewStaticAgentCardProducer(agentCard)
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
+	cacheControlOption := a2asrv.WithAgentCardCacheControl("public, max-age=3600") 
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer, cacheControlOption))
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", *httpPort),
