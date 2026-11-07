@@ -17,6 +17,7 @@ package a2aclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"reflect"
 	"strings"
@@ -1091,6 +1092,34 @@ func TestClient_intercept_EarlyReturn(t *testing.T) {
 	}
 }
 
+func TestClient_StreamingInterceptorCachedEvents(t *testing.T) {
+	t.Parallel()
+	task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: "task", ContextID: "context"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("request")))
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		for _, event := range []a2a.Event{task, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("cached")), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), a2a.NewArtifactEvent(task, a2a.NewTextPart("cached"))} {
+			t.Run(fmt.Sprintf("%s/%T", method, event), func(t *testing.T) {
+				t.Parallel()
+				interceptor := &testInterceptor{BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) { return ctx, event, nil }}
+				client := newTestClient(&testTransport{}, interceptor)
+				stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+				if method == "SubscribeToTask" {
+					stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+				}
+				var got []a2a.Event
+				for e, err := range stream {
+					if err != nil {
+						t.Fatalf("client.%s() error = %v, want nil", method, err)
+					}
+					got = append(got, e)
+				}
+				if diff := cmp.Diff([]a2a.Event{event}, got); diff != "" {
+					t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+				}
+			})
+		}
+	}
+}
+
 func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
 	t.Parallel()
 	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
@@ -1128,6 +1157,82 @@ func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
 			}
 			if diff := cmp.Diff([]a2a.Event{fallback}, got); diff != "" {
 				t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+			}
+		})
+	}
+}
+
+func TestClient_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
+	t.Parallel()
+
+	type depthKey struct{}
+	type attempt struct {
+		RequestIDs []string
+		TaskID     a2a.TaskID
+		Depth      int
+	}
+
+	testCases := []struct {
+		name string
+		run  func(handler callHandler, ctx context.Context, req Request)
+	}{
+		{
+			name: "same sequence iterated twice",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				seq := handler(ctx, req)
+				for range 2 {
+					for range seq {
+					}
+				}
+			},
+		},
+		{
+			name: "handler called twice with the same request",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				for range 2 {
+					for range handler(ctx, req) {
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			requests := 0
+			interceptor := &testInterceptor{
+				BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) {
+					requests++
+					req.ServiceParams.Append("x-request-id", fmt.Sprintf("id-%d", requests))
+					req.Payload = &a2a.GetTaskRequest{ID: req.Payload.(*a2a.GetTaskRequest).ID + "!"}
+					depth, _ := ctx.Value(depthKey{}).(int)
+					return context.WithValue(ctx, depthKey{}, depth+1), nil, nil
+				},
+			}
+			client := &Client{interceptors: []CallInterceptor{interceptor}}
+			var got []attempt
+			terminal := func(ctx context.Context, req Request) iter.Seq2[any, error] {
+				return func(yield func(any, error) bool) {
+					depth, _ := ctx.Value(depthKey{}).(int)
+					got = append(got, attempt{
+						RequestIDs: req.ServiceParams.Get("x-request-id"),
+						TaskID:     req.Payload.(*a2a.GetTaskRequest).ID,
+						Depth:      depth,
+					})
+					yield(&a2a.Task{}, nil)
+				}
+			}
+
+			ctx := t.Context()
+			tc.run(interceptCalls(client, terminal), ctx, client.newRequest(ctx, "GetTask", &a2a.GetTaskRequest{ID: "task"}))
+
+			want := []attempt{
+				{RequestIDs: []string{"id-1"}, TaskID: "task!", Depth: 1},
+				{RequestIDs: []string{"id-2"}, TaskID: "task!", Depth: 1},
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("interceptCalls() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}

@@ -178,7 +178,9 @@ There are three distinct cancellation scenarios, all handled by `localManager.Ca
 4. Waits for the execution's promise to resolve: `run.result.wait(ctx)`.
 5. Copies the execution result to the cancelation result.
 
-The cancelation result is the same as the execution result. If the execution was already completing with a different state, the cancellation might not take effect (see TODO comment at line 329-334).
+The cancelation result is the same as the execution result. If the execution was already completing with a different state, the cancellation might not take effect (see the TODO comment in `handleCancelWithConcurrentRun`).
+
+`AgentExecutor.Cancel` implementations often stop the running work before yielding their `CANCELED` event (e.g. `a2aacp` cancels the ACP turn first). The agent can then end the execution with its own terminal event, and `cleanupExecution` closes the pipe before the canceler writes. The write fails with `eventqueue.ErrQueueClosed`, which `handleCancelWithConcurrentRun` treats as "the execution already finished" and resolves the cancelation to the execution result instead of failing. Any other canceler error fails the cancelation.
 
 **Scenario 3: Duplicate Cancel (Cancelation Already in Progress)**
 
@@ -249,8 +251,10 @@ The event flow through the pipeline is identical to local mode. The difference i
 
 1. Loads the task from the store and validates it's cancelable.
 2. Writes a `Payload{Type: "cancel"}` to the work queue.
-3. Creates a `remoteSubscription` and iterates events until it finds a terminal event.
+3. Creates a cancel `remoteSubscription` (`newRemoteCancelSubscription`) and iterates events until it finds a final event. The subscription emits the task snapshot only if it is terminal, and skips events not newer than the version loaded in step 1. A non-terminal snapshot is not emitted, because `IsFinal` treats `INPUT_REQUIRED` as final and the snapshot would be returned as a cancelation refusal.
 4. Returns the terminal task, or on error falls back to loading the latest task from the store.
+
+The version used for filtering is loaded before the cancel request is written, because a fast worker may persist a refusal before the subscription loads its snapshot. Execute and Resubscribe subscriptions still emit the snapshot first.
 
 Unlike `localManager`, there is no in-process coalescing of duplicate cancels, no check for active executions, and no promise-based result sharing. The work queue and OCC handle coordination.
 
@@ -281,7 +285,7 @@ if req.PrevVersion != TaskVersionMissing && stored.version != req.PrevVersion {
 }
 ```
 
-### OCC Retry Loop for Cancellation (`updateStatus`, taskupdate/manager.go:159)
+### OCC Retry Loop for Cancellation (`updateStatus`, taskupdate/manager.go:133)
 
 When updating task status to `TaskStateCanceled` and hitting `ErrConcurrentModification`:
 
@@ -291,6 +295,10 @@ When updating task status to `TaskStateCanceled` and hitting `ErrConcurrentModif
 4. Otherwise: retries the update with the new version, up to `maxCancelationAttempts` (10).
 
 This retry loop ONLY applies to cancelation status updates. Other status updates (completed, failed, etc.) do not retry on OCC conflicts.
+
+When every attempt conflicts, the returned error wraps `ErrConcurrentModification`. The processor handles it like any other OCC conflict (see below), so `CancelTask` fails and the task keeps running instead of being moved to `FAILED`.
+
+An attempt succeeds only if no other update is committed between the version read in `Store.Get` and the version check in `Store.Update`. The in-memory store deep-copies the whole task in both calls, so this window grows with the task. If the window is longer than the interval between a concurrent execution's updates, every attempt conflicts, and more attempts would not help because the conflicts are correlated. Only cancelations that don't go through the execution's pipe race this way: a cancel handled by another server instance sharing the store, or any cancel in cluster mode.
 
 ### OCC Error Handling in the Processor (agentexec.go:380)
 

@@ -72,6 +72,9 @@ func (sp *ServiceParams) With(additional map[string][]string) *ServiceParams {
 	if len(additional) == 0 {
 		return sp
 	}
+	if sp == nil {
+		return NewServiceParams(additional)
+	}
 
 	merged := make(map[string][]string, len(additional)+len(sp.kv))
 	maps.Copy(merged, sp.kv)

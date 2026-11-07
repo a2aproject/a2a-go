@@ -112,6 +112,74 @@ func TestFromV1Part(t *testing.T) {
 	}
 }
 
+func TestAgentCard_V1ToLegacyToV1(t *testing.T) {
+	t.Parallel()
+	scopes := map[string]string{"read": "Read"}
+	tests := []struct {
+		name string
+		card *a2a.AgentCard
+		want *a2a.AgentCard
+	}{
+		{
+			name: "security schemes and requirements",
+			card: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{{URL: "https://agent", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: Version}},
+				SecuritySchemes: a2a.NamedSecuritySchemes{
+					"apiKey":   a2a.APIKeySecurityScheme{Name: "X-Key", Location: a2a.APIKeySecuritySchemeLocationHeader, Description: "key"},
+					"http":     a2a.HTTPAuthSecurityScheme{Scheme: "Bearer", BearerFormat: "JWT"},
+					"oidc":     a2a.OpenIDConnectSecurityScheme{OpenIDConnectURL: "https://auth/.well-known"},
+					"mtls":     a2a.MutualTLSSecurityScheme{Description: "mtls"},
+					"authCode": a2a.OAuth2SecurityScheme{Flows: a2a.AuthorizationCodeOAuthFlow{AuthorizationURL: "https://auth/a", TokenURL: "https://auth/t", Scopes: scopes}},
+					"client":   a2a.OAuth2SecurityScheme{Flows: a2a.ClientCredentialsOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}},
+					"implicit": a2a.OAuth2SecurityScheme{Flows: a2a.ImplicitOAuthFlow{AuthorizationURL: "https://auth/a", Scopes: scopes}},
+					"password": a2a.OAuth2SecurityScheme{Flows: a2a.PasswordOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}, Oauth2MetadataURL: "https://auth/meta"},
+				},
+				SecurityRequirements: a2a.SecurityRequirementsOptions{{"http": {}}, {"apiKey": {}, "mtls": {}}},
+				Skills:               []a2a.AgentSkill{{ID: "s1", SecurityRequirements: a2a.SecurityRequirementsOptions{{"client": {"read"}}}}},
+			},
+		},
+		{
+			name: "v0.3 interfaces are preferred",
+			card: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{
+					{URL: "https://agent/v1", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: a2a.Version},
+					{URL: "https://agent/v03", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: Version},
+					{URL: "https://agent/v03", ProtocolBinding: a2a.TransportProtocolHTTPJSON, ProtocolVersion: Version},
+				},
+			},
+			want: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{
+					{URL: "https://agent/v03", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: Version},
+					{URL: "https://agent/v03", ProtocolBinding: a2a.TransportProtocolHTTPJSON, ProtocolVersion: Version},
+				},
+			},
+		},
+		{
+			name: "v1.0 interfaces are kept without v0.3 interfaces",
+			card: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{
+					{URL: "https://agent", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: a2a.Version},
+					{URL: "https://agent", ProtocolBinding: a2a.TransportProtocolHTTPJSON, ProtocolVersion: a2a.Version},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			want := tc.want
+			if want == nil {
+				want = tc.card
+			}
+			got := ToV1AgentCard(FromV1AgentCard(tc.card))
+			if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("ToV1AgentCard(FromV1AgentCard()) wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestAgentCardSkillsConversion(t *testing.T) {
 	t.Parallel()
 	legacyCard := &a2alegacy.AgentCard{

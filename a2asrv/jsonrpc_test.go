@@ -35,6 +35,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestJSONRPC_RequestRouting(t *testing.T) {
@@ -475,7 +476,10 @@ func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
 
 			want := mustUnmarshal(t, mustMarshal(t, tc.want))
 			got := mustUnmarshal(t, rw.Body.Bytes())
-			if diff := cmp.Diff(want, got); diff != "" {
+			ignoreTimestamp := cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
+				return k == "timestamp"
+			})
+			if diff := cmp.Diff(want, got, ignoreTimestamp); diff != "" {
 				t.Fatalf("handler.ServeHTTP() wrong result (-want +got) diff = %s", diff)
 			}
 		})

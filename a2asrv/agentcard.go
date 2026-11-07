@@ -83,12 +83,15 @@ func WithExtendedAgentCardProducer(cardProducer ExtendedAgentCardProducer) Reque
 // NewStaticAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard]
 // which is not expected to change while the program is running.
 // The information contained in this card can be queried from any origin.
+// Responses carry a weak ETag and honor If-None-Match.
 // The method panics if the argument json marhsaling fails.
-func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
+func NewStaticAgentCardHandler(card *a2a.AgentCard, opts ...AgentCardHandlerOption) http.Handler {
 	bytes, err := json.Marshal(card)
 	if err != nil {
 		panic(err.Error())
 	}
+	cfg := newAgentCardHandlerConfig(opts)
+	etag := cardETag(card)
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
@@ -100,13 +103,15 @@ func NewStaticAgentCardHandler(card *a2a.AgentCard) http.Handler {
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		writeAgentCardBytes(ctx, rw, req, bytes)
+		writeAgentCardResponse(ctx, rw, req, bytes, etag, cfg)
 	})
 }
 
 // NewAgentCardHandler creates an [http.Handler] implementation for serving a PUBLIC [a2a.AgentCard].
 // The information contained in this card can be queried from any origin.
-func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
+// Responses carry a weak ETag and honor If-None-Match.
+func NewAgentCardHandler(producer AgentCardProducer, opts ...AgentCardHandlerOption) http.Handler {
+	cfg := newAgentCardHandlerConfig(opts)
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ctx := attachLogger(req)
 		if req.Method == "OPTIONS" {
@@ -126,7 +131,7 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 				rw.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			writeAgentCardBytes(ctx, rw, req, cardBytes)
+			writeAgentCardResponse(ctx, rw, req, cardBytes, rawJSONETag(cardBytes), cfg)
 			return
 		}
 
@@ -142,7 +147,7 @@ func NewAgentCardHandler(producer AgentCardProducer) http.Handler {
 			rw.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		writeAgentCardBytes(ctx, rw, req, cardBytes)
+		writeAgentCardResponse(ctx, rw, req, cardBytes, cardETag(card), cfg)
 	})
 }
 
@@ -163,20 +168,31 @@ func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Access-Control-Max-Age", "86400")
 }
 
-func writeAgentCardBytes(ctx context.Context, rw http.ResponseWriter, req *http.Request, bytes []byte) {
+func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *http.Request, body []byte, etag string, cfg *agentCardHandlerConfig) {
 	writeCORSHeaders(rw, req)
+	if cfg.cacheControl != "" {
+		rw.Header().Set("Cache-Control", cfg.cacheControl)
+	}
+	if etag != "" {
+		rw.Header().Set("ETag", etag)
+		if ifNoneMatchHits(req.Header.Get("If-None-Match"), etag) {
+			rw.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
 	rw.Header().Set("Content-Type", "application/json")
-	if _, err := rw.Write(bytes); err != nil {
+	if _, err := rw.Write(body); err != nil {
 		log.Error(ctx, "failed to write agent card response", err)
 	}
 }
 
 func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {
+	// Sent without Origin too, so that shared caches don't serve the "*" response to credentialed requests.
+	rw.Header().Add("Vary", "Origin")
 	origin := req.Header.Get("Origin")
 	if origin != "" {
 		rw.Header().Set("Access-Control-Allow-Origin", origin)
 		rw.Header().Set("Access-Control-Allow-Credentials", "true")
-		rw.Header().Set("Vary", "Origin")
 	} else {
 		rw.Header().Set("Access-Control-Allow-Origin", "*")
 	}

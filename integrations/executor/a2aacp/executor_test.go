@@ -21,14 +21,20 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aext/structuredinput"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -491,7 +497,7 @@ func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
 		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
 	}
-	if diff := cmp.Diff([]eventSummary{submitted}, <-queuedResult); diff != "" {
+	if diff := cmp.Diff([]eventSummary{submitted, canceled}, <-queuedResult); diff != "" {
 		t.Fatalf("Executor.Execute() queued turn wrong result (-want +got) diff = %s", diff)
 	}
 	close(release)
@@ -499,6 +505,108 @@ func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	if _, _, _, p := h.agent(0).snapshot(); len(p) != 1 {
 		t.Fatalf("session/prompt count = %d, want 1", len(p))
 	}
+}
+
+func TestExecutor_CancelQueuedTurnInClusterMode(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "first" {
+			<-release
+		}
+		s.end(acp.StopEndTurn)
+	}}
+	e := newTestExecutor(t, h, Config{})
+	var handle workqueue.HandlerFn
+	handled := make(chan *workqueue.Payload, 3)
+	queue := testutil.NewTestWorkQueue()
+	queue.RegisterHandlerFunc = func(_ workqueue.HandlerConfig, fn workqueue.HandlerFn) { handle = fn }
+	queue.WriteFunc = func(ctx context.Context, p *workqueue.Payload) (a2a.TaskID, error) {
+		go func() {
+			if _, err := handle(context.WithoutCancel(ctx), p); err != nil {
+				t.Errorf("workqueue.HandlerFn() error = %v", err)
+			}
+			handled <- p
+		}()
+		return p.TaskID, nil
+	}
+	handler := a2asrv.NewHandler(e, a2asrv.WithClusterMode(a2asrv.ClusterConfig{
+		QueueManager: eventqueue.NewInMemoryManager(),
+		WorkQueue:    queue,
+		TaskStore:    taskstore.NewInMemory(nil),
+	}))
+	send := func(text string) *a2a.Task {
+		msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart(text))
+		msg.ContextID = "ctx"
+		req := &a2a.SendMessageRequest{Message: msg, Config: &a2a.SendMessageConfig{ReturnImmediately: true}}
+		res, err := handler.SendMessage(t.Context(), req)
+		if err != nil {
+			t.Fatalf("handler.SendMessage() error = %v", err)
+		}
+		task, ok := res.(*a2a.Task)
+		if !ok {
+			t.Fatalf("handler.SendMessage() = %T, want *a2a.Task", res)
+		}
+		return task
+	}
+	waitHandled := func(typ workqueue.PayloadType, taskID a2a.TaskID) {
+		timeout := time.After(testTimeout)
+		for {
+			select {
+			case p := <-handled:
+				if p.Type == typ && p.TaskID == taskID {
+					return
+				}
+			case <-timeout:
+				t.Fatalf("%s payload of task %s not handled", typ, taskID)
+			}
+		}
+	}
+
+	first := send("first")
+	waitFor(t, func() bool { _, _, _, p := h.agent(0).snapshot(); return len(p) == 1 })
+	queued := send("second")
+	waitFor(t, func() bool { return e.isWaiting(queued.ID) })
+
+	got, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: queued.ID})
+
+	if err != nil {
+		t.Fatalf("handler.CancelTask() error = %v", err)
+	}
+	if got.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("handler.CancelTask() state = %v, want %v", got.Status.State, a2a.TaskStateCanceled)
+	}
+	waitHandled(workqueue.PayloadTypeExecute, queued.ID)
+	close(release)
+	waitHandled(workqueue.PayloadTypeExecute, first.ID)
+}
+
+func TestExecutor_CancelInterruptingReply(t *testing.T) {
+	t.Parallel()
+	release, ended := make(chan struct{}), make(chan struct{})
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		defer close(ended)
+		s.askPermission(rmToolCall)
+		<-release
+		s.end(acp.StopCancelled)
+	}}
+	e := newTestExecutor(t, h, Config{})
+	execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+	run(t, execute(e, execCtx))
+	replyResult := make(chan []eventSummary, 1)
+	go func() { replyResult <- run(t, execute(e, followUp(execCtx, a2a.NewTextPart("rename it instead")))) }()
+	waitFor(t, func() bool { return e.isWaiting(execCtx.TaskID) })
+
+	got := run(t, cancelTask(e, execCtx))
+
+	if diff := cmp.Diff([]eventSummary{canceled}, got); diff != "" {
+		t.Fatalf("Executor.Cancel() wrong result (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]eventSummary{canceled}, <-replyResult); diff != "" {
+		t.Fatalf("Executor.Execute() interrupting reply wrong result (-want +got) diff = %s", diff)
+	}
+	close(release)
+	<-ended
 }
 
 func agentExited(e *Executor) bool {
@@ -547,6 +655,23 @@ func TestExecutor_RestartsAgent(t *testing.T) {
 	}
 }
 
+func TestExecutor_RestartsAgentThatExitedUnnoticed(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{})
+	run(t, execute(e, newExecCtx("ctx1", a2a.NewTextPart("one"))))
+	h.agent(0).exitUnnoticed()
+
+	got := run(t, execute(e, newExecCtx("ctx2", a2a.NewTextPart("two"))))
+
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	if got := h.agentCount(); got != 2 {
+		t.Fatalf("started agents = %d, want 2", got)
+	}
+}
+
 func TestExecutor_AgentExitFailsTurn(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) {
@@ -571,6 +696,17 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 	png := a2a.NewRawPart([]byte("png"))
 	png.MediaType = "image/png"
 	link := a2a.NewFileURLPart("https://example.com/a.txt", "text/plain")
+	blob := a2a.NewRawPart([]byte{0x00, 0xff, 0xfe, 0x01})
+	blob.Filename = "blob.bin"
+	untypedText := a2a.NewRawPart([]byte("log line"))
+	untypedText.Filename = "app.log"
+	jsonFile := a2a.NewRawPart([]byte(`{"a":1}`))
+	jsonFile.MediaType = "application/json; charset=utf-8"
+	jsonFile.Filename = "a.json"
+	zip := a2a.NewRawPart([]byte("PK"))
+	zip.MediaType = "application/zip"
+	invalidText := a2a.NewRawPart([]byte{0xff, 0xfe})
+	invalidText.MediaType = "text/plain"
 
 	tests := []struct {
 		name       string
@@ -611,6 +747,48 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 			name:       "unsupported file",
 			parts:      []*a2a.Part{pdf},
 			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/pdf attachments")},
+		},
+		{
+			name:  "embedded text-like file",
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
+			parts: []*a2a.Part{jsonFile},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:a.json", MimeType: "application/json; charset=utf-8", Text: `{"a":1}`,
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:  "untyped text file",
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
+			parts: []*a2a.Part{untypedText},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:app.log", MimeType: "text/plain", Text: "log line",
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:       "untyped binary file",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{blob},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/octet-stream attachments")},
+		},
+		{
+			name:       "binary type the model may reject",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{zip},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept application/zip attachments")},
+		},
+		{
+			name:       "image the agent does not advertise",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{png},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept image/png attachments")},
+		},
+		{
+			name:       "text file which is not UTF-8",
+			caps:       acp.PromptCapabilities{EmbeddedContext: true},
+			parts:      []*a2a.Part{invalidText},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept text/plain attachments which are not UTF-8")},
 		},
 	}
 	for _, tc := range tests {
@@ -663,7 +841,7 @@ func TestNewExecutor_InvalidAgent(t *testing.T) {
 		{name: "no agent", agent: nil, want: "agent is required"},
 		{name: "no command", agent: Process{}, want: "Process.Argv is empty"},
 		{name: "agent exits", agent: Process{Argv: []string{"true"}}, want: "initializing acp agent: acp agent exited"},
-		{name: "agent prints non-json", agent: Process{Argv: []string{"echo", "hello"}}, want: "initializing acp agent: invalid character"},
+		{name: "agent prints non-json and exits", agent: Process{Argv: []string{"echo", "hello"}}, want: "initializing acp agent: acp agent exited"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -842,7 +1020,7 @@ func TestExecutor_QuestionTimeout(t *testing.T) {
 	waitFor(t, func() bool { _, _, canceled, _ := h.agent(0).snapshot(); return len(canceled) == 1 })
 
 	got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
-	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone)}, got); diff != "" {
+	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone.Error())}, got); diff != "" {
 		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 	}
 	<-scriptDone
@@ -861,11 +1039,165 @@ func TestExecutor_AgentExitWhileInputRequired(t *testing.T) {
 
 	got := run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
 
-	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone)}, got); diff != "" {
+	if diff := cmp.Diff([]eventSummary{failedWith(errQuestionGone.Error())}, got); diff != "" {
 		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
 	}
 	if got := h.agentCount(); got != 1 {
 		t.Fatalf("started agents = %d, want 1", got)
+	}
+}
+
+type turnRecorder struct {
+	mu  sync.Mutex
+	log []string
+}
+
+func (r *turnRecorder) turn(ctx context.Context, execCtx *a2asrv.ExecutorContext) func() {
+	text := messageText(execCtx.Message)
+	r.add("start " + text)
+	return func() {
+		if err := ctx.Err(); err != nil {
+			r.add(fmt.Sprintf("end %s: %v", text, err))
+			return
+		}
+		r.add("end " + text)
+	}
+}
+
+func (r *turnRecorder) add(s string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.log = append(r.log, s)
+}
+
+func (r *turnRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.log)
+}
+
+func TestExecutor_TurnSpansInputRequired(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		cfg       Config
+		resume    func(t *testing.T, e *Executor, h *fakeHarness, execCtx *a2asrv.ExecutorContext)
+		want      []string
+		abandoned []eventSummary
+	}{
+		{
+			name: "answer",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, execute(e, followUp(execCtx, a2a.NewTextPart("once"))))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt"},
+		},
+		{
+			name: "interrupt",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, execute(e, followUp(execCtx, a2a.NewTextPart("rename it instead"))))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt", "start rename it instead", "end rename it instead"},
+		},
+		{
+			name: "cancel",
+			resume: func(t *testing.T, e *Executor, _ *fakeHarness, execCtx *a2asrv.ExecutorContext) {
+				run(t, cancelTask(e, execCtx))
+			},
+			want: []string{"start delete x.txt", "end delete x.txt"},
+		},
+		{
+			name:      "question timeout",
+			cfg:       Config{QuestionTimeout: 200 * time.Millisecond},
+			resume:    func(*testing.T, *Executor, *fakeHarness, *a2asrv.ExecutorContext) {},
+			want:      []string{"start delete x.txt", "end delete x.txt"},
+			abandoned: []eventSummary{failedWith("nobody answered the question in time, send a new message to continue")},
+		},
+		{
+			name: "agent exit",
+			resume: func(_ *testing.T, _ *Executor, h *fakeHarness, _ *a2asrv.ExecutorContext) {
+				h.agent(0).crash()
+			},
+			want:      []string{"start delete x.txt", "end delete x.txt"},
+			abandoned: []eventSummary{failedWith("acp agent error: acp agent exited")},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			scriptsDone := make(chan struct{}, 2)
+			h := &fakeHarness{onPrompt: func(s *promptScript) {
+				defer func() { scriptsDone <- struct{}{} }()
+				if s.promptText() != "delete x.txt" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				outcome := s.askPermission(rmToolCall)
+				if s.agent.isCrashed() {
+					return
+				}
+				if outcome.OptionID == "opt-allow" {
+					s.end(acp.StopEndTurn)
+					return
+				}
+				waitFor(t, func() bool { _, _, canceled, _ := s.agent.snapshot(); return len(canceled) > 0 })
+				s.end(acp.StopCancelled)
+			}}
+			rec := &turnRecorder{}
+			tc.cfg.Turn = rec.turn
+			var abandonedMu sync.Mutex
+			var abandoned []eventSummary
+			var abandonedTasks []a2a.TaskID
+			tc.cfg.Abandoned = func(_ context.Context, ev *a2a.TaskStatusUpdateEvent) {
+				abandonedMu.Lock()
+				defer abandonedMu.Unlock()
+				abandoned = append(abandoned, summarize(ev))
+				abandonedTasks = append(abandonedTasks, ev.TaskID)
+			}
+			e := newTestExecutor(t, h, tc.cfg)
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+			run(t, execute(e, execCtx))
+			if diff := cmp.Diff([]string{"start delete x.txt"}, rec.snapshot()); diff != "" {
+				t.Fatalf("Config.Turn calls while input-required wrong result (-want +got) diff = %s", diff)
+			}
+
+			tc.resume(t, e, h, execCtx)
+
+			waitFor(t, func() bool { return len(rec.snapshot()) >= len(tc.want) })
+			if diff := cmp.Diff(tc.want, rec.snapshot()); diff != "" {
+				t.Fatalf("Config.Turn calls wrong result (-want +got) diff = %s", diff)
+			}
+			abandonedMu.Lock()
+			gotAbandoned, gotTasks := abandoned, abandonedTasks
+			abandonedMu.Unlock()
+			if diff := cmp.Diff(tc.abandoned, gotAbandoned); diff != "" {
+				t.Fatalf("Config.Abandoned calls wrong result (-want +got) diff = %s", diff)
+			}
+			for _, id := range gotTasks {
+				if id != execCtx.TaskID {
+					t.Fatalf("Config.Abandoned() task = %s, want %s", id, execCtx.TaskID)
+				}
+			}
+			for range len(tc.want) / 2 {
+				<-scriptsDone
+			}
+		})
+	}
+}
+
+func TestExecutor_TurnNotCalledWhenPromptNotSent(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	rec := &turnRecorder{}
+	e := newTestExecutor(t, h, Config{Turn: rec.turn})
+
+	got := run(t, execute(e, newExecCtx("ctx", a2a.NewRawPart([]byte("%PDF")))))
+
+	if got[len(got)-1].State != a2a.TaskStateFailed {
+		t.Fatalf("Executor.Execute() = %+v, want failed", got)
+	}
+	if got := rec.snapshot(); len(got) != 0 {
+		t.Fatalf("Config.Turn calls = %v, want none", got)
 	}
 }
 
@@ -876,10 +1208,7 @@ func withSettings(execCtx *a2asrv.ExecutorContext, settings map[string]any) *a2a
 
 func TestExecutor_Settings(t *testing.T) {
 	t.Parallel()
-	configOptions := acp.SessionState{ConfigOptions: []acp.SessionConfigOption{
-		{ID: "model", Name: "Model", Type: "select"},
-		{ID: "fast", Name: "Fast", Type: "boolean"},
-	}}
+	configOptions := acp.SessionState{ConfigOptions: testConfigOptions}
 	modesAndModels := acp.SessionState{Modes: &struct{}{}, Models: &struct{}{}}
 	tests := []struct {
 		name         string
@@ -899,9 +1228,24 @@ func TestExecutor_Settings(t *testing.T) {
 			wantSettings: []string{
 				"session/set_config_option fast=true boolean",
 				"session/set_config_option model=m1 ",
-				"session/set_config_option model=m1 ",
 			},
 			wantLast: completed,
+		},
+		{
+			name:     "current value not sent",
+			state:    configOptions,
+			defaults: map[string]any{"model": "m0", "fast": false},
+			allowed:  []string{"*"},
+			messages: []map[string]any{nil},
+			wantLast: completed,
+		},
+		{
+			name:         "value refused",
+			state:        configOptions,
+			allowed:      []string{"*"},
+			messages:     []map[string]any{{"model": "m9"}},
+			wantSettings: []string{"session/set_config_option model=m9 "},
+			wantLast:     failedWith(`configuring acp session: setting "model": Invalid params: model not found: m9 (code -32602)`),
 		},
 		{
 			name:     "message overrides defaults",
@@ -981,6 +1325,176 @@ func TestExecutor_Settings(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantSettings, h.agent(0).recordedSettings()); diff != "" {
 				t.Fatalf("session settings wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+var testConfigOptions = []acp.SessionConfigOption{
+	{
+		ID: "model", Name: "Model", Type: "select", CurrentValue: "m0",
+		Options: []acp.SessionConfigSelectOption{
+			{Group: "small", Name: "Small", Options: []acp.SessionConfigSelectOption{
+				{Value: "m0", Name: "Model 0"},
+				{Value: "m1", Name: "Model 1", Description: "Faster"},
+			}},
+			{Group: "large", Name: "Large", Options: []acp.SessionConfigSelectOption{{Value: "m2", Name: "Model 2"}}},
+		},
+	},
+	{ID: "fast", Name: "Fast", Type: "boolean", CurrentValue: false},
+}
+
+func TestExecutor_SettingsFollowAgentChanges(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{state: acp.SessionState{ConfigOptions: testConfigOptions}}
+	h.onPrompt = func(s *promptScript) {
+		fellBack := slices.Clone(testConfigOptions)
+		fellBack[0].CurrentValue = "m2"
+		s.update(map[string]any{"sessionUpdate": acp.UpdateConfigOption, "configOptions": fellBack})
+		s.end(acp.StopEndTurn)
+	}
+	settings := func(context.Context, *a2asrv.ExecutorContext) (map[string]any, error) {
+		return map[string]any{"model": "m1"}, nil
+	}
+	e := newTestExecutor(t, h, Config{Settings: settings})
+
+	for range 2 {
+		got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+		if diff := cmp.Diff(completed, got[len(got)-1]); diff != "" {
+			t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
+		}
+	}
+
+	want := []string{"session/set_config_option model=m1 ", "session/set_config_option model=m1 "}
+	if diff := cmp.Diff(want, h.agent(0).recordedSettings()); diff != "" {
+		t.Fatalf("session settings wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_Failure(t *testing.T) {
+	t.Parallel()
+	suggest := func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+		var settingErr *SettingError
+		if !errors.As(err, &settingErr) {
+			return nil
+		}
+		var values []string
+		for _, o := range settingErr.Options {
+			values = append(values, fmt.Sprintf("%s (%s/%s)", o.Value, o.Group, o.Name))
+		}
+		return []*a2a.Part{a2a.NewTextPart(fmt.Sprintf("unknown %s %v, try: %s", settingErr.ID, settingErr.Value, strings.Join(values, ", ")))}
+	}
+	tests := []struct {
+		name     string
+		settings map[string]any
+		want     eventSummary
+	}{
+		{
+			name:     "setting error",
+			settings: map[string]any{"model": "m9"},
+			want:     failedWith("unknown model m9, try: m0 (Small/Model 0), m1 (Small/Model 1), m2 (Large/Model 2)"),
+		},
+		{
+			name:     "other error",
+			settings: map[string]any{"temperature": 1},
+			want:     failedWith(`configuring acp session: the agent has no session setting "temperature"`),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{state: acp.SessionState{ConfigOptions: testConfigOptions}, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+			settings := func(context.Context, *a2asrv.ExecutorContext) (map[string]any, error) { return tc.settings, nil }
+			e := newTestExecutor(t, h, Config{Settings: settings, Failure: suggest})
+
+			got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+
+			if diff := cmp.Diff(tc.want, got[len(got)-1]); diff != "" {
+				t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestExecutor_InactivityTimeout(t *testing.T) {
+	t.Parallel()
+	const timeout = 200 * time.Millisecond
+	waitForCancel := func(s *promptScript) {
+		waitFor(s.t, func() bool {
+			_, _, canceled, _ := s.agent.snapshot()
+			return len(canceled) > 0
+		})
+	}
+	tests := []struct {
+		name     string
+		onPrompt func(*promptScript)
+		// answerAfter answers the question the agent asks after this long.
+		answerAfter time.Duration
+		want        eventSummary
+	}{
+		{
+			name: "silent agent",
+			onPrompt: func(s *promptScript) {
+				waitForCancel(s)
+				s.end(acp.StopCancelled)
+			},
+			want: failedWith("the agent sent no updates for 200ms"),
+		},
+		{
+			name: "silent after an update",
+			onPrompt: func(s *promptScript) {
+				s.update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "hmm"}})
+				waitForCancel(s)
+				s.end(acp.StopEndTurn)
+			},
+			want: failedWith("the agent sent no updates for 200ms"),
+		},
+		{
+			name: "updates keep the task going",
+			onPrompt: func(s *promptScript) {
+				for range 10 {
+					s.update(map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]any{"type": "text", "text": "hmm"}})
+					time.Sleep(timeout / 5)
+				}
+				s.end(acp.StopEndTurn)
+			},
+			want: completed,
+		},
+		{
+			name: "waiting for an answer doesn't count",
+			onPrompt: func(s *promptScript) {
+				s.askPermission(rmToolCall)
+				s.end(acp.StopEndTurn)
+			},
+			answerAfter: 3 * timeout,
+			want:        completed,
+		},
+		{
+			name: "silent after an answer",
+			onPrompt: func(s *promptScript) {
+				s.askPermission(rmToolCall)
+				waitForCancel(s)
+				s.end(acp.StopCancelled)
+			},
+			answerAfter: 3 * timeout,
+			want:        failedWith("the agent sent no updates for 200ms"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{onPrompt: tc.onPrompt}
+			e := newTestExecutor(t, h, Config{InactivityTimeout: timeout})
+			execCtx := newExecCtx("ctx", a2a.NewTextPart("delete x.txt"))
+
+			got := run(t, execute(e, execCtx))
+			if tc.answerAfter > 0 {
+				time.Sleep(tc.answerAfter)
+				got = run(t, execute(e, followUp(execCtx, a2a.NewTextPart("yes"))))
+			}
+
+			if diff := cmp.Diff(tc.want, got[len(got)-1]); diff != "" {
+				t.Fatalf("Executor.Execute() wrong last event (-want +got) diff = %s", diff)
 			}
 		})
 	}
