@@ -486,7 +486,7 @@ func (s oauth2SecurityScheme) MarshalJSON() ([]byte, error) {
 		Flows             map[a2a.OAuthFlowName]any `json:"flows,omitempty"`
 	}
 	wrapped := wrapper{Type: "oauth2", Description: s.Description, Oauth2MetadataURL: s.Oauth2MetadataURL}
-	switch v := s.Flows.(type) {
+	switch v := oauthFlowValue(s.Flows).(type) {
 	case a2a.AuthorizationCodeOAuthFlow:
 		wrapped.Flows = map[a2a.OAuthFlowName]any{a2a.AuthorizationCodeOAuthFlowName: v}
 	case a2a.ClientCredentialsOAuthFlow:
@@ -501,6 +501,36 @@ func (s oauth2SecurityScheme) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("unknown OAuth flow type %T", v)
 	}
 	return json.Marshal(wrapped)
+}
+
+// oauthFlowValue returns the value form of a flow held as a pointer, which is how
+// pbconv returns flows, or nil for a nil pointer.
+func oauthFlowValue(flows a2a.OAuthFlows) a2a.OAuthFlows {
+	switch v := flows.(type) {
+	case *a2a.AuthorizationCodeOAuthFlow:
+		if v != nil {
+			return *v
+		}
+	case *a2a.ClientCredentialsOAuthFlow:
+		if v != nil {
+			return *v
+		}
+	case *a2a.ImplicitOAuthFlow:
+		if v != nil {
+			return *v
+		}
+	case *a2a.PasswordOAuthFlow:
+		if v != nil {
+			return *v
+		}
+	case *a2a.DeviceCodeOAuthFlow:
+		if v != nil {
+			return *v
+		}
+	default:
+		return flows
+	}
+	return nil
 }
 
 func (s *oauth2SecurityScheme) UnmarshalJSON(b []byte) error {

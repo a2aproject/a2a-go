@@ -841,7 +841,7 @@ func TestToProto_toProtoAgentCard(t *testing.T) {
 			},
 			"oauth2": a2a.OAuth2SecurityScheme{
 				Description: "OAuth2",
-				Flows: a2a.AuthorizationCodeOAuthFlow{
+				Flows: &a2a.AuthorizationCodeOAuthFlow{
 					AuthorizationURL: "https://example.com/auth",
 					TokenURL:         "https://example.com/token",
 					Scopes:           map[string]string{"read": "read scope"},
@@ -1101,6 +1101,11 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name:    "nil pointer flow",
+			flows:   (*a2a.AuthorizationCodeOAuthFlow)(nil),
+			wantErr: true,
 		},
 		{
 			name:    "no flows specified",

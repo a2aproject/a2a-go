@@ -15,6 +15,7 @@
 package pbconv
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -633,6 +634,80 @@ func TestFromProto_fromProtoDeleteTaskPushConfigRequest(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("fromProtoDeleteTaskPushConfigRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFromProto_OAuth2SecuritySchemeJSON(t *testing.T) {
+	t.Parallel()
+
+	scopes := map[string]string{"read": "read data"}
+	tests := []struct {
+		name  string
+		flows *a2apb.OAuthFlows
+		want  string
+	}{
+		{
+			name: "authorization code",
+			flows: &a2apb.OAuthFlows{Flow: &a2apb.OAuthFlows_AuthorizationCode{AuthorizationCode: &a2apb.AuthorizationCodeOAuthFlow{
+				AuthorizationUrl: "auth", TokenUrl: "token", Scopes: scopes, PkceRequired: true,
+			}}},
+			want: `{"authorizationCode":{"authorizationUrl":"auth","tokenUrl":"token","scopes":{"read":"read data"},"pkceRequired":true}}`,
+		},
+		{
+			name: "client credentials",
+			flows: &a2apb.OAuthFlows{Flow: &a2apb.OAuthFlows_ClientCredentials{ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
+				TokenUrl: "token", Scopes: scopes,
+			}}},
+			want: `{"clientCredentials":{"tokenUrl":"token","scopes":{"read":"read data"}}}`,
+		},
+		{
+			name: "implicit",
+			flows: &a2apb.OAuthFlows{Flow: &a2apb.OAuthFlows_Implicit{Implicit: &a2apb.ImplicitOAuthFlow{
+				AuthorizationUrl: "auth", Scopes: scopes,
+			}}},
+			want: `{"implicit":{"authorizationUrl":"auth","scopes":{"read":"read data"}}}`,
+		},
+		{
+			name: "password",
+			flows: &a2apb.OAuthFlows{Flow: &a2apb.OAuthFlows_Password{Password: &a2apb.PasswordOAuthFlow{
+				TokenUrl: "token", Scopes: scopes,
+			}}},
+			want: `{"password":{"tokenUrl":"token","scopes":{"read":"read data"}}}`,
+		},
+		{
+			name: "device code",
+			flows: &a2apb.OAuthFlows{Flow: &a2apb.OAuthFlows_DeviceCode{DeviceCode: &a2apb.DeviceCodeOAuthFlow{
+				DeviceAuthorizationUrl: "device", TokenUrl: "token", Scopes: scopes,
+			}}},
+			want: `{"deviceCode":{"deviceAuthorizationUrl":"device","tokenUrl":"token","scopes":{"read":"read data"}}}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			scheme, err := fromProtoSecurityScheme(&a2apb.SecurityScheme{Scheme: &a2apb.SecurityScheme_Oauth2SecurityScheme{
+				Oauth2SecurityScheme: &a2apb.OAuth2SecurityScheme{Flows: tc.flows},
+			}})
+			if err != nil {
+				t.Fatalf("fromProtoSecurityScheme() error = %v", err)
+			}
+			got, err := json.Marshal(scheme)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			var gotJSON, wantJSON any
+			if err := json.Unmarshal(got, &gotJSON); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if err := json.Unmarshal([]byte(`{"flows":`+tc.want+`}`), &wantJSON); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if diff := cmp.Diff(wantJSON, gotJSON); diff != "" {
+				t.Fatalf("json.Marshal() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}

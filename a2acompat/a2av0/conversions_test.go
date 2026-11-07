@@ -139,6 +139,29 @@ func TestAgentCard_V1ToLegacyToV1(t *testing.T) {
 			},
 		},
 		{
+			name: "pointer OAuth flows",
+			card: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{{URL: "https://agent", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: Version}},
+				SecuritySchemes: a2a.NamedSecuritySchemes{
+					"authCode": a2a.OAuth2SecurityScheme{Flows: &a2a.AuthorizationCodeOAuthFlow{AuthorizationURL: "https://auth/a", TokenURL: "https://auth/t", Scopes: scopes}},
+					"client":   a2a.OAuth2SecurityScheme{Flows: &a2a.ClientCredentialsOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}},
+					"implicit": a2a.OAuth2SecurityScheme{Flows: &a2a.ImplicitOAuthFlow{AuthorizationURL: "https://auth/a", Scopes: scopes}},
+					"password": a2a.OAuth2SecurityScheme{Flows: &a2a.PasswordOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}},
+					"nil":      a2a.OAuth2SecurityScheme{Flows: (*a2a.PasswordOAuthFlow)(nil), Description: "nil flow"},
+				},
+			},
+			want: &a2a.AgentCard{
+				SupportedInterfaces: []*a2a.AgentInterface{{URL: "https://agent", ProtocolBinding: a2a.TransportProtocolJSONRPC, ProtocolVersion: Version}},
+				SecuritySchemes: a2a.NamedSecuritySchemes{
+					"authCode": a2a.OAuth2SecurityScheme{Flows: a2a.AuthorizationCodeOAuthFlow{AuthorizationURL: "https://auth/a", TokenURL: "https://auth/t", Scopes: scopes}},
+					"client":   a2a.OAuth2SecurityScheme{Flows: a2a.ClientCredentialsOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}},
+					"implicit": a2a.OAuth2SecurityScheme{Flows: a2a.ImplicitOAuthFlow{AuthorizationURL: "https://auth/a", Scopes: scopes}},
+					"password": a2a.OAuth2SecurityScheme{Flows: a2a.PasswordOAuthFlow{TokenURL: "https://auth/t", Scopes: scopes}},
+					"nil":      a2a.OAuth2SecurityScheme{Description: "nil flow"},
+				},
+			},
+		},
+		{
 			name: "v0.3 interfaces are preferred",
 			card: &a2a.AgentCard{
 				SupportedInterfaces: []*a2a.AgentInterface{

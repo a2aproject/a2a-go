@@ -208,6 +208,94 @@ func TestSecuritySchemeJSONCodec(t *testing.T) {
 	}
 }
 
+func TestOAuth2SecuritySchemeJSONMarshalPointerFlows(t *testing.T) {
+	t.Parallel()
+
+	scopes := map[string]string{"read": "read data"}
+	tests := []struct {
+		name  string
+		flows OAuthFlows
+		want  string
+	}{
+		{
+			name:  "authorization code",
+			flows: &AuthorizationCodeOAuthFlow{AuthorizationURL: "auth", TokenURL: "token", Scopes: scopes, PKCERequired: true},
+			want:  `{"flows":{"authorizationCode":{"authorizationUrl":"auth","tokenUrl":"token","scopes":{"read":"read data"},"pkceRequired":true}}}`,
+		},
+		{
+			name:  "client credentials",
+			flows: &ClientCredentialsOAuthFlow{TokenURL: "token", Scopes: scopes},
+			want:  `{"flows":{"clientCredentials":{"tokenUrl":"token","scopes":{"read":"read data"}}}}`,
+		},
+		{
+			name:  "implicit",
+			flows: &ImplicitOAuthFlow{AuthorizationURL: "auth", Scopes: scopes},
+			want:  `{"flows":{"implicit":{"authorizationUrl":"auth","scopes":{"read":"read data"}}}}`,
+		},
+		{
+			name:  "password",
+			flows: &PasswordOAuthFlow{TokenURL: "token", Scopes: scopes},
+			want:  `{"flows":{"password":{"tokenUrl":"token","scopes":{"read":"read data"}}}}`,
+		},
+		{
+			name:  "device code",
+			flows: &DeviceCodeOAuthFlow{DeviceAuthorizationURL: "device", TokenURL: "token", Scopes: scopes},
+			want:  `{"flows":{"deviceCode":{"deviceAuthorizationUrl":"device","tokenUrl":"token","scopes":{"read":"read data"}}}}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := mustMarshal(t, OAuth2SecurityScheme{Flows: tc.flows})
+			if diff := cmp.Diff(mustDecodeJSON(t, tc.want), mustDecodeJSON(t, got)); diff != "" {
+				t.Fatalf("json.Marshal() wrong result (-want +got) diff = %s", diff)
+			}
+
+			var decoded OAuth2SecurityScheme
+			mustUnmarshal(t, []byte(got), &decoded)
+			valueFlows := reflect.ValueOf(tc.flows).Elem().Interface()
+			if diff := cmp.Diff(valueFlows, decoded.Flows); diff != "" {
+				t.Fatalf("json.Unmarshal() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestOAuth2SecuritySchemeJSONMarshalNilFlows(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		flows OAuthFlows
+	}{
+		{name: "nil", flows: nil},
+		{name: "nil authorization code pointer", flows: (*AuthorizationCodeOAuthFlow)(nil)},
+		{name: "nil client credentials pointer", flows: (*ClientCredentialsOAuthFlow)(nil)},
+		{name: "nil implicit pointer", flows: (*ImplicitOAuthFlow)(nil)},
+		{name: "nil password pointer", flows: (*PasswordOAuthFlow)(nil)},
+		{name: "nil device code pointer", flows: (*DeviceCodeOAuthFlow)(nil)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got, err := json.Marshal(OAuth2SecurityScheme{Flows: tc.flows}); err == nil {
+				t.Fatalf("json.Marshal() = %s, want error", got)
+			}
+		})
+	}
+}
+
+func mustDecodeJSON(t *testing.T, s string) any {
+	t.Helper()
+	var v any
+	mustUnmarshal(t, []byte(s), &v)
+	return v
+}
+
 func TestSecurityRequirementsJSONMarshal(t *testing.T) {
 	tests := []struct {
 		name string

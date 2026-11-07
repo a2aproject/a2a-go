@@ -689,23 +689,33 @@ func toProtoOAuthFlows(flows a2a.OAuthFlows) (*a2apb.OAuthFlows, error) {
 	case a2a.AuthorizationCodeOAuthFlow:
 		result = append(result, toProtoAuthzOAuthCodeFlow(&f))
 	case *a2a.AuthorizationCodeOAuthFlow:
-		result = append(result, toProtoAuthzOAuthCodeFlow(f))
+		if f != nil {
+			result = append(result, toProtoAuthzOAuthCodeFlow(f))
+		}
 	case a2a.ClientCredentialsOAuthFlow:
 		result = append(result, toProtoCredentialsOAuthFlow(&f))
 	case *a2a.ClientCredentialsOAuthFlow:
-		result = append(result, toProtoCredentialsOAuthFlow(f))
+		if f != nil {
+			result = append(result, toProtoCredentialsOAuthFlow(f))
+		}
 	case a2a.ImplicitOAuthFlow:
 		result = append(result, toProtoImplicitOAuthFlow(&f))
 	case *a2a.ImplicitOAuthFlow:
-		result = append(result, toProtoImplicitOAuthFlow(f))
+		if f != nil {
+			result = append(result, toProtoImplicitOAuthFlow(f))
+		}
 	case a2a.PasswordOAuthFlow:
 		result = append(result, toProtoPasswordOAuthFlows(&f))
 	case *a2a.PasswordOAuthFlow:
-		result = append(result, toProtoPasswordOAuthFlows(f))
+		if f != nil {
+			result = append(result, toProtoPasswordOAuthFlows(f))
+		}
 	case a2a.DeviceCodeOAuthFlow:
 		result = append(result, toProtoDeviceCodeOAuthFlow(&f))
 	case *a2a.DeviceCodeOAuthFlow:
-		result = append(result, toProtoDeviceCodeOAuthFlow(f))
+		if f != nil {
+			result = append(result, toProtoDeviceCodeOAuthFlow(f))
+		}
 	default:
 		return nil, fmt.Errorf("unsupported OAuthFlows type: %T", f)
 	}
