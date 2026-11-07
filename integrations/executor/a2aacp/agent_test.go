@@ -268,6 +268,46 @@ func TestExecutor_MaxAgents(t *testing.T) {
 	<-asked
 }
 
+func TestExecutor_MaxAgentsSkipsExited(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 2}})
+	idle := func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for _, s := range e.agents {
+			if s.refs > 0 {
+				return false
+			}
+		}
+		return true
+	}
+	run(t, execute(e, newExecCtx("b", a2a.NewTextPart("done"))))
+	waitFor(t, idle)
+	run(t, execute(e, newExecCtx("a", a2a.NewTextPart("done"))))
+	waitFor(t, idle)
+	h.agent(1).crash()
+	waitFor(t, func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.agents["key-a"].agent.exited()
+	})
+
+	got := run(t, execute(e, newExecCtx("c", a2a.NewTextPart("done"))))
+
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s := e.agents["key-b"]; s == nil || s.agent == nil {
+		t.Fatalf("idle agent b was stopped, want only the exited agent a to make room")
+	}
+	if _, ok := e.agents["key-a"]; ok {
+		t.Fatalf("slot of exited agent a was kept, want it dropped")
+	}
+}
+
 func TestExecutor_NotOwnerDoesNotDelayStart(t *testing.T) {
 	t.Parallel()
 	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
