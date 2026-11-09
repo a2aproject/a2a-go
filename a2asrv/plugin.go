@@ -59,16 +59,13 @@ func wrapExecutor(executor AgentExecutor, plugins []Plugin) (AgentExecutor, []Ag
 	if cleaner, ok := executor.(AgentExecutionCleaner); ok {
 		cleaners = append(cleaners, cleaner)
 	}
-	for _, plugin := range slices.Backward(plugins) {
-		wrapped := plugin.WrapExecutor(executor)
-		if sameExecutor(wrapped, executor) {
-			continue
-		}
-		if cleaner, ok := wrapped.(AgentExecutionCleaner); ok {
+	executor = wrapWithPlugins(executor, plugins, func(plugin Plugin, next AgentExecutor) AgentExecutor {
+		wrapped := plugin.WrapExecutor(next)
+		if cleaner, ok := wrapped.(AgentExecutionCleaner); ok && !sameExecutor(wrapped, next) {
 			cleaners = append(cleaners, cleaner)
 		}
-		executor = wrapped
-	}
+		return wrapped
+	})
 	return executor, cleaners
 }
 
