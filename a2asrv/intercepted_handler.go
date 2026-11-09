@@ -40,6 +40,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+
+	plugins []Plugin
 }
 
 var _ RequestHandler = (*InterceptedHandler)(nil)
@@ -155,6 +157,14 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
+func wrapCall(h *InterceptedHandler, next CallHandler) CallHandler {
+	next = interceptCalls(h, next)
+	for _, plugin := range slices.Backward(h.plugins) {
+		next = plugin.WrapCall(next)
+	}
+	return next
+}
+
 func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
 	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
@@ -256,7 +266,7 @@ func doCall[Req any, Resp any](
 	if err := checkProtocolVersion(callCtx); err != nil {
 		return zero, err
 	}
-	for payload, err := range interceptCalls(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+	for payload, err := range wrapCall(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
 		return utils.CastResult[Resp](payload, err)
 	}
 	return zero, fmt.Errorf("%s produced no result", callCtx.Method())
@@ -266,7 +276,7 @@ func streamCall[Req any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error], yield func(a2a.Event, error) bool,
 ) {
-	for payload, err := range interceptCalls(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+	for payload, err := range wrapCall(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
 		event, err := utils.CastResult[a2a.Event](payload, err)
 		if err != nil {
 			yield(nil, err)

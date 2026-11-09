@@ -33,6 +33,13 @@ type Plugin interface {
 	WrapTaskStore(next taskstore.Store) taskstore.Store
 }
 
+// WithPlugins adds plugins to the ones already set. The first plugin is the outermost wrapper.
+func WithPlugins(plugins ...Plugin) RequestHandlerOption {
+	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
+		ih.plugins = append(ih.plugins, plugins...)
+	}
+}
+
 // PassthroughPlugin can be embedded by [Plugin] implementers who don't need all methods.
 // It returns every component unchanged, so adding a method to [Plugin] doesn't break plugins embedding it.
 type PassthroughPlugin struct{}
