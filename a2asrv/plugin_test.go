@@ -18,19 +18,24 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
 
 type mockPlugin struct {
 	PassthroughPlugin
 	wrapCallFn     func(next CallHandler) CallHandler
 	wrapExecutorFn func(next AgentExecutor) AgentExecutor
+	wrapStoreFn    func(next taskstore.Store) taskstore.Store
 }
 
 func (p *mockPlugin) Name() string { return "mock" }
@@ -47,6 +52,62 @@ func (p *mockPlugin) WrapExecutor(next AgentExecutor) AgentExecutor {
 		return p.wrapExecutorFn(next)
 	}
 	return next
+}
+
+func (p *mockPlugin) WrapTaskStore(next taskstore.Store) taskstore.Store {
+	if p.wrapStoreFn != nil {
+		return p.wrapStoreFn(next)
+	}
+	return next
+}
+
+type callRecorder struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (r *callRecorder) add(call string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, call)
+}
+
+func (r *callRecorder) get() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.calls)
+}
+
+type recordingStore struct {
+	taskstore.Store
+	name     string
+	recorder *callRecorder
+}
+
+func (s *recordingStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
+	s.recorder.add(s.name + "-create")
+	return s.Store.Create(ctx, task)
+}
+
+func (s *recordingStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+	s.recorder.add(s.name + "-update")
+	return s.Store.Update(ctx, req)
+}
+
+func (s *recordingStore) Get(ctx context.Context, taskID a2a.TaskID) (*taskstore.StoredTask, error) {
+	s.recorder.add(s.name + "-get")
+	return s.Store.Get(ctx, taskID)
+}
+
+func (s *recordingStore) List(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	s.recorder.add(s.name + "-list")
+	return s.Store.List(ctx, req)
+}
+
+func recordingStorePlugin(name string, recorder *callRecorder) Plugin {
+	return &mockPlugin{wrapStoreFn: func(next taskstore.Store) taskstore.Store {
+		return &recordingStore{Store: next, name: name, recorder: recorder}
+	}}
 }
 
 type recordingExecutor struct {
@@ -386,5 +447,51 @@ func TestWithPlugins_PassthroughExecutorFunc(t *testing.T) {
 	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
 	if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg}); err != nil {
 		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+}
+
+func TestWithPlugins_WrapTaskStore(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name    string
+		options []RequestHandlerOption
+	}{
+		{name: "default store"},
+		{name: "custom store", options: []RequestHandlerOption{WithTaskStore(testutil.NewTestTaskStore())}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := &callRecorder{}
+			agent := AgentExecutorFunc(func(_ context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+				return func(yield func(a2a.Event, error) bool) {
+					if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+						return
+					}
+					yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+				}
+			})
+			options := append(tc.options, WithPlugins(recordingStorePlugin("p1", recorder), recordingStorePlugin("p2", recorder)))
+			handler := NewHandler(agent, options...)
+
+			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+			result, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg})
+			if err != nil {
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+			}
+			if _, err := handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: result.TaskInfo().TaskID}); err != nil {
+				t.Fatalf("handler.GetTask() error = %v, want nil", err)
+			}
+
+			want := []string{
+				"p1-create", "p2-create", "p1-update", "p2-update",
+				"p1-get", "p2-get", // SendMessage loads the final task state
+				"p1-get", "p2-get",
+			}
+			if diff := cmp.Diff(want, recorder.get()); diff != "" {
+				t.Fatalf("WrapTaskStore() wrong store calls (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

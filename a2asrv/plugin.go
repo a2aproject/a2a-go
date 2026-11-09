@@ -47,6 +47,13 @@ func WithPlugins(plugins ...Plugin) RequestHandlerOption {
 	}
 }
 
+func wrapWithPlugins[T any](next T, plugins []Plugin, wrap func(Plugin, T) T) T {
+	for _, plugin := range slices.Backward(plugins) {
+		next = wrap(plugin, next)
+	}
+	return next
+}
+
 func wrapExecutor(executor AgentExecutor, plugins []Plugin) (AgentExecutor, []AgentExecutionCleaner) {
 	var cleaners []AgentExecutionCleaner
 	if cleaner, ok := executor.(AgentExecutionCleaner); ok {

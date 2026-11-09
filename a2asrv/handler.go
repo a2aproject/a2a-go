@@ -230,6 +230,15 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		materializer = defaultMaterializer
 	}
 
+	if h.workQueue == nil && h.taskStore == nil {
+		h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
+			Authenticator: NewTaskStoreAuthenticator(),
+		})
+	}
+	if h.taskStore != nil {
+		h.taskStore = wrapWithPlugins(h.taskStore, ih.plugins, Plugin.WrapTaskStore)
+	}
+
 	agent, cleaners := wrapExecutor(h.agentExecutor, ih.plugins)
 	execFactory := &factory{
 		agent:           agent,
@@ -260,12 +269,6 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	} else {
 		if h.queueManager == nil {
 			h.queueManager = eventqueue.NewInMemoryManager()
-		}
-		if h.taskStore == nil {
-			h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
-				Authenticator: NewTaskStoreAuthenticator(),
-			})
-			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
 			QueueManager:           h.queueManager,

@@ -158,11 +158,7 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 }
 
 func wrapCall(h *InterceptedHandler, next CallHandler) CallHandler {
-	next = interceptCalls(h, next)
-	for _, plugin := range slices.Backward(h.plugins) {
-		next = plugin.WrapCall(next)
-	}
-	return next
+	return wrapWithPlugins(interceptCalls(h, next), h.plugins, Plugin.WrapCall)
 }
 
 func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
