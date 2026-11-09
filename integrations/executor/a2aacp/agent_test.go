@@ -107,6 +107,57 @@ func TestExecutor_CancelTimeoutStopsAgent(t *testing.T) {
 	}
 }
 
+func TestExecutor_CancelTimeoutFailsOtherTurns(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.text("m1", s.promptText()) }}
+	failures := make(chan error, 1)
+	e := newTestExecutor(t, h, Config{
+		CancelTimeout: 10 * time.Millisecond,
+		Failure: func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+			failures <- err
+			return nil
+		},
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	other := make(chan []eventSummary, 1)
+	go func() {
+		var got []eventSummary
+		for ev, err := range e.Execute(ctx, newExecCtx("other", a2a.NewTextPart("other"))) {
+			if err != nil {
+				t.Errorf("Executor.Execute() error = %v", err)
+			}
+			got = append(got, summarize(ev))
+		}
+		other <- got
+	}()
+	waitFor(t, func() bool { return h.agentCount() == 1 && len(promptTexts(h.agent(0))) == 1 })
+
+	stuck := newExecCtx("stuck", a2a.NewTextPart("stuck"))
+	for ev, err := range e.Execute(ctx, stuck) {
+		if err != nil {
+			t.Fatalf("Executor.Execute() error = %v", err)
+		}
+		if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+			run(t, cancelTask(e, stuck))
+		}
+	}
+
+	want := []eventSummary{
+		submitted,
+		working,
+		{Kind: "artifact", Text: "other"},
+		failedWith(fmt.Sprintf("acp agent error: the agent was stopped because a canceled task didn't stop (task %s): acp agent exited", stuck.TaskID)),
+	}
+	if diff := cmp.Diff(want, <-other); diff != "" {
+		t.Fatalf("Executor.Execute() of the other task wrong result (-want +got) diff = %s", diff)
+	}
+	err := <-failures
+	if !errors.Is(err, ErrAgentStopped) || !errors.Is(err, acp.ErrAgentExited) {
+		t.Fatalf("Config.Failure() error = %v, want %v wrapping %v", err, ErrAgentStopped, acp.ErrAgentExited)
+	}
+}
+
 func keyByContext(_ context.Context, contextID string) (string, error) {
 	return "key-" + contextID, nil
 }

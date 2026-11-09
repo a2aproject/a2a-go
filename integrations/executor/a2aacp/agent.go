@@ -401,8 +401,8 @@ func (e *Executor) startAgent(ctx context.Context, key string) (*agent, error) {
 	return ag, nil
 }
 
-// stopAgent stops ag if it is still the running agent of its key. Its turns fail.
-func (e *Executor) stopAgent(ag *agent) {
+// stopAgent stops ag if it is still the running agent of its key. Its turns fail with cause.
+func (e *Executor) stopAgent(ag *agent, cause error) {
 	e.mu.Lock()
 	s := e.agents[ag.key]
 	e.mu.Unlock()
@@ -420,7 +420,7 @@ func (e *Executor) stopAgent(ag *agent) {
 	if !running {
 		return
 	}
-	if err := ag.client.Close(); err != nil {
+	if err := ag.client.CloseWithError(cause); err != nil {
 		log.Warn(context.Background(), "failed to stop acp agent", "key", ag.key, "cause", err)
 	}
 }

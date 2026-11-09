@@ -210,8 +210,12 @@ func (c *Conn) Err() error {
 }
 
 // Close fails calls in flight and closes the underlying stream.
-func (c *Conn) Close() error {
-	c.fail(ErrAgentExited)
+func (c *Conn) Close() error { return c.CloseWithError(ErrAgentExited) }
+
+// CloseWithError fails calls in flight with err and closes the underlying stream.
+// Calls keep the earlier error if the connection already stopped reading.
+func (c *Conn) CloseWithError(err error) error {
+	c.fail(err)
 	return c.rwc.Close()
 }
 
