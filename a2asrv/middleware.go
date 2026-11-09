@@ -92,10 +92,10 @@ type Response struct {
 	Err error
 }
 
-// callHandler processes a call. A unary call yields one value, a streaming call yields one value per event.
+// CallHandler processes a call. A unary call yields one value, a streaming call yields one value per event.
 // It must not modify data shared with the caller's req, such as Payload, so that a middleware can call
 // next again with the original request. Changes are made on a copy.
-type callHandler func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error]
+type CallHandler func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error]
 
 // CallInterceptor can be attached to an [RequestHandler]. If multiple interceptors are added:
 //   - Before will be executed in the order of attachment sequentially.

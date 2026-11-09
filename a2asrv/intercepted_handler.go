@@ -155,7 +155,7 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
-func interceptCalls(h *InterceptedHandler, next callHandler) callHandler {
+func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
 	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			ctx, req := ctx, req
@@ -186,7 +186,7 @@ func interceptAfter(ctx context.Context, interceptors []CallInterceptor, callCtx
 	return response.Payload, response.Err
 }
 
-func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) callHandler {
+func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) CallHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
@@ -199,7 +199,7 @@ func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, e
 	}
 }
 
-func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) callHandler {
+func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) CallHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
