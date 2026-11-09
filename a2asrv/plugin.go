@@ -14,7 +14,12 @@
 
 package a2asrv
 
-import "github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+import (
+	"reflect"
+	"slices"
+
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+)
 
 // Plugin extends a [RequestHandler] by wrapping its components. Each method receives
 // the next component and returns a wrapped one, or next itself to leave it unchanged.
@@ -27,6 +32,8 @@ type Plugin interface {
 	WrapCall(next CallHandler) CallHandler
 
 	// WrapExecutor wraps the [AgentExecutor]. It is called once, when the handler is created.
+	// If the wrapper implements [AgentExecutionCleaner], its Cleanup is called after the Cleanup of the
+	// executors it wraps.
 	WrapExecutor(next AgentExecutor) AgentExecutor
 
 	// WrapTaskStore wraps the task store, including the default in-memory store.
@@ -38,6 +45,30 @@ func WithPlugins(plugins ...Plugin) RequestHandlerOption {
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		ih.plugins = append(ih.plugins, plugins...)
 	}
+}
+
+func wrapExecutor(executor AgentExecutor, plugins []Plugin) (AgentExecutor, []AgentExecutionCleaner) {
+	var cleaners []AgentExecutionCleaner
+	if cleaner, ok := executor.(AgentExecutionCleaner); ok {
+		cleaners = append(cleaners, cleaner)
+	}
+	for _, plugin := range slices.Backward(plugins) {
+		wrapped := plugin.WrapExecutor(executor)
+		if sameExecutor(wrapped, executor) {
+			continue
+		}
+		if cleaner, ok := wrapped.(AgentExecutionCleaner); ok {
+			cleaners = append(cleaners, cleaner)
+		}
+		executor = wrapped
+	}
+	return executor, cleaners
+}
+
+// sameExecutor reports whether a plugin returned next unchanged. Values that can't be compared with ==,
+// such as functions, are treated as different, because comparing them would panic.
+func sameExecutor(a, b AgentExecutor) bool {
+	return reflect.TypeOf(a) == reflect.TypeOf(b) && reflect.ValueOf(a).Comparable() && a == b
 }
 
 // PassthroughPlugin can be embedded by [Plugin] implementers who don't need all methods.

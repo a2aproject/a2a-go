@@ -230,8 +230,10 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		materializer = defaultMaterializer
 	}
 
+	agent, cleaners := wrapExecutor(h.agentExecutor, ih.plugins)
 	execFactory := &factory{
-		agent:           h.agentExecutor,
+		agent:           agent,
+		cleaners:        cleaners,
 		taskStore:       h.taskStore,
 		pushSender:      h.pushSender,
 		pushConfigStore: h.pushConfigStore,

@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -27,7 +29,8 @@ import (
 
 type mockPlugin struct {
 	PassthroughPlugin
-	wrapCallFn func(next CallHandler) CallHandler
+	wrapCallFn     func(next CallHandler) CallHandler
+	wrapExecutorFn func(next AgentExecutor) AgentExecutor
 }
 
 func (p *mockPlugin) Name() string { return "mock" }
@@ -37,6 +40,74 @@ func (p *mockPlugin) WrapCall(next CallHandler) CallHandler {
 		return p.wrapCallFn(next)
 	}
 	return next
+}
+
+func (p *mockPlugin) WrapExecutor(next AgentExecutor) AgentExecutor {
+	if p.wrapExecutorFn != nil {
+		return p.wrapExecutorFn(next)
+	}
+	return next
+}
+
+type recordingExecutor struct {
+	AgentExecutor
+	name  string
+	calls chan<- string
+}
+
+func (e *recordingExecutor) Execute(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+	e.calls <- e.name + "-execute"
+	return e.AgentExecutor.Execute(ctx, execCtx)
+}
+
+type cleaningExecutor struct {
+	recordingExecutor
+}
+
+func (e *cleaningExecutor) Cleanup(context.Context, *ExecutorContext, a2a.SendMessageResult, error) {
+	e.calls <- e.name + "-cleanup"
+}
+
+func recordingExecutorPlugin(name string, calls chan<- string) Plugin {
+	return &mockPlugin{wrapExecutorFn: func(next AgentExecutor) AgentExecutor {
+		return &recordingExecutor{AgentExecutor: next, name: name, calls: calls}
+	}}
+}
+
+func cleaningExecutorPlugin(name string, calls chan<- string) Plugin {
+	return &mockPlugin{wrapExecutorFn: func(next AgentExecutor) AgentExecutor {
+		return &cleaningExecutor{recordingExecutor{AgentExecutor: next, name: name, calls: calls}}
+	}}
+}
+
+func newRecordingAgent(calls chan<- string) *mockAgentExecutor {
+	return &mockAgentExecutor{
+		ExecuteFunc: func(context.Context, *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			calls <- "agent-execute"
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("done")), nil)
+			}
+		},
+		CleanupFn: func(context.Context, a2a.SendMessageResult, error) {
+			calls <- "agent-cleanup"
+		},
+	}
+}
+
+func collectCallsUntil(t *testing.T, calls <-chan string, last string) []string {
+	t.Helper()
+	var got []string
+	for {
+		select {
+		case call := <-calls:
+			got = append(got, call)
+			if call == last {
+				return got
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %q, got calls %v", last, got)
+		}
+	}
 }
 
 func newPluginHandler(h RequestHandler, interceptors []CallInterceptor, options ...RequestHandlerOption) *InterceptedHandler {
@@ -210,5 +281,110 @@ func TestWithPlugins_Streaming(t *testing.T) {
 	want := []string{"1", "2", "3", "end"}
 	if diff := cmp.Diff(want, seen); diff != "" {
 		t.Fatalf("WrapCall() wrong observed values (-want +got) diff = %s", diff)
+	}
+}
+
+func TestWithPlugins_WrapExecutor(t *testing.T) {
+	t.Parallel()
+	calls := make(chan string, 10)
+	interceptor := interceptExecCtxFn(func(ctx context.Context, _ *ExecutorContext) (context.Context, error) {
+		calls <- "interceptor"
+		return ctx, nil
+	})
+	handler := NewHandler(newRecordingAgent(calls),
+		WithExecutorContextInterceptor(interceptor),
+		WithPlugins(recordingExecutorPlugin("p1", calls), recordingExecutorPlugin("p2", calls)),
+	)
+
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg}); err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+
+	want := []string{"interceptor", "p1-execute", "p2-execute", "agent-execute", "agent-cleanup"}
+	if diff := cmp.Diff(want, collectCallsUntil(t, calls, "agent-cleanup")); diff != "" {
+		t.Fatalf("handler.SendMessage() wrong call order (-want +got) diff = %s", diff)
+	}
+}
+
+func TestWithPlugins_ExecutorCleanup(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name    string
+		plugins func(calls chan<- string) []Plugin
+		want    []string
+	}{
+		{
+			name: "wrapper without Cleanup",
+			plugins: func(calls chan<- string) []Plugin {
+				return []Plugin{recordingExecutorPlugin("p1", calls)}
+			},
+			want: []string{"agent-cleanup"},
+		},
+		{
+			name: "passthrough plugin",
+			plugins: func(chan<- string) []Plugin {
+				return []Plugin{&mockPlugin{}}
+			},
+			want: []string{"agent-cleanup"},
+		},
+		{
+			name: "wrappers with Cleanup run innermost first",
+			plugins: func(calls chan<- string) []Plugin {
+				return []Plugin{cleaningExecutorPlugin("p1", calls), cleaningExecutorPlugin("p2", calls)}
+			},
+			want: []string{"agent-cleanup", "p2-cleanup", "p1-cleanup"},
+		},
+		{
+			name: "mixed wrappers",
+			plugins: func(calls chan<- string) []Plugin {
+				return []Plugin{
+					cleaningExecutorPlugin("p1", calls),
+					&mockPlugin{},
+					recordingExecutorPlugin("p3", calls),
+					cleaningExecutorPlugin("p4", calls),
+				}
+			},
+			want: []string{"agent-cleanup", "p4-cleanup", "p1-cleanup"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			calls := make(chan string, 10)
+			plugins := append([]Plugin{cleaningExecutorPlugin("end", calls)}, tc.plugins(calls)...)
+			handler := NewHandler(newRecordingAgent(calls), WithPlugins(plugins...))
+
+			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+			if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg}); err != nil {
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+			}
+
+			var got []string
+			for _, call := range collectCallsUntil(t, calls, "end-cleanup") {
+				if strings.HasSuffix(call, "-cleanup") && call != "end-cleanup" {
+					got = append(got, call)
+				}
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Cleanup() wrong call order (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestWithPlugins_PassthroughExecutorFunc(t *testing.T) {
+	t.Parallel()
+	agent := AgentExecutorFunc(func(context.Context, *ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("done")), nil)
+		}
+	})
+	handler := NewHandler(agent, WithPlugins(&mockPlugin{}))
+
+	msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
+	if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg}); err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 	}
 }

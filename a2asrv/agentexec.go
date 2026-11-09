@@ -156,6 +156,7 @@ type factory struct {
 	pushSender         push.Sender
 	pushConfigStore    push.ConfigStore
 	agent              AgentExecutor
+	cleaners           []AgentExecutionCleaner
 	interceptors       []ExecutorContextInterceptor
 	taskRetrySupported bool
 	materializer       taskstore.UpdateMaterializer
@@ -197,7 +198,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		execCtx.ctx,
 		f.taskStore,
 	)
-	return executor, processor, &cleaner{agent: f.agent, execCtx: execCtx.ctx}, nil
+	return executor, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx.ctx}, nil
 }
 
 type executionContext struct {
@@ -342,7 +343,7 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx, f.taskStore)
-	return canceler, processor, &cleaner{agent: f.agent, execCtx: execCtx}, nil
+	return canceler, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx}, nil
 }
 
 type executor struct {
@@ -375,8 +376,8 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 }
 
 type cleaner struct {
-	agent   AgentExecutor
-	execCtx *ExecutorContext
+	cleaners []AgentExecutionCleaner
+	execCtx  *ExecutorContext
 }
 
 // Cleanup is called after an agent execution finishes with either result or an error.
@@ -396,7 +397,7 @@ func (e *cleaner) Cleanup(ctx context.Context, result a2a.SendMessageResult, err
 		}
 	}
 
-	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
+	for _, cleaner := range e.cleaners {
 		cleaner.Cleanup(ctx, e.execCtx, result, err)
 	}
 }
