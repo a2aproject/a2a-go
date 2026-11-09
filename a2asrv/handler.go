@@ -244,7 +244,7 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		agent:           agent,
 		cleaners:        cleaners,
 		taskStore:       h.taskStore,
-		pushSender:      h.pushSender,
+		pushDelivery:    push.NewDeliveryHandler(h.pushSender),
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
 		materializer:    materializer,

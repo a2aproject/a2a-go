@@ -16,6 +16,8 @@ package push
 
 import (
 	"context"
+	"net/http"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
@@ -25,6 +27,31 @@ import (
 type Sender interface {
 	// SendPush sends a push notification containing the latest task state. If an error is returned execution is stopped.
 	SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error
+}
+
+// DeliveryHandler delivers one push notification. If an error is returned execution is stopped.
+type DeliveryHandler func(ctx context.Context, d *Delivery) (*DeliveryResult, error)
+
+// Delivery is a push notification to be delivered.
+type Delivery struct {
+	// Config is the push configuration of the receiving endpoint.
+	Config *a2a.PushConfig
+	// Event is the event to deliver.
+	Event a2a.Event
+	// Headers are added to the outgoing request by [HTTPPushSender]. Custom [Sender]s don't receive them.
+	Headers http.Header
+	// Skip can be set by a wrapper to skip the delivery without failing the execution.
+	Skip bool
+}
+
+// DeliveryResult is the outcome of a push notification delivery.
+type DeliveryResult struct {
+	// StatusCode is the HTTP status code returned by the endpoint. It is 0 if no response was received.
+	StatusCode int
+	// Duration is the time the delivery took.
+	Duration time.Duration
+	// Err is the delivery error. It is set even when the error doesn't stop the execution.
+	Err error
 }
 
 // ConfigStore manages push notification configurations for tasks.
