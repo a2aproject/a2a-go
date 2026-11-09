@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"slices"
 
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
@@ -38,6 +39,10 @@ type Plugin interface {
 
 	// WrapTaskStore wraps the task store, including the default in-memory store.
 	WrapTaskStore(next taskstore.Store) taskstore.Store
+
+	// WrapPushDelivery wraps the delivery of every push notification. It is not called if push notifications
+	// are not configured.
+	WrapPushDelivery(next push.DeliveryHandler) push.DeliveryHandler
 }
 
 // WithPlugins adds plugins to the ones already set. The first plugin is the outermost wrapper.
@@ -91,5 +96,10 @@ func (PassthroughPlugin) WrapExecutor(next AgentExecutor) AgentExecutor {
 
 // WrapTaskStore implements [Plugin.WrapTaskStore].
 func (PassthroughPlugin) WrapTaskStore(next taskstore.Store) taskstore.Store {
+	return next
+}
+
+// WrapPushDelivery implements [Plugin.WrapPushDelivery].
+func (PassthroughPlugin) WrapPushDelivery(next push.DeliveryHandler) push.DeliveryHandler {
 	return next
 }

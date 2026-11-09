@@ -17,7 +17,10 @@ package a2asrv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -27,6 +30,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
@@ -36,6 +40,7 @@ type mockPlugin struct {
 	wrapCallFn     func(next CallHandler) CallHandler
 	wrapExecutorFn func(next AgentExecutor) AgentExecutor
 	wrapStoreFn    func(next taskstore.Store) taskstore.Store
+	wrapPushFn     func(next push.DeliveryHandler) push.DeliveryHandler
 }
 
 func (p *mockPlugin) Name() string { return "mock" }
@@ -57,6 +62,13 @@ func (p *mockPlugin) WrapExecutor(next AgentExecutor) AgentExecutor {
 func (p *mockPlugin) WrapTaskStore(next taskstore.Store) taskstore.Store {
 	if p.wrapStoreFn != nil {
 		return p.wrapStoreFn(next)
+	}
+	return next
+}
+
+func (p *mockPlugin) WrapPushDelivery(next push.DeliveryHandler) push.DeliveryHandler {
+	if p.wrapPushFn != nil {
+		return p.wrapPushFn(next)
 	}
 	return next
 }
@@ -493,5 +505,81 @@ func TestWithPlugins_WrapTaskStore(t *testing.T) {
 				t.Fatalf("WrapTaskStore() wrong store calls (-want +got) diff = %s", diff)
 			}
 		})
+	}
+}
+
+func TestWithPlugins_WrapPushDelivery(t *testing.T) {
+	t.Parallel()
+	recorder := &callRecorder{}
+	var gotHeaders []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Values("X-Plugin")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	headerPlugin := func(name string) Plugin {
+		return &mockPlugin{wrapPushFn: func(next push.DeliveryHandler) push.DeliveryHandler {
+			return func(ctx context.Context, d *push.Delivery) (*push.DeliveryResult, error) {
+				recorder.add(name + "-before")
+				d.Headers.Add("X-Plugin", name)
+				result, err := next(ctx, d)
+				recorder.add(fmt.Sprintf("%s-after-%d", name, result.StatusCode))
+				return result, err
+			}
+		}}
+	}
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	agent := newEventReplayAgent([]a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done")}, nil)
+	sender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
+	handler := NewHandler(agent,
+		WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)),
+		WithPushNotifications(push.NewInMemoryStore(), sender),
+		WithPlugins(headerPlugin("p1"), headerPlugin("p2")),
+	)
+
+	input := &a2a.SendMessageRequest{
+		Message: newUserMessage(taskSeed, "work"),
+		Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: server.URL}},
+	}
+	if _, err := handler.SendMessage(t.Context(), input); err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+
+	wantCalls := []string{"p1-before", "p2-before", "p2-after-200", "p1-after-200"}
+	if diff := cmp.Diff(wantCalls, recorder.get()); diff != "" {
+		t.Fatalf("WrapPushDelivery() wrong call order (-want +got) diff = %s", diff)
+	}
+	if diff := cmp.Diff([]string{"p1", "p2"}, gotHeaders); diff != "" {
+		t.Fatalf("X-Plugin header wrong values (-want +got) diff = %s", diff)
+	}
+}
+
+func TestWithPlugins_SkipPushDelivery(t *testing.T) {
+	t.Parallel()
+	skipPlugin := &mockPlugin{wrapPushFn: func(next push.DeliveryHandler) push.DeliveryHandler {
+		return func(ctx context.Context, d *push.Delivery) (*push.DeliveryResult, error) {
+			d.Skip = true
+			return next(ctx, d)
+		}
+	}}
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	agent := newEventReplayAgent([]a2a.Event{newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done")}, nil)
+	failingSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{FailOnError: true})
+	handler := NewHandler(agent,
+		WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)),
+		WithPushNotifications(push.NewInMemoryStore(), failingSender),
+		WithPlugins(skipPlugin),
+	)
+
+	input := &a2a.SendMessageRequest{
+		Message: newUserMessage(taskSeed, "work"),
+		Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "http://localhost:1"}},
+	}
+	result, err := handler.SendMessage(t.Context(), input)
+	if err != nil {
+		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+	}
+	if state := result.(*a2a.Task).Status.State; state != a2a.TaskStateCompleted {
+		t.Fatalf("handler.SendMessage() state = %q, want %q", state, a2a.TaskStateCompleted)
 	}
 }

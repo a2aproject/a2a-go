@@ -239,12 +239,17 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		h.taskStore = wrapWithPlugins(h.taskStore, ih.plugins, Plugin.WrapTaskStore)
 	}
 
+	pushDelivery := push.NewDeliveryHandler(h.pushSender)
+	if pushDelivery != nil {
+		pushDelivery = wrapWithPlugins(pushDelivery, ih.plugins, Plugin.WrapPushDelivery)
+	}
+
 	agent, cleaners := wrapExecutor(h.agentExecutor, ih.plugins)
 	execFactory := &factory{
 		agent:           agent,
 		cleaners:        cleaners,
 		taskStore:       h.taskStore,
-		pushDelivery:    push.NewDeliveryHandler(h.pushSender),
+		pushDelivery:    pushDelivery,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
 		materializer:    materializer,
