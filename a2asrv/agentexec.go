@@ -490,10 +490,16 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 	}
 
 	if msg, ok := event.(*a2a.Message); ok {
-		if err := p.sendPushNotifications(ctx, event); err != nil {
+		if msg.ContextID != "" && msg.ContextID != p.execCtx.ContextID {
+			return nil, fmt.Errorf("context IDs don't match: %s != %s: %w", msg.ContextID, p.execCtx.ContextID, a2a.ErrInvalidAgentResponse)
+		}
+		withCtx := *msg
+		withCtx.ContextID = p.execCtx.ContextID
+		withCtx.TaskID = ""
+		if err := p.sendPushNotifications(ctx, &withCtx); err != nil {
 			return nil, fmt.Errorf("failed to send push notification for message response: %w", err)
 		}
-		return &taskexec.ProcessorResult{ExecutionResult: msg}, nil
+		return &taskexec.ProcessorResult{ExecutionResult: &withCtx, EventOverride: &withCtx}, nil
 	}
 
 	if err := p.sendPushNotifications(ctx, event); err != nil {
