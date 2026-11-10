@@ -15,6 +15,7 @@
 package pbconv
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -348,6 +349,10 @@ func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMess
 	}
 }
 
+// ErrUnsupportedStreamResponse identifies a payload the converter does not support.
+// Conversion failures for supported payloads do not wrap this error.
+var ErrUnsupportedStreamResponse = errors.New("unsupported StreamResponse payload type")
+
 // FromProtoStreamResponse converts a [a2apb.StreamResponse] to a [a2a.Event].
 func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 	if resp == nil {
@@ -394,7 +399,10 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 			Metadata:  fromProtoMap(p.ArtifactUpdate.GetMetadata()),
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported StreamResponse payload type: %T", resp.Payload)
+		if resp.Payload == nil && len(resp.ProtoReflect().GetUnknown()) == 0 {
+			return nil, fmt.Errorf("stream response has no payload")
+		}
+		return nil, fmt.Errorf("%w: %T", ErrUnsupportedStreamResponse, resp.Payload)
 	}
 }
 

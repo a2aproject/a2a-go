@@ -31,4 +31,4 @@
 
 ### AI learnings
 
-* ...
+* For streaming compatibility regressions, assert the known events after an unknown payload and the specific subsequent error; a generic unknown-type error can make a broken receive path pass.

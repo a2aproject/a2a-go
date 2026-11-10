@@ -218,6 +218,11 @@ func TestUnmarshalEventJSON_Errors(t *testing.T) {
 		wantErr string
 	}{
 		{
+			name:    "known null with unknown payload stays strict",
+			json:    `{"task":null,"futureEvent":{}}`,
+			wantErr: "unknown event type",
+		},
+		{
 			name:    "invalid JSON",
 			json:    `{invalid}`,
 			wantErr: "failed to unmarshal event",

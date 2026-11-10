@@ -30,7 +30,9 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // Content-Type header values.
@@ -373,7 +375,7 @@ type streamResponse struct {
 // ParseStreamResponse parses raw SSE stream data.
 // It returns (nil, nil) for an unknown payload that the caller must skip,
 // (event, nil) for known events, or (nil, err) for invalid responses and server errors.
-func ParseStreamResponse(data []byte) (a2a.Event, error) {
+func ParseStreamResponse(ctx context.Context, data []byte) (a2a.Event, error) {
 	var wrapper streamResponse
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
@@ -402,27 +404,15 @@ func ParseStreamResponse(data []byte) (a2a.Event, error) {
 		n++
 	}
 	if n == 0 {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(data, &fields); err != nil {
+		fields, err := eventjson.NonNullJSONFields(data)
+		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
 		}
-		var hasPayload bool
-		for key, value := range fields {
-			// Match encoding/json's case-insensitive field names. A known null
-			// payload is invalid, even when accompanied by unknown fields.
-			for _, known := range []string{"message", "task", "statusUpdate", "artifactUpdate", "error"} {
-				if strings.EqualFold(key, known) {
-					return nil, fmt.Errorf("unknown stream response type")
-				}
-			}
-			if !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				hasPayload = true
-			}
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("stream response has no payload")
 		}
-		if hasPayload {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("unknown stream response type")
+		log.Debug(ctx, "skipping unknown REST stream response", "fields", fields)
+		return nil, nil
 	}
 	if n != 1 {
 		return nil, fmt.Errorf("expected exactly one stream response type, got %d", n)

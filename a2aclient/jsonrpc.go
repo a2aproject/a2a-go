@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -26,6 +27,7 @@ import (
 	"net/url"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
@@ -267,8 +269,21 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 
 			var sr a2a.StreamResponse
 			if err := json.Unmarshal(result, &sr); err != nil {
-				yield(nil, err)
-				return
+				if !errors.Is(err, eventjson.ErrUnknownEventType) {
+					yield(nil, err)
+					return
+				}
+				fields, err := eventjson.NonNullJSONFields(result)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				if len(fields) == 0 {
+					yield(nil, fmt.Errorf("stream response has no payload"))
+					return
+				}
+				log.Debug(ctx, "skipping unknown JSON-RPC stream response", "fields", fields)
+				continue
 			}
 			event := sr.Event
 

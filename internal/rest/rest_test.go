@@ -785,7 +785,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("task event", func(t *testing.T) {
 		data := []byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -800,7 +800,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("message event", func(t *testing.T) {
 		data := []byte(`{"message":{"messageId":"msg-1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -811,7 +811,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("status update event", func(t *testing.T) {
 		data := []byte(`{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"TASK_STATE_COMPLETED"}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -822,7 +822,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("artifact update event", func(t *testing.T) {
 		data := []byte(`{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-1","parts":[{"text":"x"}]}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -833,7 +833,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("error event", func(t *testing.T) {
 		data := []byte(makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -844,7 +844,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("multiple discriminators", func(t *testing.T) {
 		data := []byte(`{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}},"message":{"messageId":"m1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -854,7 +854,7 @@ func TestParseStreamResponse(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		event, err := ParseStreamResponse([]byte(`not json`))
+		event, err := ParseStreamResponse(t.Context(), []byte(`not json`))
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -942,9 +942,9 @@ func TestParseStreamResponse_UnknownPayload(t *testing.T) {
 		{name: "status null", data: `{"statusUpdate":null}`, wantErr: true},
 		{name: "artifact null", data: `{"artifactUpdate":null}`, wantErr: true},
 		{name: "error null", data: `{"error":null}`, wantErr: true},
-		{name: "known null with unknown", data: `{"task":null,"futureEvent":{}}`, wantErr: true},
-		{name: "case insensitive known null", data: `{"TASK":null,"futureEvent":{}}`, wantErr: true},
-		{name: "unicode case insensitive task null", data: `{"taſk":null,"futureEvent":{}}`, wantErr: true},
+		{name: "known null with unknown", data: `{"task":null,"futureEvent":{}}`},
+		{name: "case insensitive known null", data: `{"TASK":null,"futureEvent":{}}`},
+		{name: "unicode case insensitive task null", data: `{"taſk":null,"futureEvent":{}}`},
 		{name: "unicode case insensitive status null", data: `{"ſtatusUpdate":null}`, wantErr: true},
 		{name: "case insensitive status null", data: `{"StatusUpdate":null}`, wantErr: true},
 		{name: "malformed known with unknown", data: `{"statusUpdate":{"status":42},"futureEvent":{}}`, wantErr: true},
@@ -957,7 +957,7 @@ func TestParseStreamResponse_UnknownPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			event, err := ParseStreamResponse([]byte(tt.data))
+			event, err := ParseStreamResponse(t.Context(), []byte(tt.data))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ParseStreamResponse() error = %v, want error %v", err, tt.wantErr)
 			}
