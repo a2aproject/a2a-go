@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"testing"
 
@@ -29,7 +30,9 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
@@ -208,4 +211,168 @@ func TestGRPCTransport_UnknownStreamResponses(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestGRPCTransport_StreamResponseWireTypes(t *testing.T) {
+	t.Parallel()
+	task := &a2a.Task{ID: "task-123", ContextID: "ctx-123", Status: a2a.TaskStatus{State: a2a.TaskStateSubmitted}}
+	working := a2a.NewStatusUpdateEvent(task, a2a.TaskStateWorking, nil)
+	completed := a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil)
+	encode := func(event a2a.Event) *a2apb.StreamResponse {
+		t.Helper()
+		response, err := pbconv.ToProtoStreamResponse(event)
+		if err != nil {
+			t.Fatalf("ToProtoStreamResponse() error = %v, want nil", err)
+		}
+		return response
+	}
+	pTask, pWorking, pCompleted := encode(task), encode(working), encode(completed)
+	futureWire := protowire.AppendBytes(protowire.AppendTag(nil, 100, protowire.BytesType), []byte("future payload"))
+	future := &a2apb.StreamResponse{}
+	future.ProtoReflect().SetUnknown(futureWire)
+	fields := future.ProtoReflect().Descriptor().Oneofs().ByName("payload").Fields()
+	taskField := fields.ByName("task")
+	wrongTaskWire := protowire.AppendVarint(protowire.AppendTag(nil, taskField.Number(), protowire.VarintType), 1)
+	unknownGroup := protowire.AppendTag(nil, 100, protowire.StartGroupType)
+	unknownGroup = protowire.AppendVarint(protowire.AppendTag(unknownGroup, taskField.Number(), protowire.VarintType), 1)
+	unknownGroup = protowire.AppendTag(unknownGroup, 100, protowire.EndGroupType)
+	type testCase struct {
+		name             string
+		wire             []byte
+		withKnownPayload bool
+		want             []a2a.Event
+		wantErrText      string
+	}
+	cases := []testCase{
+		{
+			name: "future field",
+			wire: futureWire,
+			want: []a2a.Event{task, completed},
+		},
+		{
+			name: "unknown group with matching nested field number",
+			wire: unknownGroup,
+			want: []a2a.Event{task, completed},
+		},
+		{
+			name:        "unknown field before malformed known field",
+			wire:        append(append([]byte(nil), futureWire...), wrongTaskWire...),
+			want:        []a2a.Event{task},
+			wantErrText: `invalid wire type for stream response field "task"`,
+		},
+		{
+			name:             "known payload retains existing wrong wire field behavior",
+			wire:             wrongTaskWire,
+			withKnownPayload: true,
+			want:             []a2a.Event{task, working, completed},
+		},
+		{
+			name:        "malformed embedded task",
+			wire:        protowire.AppendBytes(protowire.AppendTag(nil, taskField.Number(), protowire.BytesType), []byte{0xff}),
+			want:        []a2a.Event{task},
+			wantErrText: "failed to unmarshal the received message",
+		},
+		{
+			name:        "empty wrapper",
+			want:        []a2a.Event{task},
+			wantErrText: "stream response has no payload",
+		},
+	}
+	for i := 0; i < fields.Len(); i++ {
+		field := fields.Get(i)
+		cases = append(cases, testCase{
+			name:        fmt.Sprintf("wrong wire type for %s", field.Name()),
+			wire:        protowire.AppendVarint(protowire.AppendTag(nil, field.Number(), protowire.VarintType), 1),
+			want:        []a2a.Event{task},
+			wantErrText: fmt.Sprintf("invalid wire type for stream response field %q", field.Name()),
+		})
+	}
+	for _, subscribe := range []bool{false, true} {
+		for _, tc := range cases {
+			t.Run(fmt.Sprintf("subscribe=%t/%s", subscribe, tc.name), func(t *testing.T) {
+				t.Parallel()
+				middle := &a2apb.StreamResponse{}
+				if tc.withKnownPayload {
+					middle = proto.Clone(pWorking).(*a2apb.StreamResponse)
+				}
+				// Preserve these bytes until gRPC's real protobuf decoder receives them.
+				middle.ProtoReflect().SetUnknown(tc.wire)
+				conn := newStreamResponseClientConn(t, []*a2apb.StreamResponse{pTask, future, middle, pCompleted})
+				transport := NewGRPCTransport(conn)
+				stream := transport.SendStreamingMessage(t.Context(), nil, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+				if subscribe {
+					stream = transport.SubscribeToTask(t.Context(), nil, &a2a.SubscribeToTaskRequest{ID: task.ID})
+				}
+				var got []a2a.Event
+				var gotErr error
+				for event, err := range stream {
+					if err != nil {
+						if event != nil || gotErr != nil {
+							t.Fatalf("stream = (%v, %v), want a single error with no event", event, err)
+						}
+						gotErr = err
+						continue
+					}
+					got = append(got, event)
+				}
+				if tc.wantErrText != "" {
+					if gotErr == nil || !strings.Contains(gotErr.Error(), tc.wantErrText) {
+						t.Fatalf("stream error = %v, want %q", gotErr, tc.wantErrText)
+					}
+				} else if gotErr != nil {
+					t.Fatalf("stream error = %v, want nil", gotErr)
+				}
+				if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+					t.Fatalf("stream wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
+type streamResponseServer struct {
+	a2apb.UnimplementedA2AServiceServer
+	responses []*a2apb.StreamResponse
+}
+
+func (s *streamResponseServer) send(stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+	for _, response := range s.responses {
+		if err := stream.Send(response); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *streamResponseServer) SendStreamingMessage(_ *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+	return s.send(stream)
+}
+
+func (s *streamResponseServer) SubscribeToTask(_ *a2apb.SubscribeToTaskRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+	return s.send(stream)
+}
+
+func newStreamResponseClientConn(t *testing.T, responses []*a2apb.StreamResponse) *grpc.ClientConn {
+	t.Helper()
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	a2apb.RegisterA2AServiceServer(server, &streamResponseServer{responses: responses})
+	t.Cleanup(server.Stop)
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Errorf("server.Serve() error = %v, want nil", err)
+		}
+	}()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(); err != nil {
+			t.Errorf("conn.Close() error = %v, want nil", err)
+		}
+	})
+	return conn
 }
