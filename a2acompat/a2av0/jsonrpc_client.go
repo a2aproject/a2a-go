@@ -22,6 +22,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"net/url"
 	"time"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -88,9 +89,21 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewBuffer(reqBody))
+	requestURL := t.url
+	if extraQuery := a2aclient.HTTPQueryParamsFrom(ctx); len(extraQuery) > 0 {
+		u, err := url.Parse(t.url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
+		}
+		query := u.Query()
+		utils.MergeQueryParams(query, extraQuery)
+		u.RawQuery = query.Encode()
+		requestURL = u.String()
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
@@ -113,7 +126,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	defer func() {
 		if err := httpResp.Body.Close(); err != nil {
@@ -122,7 +135,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+		return nil, jsonrpc.FromHTTPError(httpResp)
 	}
 
 	var resp jsonrpc.ClientResponse
@@ -146,14 +159,15 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
+		statusErr := jsonrpc.FromHTTPError(httpResp)
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+		return nil, statusErr
 	}
 
 	return httpResp.Body, nil

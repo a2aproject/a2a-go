@@ -121,12 +121,23 @@ type remoteSubscription struct {
 	store    taskstore.Store
 	queue    eventqueue.Reader
 	consumed bool
+
+	cancel            bool
+	cancelFromVersion taskstore.TaskVersion
 }
 
 var _ Subscription = (*remoteSubscription)(nil)
 
 func newRemoteSubscription(queue eventqueue.Reader, store taskstore.Store, tid a2a.TaskID) *remoteSubscription {
 	return &remoteSubscription{tid: tid, queue: queue, store: store}
+}
+
+// newRemoteCancelSubscription creates a subscription to the events of a cancelation. A non-terminal task snapshot
+// is not emitted, because an input-required snapshot would be treated as the final event of the cancelation.
+// fromVersion must be loaded before the cancel request is written, so that a refusal persisted by a fast worker
+// before the snapshot is loaded is not skipped.
+func newRemoteCancelSubscription(queue eventqueue.Reader, store taskstore.Store, tid a2a.TaskID, fromVersion taskstore.TaskVersion) *remoteSubscription {
+	return &remoteSubscription{tid: tid, queue: queue, store: store, cancel: true, cancelFromVersion: fromVersion}
 }
 
 func (s *remoteSubscription) TaskID() a2a.TaskID {
@@ -160,13 +171,16 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 		snapshotVersion := taskstore.TaskVersionMissing
 		if storedTask != nil {
 			task := storedTask.Task
-			if !yield(task, nil) {
-				return
-			}
-			if task.Status.State.Terminal() {
-				return
+			terminal := task.Status.State.Terminal()
+			if !s.cancel || terminal {
+				if !yield(task, nil) || terminal {
+					return
+				}
 			}
 			snapshotVersion = storedTask.Version
+		}
+		if s.cancel {
+			snapshotVersion = s.cancelFromVersion
 		}
 
 		for {

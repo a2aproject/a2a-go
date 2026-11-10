@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -104,13 +105,60 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				req.ServiceParams.set("Authorization", fmt.Sprintf("Bearer %s", credential))
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
-				req.ServiceParams.set(v.Name, string(credential))
-				return ctx, nil, nil
+				if !isHTTPProtocolBinding(req) {
+					req.ServiceParams.set(v.Name, string(credential))
+					return ctx, nil, nil
+				}
+				switch v.Location {
+				case a2a.APIKeySecuritySchemeLocationQuery:
+					ctx = AttachHTTPQueryParams(ctx, url.Values{v.Name: {string(credential)}})
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationCookie:
+					if err := validateCookiePair(v.Name, string(credential)); err != nil {
+						return ctx, nil, err
+					}
+					pair := v.Name + "=" + string(credential)
+					// RFC 6265 section 5.4 forbids sending more than one Cookie header.
+					if existing := req.ServiceParams.Get("Cookie"); len(existing) > 0 {
+						pair = strings.Join(existing, "; ") + "; " + pair
+					}
+					req.ServiceParams.set("Cookie", pair)
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationHeader, "":
+					req.ServiceParams.set(v.Name, string(credential))
+					return ctx, nil, nil
+				default:
+					log.Warn(ctx, "unsupported API key security scheme location, credential not attached", "location", v.Location)
+				}
 			}
 		}
 	}
 
 	return ctx, nil, nil
+}
+
+func isHTTPProtocolBinding(req *Request) bool {
+	return req.ProtocolBinding == a2a.TransportProtocolJSONRPC ||
+		req.ProtocolBinding == a2a.TransportProtocolHTTPJSON
+}
+
+func validateCookiePair(name, credential string) error {
+	switch {
+	case name == "":
+		return errors.New("API key cookie name is empty")
+	case strings.ContainsAny(name, "=;,\"\\ \t\r\n") || containsControlChars(name):
+		return fmt.Errorf("API key cookie name %q contains invalid characters", name)
+	// The error must not include the credential.
+	case strings.ContainsAny(credential, ";,\"\\ \t\r\n") || containsControlChars(credential):
+		return errors.New("API key credential contains characters that are invalid for a cookie value")
+	}
+	return nil
+}
+
+func containsControlChars(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f
+	})
 }
 
 // CredentialsService is used by [AuthInterceptor] for resolving credentials.

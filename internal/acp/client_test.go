@@ -15,10 +15,12 @@
 package acp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -245,4 +247,193 @@ func TestConn_PeerExitFailsCalls(t *testing.T) {
 		t.Fatalf("client.Prompt() error = %v, want %v", err, ErrAgentExited)
 	}
 	<-client.Done()
+}
+
+// newRawAgent connects a client to an agent played by the test through raw
+// lines: it reads what the client writes and writes agent output verbatim.
+func newRawAgent(t *testing.T) (*Client, *bufio.Reader, io.Writer) {
+	t.Helper()
+	clientR, agentW := io.Pipe()
+	agentR, clientW := io.Pipe()
+	client := NewClient(pipeRWC{r: clientR, w: clientW}, &recordingHandler{})
+	client.Start()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("client.Close() error = %v", err)
+		}
+		if err := agentW.Close(); err != nil {
+			t.Errorf("agentW.Close() error = %v", err)
+		}
+		if err := agentR.Close(); err != nil {
+			t.Errorf("agentR.Close() error = %v", err)
+		}
+	})
+	return client, bufio.NewReader(agentR), agentW
+}
+
+// ioTimeout is generous because race-enabled tests decode long lines slowly.
+const ioTimeout = 30 * time.Second
+
+func readLine(t *testing.T, r *bufio.Reader) []byte {
+	t.Helper()
+	type result struct {
+		line []byte
+		err  error
+	}
+	results := make(chan result, 1)
+	go func() {
+		line, err := r.ReadBytes('\n')
+		results <- result{line, err}
+	}()
+	select {
+	case got := <-results:
+		if got.err != nil {
+			t.Fatalf("ReadBytes() error = %v", got.err)
+		}
+		return got.line
+	case <-time.After(ioTimeout):
+		t.Fatal("ReadBytes() did not return, want a message from the client")
+		return nil
+	}
+}
+
+func readRequestID(t *testing.T, r *bufio.Reader) string {
+	t.Helper()
+	line := readLine(t, r)
+	var m Message
+	if err := json.Unmarshal(line, &m); err != nil {
+		t.Fatalf("json.Unmarshal(%s) error = %v", line, err)
+	}
+	return string(m.ID)
+}
+
+func writeString(t *testing.T, w io.Writer, s string) {
+	t.Helper()
+	errs := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(w, s)
+		errs <- err
+	}()
+	select {
+	case err := <-errs:
+		if err != nil {
+			t.Fatalf("WriteString() error = %v", err)
+		}
+	case <-time.After(ioTimeout):
+		t.Fatal("WriteString() did not return, want the client to read agent output")
+	}
+}
+
+func TestConn_SkipsOutputWhichIsNotJSONRPC(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		output string
+	}{
+		{name: "plain text", output: "npm WARN config production Use `--omit=dev` instead.\n"},
+		{name: "JSON log", output: `{"level":"info","msg":"agent started"}` + "\n"},
+		{name: "JSON value", output: "[1,2,3]\n42\nnull\n"},
+		{name: "truncated JSON", output: `{"jsonrpc":"2.0","id":` + "\n"},
+		{name: "mistyped notification method", output: `{"jsonrpc":"2.0","method":5,"params":{}}` + "\n"},
+		{name: "blank lines", output: "\n\r\n  \n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			client, r, w := newRawAgent(t)
+			type result struct {
+				resp *PromptResponse
+				err  error
+			}
+			results := make(chan result, 1)
+			go func() {
+				resp, err := client.Prompt(testContext(t), PromptRequest{SessionID: "s1"})
+				results <- result{resp, err}
+			}()
+			id := readRequestID(t, r)
+
+			writeString(t, w, tc.output)
+			writeString(t, w, `{"jsonrpc":"2.0","id":`+id+`,"result":{"stopReason":"end_turn"}}`+"\r\n")
+
+			got := <-results
+			if got.err != nil {
+				t.Fatalf("client.Prompt() error = %v, want nil", got.err)
+			}
+			if got.resp.StopReason != StopEndTurn {
+				t.Fatalf("client.Prompt() = %v, want %v", got.resp.StopReason, StopEndTurn)
+			}
+		})
+	}
+}
+
+func TestConn_RejectsRequestWithMistypedMethod(t *testing.T) {
+	t.Parallel()
+	_, r, w := newRawAgent(t)
+
+	writeString(t, w, `{"jsonrpc":"2.0","id":7,"method":{"name":"session/request_permission"}}`+"\n")
+
+	line := readLine(t, r)
+	var got Message
+	if err := json.Unmarshal(line, &got); err != nil {
+		t.Fatalf("json.Unmarshal(%s) error = %v", line, err)
+	}
+	if diff := cmp.Diff(Message{ID: json.RawMessage("7"), Error: &Error{Code: CodeInvalidRequest, Message: "method must be a non-empty string"}}, got); diff != "" {
+		t.Fatalf("client response wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestConn_MalformedResponseFailsOnlyItsCall(t *testing.T) {
+	t.Parallel()
+	client, r, w := newRawAgent(t)
+	ctx := testContext(t)
+	errs := make(chan error, 1)
+	go func() {
+		_, err := client.Prompt(ctx, PromptRequest{SessionID: "s1"})
+		errs <- err
+	}()
+	id := readRequestID(t, r)
+
+	writeString(t, w, `{"jsonrpc":"2.0","id":`+id+`,"error":"rate limited"}`+"\n")
+
+	if err := <-errs; err == nil || !strings.Contains(err.Error(), "decoding session/prompt error") {
+		t.Fatalf("client.Prompt() error = %v, want decoding session/prompt error", err)
+	}
+	sessions := make(chan error, 1)
+	go func() {
+		_, err := client.NewSession(ctx, NewSessionRequest{})
+		sessions <- err
+	}()
+	id = readRequestID(t, r)
+	writeString(t, w, `{"jsonrpc":"2.0","id":`+id+`,"result":{"sessionId":"s2"}}`+"\n")
+	if err := <-sessions; err != nil {
+		t.Fatalf("client.NewSession() error = %v, want nil", err)
+	}
+}
+
+func TestConn_ReadsLongLines(t *testing.T) {
+	t.Parallel()
+	client, r, w := newRawAgent(t)
+	type result struct {
+		resp *NewSessionResponse
+		err  error
+	}
+	results := make(chan result, 1)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	go func() {
+		resp, err := client.NewSession(ctx, NewSessionRequest{})
+		results <- result{resp, err}
+	}()
+	id := readRequestID(t, r)
+	sessionID := strings.Repeat("s", 20<<20)
+
+	writeString(t, w, `{"jsonrpc":"2.0","id":`+id+`,"result":{"sessionId":"`+sessionID+`"}}`+"\r\n")
+
+	got := <-results
+	if got.err != nil {
+		t.Fatalf("client.NewSession() error = %v, want nil", got.err)
+	}
+	if len(got.resp.SessionID) != len(sessionID) {
+		t.Fatalf("client.NewSession() session ID length = %d, want %d", len(got.resp.SessionID), len(sessionID))
+	}
 }

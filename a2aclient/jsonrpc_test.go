@@ -21,7 +21,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -887,6 +889,206 @@ func TestJSONRPCTransport_ResponseTrailingData(t *testing.T) {
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
+		})
+	}
+}
+
+func TestJSONRPCTransport_QueryParamsFromContext(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		req := mustDecodeJSONRPC(t, r, "GetTask")
+		resp := newResponse(req, json.RawMessage(`{"kind":"task","id":"task-123"}`))
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+
+	transport := NewJSONRPCTransport(server.URL, nil)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"secret"}})
+
+	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err != nil {
+		t.Fatalf("transport.GetTask() error = %v", err)
+	}
+
+	want := url.Values{"api_key": []string{"secret"}}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Errorf("wrong query params (-want +got) diff = %s", diff)
+	}
+}
+
+func TestJSONRPCTransport_ErrorRedactsQueryParams(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	transport := NewJSONRPCTransport(serverURL, nil)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
+
+	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err == nil {
+		t.Fatalf("transport.GetTask() error = nil, want non-nil")
+	}
+	if strings.Contains(err.Error(), "super-secret") {
+		t.Errorf("transport.GetTask() error = %v, must not contain query params", err)
+	}
+}
+
+func TestAuth_APIKeyCookieLocation_JSONRPC(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	var gotCookie string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCookie = r.Header.Get("Cookie")
+		if got := r.Header.Get("session_key"); got != "" {
+			t.Errorf("credential leaked into header session_key = %q, want empty", got)
+		}
+		req := mustDecodeJSONRPC(t, r, "SendMessage")
+		resp := newResponse(req, json.RawMessage(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`))
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+
+	schemeName := a2a.SecuritySchemeName("api-key")
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			schemeName: a2a.APIKeySecurityScheme{Name: "session_key", Location: a2a.APIKeySecuritySchemeLocationCookie},
+		},
+	}
+
+	credStore := NewInMemoryCredentialsStore()
+	client, err := NewFromCard(
+		ctx,
+		card,
+		withTestJSONRPCTransport(),
+		WithCallInterceptors(&AuthInterceptor{Service: credStore}),
+	)
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Destroy(); err != nil {
+			t.Errorf("client.Destroy() error = %v", err)
+		}
+	})
+
+	sessionID := SessionID("abcd")
+	credStore.Set(sessionID, schemeName, AuthCredential("secret"))
+
+	ctx = AttachSessionID(ctx, sessionID)
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v", err)
+	}
+
+	if gotCookie != "session_key=secret" {
+		t.Errorf("Cookie header = %q, want %q", gotCookie, "session_key=secret")
+	}
+}
+
+func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		status      int
+		contentType string
+		body        string
+		wantErr     error
+		wantMsg     string
+	}{
+		{
+			name:        "JSON-RPC error from auth middleware",
+			status:      http.StatusUnauthorized,
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantErr:     a2a.ErrUnauthenticated,
+			wantMsg:     "the token was revoked",
+		},
+		{
+			name:        "JSON-RPC error with content type parameters",
+			status:      http.StatusRequestEntityTooLarge,
+			contentType: "application/json; charset=utf-8",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"payload too large"}}`,
+			wantErr:     a2a.ErrInvalidRequest,
+			wantMsg:     "payload too large",
+		},
+		{
+			name:        "non-JSON body",
+			status:      http.StatusUnauthorized,
+			contentType: "text/plain",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
+		},
+		{
+			name:        "JSON body without error",
+			status:      http.StatusBadGateway,
+			contentType: "application/json",
+			body:        `{"message":"upstream unavailable"}`,
+			wantMsg:     "unexpected HTTP status: 502 Bad Gateway",
+		},
+		{
+			name:        "malformed JSON body",
+			status:      http.StatusForbidden,
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","error":{"code":-31403`,
+			wantMsg:     "unexpected HTTP status: 403 Forbidden",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+
+			checkErr := func(op string, err error) {
+				t.Helper()
+				if err == nil {
+					t.Fatalf("transport.%s() error = nil, want non-nil", op)
+				}
+				if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+					t.Fatalf("transport.%s() error = %v, want %v", op, err, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantMsg) {
+					t.Fatalf("transport.%s() error = %v, want message containing %q", op, err, tc.wantMsg)
+				}
+			}
+
+			_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+			checkErr("GetTask", err)
+
+			var streamErr error
+			for _, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+			}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			checkErr("SendStreamingMessage", streamErr)
 		})
 	}
 }

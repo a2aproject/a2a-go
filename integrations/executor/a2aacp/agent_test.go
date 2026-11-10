@@ -240,6 +240,16 @@ func TestExecutor_MaxAgents(t *testing.T) {
 	}}
 	e := newTestExecutor(t, h, Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 1}})
 	run(t, execute(e, newExecCtx("a", a2a.NewTextPart("done"))))
+	waitFor(t, func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for _, s := range e.agents {
+			if s.refs > 0 {
+				return false
+			}
+		}
+		return true
+	})
 	busy := newExecCtx("b", a2a.NewTextPart("ask"))
 
 	got := run(t, execute(e, busy))

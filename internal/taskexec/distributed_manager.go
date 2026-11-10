@@ -110,7 +110,7 @@ func (m *distributedManager) Execute(ctx context.Context, req *a2a.SendMessageRe
 		}
 
 		if storedTask.Status.State.Terminal() {
-			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrInvalidParams)
+			return nil, fmt.Errorf("task in a terminal state %q: %w", storedTask.Status.State, a2a.ErrUnsupportedOperation)
 		}
 	}
 
@@ -195,7 +195,7 @@ func (m *distributedManager) Cancel(ctx context.Context, req *a2a.CancelTaskRequ
 		return nil, fmt.Errorf("bug: work-queue task id override is only allowed for executions")
 	}
 
-	subscription := newRemoteSubscription(queue, m.taskStore, req.ID)
+	subscription := newRemoteCancelSubscription(queue, m.taskStore, req.ID, storedTask.Version)
 
 	var subscriptionErr error
 	for event, err := range subscription.Events(ctx) {

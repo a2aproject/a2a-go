@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 )
 
 // Config exposes options for customizing [Client] behavior.
@@ -59,13 +60,6 @@ type Client struct {
 	card atomic.Pointer[a2a.AgentCard]
 }
 
-type interceptBeforeResult[Req any, Resp any] struct {
-	reqOverride   Req
-	params        ServiceParams
-	earlyResponse *Resp
-	earlyErr      error
-}
-
 // A2A protocol methods
 
 // GetTask implements the 'GetTask' protocol method.
@@ -92,73 +86,15 @@ func (c *Client) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (
 // SendStreamingMessage implements the 'SendStreamingMessage' protocol method (streaming).
 func (c *Client) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		method := "SendStreamingMessage"
-
 		req = c.withDefaultSendConfig(req)
-
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.Event](ctx, c, method, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-
-		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
-			resp, err := c.transport.SendMessage(ctx, res.params, res.reqOverride)
-			interceptedResponse, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			yield(interceptedResponse, nil)
-			return
-		}
-
-		for resp, err := range c.transport.SendStreamingMessage(ctx, res.params, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, c, "SendStreamingMessage", req, sendStreamingMessage(c), yield)
 	}
 }
 
 // SubscribeToTask implements the `SubscribeToTask` protocol method.
 func (c *Client) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		method := "SubscribeToTask"
-
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.Event](ctx, c, method, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-
-		for resp, err := range c.transport.SubscribeToTask(ctx, res.params, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, resp, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, c, "SubscribeToTask", req, streamHandler(c.transport.SubscribeToTask), yield)
 	}
 }
 
@@ -179,20 +115,10 @@ func (c *Client) CreateTaskPushConfig(ctx context.Context, req *a2a.PushConfig) 
 
 // DeleteTaskPushConfig implements the `DeleteTaskPushNotificationConfig` protocol method.
 func (c *Client) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
-	method := "DeleteTaskPushConfig"
-
-	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, c, method, req)
-	if res.earlyErr != nil {
-		return res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return nil
-	}
-
-	err := c.transport.DeleteTaskPushConfig(ctx, res.params, res.reqOverride)
-	var emptyResp struct{}
-	_, errOverride := interceptAfter(ctx, c, c.interceptors, method, res.params, emptyResp, err)
-	return errOverride
+	_, err := doCall(ctx, c, "DeleteTaskPushConfig", req, func(ctx context.Context, params ServiceParams, req *a2a.DeleteTaskPushConfigRequest) (struct{}, error) {
+		return struct{}{}, c.transport.DeleteTaskPushConfig(ctx, params, req)
+	})
+	return err
 }
 
 // GetExtendedAgentCard implements the `GetExtendedAgentCard` protocol method.
@@ -255,102 +181,117 @@ func (c *Client) withDefaultSendConfig(message *a2a.SendMessageRequest) *a2a.Sen
 	return &result
 }
 
-func interceptBefore[Req any, Resp any](ctx context.Context, c *Client, method string, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
+func (c *Client) newRequest(ctx context.Context, method string, payload any) Request {
 	serviceParams := serviceParamsCloneFrom(ctx)
 	serviceParams.set(a2a.SvcParamVersion, string(c.protocolVersion))
-	req := Request{
-		Method:        method,
-		BaseURL:       c.endpoint.URL,
-		ServiceParams: serviceParams,
-		Card:          c.card.Load(),
-		Payload:       payload,
+	return Request{
+		Method:          method,
+		BaseURL:         c.endpoint.URL,
+		ProtocolBinding: c.endpoint.ProtocolBinding,
+		ServiceParams:   serviceParams,
+		Card:            c.card.Load(),
+		Payload:         payload,
 	}
-
-	var zeroReq Req
-	outcome := interceptBeforeResult[Req, Resp]{
-		reqOverride:   zeroReq,
-		earlyResponse: nil,
-		earlyErr:      nil,
-	}
-
-	for i, interceptor := range c.interceptors {
-		localCtx, result, err := interceptor.Before(ctx, &req)
-
-		ctx = localCtx
-
-		if err != nil || result != nil {
-			var typedResult Resp
-			if result != nil {
-				r, ok := result.(Resp)
-				if !ok {
-					outcome.earlyErr = fmt.Errorf("result type changed from %T to %T", result, r)
-					return ctx, outcome
-				}
-				typedResult = r
-			}
-			interceptors := c.interceptors[:i+1]
-			resp, err := interceptAfter(ctx, c, interceptors, method, req.ServiceParams, typedResult, err)
-			outcome.earlyResponse = &resp
-			outcome.earlyErr = err
-			return ctx, outcome
-		}
-	}
-
-	if req.Payload == nil {
-		return ctx, outcome
-	}
-
-	typed, ok := req.Payload.(Req)
-	if !ok {
-		outcome.earlyErr = fmt.Errorf("payload type changed from %T to %T", payload, req.Payload)
-		return ctx, outcome
-	}
-	outcome.reqOverride = typed
-	outcome.params = req.ServiceParams
-	return ctx, outcome
 }
 
-func interceptAfter[T any](ctx context.Context, c *Client, interceptors []CallInterceptor, method string, params ServiceParams, payload T, err error) (T, error) {
+func interceptCalls(c *Client, next callHandler) callHandler {
+	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			ctx, req := ctx, req
+			req.ServiceParams = req.ServiceParams.clone()
+			for i, interceptor := range c.interceptors {
+				localCtx, result, err := interceptor.Before(ctx, &req)
+				ctx = localCtx
+				if err != nil || result != nil {
+					yield(interceptAfter(ctx, c, c.interceptors[:i+1], req, result, err))
+					return
+				}
+			}
+			for payload, err := range next(ctx, req) {
+				if !yield(interceptAfter(ctx, c, c.interceptors, req, payload, err)) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func interceptAfter(ctx context.Context, c *Client, interceptors []CallInterceptor, req Request, payload any, err error) (any, error) {
 	resp := Response{
 		BaseURL:       c.endpoint.URL,
-		Method:        method,
-		ServiceParams: params,
+		Method:        req.Method,
+		ServiceParams: req.ServiceParams,
 		Payload:       payload,
 		Card:          c.card.Load(),
 		Err:           err,
 	}
-
-	var zero T
 	for _, interceptor := range slices.Backward(interceptors) {
 		if err := interceptor.After(ctx, &resp); err != nil {
-			return zero, err
+			return nil, err
 		}
 	}
+	return resp.Payload, resp.Err
+}
 
-	if resp.Payload == nil {
-		return zero, resp.Err
+func unaryHandler[Req, Resp any](transportCall func(context.Context, ServiceParams, Req) (Resp, error)) callHandler {
+	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			yield(transportCall(ctx, req.ServiceParams, typed))
+		}
 	}
+}
 
-	typed, ok := resp.Payload.(T)
-	if !ok {
-		return zero, fmt.Errorf("payload type changed from %T to %T", payload, resp.Payload)
+func streamHandler[Req any](transportCall func(context.Context, ServiceParams, Req) iter.Seq2[a2a.Event, error]) callHandler {
+	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			for event, err := range transportCall(ctx, req.ServiceParams, typed) {
+				if !yield(event, err) {
+					return
+				}
+			}
+		}
 	}
+}
 
-	return typed, resp.Err
+func sendStreamingMessage(c *Client) callHandler {
+	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
+		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
+			return unaryHandler(c.transport.SendMessage)(ctx, req)
+		}
+		return streamHandler(c.transport.SendStreamingMessage)(ctx, req)
+	}
 }
 
 func doCall[Req any, Resp any](
 	ctx context.Context, c *Client, method string, req Req,
 	transportCall func(context.Context, ServiceParams, Req) (Resp, error),
 ) (Resp, error) {
-	ctx, res := interceptBefore[Req, Resp](ctx, c, method, req)
-	if res.earlyErr != nil {
-		var zero Resp
-		return zero, res.earlyErr
+	for payload, err := range interceptCalls(c, unaryHandler(transportCall))(ctx, c.newRequest(ctx, method, req)) {
+		return utils.CastResult[Resp](payload, err)
 	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
+	var zero Resp
+	return zero, fmt.Errorf("%s produced no result", method)
+}
+
+func streamCall(ctx context.Context, c *Client, method string, req any, handler callHandler, yield func(a2a.Event, error) bool) {
+	for payload, err := range interceptCalls(c, handler)(ctx, c.newRequest(ctx, method, req)) {
+		event, err := utils.CastResult[a2a.Event](payload, err)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if !yield(event, nil) {
+			return
+		}
 	}
-	response, err := transportCall(ctx, res.params, res.reqOverride)
-	return interceptAfter(ctx, c, c.interceptors, method, res.params, response, err)
 }

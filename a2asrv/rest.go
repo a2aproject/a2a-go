@@ -77,6 +77,9 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 // - "/{*}"
 // - "/locations/*/projects/{*}"
 // - "/{locations/*/projects/*}"
+//
+// A tenant can also be sent as a single escaped path segment, e.g. "/locations%2Fx%2Fprojects%2Fy"
+// matches "/{locations/*/projects/*}" with tenant "locations/x/projects/y".
 func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ...TransportOption) http.Handler {
 	compiledTemplate, err := pathtemplate.New(tenantTemplate)
 	if err != nil {
