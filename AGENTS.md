@@ -34,3 +34,5 @@
 * For streaming compatibility regressions, assert the known events after an unknown payload and the specific subsequent error; a generic unknown-type error can make a broken receive path pass.
 
 * Before treating protobuf unknown bytes as a future payload, test known field numbers with incompatible wire types; successful proto.Unmarshal alone does not establish schema validity.
+
+* For diagnostics, assert the intended log record without assuming it is the only record, and check the full output for payload leakage.

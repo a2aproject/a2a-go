@@ -1,4 +1,4 @@
-// Copyright 2025 The A2A Authors
+// Copyright 2026 The A2A Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -233,17 +233,42 @@ func TestHTTPTransports_UnknownStreamResponseDiagnostics(t *testing.T) {
 			}
 			var output strings.Builder
 			ctx := log.AttachLogger(t.Context(), slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			log.Debug(ctx, "starting stream", "fields", "unrelated context")
 			for event, err := range transport.SubscribeToTask(ctx, nil, &a2a.SubscribeToTaskRequest{ID: "task-123"}) {
 				t.Fatalf("SubscribeToTask() = (%v, %v), want no events or errors", event, err)
 			}
-			var record struct {
-				Fields []string `json:"fields"`
+			log.Debug(ctx, "stream complete")
+			wantMessage := "skipping unknown REST stream response"
+			if protocol == "JSONRPC" {
+				wantMessage = "skipping unknown JSON-RPC stream response"
 			}
-			if err := json.Unmarshal([]byte(output.String()), &record); err != nil {
-				t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+			decoder := json.NewDecoder(strings.NewReader(output.String()))
+			var matches int
+			for {
+				var record struct {
+					Message string          `json:"msg"`
+					Fields  json.RawMessage `json:"fields"`
+				}
+				if err := decoder.Decode(&record); err != nil {
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					t.Fatalf("decoder.Decode() error = %v, want nil", err)
+				}
+				if record.Message != wantMessage {
+					continue
+				}
+				matches++
+				var fields []string
+				if err := json.Unmarshal(record.Fields, &fields); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+				}
+				if diff := cmp.Diff([]string{"anotherEvent", "futureEvent"}, fields); diff != "" {
+					t.Fatalf("log fields wrong result (-want +got) diff = %s", diff)
+				}
 			}
-			if diff := cmp.Diff([]string{"anotherEvent", "futureEvent"}, record.Fields); diff != "" {
-				t.Fatalf("log fields wrong result (-want +got) diff = %s", diff)
+			if matches != 1 {
+				t.Fatalf("skip log count = %d, want 1", matches)
 			}
 			if strings.Contains(output.String(), "secret") || strings.Contains(output.String(), "private payload") {
 				t.Fatalf("log contains payload: %s", output.String())

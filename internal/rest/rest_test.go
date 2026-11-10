@@ -923,43 +923,107 @@ func TestParseStreamResponse_UnknownPayload(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		data    string
-		wantErr bool
+		name          string
+		data          string
+		wantErr       string
+		wantErrPrefix string
 	}{
 		{name: "unknown object", data: `{"futureEvent":{"taskId":"t1"}}`},
-		{name: "unknown scalar", data: `{"futureEvent":42}`},
+		{name: "unknown zero", data: `{"futureEvent":0}`},
+		{name: "unknown false", data: `{"futureEvent":false}`},
 		{name: "unknown array", data: `{"futureEvent":[1,2]}`},
 		{name: "unknown string", data: `{"foo":"bar"}`},
-		{name: "unknown boolean", data: `{"futureEvent":false}`},
 		{name: "unknown empty object", data: `{"futureEvent":{}}`},
-		{name: "unknown with extra fields", data: `{"futureEvent":{},"metadata":{},"optional":null}`},
-		{name: "empty object", data: `{}`, wantErr: true},
-		{name: "null", data: `null`, wantErr: true},
-		{name: "unknown null", data: `{"futureEvent":null}`, wantErr: true},
-		{name: "task null", data: `{"task":null}`, wantErr: true},
-		{name: "message null", data: `{"message":null}`, wantErr: true},
-		{name: "status null", data: `{"statusUpdate":null}`, wantErr: true},
-		{name: "artifact null", data: `{"artifactUpdate":null}`, wantErr: true},
-		{name: "error null", data: `{"error":null}`, wantErr: true},
-		{name: "known null with unknown", data: `{"task":null,"futureEvent":{}}`},
-		{name: "case insensitive known null", data: `{"TASK":null,"futureEvent":{}}`},
-		{name: "unicode case insensitive task null", data: `{"taſk":null,"futureEvent":{}}`},
-		{name: "unicode case insensitive status null", data: `{"ſtatusUpdate":null}`, wantErr: true},
-		{name: "case insensitive status null", data: `{"StatusUpdate":null}`, wantErr: true},
-		{name: "malformed known with unknown", data: `{"statusUpdate":{"status":42},"futureEvent":{}}`, wantErr: true},
-		{name: "invalid JSON", data: `{"futureEvent":`, wantErr: true},
-		{name: "trailing JSON", data: `{"futureEvent":{}} {}`, wantErr: true},
-		{name: "array", data: `[]`, wantErr: true},
-		{name: "number", data: `42`, wantErr: true},
-		{name: "string", data: `"futureEvent"`, wantErr: true},
+		{
+			name: "unknown with extra fields",
+			data: `{"futureEvent":{},"metadata":{},"optional":null}`,
+		},
+		{
+			name:    "empty object",
+			data:    `{}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:    "null wrapper",
+			data:    `null`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:    "unknown null",
+			data:    `{"futureEvent":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name: "all known fields null",
+			data: `{"task":null,"message":null,"statusUpdate":null,` +
+				`"artifactUpdate":null,"error":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name: "known null with unknown",
+			data: `{"task":null,"futureEvent":{}}`,
+		},
+		{
+			name: "case insensitive known null with unknown",
+			data: `{"TASK":null,"futureEvent":{}}`,
+		},
+		{
+			name: "unicode case insensitive known null with unknown",
+			data: `{"taſk":null,"futureEvent":{}}`,
+		},
+		{
+			name:    "case insensitive null fields",
+			data:    `{"StatusUpdate":null,"ſtatusUpdate":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:          "malformed known with unknown",
+			data:          `{"statusUpdate":{"status":42},"futureEvent":{}}`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "invalid JSON",
+			data:          `{"futureEvent":`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "trailing JSON",
+			data:          `{"futureEvent":{}} {}`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object array",
+			data:          `[]`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object number",
+			data:          `42`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object string",
+			data:          `"futureEvent"`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			event, err := ParseStreamResponse(t.Context(), []byte(tt.data))
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ParseStreamResponse() error = %v, want error %v", err, tt.wantErr)
+			switch {
+			case tt.wantErr != "":
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("ParseStreamResponse() error = %v, want %q", err, tt.wantErr)
+				}
+			case tt.wantErrPrefix != "":
+				if err == nil || !strings.HasPrefix(err.Error(), tt.wantErrPrefix) {
+					t.Fatalf("ParseStreamResponse() error = %v, want prefix %q", err, tt.wantErrPrefix)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+				}
 			}
 			if event != nil {
 				t.Fatalf("ParseStreamResponse() = %v, want nil", event)
