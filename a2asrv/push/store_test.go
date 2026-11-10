@@ -198,7 +198,7 @@ func TestInMemoryPushConfigStore_Get(t *testing.T) {
 		{
 			name:    "non-existent task",
 			taskID:  a2a.TaskID("non-existent"),
-			wantErr: ErrPushConfigNotFound,
+			wantErr: a2a.ErrTaskNotFound,
 		},
 	}
 

@@ -105,7 +105,7 @@ func (s *InMemoryPushConfigStore) Get(ctx context.Context, taskID a2a.TaskID, co
 		}
 	}
 
-	return nil, ErrPushConfigNotFound
+	return nil, a2a.ErrTaskNotFound
 }
 
 // List returns a copy of stored configs for a task.
