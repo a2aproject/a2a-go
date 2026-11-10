@@ -15,16 +15,19 @@
 // Package main demonstrates client plugins.
 //
 // It installs retry, a plugin which implements [a2aclient.Plugin] directly by embedding [a2aclient.PassthroughPlugin].
-// It retries failed GetTask calls.
+// It retries GetTask calls which failed with a network error.
 //
 // Run the server first, then: go run .
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"iter"
 	"log"
+	"net"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
@@ -51,14 +54,30 @@ func (r retry) WrapCall(next a2aclient.CallHandler) a2aclient.CallHandler {
 			for attempt := 1; attempt <= r.attempts; attempt++ {
 				for result, err = range next(ctx, req) {
 				}
-				if err == nil {
+				if err == nil || !isTransient(ctx, err) || attempt == r.attempts {
 					break
 				}
 				log.Printf("[retry] %s attempt %d failed: %v", req.Method, attempt, err)
+				select {
+				case <-time.After(time.Duration(attempt) * 100 * time.Millisecond):
+				case <-ctx.Done():
+					yield(nil, ctx.Err())
+					return
+				}
 			}
 			yield(result, err)
 		}
 	}
+}
+
+// isTransient reports whether a call failed with a network error, for example a refused connection or a timeout.
+// Errors returned by the agent, such as a2a.ErrTaskNotFound, and the cancelation of the caller's context are not retried.
+func isTransient(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 func main() {

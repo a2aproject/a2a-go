@@ -34,7 +34,7 @@ type Plugin interface {
 
 	// WrapExecutor wraps the [AgentExecutor]. It is called once, when the handler is created.
 	// If the wrapper implements [AgentExecutionCleaner], its Cleanup is called after the Cleanup of the
-	// executors it wraps.
+	// executors it wraps, so it must not forward Cleanup to next.
 	WrapExecutor(next AgentExecutor) AgentExecutor
 
 	// WrapTaskStore wraps the task store, including the default in-memory store.

@@ -39,6 +39,7 @@ type Delivery struct {
 	// Event is the event to deliver.
 	Event a2a.Event
 	// Headers are added to the outgoing request by [HTTPPushSender]. Custom [Sender]s don't receive them.
+	// The Content-Type, notification token and Authorization headers are set after these and overwrite their values.
 	Headers http.Header
 	// Skip can be set by a wrapper to skip the delivery without failing the execution.
 	Skip bool
