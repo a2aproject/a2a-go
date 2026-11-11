@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/workqueue"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
@@ -146,7 +147,7 @@ func TestClusterFrontend_Execute(t *testing.T) {
 		{
 			name:    "task in terminal state",
 			req:     &a2a.SendMessageRequest{Message: &a2a.Message{TaskID: terminalStateTaskSeed.ID}},
-			wantErr: a2a.ErrInvalidParams,
+			wantErr: a2a.ErrUnsupportedOperation,
 		},
 		{
 			name:        "queue creation error",
@@ -335,6 +336,7 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 		getTaskResults []*a2a.Task
 		getTaskErr     error
 		writeQueueErr  error
+		events         []a2a.Event
 		wantQueueWrite *workqueue.Payload
 		wantResult     *a2a.Task
 		wantErrContain string
@@ -351,6 +353,35 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
 			},
 			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+		},
+		{
+			name: "cancel input-required task",
+			getTaskResults: []*a2a.Task{
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+			},
+			events: []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}},
+			wantQueueWrite: &workqueue.Payload{
+				Type:          workqueue.PayloadTypeCancel,
+				TaskID:        tid,
+				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
+			},
+			wantResult: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+		},
+		{
+			name: "input-required task cancelation refused",
+			getTaskResults: []*a2a.Task{
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+				{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+			},
+			events: []a2a.Event{&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}},
+			wantQueueWrite: &workqueue.Payload{
+				Type:          workqueue.PayloadTypeCancel,
+				TaskID:        tid,
+				CancelRequest: &a2a.CancelTaskRequest{ID: tid},
+			},
+			wantErrContain: a2a.ErrTaskNotCancelable.Error(),
 		},
 		{
 			name: "failed to cancel task",
@@ -414,9 +445,25 @@ func TestClusterFrontend_Cancel(t *testing.T) {
 			wq := testutil.NewTestWorkQueue()
 			wq.WriteErr = tc.writeQueueErr
 
+			qm := testutil.NewTestQueueManager()
+			if tc.events != nil {
+				queue := testutil.NewTestEventQueue()
+				events := tc.events
+				queue.ReadFunc = func(ctx context.Context) (*eventqueue.Message, error) {
+					if len(events) == 0 {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					event := events[0]
+					events = events[1:]
+					return &eventqueue.Message{Event: event}, nil
+				}
+				qm.SetQueue(queue)
+			}
+
 			frontend := NewDistributedManager(DistributedManagerConfig{
 				TaskStore:    store,
-				QueueManager: testutil.NewTestQueueManager(),
+				QueueManager: qm,
 				WorkQueue:    wq,
 			})
 

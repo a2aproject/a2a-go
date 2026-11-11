@@ -15,11 +15,14 @@
 package a2aclient
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,40 +179,60 @@ func TestRESTTransport_ListTasks_QueryParams(t *testing.T) {
 }
 
 func TestRESTTransport_CancelTask(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("expected method POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/tasks/task-123:cancel" {
-			t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("io.ReadAll(r.Body) error = %v, want nil", err)
-		}
-		if len(body) != 0 {
-			t.Errorf("request body = %q, want empty", string(body))
-		}
-		if ct := r.Header.Get("Content-Type"); ct != "" {
-			t.Errorf("Content-Type = %q, want unset for empty-body request", ct)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`))
-	}))
-	defer server.Close()
-	transport := newRESTTransport(t, server)
-
-	task, err := transport.CancelTask(t.Context(), ServiceParams{}, &a2a.CancelTaskRequest{
-		ID: "task-123",
-	})
-
-	if err != nil {
-		t.Fatalf("CancelTask failed: %v", err)
+	tests := []struct {
+		name            string
+		req             *a2a.CancelTaskRequest
+		wantBody        string
+		wantContentType string
+	}{
+		{
+			name: "without metadata",
+			req:  &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:            "with metadata",
+			req:             &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+			wantBody:        `{"metadata":{"reason":"rest"}}`,
+			wantContentType: "application/json",
+		},
 	}
 
-	if task.Status.State != a2a.TaskStateCanceled {
-		t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("expected method POST, got %s", r.Method)
+				}
+				if r.URL.Path != "/tasks/task-123:cancel" {
+					t.Errorf("expected path /tasks/task-123:cancel, got %s", r.URL.Path)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("io.ReadAll(r.Body) error = %v, want nil", err)
+				}
+				if string(body) != tc.wantBody {
+					t.Errorf("request body = %q, want %q", string(body), tc.wantBody)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != tc.wantContentType {
+					t.Errorf("Content-Type = %q, want %q", ct, tc.wantContentType)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_CANCELED"}}`))
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+
+			task, err := transport.CancelTask(t.Context(), ServiceParams{}, tc.req)
+
+			if err != nil {
+				t.Fatalf("CancelTask failed: %v", err)
+			}
+
+			if task.Status.State != a2a.TaskStateCanceled {
+				t.Errorf("got status %s, want TASK_STATE_CANCELED", task.Status.State)
+			}
+		})
 	}
 }
 
@@ -630,5 +653,198 @@ func TestRESTTransport_ResponseTrailingData(t *testing.T) {
 				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestStreamingTransportsBOM(t *testing.T) {
+	t.Parallel()
+	for _, rpc := range []bool{false, true} {
+		t.Run(fmt.Sprintf("jsonrpc=%t", rpc), func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				payload := []byte(`{"task":{"id":"task","contextId":"context","status":{"state":"TASK_STATE_WORKING"}}}`)
+				if rpc {
+					req := mustDecodeJSONRPC(t, r, "SendStreamingMessage")
+					var err error
+					payload, err = json.Marshal(newResponse(req, payload))
+					if err != nil {
+						t.Errorf("json.Marshal() error = %v, want nil", err)
+						return
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+
+				if _, err := fmt.Fprintf(w, "\ufeffdata: %s\n\n", payload); err != nil {
+					t.Errorf("fmt.Fprintf() error = %v, want nil", err)
+				}
+			}))
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+			if rpc {
+				transport = NewJSONRPCTransport(server.URL, server.Client())
+			}
+			var got []a2a.TaskID
+			req := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))}
+			for event, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, req) {
+				if err != nil {
+					t.Fatalf("transport.SendStreamingMessage() error = %v, want nil", err)
+				}
+				task, ok := event.(*a2a.Task)
+				if !ok {
+					t.Fatalf("transport.SendStreamingMessage() = %T, want *a2a.Task", event)
+				}
+				got = append(got, task.ID)
+			}
+			if diff := cmp.Diff([]a2a.TaskID{"task"}, got); diff != "" {
+				t.Fatalf("transport.SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestRESTTransport_EscapedPathSegments(t *testing.T) {
+	t.Parallel()
+	for _, tenant := range []string{"", "owner/a?b#c%20"} {
+		t.Run(tenant, func(t *testing.T) {
+			t.Parallel()
+			mux := http.NewServeMux()
+			prefix := ""
+			wantTenant := tenant
+			if tenant != "" {
+				prefix = "/{tenant}"
+			}
+			mux.HandleFunc("GET "+prefix+"/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+				if r.PathValue("id") != "task/a?b#c%20" || r.PathValue("tenant") != wantTenant {
+					t.Errorf("PathValue() = (%q, %q), want (%q, %q)", r.PathValue("id"), r.PathValue("tenant"), "task/a?b#c%20", wantTenant)
+				}
+				if r.URL.Query().Get("historyLength") != "2" {
+					t.Errorf("historyLength = %q, want 2", r.URL.Query().Get("historyLength"))
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := io.WriteString(w, `{"id":"task/a?b#c%20","contextId":"ctx","status":{"state":"TASK_STATE_COMPLETED"}}`); err != nil {
+					t.Errorf("io.WriteString() error = %v, want nil", err)
+				}
+			})
+			server := httptest.NewServer(mux)
+			defer server.Close()
+			transport := newRESTTransport(t, server)
+			historyLength := 2
+			task, err := transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task/a?b#c%20", Tenant: tenant, HistoryLength: &historyLength})
+			if err != nil {
+				t.Fatalf("GetTask() error = %v, want nil", err)
+			}
+			if task.ID != "task/a?b#c%20" {
+				t.Fatalf("GetTask().ID = %q, want task/a?b#c%%20", task.ID)
+			}
+		})
+	}
+}
+
+func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"task","id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	transport := newRESTTransport(t, server)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"secret"}})
+
+	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err != nil {
+		t.Fatalf("transport.GetTask() error = %v", err)
+	}
+
+	want := url.Values{"api_key": []string{"secret"}}
+	if diff := cmp.Diff(want, gotQuery); diff != "" {
+		t.Errorf("wrong query params (-want +got) diff = %s", diff)
+	}
+}
+
+func TestRESTTransport_ErrorRedactsQueryParams(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close()
+
+	u, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", serverURL, err)
+	}
+	transport := NewRESTTransport(u, nil)
+	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
+
+	_, err = transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if err == nil {
+		t.Fatalf("transport.GetTask() error = nil, want non-nil")
+	}
+	if strings.Contains(err.Error(), "super-secret") {
+		t.Errorf("transport.GetTask() error = %v, must not contain query params", err)
+	}
+}
+
+func TestAuth_APIKeyQueryLocation_REST(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		if got := r.Header.Get("api_key"); got != "" {
+			t.Errorf("credential leaked into header api_key = %q, want empty", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_SUBMITTED"}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	schemeName := a2a.SecuritySchemeName("api-key")
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolHTTPJSON,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+		SecurityRequirements: []a2a.SecurityRequirements{{schemeName: []string{}}},
+		SecuritySchemes: a2a.NamedSecuritySchemes{
+			schemeName: a2a.APIKeySecurityScheme{Name: "api_key", Location: a2a.APIKeySecuritySchemeLocationQuery},
+		},
+	}
+
+	credStore := NewInMemoryCredentialsStore()
+	client, err := NewFromCard(
+		ctx,
+		card,
+		WithRESTTransport(nil),
+		WithCallInterceptors(&AuthInterceptor{Service: credStore}),
+	)
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Destroy(); err != nil {
+			t.Errorf("client.Destroy() error = %v", err)
+		}
+	})
+
+	sessionID := SessionID("abcd")
+	credStore.Set(sessionID, schemeName, AuthCredential("secret"))
+
+	ctx = AttachSessionID(ctx, sessionID)
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v", err)
+	}
+
+	if got := gotQuery.Get("api_key"); got != "secret" {
+		t.Errorf("query param api_key = %q, want %q", got, "secret")
 	}
 }

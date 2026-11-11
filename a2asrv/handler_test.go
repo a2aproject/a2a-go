@@ -1725,6 +1725,37 @@ func TestRequestHandler_CancelTask_AgentCancelFails(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_CancelTask_ConcurrentModificationExhaustsRetries(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	taskToCancel := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel)
+	// Every cancelation update conflicts, as if an execution on another server kept updating the task.
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		if event, ok := req.Event.(*a2a.TaskStatusUpdateEvent); ok && event.Status.State == a2a.TaskStateCanceled {
+			return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+		}
+		return store.InMemory.Update(ctx, req)
+	}
+	executor := &mockAgentExecutor{
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	_, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
+
+	if !errors.Is(err, taskstore.ErrConcurrentModification) {
+		t.Fatalf("handler.CancelTask() error = %v, want %v", err, taskstore.ErrConcurrentModification)
+	}
+	if got := store.MustGet(t, taskToCancel.ID).Task.Status.State; got != a2a.TaskStateWorking {
+		t.Fatalf("stored task state = %v, want %v", got, a2a.TaskStateWorking)
+	}
+}
+
 func TestRequestHandler_MultipleRequestContextInterceptors(t *testing.T) {
 	ctx := t.Context()
 	executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
@@ -2286,6 +2317,10 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			name:           "succeeds when required extension is declared",
 			clientSupports: []string{extensionURI},
 		},
+		{
+			name:           "succeeds when required extension is in a comma-separated list",
+			clientSupports: []string{"other-ext, " + extensionURI},
+		},
 	}
 
 	for _, tt := range tests {
@@ -2538,13 +2573,13 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 
 func newAgentMessage(text string) *a2a.Message {
 	m := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "agent-" + text
 	return m
 }
 
 func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	m := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "user-" + text
 	return m
 }
 

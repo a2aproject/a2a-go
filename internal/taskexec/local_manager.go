@@ -34,10 +34,10 @@ import (
 var (
 	// ErrExecutionInProgress is returned when a caller attempts to start an execution for
 	// a Task concurrently with another execution.
-	ErrExecutionInProgress = errors.New("task execution is already in progress")
+	ErrExecutionInProgress = a2a.NewError(a2a.ErrUnsupportedOperation, "task execution is already in progress")
 	// ErrCancelationInProgress is returned when a caller attempts to start an execution for
 	// a Task concurrently with its cancelation.
-	ErrCancelationInProgress = errors.New("task cancelation is in progress")
+	ErrCancelationInProgress = a2a.NewError(a2a.ErrUnsupportedOperation, "task cancelation is in progress")
 )
 
 // localManager provides an API for executing and canceling tasks in a way that ensures
@@ -358,23 +358,31 @@ func (m *localManager) handleCancel(ctx context.Context, cancel *cancelation) {
 	cancel.result.setValue(result)
 }
 
+func (m *localManager) cancelOnPipe(ctx context.Context, canceler Canceler, pipe eventpipe.Writer) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = m.cancelationPanicError(ctx, r)
+		}
+	}()
+	return canceler.Cancel(ctx, pipe)
+}
+
+func (m *localManager) cancelationPanicError(ctx context.Context, r any) error {
+	if m.panicHandler != nil {
+		return m.panicHandler(r)
+	}
+	err := fmt.Errorf("task cancelation panicked: %v\n%s", r, debug.Stack())
+	log.Warn(ctx, "cancelation panicked", "error", err)
+	return err
+}
+
 // Sends a cancelation request on the queue which is being used by an active execution.
 // Then waits for the execution to complete and resolves cancelation to the same result.
 func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
 		if r := recover(); r != nil {
-			var err error
-			if m.panicHandler != nil {
-				err = m.panicHandler(r)
-			} else {
-				err := fmt.Errorf("task cancelation panicked: %v\n%s", r, debug.Stack())
-				log.Warn(ctx, "cancelation panicked", "error", err)
-			}
-			cancel.result.setError(err)
+			cancel.result.setError(m.cancelationPanicError(ctx, r))
 		}
-	}()
-
-	defer func() {
 		m.mu.Lock()
 		delete(m.cancelations, cancel.req.ID)
 		cancel.result.signalDone()
@@ -394,10 +402,15 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	// non-terminal state (eg. input-required) before receiving the cancelation signal.
 	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
 	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
-	if err := canceler.Cancel(ctx, run.pipe.Writer); err != nil {
-		cleaner.Cleanup(ctx, nil, err)
-		cancel.result.setError(err)
-		return
+	if err := m.cancelOnPipe(ctx, canceler, run.pipe.Writer); err != nil {
+		// The pipe is closed after the execution finishes. This happens when the agent ends the execution in
+		// response to the cancelation before the canceler writes its events, so we resolve to the execution result.
+		if !errors.Is(err, eventqueue.ErrQueueClosed) {
+			cleaner.Cleanup(ctx, nil, err)
+			cancel.result.setError(err)
+			return
+		}
+		log.Debug(ctx, "execution finished before the cancelation was written")
 	}
 
 	log.Debug(ctx, "waiting for concurrent cancelation result")

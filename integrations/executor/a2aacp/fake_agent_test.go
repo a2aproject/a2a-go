@@ -17,10 +17,13 @@ package a2aacp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,9 +49,10 @@ type fakeHarness struct {
 }
 
 type fakeAgent struct {
-	h    *fakeHarness
-	key  string
-	conn *acp.Conn
+	h      *fakeHarness
+	key    string
+	conn   *acp.Conn
+	client *exitingRWC
 
 	mu         sync.Mutex
 	nextID     int
@@ -57,6 +61,7 @@ type fakeAgent struct {
 	prompts    []acp.PromptRequest
 	canceled   []string
 	settings   []string
+	values     map[string]any // config option ID -> value set by the client
 	mcpServers []json.RawMessage
 	cwds       []string
 	crashed    bool
@@ -65,13 +70,13 @@ type fakeAgent struct {
 func (h *fakeHarness) start(_ context.Context, key string) (io.ReadWriteCloser, error) {
 	clientR, agentW := io.Pipe()
 	agentR, clientW := io.Pipe()
-	f := &fakeAgent{h: h, key: key}
+	f := &fakeAgent{h: h, key: key, client: &exitingRWC{pipeRWC: pipeRWC{r: clientR, w: clientW}}}
 	f.conn = acp.NewConn(pipeRWC{r: agentR, w: agentW}, f.handle)
 	f.conn.Start()
 	h.mu.Lock()
 	h.agents = append(h.agents, f)
 	h.mu.Unlock()
-	return pipeRWC{r: clientR, w: clientW}, nil
+	return f.client, nil
 }
 
 func (h *fakeHarness) agent(i int) *fakeAgent {
@@ -98,6 +103,20 @@ func (p pipeRWC) Close() error {
 		return err
 	}
 	return p.r.Close()
+}
+
+// exitingRWC is the client side of a fake agent, which can exit with its
+// output ending only when the client writes next.
+type exitingRWC struct {
+	pipeRWC
+	exited atomic.Bool
+}
+
+func (c *exitingRWC) Write(b []byte) (int, error) {
+	if c.exited.Load() {
+		return 0, errors.Join(io.ErrClosedPipe, c.Close())
+	}
+	return c.pipeRWC.Write(b)
 }
 
 func (f *fakeAgent) handle(m *acp.Message) {
@@ -130,7 +149,18 @@ func (f *fakeAgent) handle(m *acp.Message) {
 		var req acp.SetConfigOptionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.settings = append(f.settings, fmt.Sprintf("%s %s=%v %s", m.Method, req.ConfigID, req.Value, req.Type))
-		result = acp.SetConfigOptionResponse{ConfigOptions: f.h.state.ConfigOptions}
+		if !f.offers(req.ConfigID, req.Value) {
+			rpcErr := &acp.Error{Code: acp.CodeInvalidParams, Message: fmt.Sprintf("Invalid params: %s not found: %v", req.ConfigID, req.Value)}
+			if err := f.conn.RespondError(m.ID, rpcErr); err != nil {
+				t.Errorf("fake agent RespondError() error = %v", err)
+			}
+			return
+		}
+		if f.values == nil {
+			f.values = map[string]any{}
+		}
+		f.values[req.ConfigID] = req.Value
+		result = acp.SetConfigOptionResponse{ConfigOptions: f.configOptions()}
 	case acp.MethodSetMode:
 		var req acp.SetModeRequest
 		mustUnmarshal(t, m.Params, &req)
@@ -157,6 +187,30 @@ func (f *fakeAgent) handle(m *acp.Message) {
 	if err := f.conn.Respond(m.ID, result); err != nil {
 		t.Errorf("fake agent respond() error = %v", err)
 	}
+}
+
+// offers reports whether value is one of the listed values of a select
+// option. The caller holds f.mu.
+func (f *fakeAgent) offers(configID string, value any) bool {
+	for _, o := range f.h.state.ConfigOptions {
+		if o.ID != configID || len(o.Options) == 0 {
+			continue
+		}
+		return slices.ContainsFunc(settingOptions(o.Options, ""), func(so SettingOption) bool { return so.Value == value })
+	}
+	return true
+}
+
+// configOptions returns the harness options with the values the client set.
+// The caller holds f.mu.
+func (f *fakeAgent) configOptions() []acp.SessionConfigOption {
+	opts := slices.Clone(f.h.state.ConfigOptions)
+	for i := range opts {
+		if v, ok := f.values[opts[i].ID]; ok {
+			opts[i].CurrentValue = v
+		}
+	}
+	return opts
 }
 
 func (f *fakeAgent) snapshot() (created, loaded, canceled []string, prompts []acp.PromptRequest) {
@@ -202,6 +256,12 @@ func (f *fakeAgent) crash() {
 	if err := f.conn.Close(); err != nil {
 		f.h.t.Errorf("fake agent Close() error = %v", err)
 	}
+}
+
+// exitUnnoticed makes the agent exit while the client still reads from it,
+// as when the agent process is gone and the client hasn't read its EOF yet.
+func (f *fakeAgent) exitUnnoticed() {
+	f.client.exited.Store(true)
 }
 
 func mustUnmarshal(t *testing.T, data json.RawMessage, v any) {

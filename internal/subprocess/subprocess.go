@@ -122,7 +122,8 @@ func (p *process) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 
 // Close closes stdin, terminates the process group if the process doesn't
 // exit in time and kills it if it doesn't exit after that either. Processes
-// left in the group, such as MCP servers the agent started, are terminated.
+// left in the group, such as MCP servers the agent started, are terminated
+// and killed if they don't exit in time.
 func (p *process) Close() error {
 	// Wait closes stdin once the process exits, which is fine here.
 	stdinErr := p.stdin.Close()
@@ -139,7 +140,7 @@ func (p *process) Close() error {
 			<-p.exited
 		}
 	}
-	groupErr := terminateProcessGroup(p.cmd)
+	groupErr := stopProcessGroup(p.cmd)
 	stdoutErr := p.closeStdout()
 	var exitErr *exec.ExitError
 	if p.waitErr != nil && !errors.As(p.waitErr, &exitErr) {
@@ -149,6 +150,24 @@ func (p *process) Close() error {
 }
 
 const closeGrace = 2 * time.Second
+
+// stopProcessGroup terminates the processes left in the group of c and kills
+// them if they don't exit within closeGrace.
+func stopProcessGroup(c *exec.Cmd) error {
+	if err := terminateProcessGroup(c); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(closeGrace)
+	for processGroupAlive(c) {
+		if time.Now().After(deadline) {
+			return killProcessGroup(c)
+		}
+		time.Sleep(groupPollInterval)
+	}
+	return nil
+}
+
+const groupPollInterval = 20 * time.Millisecond
 
 func (p *process) waitExit(timeout time.Duration) bool {
 	select {

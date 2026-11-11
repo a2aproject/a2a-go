@@ -82,6 +82,93 @@ func TestContentPartsJSONCodecUnknownType(t *testing.T) {
 	}
 }
 
+func TestPartJSONCodecEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		part *Part
+		json string
+		want *Part
+	}{
+		{name: "null data", part: NewDataPart(nil), json: `{"data":null}`, want: NewDataPart(nil)},
+		{name: "null data with metadata", part: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}, json: `{"data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}},
+		{name: "false data", part: NewDataPart(false), json: `{"data":false}`, want: NewDataPart(false)},
+		{name: "zero number data", part: NewDataPart(float64(0)), json: `{"data":0}`, want: NewDataPart(float64(0))},
+		{name: "empty string data", part: NewDataPart(""), json: `{"data":""}`, want: NewDataPart("")},
+		{name: "empty array data", part: NewDataPart([]any{}), json: `{"data":[]}`, want: NewDataPart([]any{})},
+		{name: "empty object data", part: NewDataPart(map[string]any{}), json: `{"data":{}}`, want: NewDataPart(map[string]any{})},
+		{name: "nil raw", part: NewRawPart(nil), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty raw", part: NewRawPart([]byte{}), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty text", part: NewTextPart(""), json: `{"text":""}`, want: NewTextPart("")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.part); got != tc.json {
+				t.Fatalf("json.Marshal() = %s, want %s", got, tc.json)
+			}
+			var got Part
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
+	}
+}
+
+func TestPartJSONUnmarshalNullContentFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		json    string
+		want    *Part
+		wantErr string
+	}{
+		{name: "text with null data", json: `{"text":"hello","data":null}`, want: NewTextPart("hello")},
+		{name: "raw with null data", json: `{"raw":"//4=","data":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "url with null data", json: `{"url":"https://cats.com/1.png","data":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "url with null data and null text", json: `{"url":"https://cats.com/1.png","data":null,"text":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "text with null data and metadata", json: `{"text":"hello","data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Text("hello"), Metadata: map[string]any{"k": "v"}}},
+		{name: "data with null text", json: `{"data":{"a":1},"text":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null raw", json: `{"data":{"a":1},"raw":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null url", json: `{"data":{"a":1},"url":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "text with null raw and url", json: `{"text":"hello","raw":null,"url":null}`, want: NewTextPart("hello")},
+		{name: "raw with null text", json: `{"raw":"//4=","text":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "null data with null text", json: `{"data":null,"text":null}`, want: NewDataPart(nil)},
+		{name: "null data with null raw and url", json: `{"data":null,"raw":null,"url":null}`, want: NewDataPart(nil)},
+		{name: "only null text", json: `{"text":null}`, wantErr: "unknown part content type: [text]"},
+		{name: "text with non-null data", json: `{"text":"hello","data":{"a":1}}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
+		{name: "text with raw and null data", json: `{"text":"hello","raw":"//4=","data":null}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got Part
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("json.Unmarshal(%s) error = %v, want %v", tc.json, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
+	}
+}
+
 func TestSecuritySchemeJSONCodec(t *testing.T) {
 	schemes := NamedSecuritySchemes{
 		"name1": APIKeySecurityScheme{Name: "abc", Location: APIKeySecuritySchemeLocationCookie},

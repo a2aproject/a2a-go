@@ -40,8 +40,11 @@
 // # Translation
 //
 // Message parts become prompt content: text as text, data parts as JSON text,
-// file URLs as resource links, and raw files as images, audio or embedded
-// resources, depending on what the agent accepts. [Config.Prompt] changes what
+// file URLs as resource links, and raw files as images or audio if the agent
+// accepts them. Agents with embedded context get text and PDF files as
+// embedded resources; other files fail the task before they reach the agent,
+// since agents keep embedded files in the session and a type the model rejects
+// would fail every later message. [Config.Prompt] changes what
 // is sent and [Config.Settings] selects the session's mode, model or other
 // config options before each message.
 //
@@ -50,22 +53,25 @@
 // [ResponseArtifact] artifact, tool calls become working status updates with a
 // "toolCall" data part, and other updates are dropped. The stop reason of the
 // prompt ends the task: end_turn completes it, cancelled cancels it, and
-// anything else, or an agent error, fails it. Canceling a task sends
-// session/cancel.
+// anything else, or an agent error, fails it. [Config.Failure] can change the
+// status message of a failed task. Canceling a task sends session/cancel, and
+// [Config.InactivityTimeout] fails a task whose agent goes silent.
 //
 // # Questions
 //
 // Permission requests and form elicitations pause the task in input-required
 // with a [Question] asked as a request of the Structured Input extension (see
-// package [github.com/a2aproject/a2a-go/v2/structuredinput]; advertise it in
-// the agent card with structuredinput.NewExtension), unless [Config.AutoAnswer]
-// decides them, for example with [ToolRules].
+// package [github.com/a2aproject/a2a-go/v2/a2aext/structuredinput]; advertise
+// it in the agent card with structuredinput.NewExtension), unless
+// [Config.AutoAnswer] decides them, for example with [ToolRules].
 //
 // The caller answers with an [Answer] as structured input, or by typing an option.
 // A message which isn't an answer at all interrupts the agent and is sent as a new
 // instruction, like typing instead of approving does in coding agents; an invalid
 // answer is asked again. Unanswered questions are rejected after [Config.QuestionTimeout]
 // and the agent stops working on the task; a later reply to the task fails it.
+// [Config.Abandoned] reports such tasks, and those whose agent exited while
+// they waited, so that the host can fail them right away.
 //
 // Questions are tied to the agent process which asked them, so in a cluster
 // every message of a context must reach the node which runs its agent. See

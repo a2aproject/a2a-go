@@ -16,6 +16,7 @@ package a2aclient
 
 import (
 	"context"
+	"iter"
 	"slices"
 	"strings"
 
@@ -48,6 +49,11 @@ func (m ServiceParams) Append(key string, vals ...string) {
 	m[strings.ToLower(key)] = result
 }
 
+// set replaces the values associated with the key. Key matching is case-insensitive.
+func (m ServiceParams) set(key string, vals ...string) {
+	m[strings.ToLower(key)] = vals
+}
+
 func (m ServiceParams) clone() ServiceParams {
 	if m == nil {
 		return nil
@@ -65,6 +71,8 @@ type Request struct {
 	Method string
 	// BaseURL is the URL of the agent interface to which the Client is connected.
 	BaseURL string
+	// ProtocolBinding is the protocol binding of the agent interface to which the Client is connected.
+	ProtocolBinding a2a.TransportProtocol
 	// ServiceParams holds horizontally applicable context or parameters with case-insensitive keys.
 	// The transmission mechanism for these service parameter key-value pairs is defined by the specific protocol binding
 	ServiceParams ServiceParams
@@ -92,6 +100,11 @@ type Response struct {
 	// Payload is the response. It is nil if method doesn't return anything or Err was returned. Otherwise, it is one of a2a package core types otherwise.
 	Payload any
 }
+
+// callHandler sends a call. A unary call yields one value, a streaming call yields one value per event.
+// It must not modify data shared with the caller's req, such as ServiceParams or Payload, so that a
+// middleware can call next again with the original request. Changes are made on a copy.
+type callHandler func(ctx context.Context, req Request) iter.Seq2[any, error]
 
 // CallInterceptor can be attached to a [Client].
 // If multiple interceptors are added:

@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
@@ -443,7 +445,7 @@ func TestInterceptedHandler_TypeSafety(t *testing.T) {
 	if err == nil {
 		t.Fatal("got nil error, want error due to payload type mismatch")
 	}
-	expectedErrorFragment := "payload type changed"
+	expectedErrorFragment := "type changed"
 	if !strings.Contains(err.Error(), expectedErrorFragment) {
 		t.Errorf("Error = %q, want it to contain %q", err.Error(), expectedErrorFragment)
 	}
@@ -585,6 +587,12 @@ func TestInterceptedHandler_VersionNegotiation(t *testing.T) {
 		{name: "0.3 served, 1.0 header", served: "0.3", header: []string{"1.0"}, wantErr: a2a.ErrVersionNotSupported},
 		{name: "0.3 served, 0.3 header", served: "0.3", header: []string{"0.3"}},
 		{name: "0.3 served, empty header", served: "0.3", header: []string{""}},
+		{name: "0.3 served, 0.3.0 header", served: "0.3", header: []string{"0.3.0"}},
+		{name: "0.3 served, 0.3.5 header", served: "0.3", header: []string{"0.3.5"}},
+		{name: "1.0 served, 1.0.0 header", served: a2a.Version, header: []string{"1.0.0"}},
+		{name: "1.0 served, 1 header", served: a2a.Version, header: []string{"1"}},
+		{name: "1.0 served, 1.1 header", served: a2a.Version, header: []string{"1.1"}, wantErr: a2a.ErrVersionNotSupported},
+		{name: "1.0 served, invalid header", served: a2a.Version, header: []string{"latest"}, wantErr: a2a.ErrVersionNotSupported},
 	}
 	for _, tc := range tests {
 		for _, mc := range methodCalls {
@@ -745,5 +753,114 @@ func TestInterceptedHandler_EarlyReturn(t *testing.T) {
 	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
 	if !reflect.DeepEqual(callOrder, wantCallOrder) {
 		t.Errorf("Call order = %v, want %v", callOrder, wantCallOrder)
+	}
+}
+
+func TestInterceptedHandler_StreamingInterceptorCachedEvents(t *testing.T) {
+	t.Parallel()
+	task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: "task", ContextID: "context"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("request")))
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		for _, event := range []a2a.Event{task, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("cached")), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), a2a.NewArtifactEvent(task, a2a.NewTextPart("cached"))} {
+			t.Run(fmt.Sprintf("%s/%T", method, event), func(t *testing.T) {
+				t.Parallel()
+				delegate := &mockHandler{}
+				var afterPayload any
+				interceptor := &mockInterceptor{
+					beforeFn: func(ctx context.Context, _ *CallContext, _ *Request) (context.Context, any, error) {
+						return ctx, event, nil
+					},
+					afterFn: func(_ context.Context, _ *CallContext, resp *Response) error {
+						afterPayload = resp.Payload
+						return nil
+					},
+				}
+				handler := &InterceptedHandler{Handler: delegate, Interceptors: []CallInterceptor{interceptor}}
+				stream := handler.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+				if method == "SubscribeToTask" {
+					stream = handler.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+				}
+				var got []a2a.Event
+				for e, err := range stream {
+					if err != nil {
+						t.Fatalf("handler.%s() error = %v, want nil", method, err)
+					}
+					got = append(got, e)
+				}
+				if diff := cmp.Diff([]a2a.Event{event}, got); diff != "" {
+					t.Fatalf("handler.%s() wrong result (-want +got) diff = %s", method, diff)
+				}
+				if diff := cmp.Diff(event, afterPayload); diff != "" {
+					t.Fatalf("After() wrong result (-want +got) diff = %s", diff)
+				}
+				if delegate.lastCallContext != nil {
+					t.Fatal("handler called delegate, want interceptor early return")
+				}
+			})
+		}
+	}
+}
+
+func TestInterceptedHandler_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
+	t.Parallel()
+
+	type depthKey struct{}
+	type attempt struct {
+		TaskID a2a.TaskID
+		Depth  int
+	}
+
+	testCases := []struct {
+		name string
+		run  func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request)
+	}{
+		{
+			name: "same sequence iterated twice",
+			run: func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request) {
+				seq := handler(ctx, callCtx, req)
+				for range 2 {
+					for range seq {
+					}
+				}
+			},
+		},
+		{
+			name: "handler called twice with the same request",
+			run: func(handler callHandler, ctx context.Context, callCtx *CallContext, req Request) {
+				for range 2 {
+					for range handler(ctx, callCtx, req) {
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			interceptor := &mockInterceptor{
+				beforeFn: func(ctx context.Context, _ *CallContext, req *Request) (context.Context, any, error) {
+					req.Payload = &a2a.GetTaskRequest{ID: req.Payload.(*a2a.GetTaskRequest).ID + "!"}
+					depth, _ := ctx.Value(depthKey{}).(int)
+					return context.WithValue(ctx, depthKey{}, depth+1), nil, nil
+				},
+			}
+			handler := &InterceptedHandler{Interceptors: []CallInterceptor{interceptor}}
+			var got []attempt
+			terminal := func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+				return func(yield func(any, error) bool) {
+					depth, _ := ctx.Value(depthKey{}).(int)
+					got = append(got, attempt{TaskID: req.Payload.(*a2a.GetTaskRequest).ID, Depth: depth})
+					yield(&a2a.Task{}, nil)
+				}
+			}
+
+			ctx, callCtx := NewCallContext(t.Context(), nil)
+			tc.run(interceptCalls(handler, terminal), ctx, callCtx, Request{Payload: &a2a.GetTaskRequest{ID: "task"}})
+
+			want := []attempt{{TaskID: "task!", Depth: 1}, {TaskID: "task!", Depth: 1}}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("interceptCalls() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

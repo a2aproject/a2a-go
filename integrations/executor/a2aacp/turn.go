@@ -18,12 +18,18 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime"
+	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/a2aproject/a2a-go/v2/internal/acp"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
@@ -40,10 +46,18 @@ type turn struct {
 	tools map[string]*acp.ToolCall
 	out   *taskOutput
 
-	mu       sync.Mutex
-	pending  *pendingQuestion
-	canceled bool
-	ended    bool
+	mu         sync.Mutex
+	pending    *pendingQuestion
+	canceled   bool
+	ended      bool
+	inactivity *time.Timer
+	timeout    time.Duration // of inactivity
+	inactive   bool          // the inactivity timeout expired
+	// paused is the request which paused the task for an answer while no
+	// request consumes the turn's events, so that the end of the turn is
+	// reported to Config.Abandoned.
+	paused  *a2asrv.ExecutorContext
+	expired bool
 }
 
 type turnEvent struct {
@@ -58,6 +72,9 @@ type promptResult struct {
 	// canceled reports that the turn was canceled, so that an agent stopped
 	// for not ending a canceled turn doesn't fail the task.
 	canceled bool
+	// failure fails the task whatever the agent responded, because the turn
+	// was canceled for it.
+	failure error
 }
 
 func newTurn(taskID a2a.TaskID, sessionID string, ag *agent) *turn {
@@ -80,15 +97,17 @@ func (t *turn) pendingQuestion() *pendingQuestion {
 	return t.pending
 }
 
-// setPending records p as waiting for the caller and calls expire if nobody
-// answers within timeout. It returns false if the turn was canceled or ended.
-func (t *turn) setPending(p *pendingQuestion, timeout time.Duration, expire func()) bool {
+// setPending records p as waiting for the caller of execCtx and calls expire
+// if nobody answers within timeout. It returns false if the turn was canceled
+// or ended.
+func (t *turn) setPending(execCtx *a2asrv.ExecutorContext, p *pendingQuestion, timeout time.Duration, expire func()) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.canceled || t.ended {
 		return false
 	}
 	t.pending = p
+	t.paused = execCtx
 	if timeout > 0 {
 		p.timer = time.AfterFunc(timeout, expire)
 	}
@@ -127,13 +146,78 @@ func (t *turn) cancel() (*pendingQuestion, bool) {
 	return t.clearPendingLocked(), true
 }
 
+// resume is called when a request continues or cancels a paused turn, so
+// that the request reports how the turn ends.
+func (t *turn) resume() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.paused = nil
+}
+
+// expire marks p, if it is still pending, as unanswered in time.
+func (t *turn) expire(p *pendingQuestion) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending != p {
+		return false
+	}
+	t.clearPendingLocked()
+	t.expired = true
+	return true
+}
+
 // end is called when the agent responded to the prompt: questions of the
-// turn can no longer be answered.
-func (t *turn) end() {
+// turn can no longer be answered. If the turn was paused, it returns the
+// request which paused it, since no request reports how the turn ended, and
+// whether the question expired.
+func (t *turn) end() (paused *a2asrv.ExecutorContext, expired bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ended = true
 	t.clearPendingLocked()
+	if t.inactivity != nil {
+		t.inactivity.Stop()
+	}
+	return t.paused, t.expired
+}
+
+// watchInactivity calls cancel once the agent sends nothing for the turn
+// for timeout, except while a question waits for an answer.
+func (t *turn) watchInactivity(timeout time.Duration, cancel func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.timeout = timeout
+	t.inactivity = time.AfterFunc(timeout, func() {
+		t.mu.Lock()
+		expired := !t.canceled && !t.ended && t.pending == nil
+		t.inactive = t.inactive || expired
+		t.mu.Unlock()
+		if expired {
+			cancel()
+		}
+	})
+}
+
+// touch restarts the inactivity timeout, also after it expired while a
+// question was pending.
+func (t *turn) touch() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.inactivity == nil || t.canceled || t.ended {
+		return
+	}
+	t.inactivity.Reset(t.timeout)
+}
+
+// failure returns the error which fails the task whatever the agent
+// responds to the prompt, if any.
+func (t *turn) failure() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.inactive {
+		return fmt.Errorf("%w for %s", ErrAgentInactive, t.timeout)
+	}
+	return nil
 }
 
 func (t *turn) hasEnded() bool {
@@ -148,26 +232,29 @@ func (t *turn) isCanceled() bool {
 	return t.canceled
 }
 
-func (r *promptResult) event(info a2a.TaskInfoProvider) a2a.Event {
-	if r.err != nil && r.canceled {
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
-	}
-	if r.err != nil {
-		return failed(info, fmt.Sprintf("acp agent error: %v", r.err))
+// outcome returns the state the task ends in, or the error which fails it.
+func (r *promptResult) outcome() (a2a.TaskState, error) {
+	switch {
+	case r.failure != nil:
+		return "", r.failure
+	case r.err != nil && r.canceled:
+		return a2a.TaskStateCanceled, nil
+	case r.err != nil:
+		return "", fmt.Errorf("acp agent error: %w", r.err)
 	}
 	switch r.reason {
 	case acp.StopEndTurn:
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCompleted, nil)
+		return a2a.TaskStateCompleted, nil
 	case acp.StopCancelled:
-		return a2a.NewStatusUpdateEvent(info, a2a.TaskStateCanceled, nil)
+		return a2a.TaskStateCanceled, nil
 	case acp.StopMaxTokens:
-		return failed(info, "the agent reached its token limit")
+		return "", errors.New("the agent reached its token limit")
 	case acp.StopMaxTurnRequests:
-		return failed(info, "the agent reached its request limit for the turn")
+		return "", errors.New("the agent reached its request limit for the turn")
 	case acp.StopRefusal:
-		return failed(info, "the agent refused to continue")
+		return "", errors.New("the agent refused to continue")
 	default:
-		return failed(info, fmt.Sprintf("the agent stopped: %s", r.reason))
+		return "", fmt.Errorf("the agent stopped: %s", r.reason)
 	}
 }
 
@@ -243,31 +330,80 @@ func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilitie
 	return out, nil
 }
 
+// rawBlock converts a file to an image, audio or embedded resource. Agents
+// such as opencode keep embedded resources in the session and send them to the
+// model with every later message, so a type the model rejects would fail the
+// rest of the conversation: only text and PDF files are embedded, and an
+// untyped file only if it is text.
 func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps acp.PromptCapabilities) (acp.ContentBlock, error) {
-	mime := p.MediaType
-	if mime == "" {
-		mime = "application/octet-stream"
+	mimeType := p.MediaType
+	if mimeType == "" || mediaType(mimeType) == "application/octet-stream" {
+		mimeType = "application/octet-stream"
+		if isText(data) {
+			mimeType = "text/plain"
+		}
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
+	base := mediaType(mimeType)
+	refuse := fmt.Errorf("the agent does not accept %s attachments", mimeType)
 	switch {
-	case strings.HasPrefix(mime, "image/") && caps.Image:
-		return acp.ContentBlock{Type: "image", Data: encoded, MimeType: mime}, nil
-	case strings.HasPrefix(mime, "audio/") && caps.Audio:
-		return acp.ContentBlock{Type: "audio", Data: encoded, MimeType: mime}, nil
-	case caps.EmbeddedContext:
-		name := p.Filename
-		if name == "" {
-			name = fmt.Sprintf("part-%d", i)
-		}
-		res := &acp.EmbeddedResource{URI: "attachment:" + name, MimeType: mime}
-		if strings.HasPrefix(mime, "text/") {
-			res.Text = string(data)
-		} else {
-			res.Blob = encoded
-		}
-		return acp.ContentBlock{Type: "resource", Resource: res}, nil
+	case strings.HasPrefix(base, "image/") && caps.Image:
+		return acp.ContentBlock{Type: "image", Data: encoded, MimeType: mimeType}, nil
+	case strings.HasPrefix(base, "audio/") && caps.Audio:
+		return acp.ContentBlock{Type: "audio", Data: encoded, MimeType: mimeType}, nil
+	case !caps.EmbeddedContext:
+		return acp.ContentBlock{}, refuse
 	}
-	return acp.ContentBlock{}, fmt.Errorf("the agent does not accept %s attachments", mime)
+	name := p.Filename
+	if name == "" {
+		name = fmt.Sprintf("part-%d", i)
+	}
+	res := &acp.EmbeddedResource{URI: "attachment:" + name, MimeType: mimeType}
+	switch {
+	case isTextType(base):
+		if !utf8.Valid(data) {
+			return acp.ContentBlock{}, fmt.Errorf("the agent does not accept %s attachments which are not UTF-8", mimeType)
+		}
+		res.Text = string(data)
+	case base == "application/pdf":
+		res.Blob = encoded
+	default:
+		return acp.ContentBlock{}, refuse
+	}
+	return acp.ContentBlock{Type: "resource", Resource: res}, nil
+}
+
+// mediaType returns the media type without parameters, in lower case.
+func mediaType(mimeType string) string {
+	base, _, err := mime.ParseMediaType(mimeType)
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(mimeType))
+	}
+	return base
+}
+
+var textTypes = []string{
+	"application/json", "application/xml", "application/yaml", "application/x-yaml", "application/toml",
+	"application/javascript", "application/x-javascript", "application/ecmascript", "application/typescript",
+	"application/x-sh", "application/x-shellscript", "application/sql", "application/graphql",
+	"application/x-ndjson", "application/jsonl", "application/csv", "application/x-httpd-php",
+}
+
+func isTextType(base string) bool {
+	if strings.HasPrefix(base, "text/") || slices.Contains(textTypes, base) {
+		return true
+	}
+	for _, suffix := range []string{"+json", "+xml", "+yaml"} {
+		if strings.HasSuffix(base, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isText reports whether untyped data is UTF-8 text.
+func isText(data []byte) bool {
+	return utf8.Valid(data) && strings.HasPrefix(http.DetectContentType(data), "text/plain")
 }
 
 // queue is an unbounded FIFO, so that the connection's read goroutine never

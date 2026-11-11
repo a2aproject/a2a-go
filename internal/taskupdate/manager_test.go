@@ -862,6 +862,21 @@ func TestManager_CancelationStatusUpdate_RetryOnConcurrentModification(t *testin
 	}
 }
 
+func TestManager_CancelationStatusUpdate_RetriesExhausted(t *testing.T) {
+	t.Parallel()
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+	m, saver := newUpdaterWithStoredTask(t, task)
+	saver.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+	}
+
+	_, err := m.Process(t.Context(), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCanceled, nil))
+
+	if !errors.Is(err, taskstore.ErrConcurrentModification) {
+		t.Fatalf("m.Process() error = %v, want %v", err, taskstore.ErrConcurrentModification)
+	}
+}
+
 func TestManager_SetTaskFailedAfterTerminalState(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

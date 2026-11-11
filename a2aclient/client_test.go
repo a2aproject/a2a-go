@@ -17,12 +17,15 @@ package a2aclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -275,9 +278,64 @@ func TestClient_InterceptorsAttachServiceParams(t *testing.T) {
 	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
 		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, a2a.SvcParamVersion: []string{string(client.endpoint.ProtocolVersion)}}
+	wantParams := ServiceParams{k1: []string{v1}, k2: []string{v2}, "a2a-version": []string{string(client.endpoint.ProtocolVersion)}}
 	if !reflect.DeepEqual(receivedParams, wantParams) {
 		t.Fatalf("client.GetTask() meta = %v, want %v", receivedParams, wantParams)
+	}
+}
+
+func TestClient_InterceptorsSeeProtocolVersion(t *testing.T) {
+	ctx := t.Context()
+	transport := &testTransport{
+		GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			return &a2a.Task{}, nil
+		},
+	}
+
+	var got []string
+	interceptor := &testInterceptor{
+		BeforeFn: func(ctx context.Context, r *Request) (context.Context, any, error) {
+			got = r.ServiceParams.Get(a2a.SvcParamVersion)
+			return ctx, nil, nil
+		},
+	}
+
+	client := newTestClient(transport, interceptor)
+	client.protocolVersion = a2a.Version
+	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{}); err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{string(a2a.Version)}, got); diff != "" {
+		t.Fatalf("ServiceParams.Get(%q) wrong result (-want +got) diff = %s", a2a.SvcParamVersion, diff)
+	}
+}
+
+func TestClient_AttachedProtocolVersionIsSentOnce(t *testing.T) {
+	ctx := t.Context()
+	executor := testexecutor.FromFunction(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+		return func(yield func(a2a.Event, error) bool) {
+			yield(a2a.NewMessage(a2a.MessageRoleAgent), nil)
+		}
+	})
+	server := startJSONRPCTestServer(t, a2asrv.NewHandler(executor))
+	card := &a2a.AgentCard{
+		SupportedInterfaces: []*a2a.AgentInterface{
+			{
+				ProtocolBinding: a2a.TransportProtocolJSONRPC,
+				ProtocolVersion: a2a.Version,
+				URL:             server.URL,
+			},
+		},
+	}
+	client, err := NewFromCard(ctx, card, withTestJSONRPCTransport())
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromCard() error = %v", err)
+	}
+
+	ctx = AttachServiceParams(ctx, ServiceParams{a2a.SvcParamVersion: []string{string(a2a.Version)}})
+	_, err = client.SendMessage(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))})
+	if err != nil {
+		t.Fatalf("client.SendMessage() error = %v, want nil", err)
 	}
 }
 
@@ -1031,5 +1089,151 @@ func TestClient_intercept_EarlyReturn(t *testing.T) {
 	wantCallOrder := []string{"1-Before", "2-Before", "2-After", "1-After"}
 	if !reflect.DeepEqual(callOrder, wantCallOrder) {
 		t.Fatalf("callOrder = %v, want %v", callOrder, wantCallOrder)
+	}
+}
+
+func TestClient_StreamingInterceptorCachedEvents(t *testing.T) {
+	t.Parallel()
+	task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: "task", ContextID: "context"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("request")))
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		for _, event := range []a2a.Event{task, a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("cached")), a2a.NewStatusUpdateEvent(task, a2a.TaskStateCompleted, nil), a2a.NewArtifactEvent(task, a2a.NewTextPart("cached"))} {
+			t.Run(fmt.Sprintf("%s/%T", method, event), func(t *testing.T) {
+				t.Parallel()
+				interceptor := &testInterceptor{BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) { return ctx, event, nil }}
+				client := newTestClient(&testTransport{}, interceptor)
+				stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+				if method == "SubscribeToTask" {
+					stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+				}
+				var got []a2a.Event
+				for e, err := range stream {
+					if err != nil {
+						t.Fatalf("client.%s() error = %v, want nil", method, err)
+					}
+					got = append(got, e)
+				}
+				if diff := cmp.Diff([]a2a.Event{event}, got); diff != "" {
+					t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+				}
+			})
+		}
+	}
+}
+
+func TestClient_StreamingInterceptorErrorRecovery(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{"SendStreamingMessage", "SubscribeToTask"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			transportErr := errors.New("transport failed")
+			fallback := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("fallback"))
+			transport := &testTransport{
+				SendStreamingMessageFn: func(context.Context, ServiceParams, *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+				SubscribeToTaskFn: func(context.Context, ServiceParams, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(nil, transportErr) }
+				},
+			}
+			interceptor := &testInterceptor{AfterFn: func(ctx context.Context, resp *Response) error {
+				if !errors.Is(resp.Err, transportErr) {
+					t.Fatalf("Response.Err = %v, want %v", resp.Err, transportErr)
+				}
+				resp.Err = nil
+				resp.Payload = fallback
+				return nil
+			}}
+			client := newTestClient(transport, interceptor)
+			stream := client.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{})
+			if method == "SubscribeToTask" {
+				stream = client.SubscribeToTask(t.Context(), &a2a.SubscribeToTaskRequest{})
+			}
+			var got []a2a.Event
+			for event, err := range stream {
+				if err != nil {
+					t.Fatalf("client.%s() error = %v, want nil", method, err)
+				}
+				got = append(got, event)
+			}
+			if diff := cmp.Diff([]a2a.Event{fallback}, got); diff != "" {
+				t.Fatalf("client.%s() wrong result (-want +got) diff = %s", method, diff)
+			}
+		})
+	}
+}
+
+func TestClient_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
+	t.Parallel()
+
+	type depthKey struct{}
+	type attempt struct {
+		RequestIDs []string
+		TaskID     a2a.TaskID
+		Depth      int
+	}
+
+	testCases := []struct {
+		name string
+		run  func(handler callHandler, ctx context.Context, req Request)
+	}{
+		{
+			name: "same sequence iterated twice",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				seq := handler(ctx, req)
+				for range 2 {
+					for range seq {
+					}
+				}
+			},
+		},
+		{
+			name: "handler called twice with the same request",
+			run: func(handler callHandler, ctx context.Context, req Request) {
+				for range 2 {
+					for range handler(ctx, req) {
+					}
+				}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			requests := 0
+			interceptor := &testInterceptor{
+				BeforeFn: func(ctx context.Context, req *Request) (context.Context, any, error) {
+					requests++
+					req.ServiceParams.Append("x-request-id", fmt.Sprintf("id-%d", requests))
+					req.Payload = &a2a.GetTaskRequest{ID: req.Payload.(*a2a.GetTaskRequest).ID + "!"}
+					depth, _ := ctx.Value(depthKey{}).(int)
+					return context.WithValue(ctx, depthKey{}, depth+1), nil, nil
+				},
+			}
+			client := &Client{interceptors: []CallInterceptor{interceptor}}
+			var got []attempt
+			terminal := func(ctx context.Context, req Request) iter.Seq2[any, error] {
+				return func(yield func(any, error) bool) {
+					depth, _ := ctx.Value(depthKey{}).(int)
+					got = append(got, attempt{
+						RequestIDs: req.ServiceParams.Get("x-request-id"),
+						TaskID:     req.Payload.(*a2a.GetTaskRequest).ID,
+						Depth:      depth,
+					})
+					yield(&a2a.Task{}, nil)
+				}
+			}
+
+			ctx := t.Context()
+			tc.run(interceptCalls(client, terminal), ctx, client.newRequest(ctx, "GetTask", &a2a.GetTaskRequest{ID: "task"}))
+
+			want := []attempt{
+				{RequestIDs: []string{"id-1"}, TaskID: "task!", Depth: 1},
+				{RequestIDs: []string{"id-2"}, TaskID: "task!", Depth: 1},
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("interceptCalls() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }

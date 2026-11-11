@@ -18,6 +18,7 @@ package utils
 import (
 	"bytes"
 	"context"
+	"encoding"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -32,7 +33,6 @@ func init() {
 }
 
 // DeepCopy uses gob encode-decode pass to create a deep-copy of the referenced data.
-// Preserve explicit empty slices so metadata arrays do not become null.
 func DeepCopy[T any](task *T) (*T, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -97,8 +97,30 @@ func FromMapStruct[T any](value map[string]any) (*T, error) {
 	return &zero, nil
 }
 
+// CastPayload converts a call payload to T. A nil payload is converted to the zero value of T.
+func CastPayload[T any](payload any) (T, error) {
+	var zero T
+	if payload == nil {
+		return zero, nil
+	}
+	typed, ok := payload.(T)
+	if !ok {
+		return zero, fmt.Errorf("type changed from %v to %T", reflect.TypeFor[T](), payload)
+	}
+	return typed, nil
+}
+
+// CastResult converts a call result payload to T and returns it with err. A type mismatch error
+// takes precedence over err.
+func CastResult[T any](payload any, err error) (T, error) {
+	typed, castErr := CastPayload[T](payload)
+	if castErr != nil {
+		return typed, castErr
+	}
+	return typed, err
+}
+
 // MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.
-// Print structured diagnostic values, failing explicitly if encoding fails.
 func MustPrettyPrint(value any) {
 	raw, err := json.MarshalIndent(value, "", " ")
 	if err != nil {
@@ -107,15 +129,16 @@ func MustPrettyPrint(value any) {
 	fmt.Println(string(raw))
 }
 
-// restoreEmptySlices restores empty slices lost by gob while preserving nil values, types, and deep-copy semantics.
 func restoreEmptySlices(source, target reflect.Value) {
 	if !source.IsValid() || !target.IsValid() || source.Type() != target.Type() {
 		return
 	}
-	// Custom gob codecs own their representation. Preserve their intentional transformations.
-	encoder := reflect.TypeFor[gob.GobEncoder]()
-	if source.Type().Implements(encoder) || (source.Kind() != reflect.Pointer && reflect.PointerTo(source.Type()).Implements(encoder)) {
-		return
+	// gob selects GobEncoder before BinaryMarshaler; either codec owns its representation.
+	// TextMarshaler is not used by gob, so text-only types still need empty slices restored.
+	for _, encoder := range []reflect.Type{reflect.TypeFor[gob.GobEncoder](), reflect.TypeFor[encoding.BinaryMarshaler]()} {
+		if source.Type().Implements(encoder) || (source.Kind() != reflect.Pointer && reflect.PointerTo(source.Type()).Implements(encoder)) {
+			return
+		}
 	}
 	switch source.Kind() {
 	case reflect.Interface:

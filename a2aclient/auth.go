@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -89,17 +91,74 @@ func (ai *AuthInterceptor) Before(ctx context.Context, req *Request) (context.Co
 				continue
 			}
 			switch v := scheme.(type) {
-			case a2a.HTTPAuthSecurityScheme, a2a.OAuth2SecurityScheme:
-				req.ServiceParams["Authorization"] = []string{fmt.Sprintf("Bearer %s", credential)}
+			case a2a.HTTPAuthSecurityScheme:
+				authScheme := strings.TrimSpace(v.Scheme)
+				switch {
+				case authScheme == "", strings.EqualFold(authScheme, "bearer"):
+					authScheme = "Bearer"
+				case strings.EqualFold(authScheme, "basic"):
+					authScheme = "Basic"
+				}
+				req.ServiceParams.set("Authorization", fmt.Sprintf("%s %s", authScheme, credential))
+				return ctx, nil, nil
+			case a2a.OAuth2SecurityScheme:
+				req.ServiceParams.set("Authorization", fmt.Sprintf("Bearer %s", credential))
 				return ctx, nil, nil
 			case a2a.APIKeySecurityScheme:
-				req.ServiceParams[v.Name] = []string{string(credential)}
-				return ctx, nil, nil
+				if !isHTTPProtocolBinding(req) {
+					req.ServiceParams.set(v.Name, string(credential))
+					return ctx, nil, nil
+				}
+				switch v.Location {
+				case a2a.APIKeySecuritySchemeLocationQuery:
+					ctx = AttachHTTPQueryParams(ctx, url.Values{v.Name: {string(credential)}})
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationCookie:
+					if err := validateCookiePair(v.Name, string(credential)); err != nil {
+						return ctx, nil, err
+					}
+					pair := v.Name + "=" + string(credential)
+					// RFC 6265 section 5.4 forbids sending more than one Cookie header.
+					if existing := req.ServiceParams.Get("Cookie"); len(existing) > 0 {
+						pair = strings.Join(existing, "; ") + "; " + pair
+					}
+					req.ServiceParams.set("Cookie", pair)
+					return ctx, nil, nil
+				case a2a.APIKeySecuritySchemeLocationHeader, "":
+					req.ServiceParams.set(v.Name, string(credential))
+					return ctx, nil, nil
+				default:
+					log.Warn(ctx, "unsupported API key security scheme location, credential not attached", "location", v.Location)
+				}
 			}
 		}
 	}
 
 	return ctx, nil, nil
+}
+
+func isHTTPProtocolBinding(req *Request) bool {
+	return req.ProtocolBinding == a2a.TransportProtocolJSONRPC ||
+		req.ProtocolBinding == a2a.TransportProtocolHTTPJSON
+}
+
+func validateCookiePair(name, credential string) error {
+	switch {
+	case name == "":
+		return errors.New("API key cookie name is empty")
+	case strings.ContainsAny(name, "=;,\"\\ \t\r\n") || containsControlChars(name):
+		return fmt.Errorf("API key cookie name %q contains invalid characters", name)
+	// The error must not include the credential.
+	case strings.ContainsAny(credential, ";,\"\\ \t\r\n") || containsControlChars(credential):
+		return errors.New("API key credential contains characters that are invalid for a cookie value")
+	}
+	return nil
+}
+
+func containsControlChars(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool {
+		return r < 0x20 || r == 0x7f
+	})
 }
 
 // CredentialsService is used by [AuthInterceptor] for resolving credentials.

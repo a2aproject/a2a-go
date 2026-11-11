@@ -35,6 +35,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestJSONRPC_RequestRouting(t *testing.T) {
@@ -427,51 +428,61 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 
 func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
+	testCases := []struct {
+		name      string
+		deleteErr error
+		want      jsonrpc.ServerResponse
+	}{
+		{
+			name: "success",
+			want: jsonrpc.ServerResponse{JSONRPC: "2.0", ID: "delete-1", Result: struct{}{}},
+		},
+		{
+			name:      "delete error",
+			deleteErr: a2a.ErrInternalError,
+			want:      jsonrpc.ServerResponse{JSONRPC: "2.0", ID: "delete-1", Error: jsonrpc.ToJSONRPCError(a2a.ErrInternalError)},
+		},
+	}
 
-	taskID := a2a.NewTaskID()
-	config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
-	store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
-	pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
-	pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
-	reqHandler := NewHandler(
-		&mockAgentExecutor{},
-		WithTaskStore(store),
-		WithPushNotifications(pushStore, pushSender),
-	)
-	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
-	defer server.Close()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			taskID := a2a.NewTaskID()
+			config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
+			store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
+			pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
+			if tc.deleteErr != nil {
+				pushStore.SetDeleteError(tc.deleteErr)
+			}
+			pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
+			reqHandler := NewHandler(
+				&mockAgentExecutor{},
+				WithTaskStore(store),
+				WithPushNotifications(pushStore, pushSender),
+			)
+			handler := NewJSONRPCHandler(reqHandler)
 
-	params := mustMarshal(t, &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config.ID})
-	request := jsonrpc.ServerRequest{
-		JSONRPC: "2.0",
-		Method:  jsonrpc.MethodPushConfigDelete,
-		Params:  params,
-		ID:      "delete-1",
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
-	if err != nil {
-		t.Fatalf("http.NewRequestWithContext() error = %v", err)
-	}
-	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("http.DefaultClient.Do() error = %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+			params := mustMarshal(t, &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config.ID})
+			request := jsonrpc.ServerRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodPushConfigDelete,
+				Params:  params,
+				ID:      "delete-1",
+			}
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", bytes.NewReader(mustMarshal(t, request)))
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
 
-	var payload jsonrpc.ServerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("json.Decode() error = %v, want valid JSON-RPC response", err)
-	}
-	if payload.JSONRPC != "2.0" {
-		t.Fatalf("payload.JSONRPC = %q, want %q", payload.JSONRPC, "2.0")
-	}
-	if payload.Error != nil {
-		t.Fatalf("payload.Error = %v, want nil", payload.Error)
-	}
-	if payload.ID != "delete-1" {
-		t.Fatalf("payload.ID = %v, want %q", payload.ID, "delete-1")
+			want := mustUnmarshal(t, mustMarshal(t, tc.want))
+			got := mustUnmarshal(t, rw.Body.Bytes())
+			ignoreTimestamp := cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
+				return k == "timestamp"
+			})
+			if diff := cmp.Diff(want, got, ignoreTimestamp); diff != "" {
+				t.Fatalf("handler.ServeHTTP() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 

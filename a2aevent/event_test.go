@@ -15,6 +15,7 @@
 package a2aevent_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -469,6 +470,105 @@ func TestApplyUpdate_UserMessage(t *testing.T) {
 					t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
 				}
 			})
+		}
+	}
+}
+
+func TestApplyUpdate_InputRequiredHistoryOrder(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range modes {
+		t.Run("answer before working"+mode.suffix, func(t *testing.T) {
+			t.Parallel()
+			tip, _ := newTestTaskInfo()
+			initial := a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("initial"))
+			question := a2a.NewMessageForTask(a2a.MessageRoleAgent, tip, a2a.NewTextPart("Q"))
+			answer := a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("A"))
+			base := newTask(tip, a2a.TaskStateInputRequired)
+			base.Status.Message = question
+			base.History = make([]*a2a.Message, 1, 4)
+			base.History[0] = initial
+			before, err := utils.DeepCopy(base)
+			if err != nil {
+				t.Fatalf("utils.DeepCopy() error = %v, want nil", err)
+			}
+
+			answered, err := mode.applyUpdate(base, answer)
+			if err != nil {
+				t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+			}
+			got, err := mode.applyUpdate(answered, a2a.NewStatusUpdateEvent(tip, a2a.TaskStateWorking, nil))
+			if err != nil {
+				t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+			}
+			want := newTask(tip, a2a.TaskStateWorking)
+			want.History = []*a2a.Message{initial, question, answer}
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(a2a.TaskStatus{}, "Timestamp")); diff != "" {
+				t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(before, base); diff != "" {
+				t.Fatalf("input task was mutated (-before +after) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestApplyUpdate_StatusMessageInHistory(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range modes {
+		for _, tc := range []struct {
+			name        string
+			statusID    string
+			historyID   string
+			historyText string
+			wantAppend  bool
+		}{
+			{name: "same ID different content", statusID: "question", historyID: "question", historyText: "earlier Q"},
+			{name: "different IDs same content", statusID: "question", historyID: "earlier", historyText: "Q", wantAppend: true},
+			{name: "empty history ID", statusID: "question", historyText: "Q", wantAppend: true},
+			{name: "empty status ID", historyID: "earlier", historyText: "Q", wantAppend: true},
+			{name: "empty IDs same content", historyText: "Q", wantAppend: true},
+		} {
+			for _, statusUpdate := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/statusUpdate=%t%s", tc.name, statusUpdate, mode.suffix), func(t *testing.T) {
+					t.Parallel()
+					tip, _ := newTestTaskInfo()
+					question := a2a.NewMessageForTask(a2a.MessageRoleAgent, tip, a2a.NewTextPart("Q"))
+					question.ID = tc.statusID
+					history := a2a.NewMessageForTask(a2a.MessageRoleAgent, tip, a2a.NewTextPart(tc.historyText))
+					history.ID = tc.historyID
+					base := newTask(tip, a2a.TaskStateInputRequired)
+					base.Status.Message = question
+					base.History = []*a2a.Message{history}
+					want := newTask(tip, a2a.TaskStateInputRequired)
+					want.Status.Message = question
+					want.History = []*a2a.Message{history}
+					// ApplyUpdate's gob-based deep copy cannot encode nil history entries.
+					if mode.suffix == "_shallow" {
+						base.History = append([]*a2a.Message{nil}, base.History...)
+						want.History = append([]*a2a.Message{nil}, want.History...)
+					}
+					if tc.wantAppend {
+						want.History = append(want.History, question)
+					}
+					answer := a2a.NewMessageForTask(a2a.MessageRoleUser, tip, a2a.NewTextPart("A"))
+					var event a2a.Event = answer
+					if statusUpdate {
+						event = a2a.NewStatusUpdateEvent(tip, a2a.TaskStateWorking, nil)
+						want.Status = event.(*a2a.TaskStatusUpdateEvent).Status
+					} else {
+						want.History = append(want.History, answer)
+					}
+					got, err := mode.applyUpdate(base, event)
+					if err != nil {
+						t.Fatalf("applyUpdateFn() error = %v, want nil", err)
+					}
+					if diff := cmp.Diff(want, got); diff != "" {
+						t.Fatalf("applyUpdateFn() wrong result (-want +got) diff = %s", diff)
+					}
+				})
+			}
 		}
 	}
 }
