@@ -25,6 +25,18 @@ import (
 
 // ServerHooks are the hooks of a server plugin. All fields are optional.
 type ServerHooks struct {
+	// BeforeCall runs before every call and can modify the request. The returned context is passed to
+	// the call and to AfterCall. If it returns a result or an error, the call is not handled and the value
+	// is returned to the client.
+	BeforeCall func(ctx context.Context, callCtx *a2asrv.CallContext, req *a2asrv.Request) (context.Context, any, error)
+
+	// AfterCall runs on every response value: once for a unary call, once per event for a streaming call.
+	// It can modify the response. If it returns an error, the error is returned instead of the value.
+	AfterCall func(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error
+
+	// WrapCall wraps every call outside the call hooks.
+	WrapCall func(next a2asrv.CallHandler) a2asrv.CallHandler
+
 	// BeforeExecute runs before the agent executes. The returned context is passed to the agent,
 	// OnExecuteEvent and AfterExecute. If it returns an error, the agent is not executed.
 	BeforeExecute func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (context.Context, error)
