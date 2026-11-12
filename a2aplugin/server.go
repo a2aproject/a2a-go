@@ -58,22 +58,25 @@ func (p *serverPlugin) Name() string {
 }
 
 func (p *serverPlugin) WrapExecutor(next a2asrv.AgentExecutor) a2asrv.AgentExecutor {
+	var contexts *sync.Map
 	if p.hooks.AfterExecute != nil {
-		next = &cleaningExecutor{hookExecutor: &hookExecutor{AgentExecutor: next, hooks: p.hooks, contexts: &sync.Map{}}}
-	} else if p.hooks.BeforeExecute != nil || p.hooks.OnExecuteEvent != nil {
-		next = &hookExecutor{AgentExecutor: next, hooks: p.hooks}
+		contexts = &sync.Map{}
+	}
+	if p.hooks.BeforeExecute != nil || p.hooks.OnExecuteEvent != nil || p.hooks.AfterExecute != nil {
+		next = &hookExecutor{AgentExecutor: next, hooks: p.hooks, contexts: contexts}
 	}
 	if p.hooks.WrapExecutor != nil {
 		next = p.hooks.WrapExecutor(next)
+	}
+	if p.hooks.AfterExecute != nil {
+		next = &cleaningExecutor{AgentExecutor: next, hooks: p.hooks, contexts: contexts}
 	}
 	return next
 }
 
 type hookExecutor struct {
 	a2asrv.AgentExecutor
-	hooks ServerHooks
-	// contexts maps the ExecutorContext of every started execution to the context passed to AfterExecute.
-	// It is nil if AfterExecute is not set.
+	hooks    ServerHooks
 	contexts *sync.Map
 }
 
@@ -112,15 +115,20 @@ func (e *hookExecutor) started(ctx context.Context, execCtx *a2asrv.ExecutorCont
 }
 
 // cleaningExecutor runs AfterExecute from Cleanup, which the handler calls after every execution and cancelation.
+// It is the outermost wrapper, so the handler finds its Cleanup even if WrapExecutor is set.
 type cleaningExecutor struct {
-	*hookExecutor
+	a2asrv.AgentExecutor
+	hooks    ServerHooks
+	contexts *sync.Map
 }
 
-func (e *cleaningExecutor) Cleanup(_ context.Context, execCtx *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
-	ctx, ok := e.contexts.LoadAndDelete(execCtx)
-	if !ok {
-		// Execute was not called: the cleanup follows a cancelation, or an ExecutorContextInterceptor failed.
-		return
+func (e *cleaningExecutor) Cleanup(ctx context.Context, execCtx *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
+	// A missing context means Execute was not called: the cleanup follows a cancelation, or an
+	// ExecutorContextInterceptor failed.
+	if hookCtx, ok := e.contexts.LoadAndDelete(execCtx); ok {
+		e.hooks.AfterExecute(context.WithoutCancel(hookCtx.(context.Context)), execCtx, result, err)
 	}
-	e.hooks.AfterExecute(context.WithoutCancel(ctx.(context.Context)), execCtx, result, err)
+	if cleaner, ok := e.AgentExecutor.(a2asrv.AgentExecutionCleaner); ok {
+		cleaner.Cleanup(ctx, execCtx, result, err)
+	}
 }

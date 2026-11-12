@@ -63,6 +63,15 @@ func waitAfterExecute(t *testing.T, calls <-chan afterExecuteCall) afterExecuteC
 	}
 }
 
+type cleaningWrapper struct {
+	a2asrv.AgentExecutor
+	calls chan<- string
+}
+
+func (w *cleaningWrapper) Cleanup(context.Context, *a2asrv.ExecutorContext, a2a.SendMessageResult, error) {
+	w.calls <- "wrapper cleanup"
+}
+
 func TestServer_Name(t *testing.T) {
 	t.Parallel()
 	if got := Server("audit", ServerHooks{}).Name(); got != "audit" {
@@ -252,5 +261,64 @@ func TestServer_WrapExecutorOutsideHooks(t *testing.T) {
 
 	if diff := cmp.Diff([]string{"wrap", "before", "agent"}, got); diff != "" {
 		t.Fatalf("WrapExecutor() wrong call order (-want +got) diff = %s", diff)
+	}
+}
+
+func TestServer_AfterExecuteWithWrapExecutor(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		wrap      func(next a2asrv.AgentExecutor, calls chan<- string) a2asrv.AgentExecutor
+		wantCalls []string
+	}{
+		{
+			name: "wrapper without cleanup",
+			wrap: func(next a2asrv.AgentExecutor, _ chan<- string) a2asrv.AgentExecutor {
+				return &struct{ a2asrv.AgentExecutor }{next}
+			},
+			wantCalls: []string{"after execute"},
+		},
+		{
+			name: "wrapper with cleanup",
+			wrap: func(next a2asrv.AgentExecutor, calls chan<- string) a2asrv.AgentExecutor {
+				return &cleaningWrapper{AgentExecutor: next, calls: calls}
+			},
+			wantCalls: []string{"after execute", "wrapper cleanup"},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			calls := make(chan string, 10)
+			agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event {
+				return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("done"))}
+			})
+			plugin := Server("wrap", ServerHooks{
+				AfterExecute: func(context.Context, *a2asrv.ExecutorContext, a2a.SendMessageResult, error) {
+					calls <- "after execute"
+				},
+				WrapExecutor: func(next a2asrv.AgentExecutor) a2asrv.AgentExecutor {
+					return tc.wrap(next, calls)
+				},
+			})
+			handler := a2asrv.NewHandler(agent, a2asrv.WithPlugins(plugin))
+
+			if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage()}); err != nil {
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
+			}
+			var got []string
+			for range tc.wantCalls {
+				select {
+				case call := <-calls:
+					got = append(got, call)
+				case <-time.After(time.Second):
+					t.Fatalf("Cleanup() calls = %v, want %v", got, tc.wantCalls)
+				}
+			}
+
+			if diff := cmp.Diff(tc.wantCalls, got); diff != "" {
+				t.Fatalf("Cleanup() wrong call order (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
