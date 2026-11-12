@@ -2026,6 +2026,15 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			},
 		},
 		{
+			name:    "nil config without error",
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantErr: a2a.ErrTaskNotFound,
+			options: []RequestHandlerOption{
+				WithPushNotifications(testutil.NewTestPushConfigStore().SetGetOverride(nil, nil), pn),
+				withTestTask(t, taskID),
+			},
+		},
+		{
 			name: "pushNotifications not supported",
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			options: []RequestHandlerOption{
