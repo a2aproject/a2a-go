@@ -115,6 +115,59 @@ func TestClient_BeforeCall(t *testing.T) {
 	}
 }
 
+func TestClient_AfterCallContextOnEarlyReturn(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		hookCtx   func(ctx context.Context) context.Context
+		result    any
+		err       error
+		wantValue any
+	}{
+		{
+			name:      "early result",
+			hookCtx:   func(ctx context.Context) context.Context { return context.WithValue(ctx, ctxKey{}, "before") },
+			result:    &a2a.Task{},
+			wantValue: "before",
+		},
+		{
+			name:      "error",
+			hookCtx:   func(ctx context.Context) context.Context { return context.WithValue(ctx, ctxKey{}, "before") },
+			err:       errors.New("rejected"),
+			wantValue: "before",
+		},
+		{
+			name:      "nil context",
+			hookCtx:   func(context.Context) context.Context { return nil },
+			err:       errors.New("rejected"),
+			wantValue: "original",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			next, _ := newClientHandler()
+			var afterCtxValue any
+			plugin := Client("hooks", ClientHooks{
+				BeforeCall: func(ctx context.Context, _ *a2aclient.Request) (context.Context, any, error) {
+					return tc.hookCtx(ctx), tc.result, tc.err
+				},
+				AfterCall: func(ctx context.Context, _ *a2aclient.Response) error {
+					afterCtxValue = ctx.Value(ctxKey{})
+					return nil
+				},
+			})
+			ctx := context.WithValue(t.Context(), ctxKey{}, "original")
+
+			collect(plugin.WrapCall(next)(ctx, a2aclient.Request{Method: "GetTask"}))
+
+			if afterCtxValue != tc.wantValue {
+				t.Fatalf("AfterCall() ctx value = %v, want %q", afterCtxValue, tc.wantValue)
+			}
+		})
+	}
+}
+
 func TestClient_CallHooks(t *testing.T) {
 	t.Parallel()
 	early := &a2a.Task{ID: "early"}

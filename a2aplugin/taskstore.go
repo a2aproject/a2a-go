@@ -63,13 +63,12 @@ func (s *hookStore) before(ctx context.Context, write *TaskWrite) (context.Conte
 		return ctx, nil
 	}
 	hookCtx, err := s.hooks.BeforeTaskWrite(ctx, write)
+	ctx = hookContext(ctx, hookCtx)
 	if err != nil {
-		if s.hooks.AfterTaskWrite != nil {
-			s.hooks.AfterTaskWrite(ctx, write, err)
-		}
+		s.after(ctx, write, err)
 		return ctx, err
 	}
-	return hookCtx, nil
+	return ctx, nil
 }
 
 func (s *hookStore) after(ctx context.Context, write *TaskWrite, err error) {

@@ -52,11 +52,12 @@ func (e *hookExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		if e.hooks.BeforeExecute != nil {
 			e.started(ctx, execCtx)
 			hookCtx, err := e.hooks.BeforeExecute(ctx, execCtx)
+			ctx = hookContext(ctx, hookCtx)
 			if err != nil {
+				e.started(ctx, execCtx)
 				yield(nil, err)
 				return
 			}
-			ctx = hookCtx
 		}
 		e.started(ctx, execCtx)
 		for event, err := range e.AgentExecutor.Execute(ctx, execCtx) {

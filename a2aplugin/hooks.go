@@ -103,3 +103,11 @@ type TaskWrite struct {
 	// PrevTask is the previous state of the task. Nil on create.
 	PrevTask *a2a.Task
 }
+
+// hookContext returns the context returned by a Before hook, or ctx if the hook returned nil.
+func hookContext(ctx, hookCtx context.Context) context.Context {
+	if hookCtx == nil {
+		return ctx
+	}
+	return hookCtx
+}

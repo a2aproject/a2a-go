@@ -147,7 +147,7 @@ func TestServer_BeforeExecuteError(t *testing.T) {
 	afterCalls := make(chan afterExecuteCall, 1)
 	plugin := Server("reject", ServerHooks{
 		BeforeExecute: func(ctx context.Context, _ *a2asrv.ExecutorContext) (context.Context, error) {
-			return ctx, wantErr
+			return context.WithValue(ctx, ctxKey{}, "before"), wantErr
 		},
 		AfterExecute: func(ctx context.Context, _ *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
 			afterCalls <- afterExecuteCall{ctx: ctx, result: result, err: err}
@@ -165,6 +165,9 @@ func TestServer_BeforeExecuteError(t *testing.T) {
 	}
 	if !errors.Is(after.err, wantErr) {
 		t.Fatalf("AfterExecute() err = %v, want %v", after.err, wantErr)
+	}
+	if got := after.ctx.Value(ctxKey{}); got != "before" {
+		t.Fatalf("AfterExecute() ctx value = %v, want %q", got, "before")
 	}
 }
 

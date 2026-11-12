@@ -113,11 +113,13 @@ func TestServer_BeforeTaskWriteError(t *testing.T) {
 		return taskstore.TaskVersionMissing, nil
 	}
 	var afterErr error
+	var afterCtxValue any
 	plugin := Server("reject", ServerHooks{
 		BeforeTaskWrite: func(ctx context.Context, _ *TaskWrite) (context.Context, error) {
-			return ctx, wantErr
+			return context.WithValue(ctx, ctxKey{}, "before"), wantErr
 		},
-		AfterTaskWrite: func(_ context.Context, _ *TaskWrite, err error) {
+		AfterTaskWrite: func(ctx context.Context, _ *TaskWrite, err error) {
+			afterCtxValue = ctx.Value(ctxKey{})
 			afterErr = err
 		},
 	})
@@ -133,6 +135,9 @@ func TestServer_BeforeTaskWriteError(t *testing.T) {
 	}
 	if !errors.Is(afterErr, wantErr) {
 		t.Fatalf("AfterTaskWrite() err = %v, want %v", afterErr, wantErr)
+	}
+	if afterCtxValue != "before" {
+		t.Fatalf("AfterTaskWrite() ctx value = %v, want %q", afterCtxValue, "before")
 	}
 }
 

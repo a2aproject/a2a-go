@@ -53,11 +53,11 @@ func (p *serverPlugin) hookCall(next a2asrv.CallHandler) a2asrv.CallHandler {
 			ctx, req := ctx, req
 			if p.hooks.BeforeCall != nil {
 				hookCtx, result, err := p.hooks.BeforeCall(ctx, callCtx, &req)
+				ctx = hookContext(ctx, hookCtx)
 				if err != nil || result != nil {
 					yield(p.afterCall(ctx, callCtx, result, err))
 					return
 				}
-				ctx = hookCtx
 			}
 			for payload, err := range next(ctx, callCtx, req) {
 				if !yield(p.afterCall(ctx, callCtx, payload, err)) {

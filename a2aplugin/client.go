@@ -59,7 +59,7 @@ func (p *clientPlugin) hookCall(next a2aclient.CallHandler) a2aclient.CallHandle
 			req.ServiceParams = params
 			if p.hooks.BeforeCall != nil {
 				hookCtx, result, err := p.hooks.BeforeCall(ctx, &req)
-				ctx = hookCtx
+				ctx = hookContext(ctx, hookCtx)
 				if err != nil || result != nil {
 					yield(p.afterCall(ctx, req, result, err))
 					return

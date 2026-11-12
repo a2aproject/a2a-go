@@ -99,11 +99,13 @@ func TestServer_BeforePushError(t *testing.T) {
 		return &push.DeliveryResult{}, nil
 	})
 	var afterResult *push.DeliveryResult
+	var afterCtxValue any
 	plugin := Server("reject", ServerHooks{
 		BeforePush: func(ctx context.Context, _ *push.Delivery) (context.Context, error) {
-			return ctx, wantErr
+			return context.WithValue(ctx, ctxKey{}, "before"), wantErr
 		},
-		AfterPush: func(_ context.Context, _ *push.Delivery, result *push.DeliveryResult) {
+		AfterPush: func(ctx context.Context, _ *push.Delivery, result *push.DeliveryResult) {
+			afterCtxValue = ctx.Value(ctxKey{})
 			afterResult = result
 		},
 	})
@@ -118,6 +120,9 @@ func TestServer_BeforePushError(t *testing.T) {
 	}
 	if afterResult == nil || !errors.Is(afterResult.Err, wantErr) {
 		t.Fatalf("AfterPush() result = %v, want Err = %v", afterResult, wantErr)
+	}
+	if afterCtxValue != "before" {
+		t.Fatalf("AfterPush() ctx value = %v, want %q", afterCtxValue, "before")
 	}
 }
 

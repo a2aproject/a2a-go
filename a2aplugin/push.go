@@ -34,12 +34,12 @@ func (p *serverPlugin) hookDelivery(next push.DeliveryHandler) push.DeliveryHand
 	return func(ctx context.Context, d *push.Delivery) (*push.DeliveryResult, error) {
 		if p.hooks.BeforePush != nil {
 			hookCtx, err := p.hooks.BeforePush(ctx, d)
+			ctx = hookContext(ctx, hookCtx)
 			if err != nil {
 				result := &push.DeliveryResult{Err: err}
 				p.afterPush(ctx, d, result)
 				return result, err
 			}
-			ctx = hookCtx
 		}
 		result, err := next(ctx, d)
 		if result == nil {

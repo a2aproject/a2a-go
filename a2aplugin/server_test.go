@@ -105,6 +105,59 @@ func TestServer_BeforeCall(t *testing.T) {
 	}
 }
 
+func TestServer_AfterCallContextOnEarlyReturn(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		hookCtx   func(ctx context.Context) context.Context
+		result    any
+		err       error
+		wantValue any
+	}{
+		{
+			name:      "early result",
+			hookCtx:   func(ctx context.Context) context.Context { return context.WithValue(ctx, ctxKey{}, "before") },
+			result:    &a2a.Task{},
+			wantValue: "before",
+		},
+		{
+			name:      "error",
+			hookCtx:   func(ctx context.Context) context.Context { return context.WithValue(ctx, ctxKey{}, "before") },
+			err:       errors.New("rejected"),
+			wantValue: "before",
+		},
+		{
+			name:      "nil context",
+			hookCtx:   func(context.Context) context.Context { return nil },
+			err:       errors.New("rejected"),
+			wantValue: "original",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			next, _ := newServerHandler()
+			var afterCtxValue any
+			plugin := Server("hooks", ServerHooks{
+				BeforeCall: func(ctx context.Context, _ *a2asrv.CallContext, _ *a2asrv.Request) (context.Context, any, error) {
+					return tc.hookCtx(ctx), tc.result, tc.err
+				},
+				AfterCall: func(ctx context.Context, _ *a2asrv.CallContext, _ *a2asrv.Response) error {
+					afterCtxValue = ctx.Value(ctxKey{})
+					return nil
+				},
+			})
+			ctx, callCtx := a2asrv.NewCallContext(context.WithValue(t.Context(), ctxKey{}, "original"), nil)
+
+			collect(plugin.WrapCall(next)(ctx, callCtx, a2asrv.Request{}))
+
+			if afterCtxValue != tc.wantValue {
+				t.Fatalf("AfterCall() ctx value = %v, want %q", afterCtxValue, tc.wantValue)
+			}
+		})
+	}
+}
+
 func TestServer_CallHooks(t *testing.T) {
 	t.Parallel()
 	early := &a2a.Task{ID: "early"}
