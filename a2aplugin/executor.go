@@ -16,6 +16,7 @@ package a2aplugin
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"sync"
 
@@ -63,6 +64,9 @@ func (e *hookExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		for event, err := range e.AgentExecutor.Execute(ctx, execCtx) {
 			if err == nil && e.hooks.OnExecuteEvent != nil {
 				event, err = e.hooks.OnExecuteEvent(ctx, execCtx, event)
+				if err == nil && event == nil {
+					err = errors.New("OnExecuteEvent returned a nil event")
+				}
 			}
 			if err != nil {
 				yield(nil, err)

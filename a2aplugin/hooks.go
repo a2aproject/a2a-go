@@ -43,7 +43,7 @@ type ServerHooks struct {
 	BeforeExecute func(ctx context.Context, execCtx *a2asrv.ExecutorContext) (context.Context, error)
 
 	// OnExecuteEvent runs on every event emitted by the agent and returns the event to emit instead.
-	// If it returns an error, the execution stops with the error.
+	// If it returns an error or a nil event, the execution stops with an error.
 	OnExecuteEvent func(ctx context.Context, execCtx *a2asrv.ExecutorContext, event a2a.Event) (a2a.Event, error)
 
 	// AfterExecute runs after the execution finishes with its result or error. Its context carries

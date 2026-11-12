@@ -19,6 +19,7 @@ import (
 	"errors"
 	"iter"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,6 +216,33 @@ func TestServer_OnExecuteEventReplacesEvent(t *testing.T) {
 
 	if diff := cmp.Diff(a2a.SendMessageResult(replaced), got); diff != "" {
 		t.Fatalf("handler.SendMessage() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestServer_OnExecuteEventNilEvent(t *testing.T) {
+	t.Parallel()
+	agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event {
+		return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("original"))}
+	})
+	plugin := Server("nil", ServerHooks{
+		OnExecuteEvent: func(context.Context, *a2asrv.ExecutorContext, a2a.Event) (a2a.Event, error) {
+			return nil, nil
+		},
+	})
+	execCtx := &a2asrv.ExecutorContext{}
+	var got []any
+	var gotErr error
+
+	for event, err := range plugin.WrapExecutor(agent).Execute(t.Context(), execCtx) {
+		got = append(got, event)
+		gotErr = err
+	}
+
+	if diff := cmp.Diff([]any{nil}, got); diff != "" {
+		t.Fatalf("Execute() wrong events (-want +got) diff = %s", diff)
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "OnExecuteEvent") {
+		t.Fatalf("Execute() error = %v, want an OnExecuteEvent error", gotErr)
 	}
 }
 
