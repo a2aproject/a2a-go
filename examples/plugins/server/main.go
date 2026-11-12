@@ -47,7 +47,7 @@ func newAudit() a2asrv.Plugin {
 			log.Printf("[audit] %s experiment=%v err=%v", callCtx.Method(), experiment, resp.Err)
 			return nil
 		},
-		AfterTaskWrite: func(ctx context.Context, w *a2aplugin.TaskWrite, err error) {
+		AfterTaskWrite: func(ctx context.Context, w a2aplugin.TaskWrite, err error) {
 			if w.PrevTask == nil {
 				log.Printf("[audit] task %s created in state %s, err=%v", w.Task.ID, w.Task.Status.State, err)
 				return

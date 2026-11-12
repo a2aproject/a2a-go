@@ -37,7 +37,7 @@ type hookStore struct {
 }
 
 func (s *hookStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
-	write := &TaskWrite{Task: task}
+	write := TaskWrite{Task: task}
 	hookCtx, err := s.before(ctx, write)
 	if err != nil {
 		return taskstore.TaskVersionMissing, err
@@ -48,7 +48,7 @@ func (s *hookStore) Create(ctx context.Context, task *a2a.Task) (taskstore.TaskV
 }
 
 func (s *hookStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
-	write := &TaskWrite{Task: req.Task, Event: req.Event, PrevTask: req.PrevTask}
+	write := TaskWrite{Task: req.Task, Event: req.Event, PrevTask: req.PrevTask}
 	hookCtx, err := s.before(ctx, write)
 	if err != nil {
 		return taskstore.TaskVersionMissing, err
@@ -58,7 +58,7 @@ func (s *hookStore) Update(ctx context.Context, req *taskstore.UpdateRequest) (t
 	return version, err
 }
 
-func (s *hookStore) before(ctx context.Context, write *TaskWrite) (context.Context, error) {
+func (s *hookStore) before(ctx context.Context, write TaskWrite) (context.Context, error) {
 	if s.hooks.BeforeTaskWrite == nil {
 		return ctx, nil
 	}
@@ -71,7 +71,7 @@ func (s *hookStore) before(ctx context.Context, write *TaskWrite) (context.Conte
 	return ctx, nil
 }
 
-func (s *hookStore) after(ctx context.Context, write *TaskWrite, err error) {
+func (s *hookStore) after(ctx context.Context, write TaskWrite, err error) {
 	if s.hooks.AfterTaskWrite != nil {
 		s.hooks.AfterTaskWrite(ctx, write, err)
 	}

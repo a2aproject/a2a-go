@@ -56,12 +56,12 @@ type ServerHooks struct {
 	// BeforeTaskWrite runs before every Create or Update call on the task store. The returned
 	// context is passed to the store and to AfterTaskWrite. If it returns an error, the write
 	// is not performed and the error is returned from the store call.
-	BeforeTaskWrite func(ctx context.Context, w *TaskWrite) (context.Context, error)
+	BeforeTaskWrite func(ctx context.Context, w TaskWrite) (context.Context, error)
 
 	// AfterTaskWrite runs after every Create or Update call on the task store with the error
 	// returned by the store (nil on success, or the error returned by BeforeTaskWrite when the
 	// write was skipped).
-	AfterTaskWrite func(ctx context.Context, w *TaskWrite, err error)
+	AfterTaskWrite func(ctx context.Context, w TaskWrite, err error)
 
 	// WrapTaskStore wraps the task store outside the task store hooks.
 	WrapTaskStore func(next taskstore.Store) taskstore.Store

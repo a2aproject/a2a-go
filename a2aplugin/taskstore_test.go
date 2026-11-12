@@ -46,7 +46,7 @@ func TestServer_NoTaskStoreHooksReturnsNext(t *testing.T) {
 func TestServer_BeforeTaskWriteOnCreate(t *testing.T) {
 	t.Parallel()
 	task := newTask("task-1")
-	var gotWrite *TaskWrite
+	var gotWrite TaskWrite
 	store := testutil.NewTestTaskStore()
 	var seenCtxValue any
 	store.CreateFunc = func(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {
@@ -54,7 +54,7 @@ func TestServer_BeforeTaskWriteOnCreate(t *testing.T) {
 		return taskstore.TaskVersion(1), nil
 	}
 	plugin := Server("before-create", ServerHooks{
-		BeforeTaskWrite: func(ctx context.Context, w *TaskWrite) (context.Context, error) {
+		BeforeTaskWrite: func(ctx context.Context, w TaskWrite) (context.Context, error) {
 			gotWrite = w
 			return context.WithValue(ctx, ctxKey{}, "before"), nil
 		},
@@ -65,7 +65,7 @@ func TestServer_BeforeTaskWriteOnCreate(t *testing.T) {
 		t.Fatalf("wrapped.Create() error = %v, want nil", err)
 	}
 
-	wantWrite := &TaskWrite{Task: task}
+	wantWrite := TaskWrite{Task: task}
 	if diff := cmp.Diff(wantWrite, gotWrite); diff != "" {
 		t.Fatalf("BeforeTaskWrite() wrong write (-want +got) diff = %s", diff)
 	}
@@ -79,13 +79,13 @@ func TestServer_BeforeTaskWriteOnUpdate(t *testing.T) {
 	task := newTask("task-1")
 	prev := newTask("task-1")
 	event := a2a.NewStatusUpdateEvent(a2a.TaskInfo{TaskID: task.ID}, a2a.TaskStateWorking, nil)
-	var gotWrite *TaskWrite
+	var gotWrite TaskWrite
 	store := testutil.NewTestTaskStore()
 	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
 		return taskstore.TaskVersion(2), nil
 	}
 	plugin := Server("before-update", ServerHooks{
-		BeforeTaskWrite: func(ctx context.Context, w *TaskWrite) (context.Context, error) {
+		BeforeTaskWrite: func(ctx context.Context, w TaskWrite) (context.Context, error) {
 			gotWrite = w
 			return ctx, nil
 		},
@@ -97,7 +97,7 @@ func TestServer_BeforeTaskWriteOnUpdate(t *testing.T) {
 		t.Fatalf("wrapped.Update() error = %v, want nil", err)
 	}
 
-	wantWrite := &TaskWrite{Task: task, Event: event, PrevTask: prev}
+	wantWrite := TaskWrite{Task: task, Event: event, PrevTask: prev}
 	if diff := cmp.Diff(wantWrite, gotWrite, cmpopts.IgnoreUnexported(a2a.Task{})); diff != "" {
 		t.Fatalf("BeforeTaskWrite() wrong write (-want +got) diff = %s", diff)
 	}
@@ -115,10 +115,10 @@ func TestServer_BeforeTaskWriteError(t *testing.T) {
 	var afterErr error
 	var afterCtxValue any
 	plugin := Server("reject", ServerHooks{
-		BeforeTaskWrite: func(ctx context.Context, _ *TaskWrite) (context.Context, error) {
+		BeforeTaskWrite: func(ctx context.Context, _ TaskWrite) (context.Context, error) {
 			return context.WithValue(ctx, ctxKey{}, "before"), wantErr
 		},
-		AfterTaskWrite: func(ctx context.Context, _ *TaskWrite, err error) {
+		AfterTaskWrite: func(ctx context.Context, _ TaskWrite, err error) {
 			afterCtxValue = ctx.Value(ctxKey{})
 			afterErr = err
 		},
@@ -147,7 +147,7 @@ func TestServer_AfterTaskWriteReceivesStoreError(t *testing.T) {
 	store := testutil.NewTestTaskStore().SetSaveError(wantErr)
 	var gotErr error
 	plugin := Server("after", ServerHooks{
-		AfterTaskWrite: func(_ context.Context, _ *TaskWrite, err error) {
+		AfterTaskWrite: func(_ context.Context, _ TaskWrite, err error) {
 			gotErr = err
 		},
 	})
@@ -172,7 +172,7 @@ func TestServer_WrapTaskStoreOutsideHooks(t *testing.T) {
 		return taskstore.TaskVersion(1), nil
 	}
 	plugin := Server("order", ServerHooks{
-		BeforeTaskWrite: func(ctx context.Context, _ *TaskWrite) (context.Context, error) {
+		BeforeTaskWrite: func(ctx context.Context, _ TaskWrite) (context.Context, error) {
 			calls = append(calls, "before")
 			return ctx, nil
 		},
@@ -196,11 +196,11 @@ func TestServer_TaskStoreHooksSkipReads(t *testing.T) {
 	t.Parallel()
 	store := testutil.NewTestTaskStore()
 	plugin := Server("hooks", ServerHooks{
-		BeforeTaskWrite: func(context.Context, *TaskWrite) (context.Context, error) {
+		BeforeTaskWrite: func(context.Context, TaskWrite) (context.Context, error) {
 			t.Fatal("BeforeTaskWrite() called on a read")
 			return nil, nil
 		},
-		AfterTaskWrite: func(context.Context, *TaskWrite, error) {
+		AfterTaskWrite: func(context.Context, TaskWrite, error) {
 			t.Fatal("AfterTaskWrite() called on a read")
 		},
 	})
