@@ -187,10 +187,13 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 				return
 			}
 
-			event, err := rest.ParseStreamResponse(data)
+			event, err := rest.ParseStreamResponse(ctx, data)
 			if err != nil {
 				yield(nil, err)
 				return
+			}
+			if event == nil {
+				continue
 			}
 
 			if !yield(event, nil) {

@@ -15,11 +15,14 @@
 package pbconv
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -348,6 +351,10 @@ func FromProtoSendMessageResponse(resp *a2apb.SendMessageResponse) (a2a.SendMess
 	}
 }
 
+// ErrUnsupportedStreamResponse identifies a payload the converter does not support.
+// Conversion failures for supported payloads do not wrap this error.
+var ErrUnsupportedStreamResponse = errors.New("unsupported StreamResponse payload type")
+
 // FromProtoStreamResponse converts a [a2apb.StreamResponse] to a [a2a.Event].
 func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 	if resp == nil {
@@ -394,7 +401,28 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 			Metadata:  fromProtoMap(p.ArtifactUpdate.GetMetadata()),
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported StreamResponse payload type: %T", resp.Payload)
+		if resp.Payload == nil {
+			message := resp.ProtoReflect()
+			data := message.GetUnknown()
+			if len(data) == 0 {
+				return nil, fmt.Errorf("stream response has no payload")
+			}
+			// Protobuf retains known message fields with the wrong wire type as
+			// unknown bytes; they are not evidence of a future payload variant.
+			fields := message.Descriptor().Fields()
+			for len(data) > 0 {
+				number, wireType, n := protowire.ConsumeField(data)
+				if n < 0 {
+					return nil, fmt.Errorf("invalid stream response wire data: %w", protowire.ParseError(n))
+				}
+				field := fields.ByNumber(number)
+				if field != nil && field.Kind() == protoreflect.MessageKind && wireType != protowire.BytesType {
+					return nil, fmt.Errorf("invalid wire type for stream response field %q", field.Name())
+				}
+				data = data[n:]
+			}
+		}
+		return nil, fmt.Errorf("%w: %T", ErrUnsupportedStreamResponse, resp.Payload)
 	}
 }
 

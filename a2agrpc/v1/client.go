@@ -16,6 +16,8 @@ package a2agrpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"strings"
@@ -25,8 +27,10 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1/pbconv"
 	"github.com/a2aproject/a2a-go/v2/internal/grpcutil"
+	"github.com/a2aproject/a2a-go/v2/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 // WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
@@ -174,6 +178,19 @@ func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], y
 		}
 
 		resp, err := pbconv.FromProtoStreamResponse(pResp)
+		if errors.Is(err, pbconv.ErrUnsupportedStreamResponse) {
+			var fields []protowire.Number
+			for data := pResp.ProtoReflect().GetUnknown(); len(data) > 0; {
+				number, _, n := protowire.ConsumeField(data)
+				if n < 0 {
+					break
+				}
+				fields = append(fields, number)
+				data = data[n:]
+			}
+			log.Debug(stream.Context(), "skipping unsupported gRPC stream response", "payload_type", fmt.Sprintf("%T", pResp.Payload), "unknown_fields", fields)
+			continue
+		}
 		if err != nil {
 			yield(nil, err)
 			return

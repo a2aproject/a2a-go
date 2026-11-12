@@ -1208,7 +1208,7 @@ func TestREST_StreamingErrors(t *testing.T) {
 				if err != nil {
 					t.Fatalf("sse.ParseDataStream() error = %v", err)
 				}
-				event, err := rest.ParseStreamResponse(data)
+				event, err := rest.ParseStreamResponse(t.Context(), data)
 				if err != nil {
 					gotErr = err
 					continue

@@ -30,7 +30,9 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // Content-Type header values.
@@ -370,9 +372,10 @@ type streamResponse struct {
 	Error          *ErrorBodyJSON               `json:"error,omitempty"`
 }
 
-// ParseStreamResponse parses raw SSE stream data in a single JSON unmarshal.
-// Returns (event, nil) for event payloads or (nil, err) for server-side errors.
-func ParseStreamResponse(data []byte) (a2a.Event, error) {
+// ParseStreamResponse parses raw SSE stream data.
+// It returns (nil, nil) for an unknown payload that the caller must skip,
+// (event, nil) for known events, or (nil, err) for invalid responses and server errors.
+func ParseStreamResponse(ctx context.Context, data []byte) (a2a.Event, error) {
 	var wrapper streamResponse
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
@@ -401,7 +404,15 @@ func ParseStreamResponse(data []byte) (a2a.Event, error) {
 		n++
 	}
 	if n == 0 {
-		return nil, fmt.Errorf("unknown stream response type")
+		fields, err := eventjson.NonNullJSONFields(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
+		}
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("stream response has no payload")
+		}
+		log.Debug(ctx, "skipping unknown REST stream response", "fields", fields)
+		return nil, nil
 	}
 	if n != 1 {
 		return nil, fmt.Errorf("expected exactly one stream response type, got %d", n)
