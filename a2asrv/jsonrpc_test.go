@@ -24,6 +24,7 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -639,4 +640,56 @@ func mustUnmarshal(t *testing.T, data []byte) map[string]any {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 	return result
+}
+
+func TestJSONRPC_PreservesRequestID(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{`9007199254740993`, `9223372036854775807`, `-9007199254740993`, `1e400`, `123`, `"string-id"`, `null`} {
+		for _, method := range []string{jsonrpc.MethodTasksGet, "unknown-method", jsonrpc.MethodTasksResubscribe} {
+			t.Run(id+"/"+method, func(t *testing.T) {
+				t.Parallel()
+				handler := &mockRequestHandler{
+
+					subscribeToTaskFunc: func(context.Context, *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+						return func(yield func(a2a.Event, error) bool) {
+							yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("reply")), nil)
+						}
+					},
+				}
+				body := fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"method":%q,"params":{"id":"task"}}`, id, method)
+				req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+				req.Header.Set("Accept", sse.ContentEventStream)
+				rw := httptest.NewRecorder()
+				NewJSONRPCHandler(handler).ServeHTTP(rw, req)
+				response := rw.Body.Bytes()
+				if method == jsonrpc.MethodTasksResubscribe {
+					for data, err := range sse.ParseDataStream(bytes.NewReader(response)) {
+						if err != nil {
+							t.Fatalf("sse.ParseDataStream() error = %v", err)
+						}
+						response = data
+						break
+					}
+				}
+				var envelope struct {
+					ID     json.RawMessage `json:"id"`
+					Result json.RawMessage `json:"result"`
+					Error  *jsonrpc.Error  `json:"error"`
+				}
+				if err := json.Unmarshal(response, &envelope); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, body = %s", err, response)
+				}
+				if got := string(envelope.ID); got != id {
+					t.Fatalf("JSONRPC response ID = %s, want %s", got, id)
+				}
+				if method == "unknown-method" {
+					if envelope.Error == nil {
+						t.Fatal("JSONRPC response error = nil, want method-not-found error")
+					}
+				} else if envelope.Error != nil || len(envelope.Result) == 0 {
+					t.Fatalf("JSONRPC response = %s, want success", response)
+				}
+			})
+		}
+	}
 }
