@@ -722,6 +722,17 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 			wantEvents: []eventSummary{submitted, working, completed},
 		},
 		{
+			name:       "empty text",
+			parts:      []*a2a.Part{a2a.NewTextPart("")},
+			wantEvents: []eventSummary{submitted, failedWith("the message is empty")},
+		},
+		{
+			name:       "empty text beside text",
+			parts:      []*a2a.Part{a2a.NewTextPart(""), a2a.NewTextPart("hi")},
+			wantPrompt: []acp.ContentBlock{{Type: "text", Text: "hi"}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
 			name:       "image",
 			caps:       acp.PromptCapabilities{Image: true},
 			parts:      []*a2a.Part{png},

@@ -298,9 +298,13 @@ func (t *turn) mergeTool(patch acp.ToolCall) *acp.ToolCall {
 // toPrompt converts message parts to prompt content.
 func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
 	var out []acp.ContentBlock
+	dropped := 0
 	for i, p := range parts {
 		switch c := p.Content.(type) {
 		case a2a.Text:
+			if c == "" {
+				continue
+			}
 			out = append(out, acp.ContentBlock{Type: "text", Text: string(c)})
 		case a2a.Data:
 			b, err := json.Marshal(c.Value)
@@ -322,7 +326,11 @@ func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilitie
 			out = append(out, block)
 		default:
 			log.Warn(ctx, "dropped prompt part the agent can't receive", "index", i, "type", fmt.Sprintf("%T", c))
+			dropped++
 		}
+	}
+	if len(out) == 0 && dropped == 0 {
+		return nil, fmt.Errorf("the message is empty")
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("the message has no content the agent accepts")
