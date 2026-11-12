@@ -58,9 +58,9 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 		return []testCase{
 			{
 				name:        "message returned as a result",
-				input:       &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
-				agentEvents: []a2a.Event{newAgentMessage("hello")},
-				wantResult:  newAgentMessage("hello"),
+				input:       &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("hi"))},
+				agentEvents: []a2a.Event{newAgentReply("ctx-hello", "hello")},
+				wantResult:  newAgentReply("ctx-hello", "hello"),
 			},
 			{
 				name:        "cancelled",
@@ -629,7 +629,7 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 }
 
 func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
-	agentEvents := []a2a.Event{newAgentMessage("hello")}
+	agentEvents := []a2a.Event{newAgentReply("ctx-hello", "hello")}
 	executor := newEventReplayAgent(agentEvents, nil)
 
 	tests := []struct {
@@ -641,14 +641,14 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 	}{
 		{
 			name:       "no capability checks - success",
-			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
-			wantResult: newAgentMessage("hello"),
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("hi"))},
+			wantResult: newAgentReply("ctx-hello", "hello"),
 		},
 		{
 			name:       "streaming supported",
-			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("work"))},
 			card:       &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}},
-			wantResult: newAgentMessage("hello"),
+			wantResult: newAgentReply("ctx-hello", "hello"),
 		},
 		{
 			name:    "streaming not supported",
@@ -2577,6 +2577,12 @@ func newAgentMessage(text string) *a2a.Message {
 	return m
 }
 
+func newAgentReply(contextID, text string) *a2a.Message {
+	m := newAgentMessage(text)
+	m.ContextID = contextID
+	return m
+}
+
 func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	m := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart(text))
 	m.ID = "user-" + text
@@ -2851,6 +2857,75 @@ func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
 			_, err := collectEvents(handler.SendStreamingMessage(ctx, tt.request))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("SendStreamingMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		contextID string
+		reply     func(execCtx *ExecutorContext) *a2a.Message
+		wantErr   error
+	}{
+		{
+			name: "missing context ID is set",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name:      "client context ID is kept",
+			contextID: "ctx-1",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name: "task ID is cleared",
+			reply: func(execCtx *ExecutorContext) *a2a.Message {
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name: "mismatched context ID is rejected",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, a2a.TaskInfo{ContextID: "other"}, a2a.NewTextPart("hi"))
+			},
+			wantErr: a2a.ErrInvalidAgentResponse,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			executor := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(tt.reply(execCtx), nil) }
+				},
+			}
+			req := &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: tt.contextID}, a2a.NewTextPart("hello"))}
+
+			result, err := NewHandler(executor).SendMessage(t.Context(), req)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("handler.SendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			msg, ok := result.(*a2a.Message)
+			if !ok {
+				t.Fatalf("handler.SendMessage() = %T, want *a2a.Message", result)
+			}
+			wantContextID := executor.capturedExecContext.ContextID
+			if tt.contextID != "" {
+				wantContextID = tt.contextID
+			}
+			if msg.ContextID != wantContextID || msg.TaskID != "" {
+				t.Fatalf("handler.SendMessage() IDs = (%q, %q), want (%q, \"\")", msg.ContextID, msg.TaskID, wantContextID)
 			}
 		})
 	}
