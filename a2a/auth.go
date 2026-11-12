@@ -330,16 +330,29 @@ func (s OAuth2SecurityScheme) MarshalJSON() ([]byte, error) {
 	switch v := s.Flows.(type) {
 	case AuthorizationCodeOAuthFlow:
 		wrapped.Flows = oauthFlows{AuthorizationCode: &v}
+	case *AuthorizationCodeOAuthFlow:
+		wrapped.Flows = oauthFlows{AuthorizationCode: v}
 	case ClientCredentialsOAuthFlow:
 		wrapped.Flows = oauthFlows{ClientCredentials: &v}
+	case *ClientCredentialsOAuthFlow:
+		wrapped.Flows = oauthFlows{ClientCredentials: v}
 	case ImplicitOAuthFlow:
 		wrapped.Flows = oauthFlows{Implicit: &v}
+	case *ImplicitOAuthFlow:
+		wrapped.Flows = oauthFlows{Implicit: v}
 	case PasswordOAuthFlow:
 		wrapped.Flows = oauthFlows{Password: &v}
+	case *PasswordOAuthFlow:
+		wrapped.Flows = oauthFlows{Password: v}
 	case DeviceCodeOAuthFlow:
 		wrapped.Flows = oauthFlows{DeviceCode: &v}
+	case *DeviceCodeOAuthFlow:
+		wrapped.Flows = oauthFlows{DeviceCode: v}
 	default:
 		return nil, fmt.Errorf("unknown OAuth flow type %T", v)
+	}
+	if wrapped.Flows == (oauthFlows{}) {
+		return nil, fmt.Errorf("nil OAuth flow %T", s.Flows)
 	}
 	return json.Marshal(wrapped)
 }

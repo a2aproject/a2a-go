@@ -1037,7 +1037,7 @@ func fromV1SecuritySchemes(schemes a2a.NamedSecuritySchemes) a2alegacy.NamedSecu
 }
 
 func fromV1OAuthFlows(flows a2a.OAuthFlows) a2alegacy.OAuthFlows {
-	switch v := flows.(type) {
+	switch v := oauthFlowValue(flows).(type) {
 	case a2a.AuthorizationCodeOAuthFlow:
 		return a2alegacy.OAuthFlows{AuthorizationCode: &a2alegacy.AuthorizationCodeOAuthFlow{
 			AuthorizationURL: v.AuthorizationURL,
