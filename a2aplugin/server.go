@@ -21,6 +21,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
 // ServerHooks are the hooks of a server plugin. All fields are optional.
@@ -39,6 +40,19 @@ type ServerHooks struct {
 
 	// WrapExecutor wraps the agent executor outside the execution hooks.
 	WrapExecutor func(next a2asrv.AgentExecutor) a2asrv.AgentExecutor
+
+	// BeforeTaskWrite runs before every Create or Update call on the task store. The returned
+	// context is passed to the store and to AfterTaskWrite. If it returns an error, the write
+	// is not performed and the error is returned from the store call.
+	BeforeTaskWrite func(ctx context.Context, w *TaskWrite) (context.Context, error)
+
+	// AfterTaskWrite runs after every Create or Update call on the task store with the error
+	// returned by the store (nil on success, or the error returned by BeforeTaskWrite when the
+	// write was skipped).
+	AfterTaskWrite func(ctx context.Context, w *TaskWrite, err error)
+
+	// WrapTaskStore wraps the task store outside the task store hooks.
+	WrapTaskStore func(next taskstore.Store) taskstore.Store
 }
 
 // Server returns an [a2asrv.Plugin] which runs the hooks. Execution hooks run for agent executions,
