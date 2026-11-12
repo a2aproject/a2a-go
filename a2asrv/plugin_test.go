@@ -141,6 +141,21 @@ func (e *cleaningExecutor) Cleanup(context.Context, *ExecutorContext, a2a.SendMe
 	e.calls <- e.name + "-cleanup"
 }
 
+type forwardingExecutor struct {
+	AgentExecutor
+}
+
+func (e *forwardingExecutor) Cleanup(ctx context.Context, execCtx *ExecutorContext, result a2a.SendMessageResult, err error) {
+	if cleaner, ok := e.AgentExecutor.(AgentExecutionCleaner); ok {
+		cleaner.Cleanup(ctx, execCtx, result, err)
+	}
+}
+
+type nonComparableAgent struct {
+	*mockAgentExecutor
+	_ []string
+}
+
 func recordingExecutorPlugin(name string, calls chan<- string) Plugin {
 	return &mockPlugin{wrapExecutorFn: func(next AgentExecutor) AgentExecutor {
 		return &recordingExecutor{AgentExecutor: next, name: name, calls: calls}
@@ -384,6 +399,7 @@ func TestWithPlugins_ExecutorCleanup(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name    string
+		agent   func(calls chan<- string) AgentExecutor
 		plugins func(calls chan<- string) []Plugin
 		want    []string
 	}{
@@ -420,14 +436,37 @@ func TestWithPlugins_ExecutorCleanup(t *testing.T) {
 			},
 			want: []string{"agent-cleanup", "p4-cleanup", "p1-cleanup"},
 		},
+		{
+			name: "non-comparable agent behind passthrough plugin",
+			agent: func(calls chan<- string) AgentExecutor {
+				return nonComparableAgent{mockAgentExecutor: newRecordingAgent(calls)}
+			},
+			plugins: func(chan<- string) []Plugin {
+				return []Plugin{&mockPlugin{}}
+			},
+			want: []string{"agent-cleanup"},
+		},
+		{
+			name: "wrapper forwarding Cleanup to next",
+			plugins: func(chan<- string) []Plugin {
+				return []Plugin{&mockPlugin{wrapExecutorFn: func(next AgentExecutor) AgentExecutor {
+					return &forwardingExecutor{AgentExecutor: next}
+				}}}
+			},
+			want: []string{"agent-cleanup"},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			calls := make(chan string, 10)
+			var agent AgentExecutor = newRecordingAgent(calls)
+			if tc.agent != nil {
+				agent = tc.agent(calls)
+			}
 			plugins := append([]Plugin{cleaningExecutorPlugin("end", calls)}, tc.plugins(calls)...)
-			handler := NewHandler(newRecordingAgent(calls), WithPlugins(plugins...))
+			handler := NewHandler(agent, WithPlugins(plugins...))
 
 			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
 			if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: msg}); err != nil {

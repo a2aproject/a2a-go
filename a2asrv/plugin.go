@@ -15,7 +15,6 @@
 package a2asrv
 
 import (
-	"reflect"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
@@ -34,7 +33,7 @@ type Plugin interface {
 
 	// WrapExecutor wraps the [AgentExecutor]. It is called once, when the handler is created.
 	// If the wrapper implements [AgentExecutionCleaner], its Cleanup is called after the Cleanup of the
-	// executors it wraps, so it must not forward Cleanup to next.
+	// executors it wraps.
 	WrapExecutor(next AgentExecutor) AgentExecutor
 
 	// WrapTaskStore wraps the task store, including the default in-memory store.
@@ -65,8 +64,12 @@ func wrapExecutor(executor AgentExecutor, plugins []Plugin) (AgentExecutor, []Ag
 		cleaners = append(cleaners, cleaner)
 	}
 	executor = wrapWithPlugins(executor, plugins, func(plugin Plugin, next AgentExecutor) AgentExecutor {
-		wrapped := plugin.WrapExecutor(next)
-		if cleaner, ok := wrapped.(AgentExecutionCleaner); ok && !sameExecutor(wrapped, next) {
+		only := &executorOnly{AgentExecutor: next}
+		wrapped := plugin.WrapExecutor(only)
+		if wrapped == AgentExecutor(only) {
+			return next
+		}
+		if cleaner, ok := wrapped.(AgentExecutionCleaner); ok {
 			cleaners = append(cleaners, cleaner)
 		}
 		return wrapped
@@ -74,11 +77,10 @@ func wrapExecutor(executor AgentExecutor, plugins []Plugin) (AgentExecutor, []Ag
 	return executor, cleaners
 }
 
-// sameExecutor reports whether a plugin returned next unchanged. Values that can't be compared with ==,
-// such as functions, are treated as different, because comparing them would panic.
-func sameExecutor(a, b AgentExecutor) bool {
-	return reflect.TypeOf(a) == reflect.TypeOf(b) && reflect.ValueOf(a).Comparable() && a == b
-}
+// executorOnly is passed to [Plugin.WrapExecutor] instead of the next executor. It exposes only the [AgentExecutor]
+// methods, hiding the Cleanup of the next executor, which is called by the handler. A new pointer is created for
+// every plugin, so the handler can detect a plugin returning next unchanged.
+type executorOnly struct{ AgentExecutor }
 
 // PassthroughPlugin can be embedded by [Plugin] implementers who don't need all methods.
 // It returns every component unchanged, so adding a method to [Plugin] doesn't break plugins embedding it.
