@@ -163,6 +163,7 @@ func TestRequirementFromCardOptions(t *testing.T) {
 		options a2a.SecurityRequirementsOptions
 		want    *Requirement
 		wantErr string
+		skipped bool
 	}{
 		{name: "oauth only", options: a2a.SecurityRequirementsOptions{{"code": {"read"}}}, want: codeReq},
 		{name: "oauth or no credentials", options: a2a.SecurityRequirementsOptions{{"code": {"read"}}, {}}, want: &optional},
@@ -184,7 +185,7 @@ func TestRequirementFromCardOptions(t *testing.T) {
 			},
 		},
 		{name: "broken options before a usable one", options: a2a.SecurityRequirementsOptions{{"noToken": nil}, {"plainHTTP": nil}, {"code": {"read"}}}, want: codeReq},
-		{name: "broken option or no credentials", options: a2a.SecurityRequirementsOptions{{"noToken": nil}, {}}},
+		{name: "broken option or no credentials", options: a2a.SecurityRequirementsOptions{{"noToken": nil}, {}}, skipped: true},
 		{name: "only a broken option", options: a2a.SecurityRequirementsOptions{{"noToken": nil}}, wantErr: `security scheme "noToken": inline flow has no token endpoint`},
 	}
 	for _, tc := range tests {
@@ -195,6 +196,13 @@ func TestRequirementFromCardOptions(t *testing.T) {
 			if tc.wantErr != "" {
 				if err == nil || err.Error() != tc.wantErr {
 					t.Fatalf("requirementFromCard() error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			var skipped *skippedOptionsError
+			if tc.skipped {
+				if got != nil || !errors.As(err, &skipped) {
+					t.Fatalf("requirementFromCard() = %+v, %v, want a skippedOptionsError", got, err)
 				}
 				return
 			}
@@ -1198,8 +1206,9 @@ func TestRequirementFromCardInlineResolution(t *testing.T) {
 					t.Fatalf("requirementFromCard() = %+v, %v, want issuer %s", got, err, tc.wantIssuer)
 				}
 			default:
-				if err != nil || got != nil {
-					t.Fatalf("requirementFromCard() = %+v, %v, want nil, nil", got, err)
+				var skipped *skippedOptionsError
+				if got != nil || !errors.As(err, &skipped) || !errors.As(err, &nc) {
+					t.Fatalf("requirementFromCard() = %+v, %v, want a skippedOptionsError wrapping a NoClientError", got, err)
 				}
 			}
 		})

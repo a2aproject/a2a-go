@@ -16,17 +16,34 @@ package oauth
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
 
-// noCloseIdle hides the CloseIdleConnections method of a transport.
-type noCloseIdle struct{ http.RoundTripper }
+// inlineHost is the host of the authorization server inline cards name. It is
+// not a loopback host, so agents on other hosts may use it.
+const inlineHost = "inline-as.example.com"
+
+// testTransport hides the CloseIdleConnections method of a transport, and
+// serves https://inlineHost from inlineHandler.
+type testTransport struct{ base http.RoundTripper }
+
+func (t testTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.URL.Host != inlineHost {
+		return t.base.RoundTrip(r)
+	}
+	rec := httptest.NewRecorder()
+	inlineHandler.ServeHTTP(rec, r)
+	resp := rec.Result()
+	resp.Request = r
+	return resp, nil
+}
 
 // TestMain keeps httptest.Server.Close, which closes the idle connections of
 // http.DefaultTransport, from breaking requests that parallel tests are making
 // over it at the same time.
 func TestMain(m *testing.M) {
-	http.DefaultTransport = noCloseIdle{http.DefaultTransport}
+	http.DefaultTransport = testTransport{base: http.DefaultTransport}
 	os.Exit(m.Run())
 }
