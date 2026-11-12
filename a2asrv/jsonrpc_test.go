@@ -38,6 +38,48 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+func TestJSONRPCHandler_InvalidEnvelope(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name    string
+		body    string
+		code    int
+		message string
+	}{
+		{name: "empty array", body: `[]`, code: -32600, message: "invalid request"},
+		{name: "batch", body: `[{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"task"}}]`, code: -32600, message: "invalid request"},
+		{name: "string", body: `"GetTask"`, code: -32600, message: "invalid request"},
+		{name: "number", body: `42`, code: -32600, message: "invalid request"},
+		{name: "boolean", body: `true`, code: -32600, message: "invalid request"},
+		{name: "null", body: `null`, code: -32600, message: "invalid request"},
+		{name: "empty object", body: `{}`, code: -32600, message: "invalid request"},
+		{name: "numeric version", body: `{"jsonrpc":2,"id":1,"method":"GetTask"}`, code: -32600, message: "invalid request"},
+		{name: "numeric method", body: `{"jsonrpc":"2.0","id":1,"method":42}`, code: -32600, message: "invalid request"},
+		{name: "empty body", code: -32700, message: "parse error"},
+		{name: "malformed JSON", body: `{"jsonrpc":`, code: -32700, message: "parse error"},
+		{name: "trailing garbage", body: `{"jsonrpc":"2.0","id":1,"method":"GetTask"} x`, code: -32700, message: "parse error"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tc.body))
+			rw := httptest.NewRecorder()
+			NewJSONRPCHandler(nil).ServeHTTP(rw, req)
+			var got jsonrpc.ServerResponse
+			if err := json.Unmarshal(rw.Body.Bytes(), &got); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+			}
+			want := jsonrpc.ServerResponse{
+				JSONRPC: "2.0",
+				Error:   &jsonrpc.Error{Code: tc.code, Message: tc.message},
+			}
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(jsonrpc.Error{}, "Data")); diff != "" {
+				t.Fatalf("ServeHTTP() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestJSONRPC_RequestRouting(t *testing.T) {
 	testCases := []struct {
 		method string
