@@ -14,8 +14,10 @@
 
 // Package main demonstrates client plugins.
 //
-// It installs retry, a plugin which implements [a2aclient.Plugin] directly by embedding [a2aclient.PassthroughPlugin].
-// It retries GetTask calls which failed with a network error.
+// It installs two plugins:
+//   - experiments, built with [a2aplugin.Client] from hooks. It adds an experiment ID to every outgoing call.
+//   - retry, a plugin which implements [a2aclient.Plugin] directly by embedding [a2aclient.PassthroughPlugin].
+//     It retries GetTask calls which failed with a network error.
 //
 // Run the server first, then: go run .
 package main
@@ -32,9 +34,19 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin"
 )
 
 var cardURL = flag.String("card-url", "http://127.0.0.1:9001", "Base URL of AgentCard server.")
+
+func newExperiments(experimentID string) a2aclient.Plugin {
+	return a2aplugin.Client("experiments", a2aplugin.ClientHooks{
+		BeforeCall: func(ctx context.Context, req *a2aclient.Request) (context.Context, any, error) {
+			req.ServiceParams.Append("x-experiment-id", experimentID)
+			return ctx, nil, nil
+		},
+	})
+}
 
 type retry struct {
 	a2aclient.PassthroughPlugin
@@ -89,7 +101,7 @@ func main() {
 		log.Fatalf("Failed to resolve an AgentCard: %v", err)
 	}
 
-	client, err := a2aclient.NewFromCard(ctx, card, a2aclient.WithPlugins(retry{attempts: 3}))
+	client, err := a2aclient.NewFromCard(ctx, card, a2aclient.WithPlugins(newExperiments("exp-42"), retry{attempts: 3}))
 	if err != nil {
 		log.Fatalf("Failed to create a client: %v", err)
 	}

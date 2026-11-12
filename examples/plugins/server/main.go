@@ -14,8 +14,11 @@
 
 // Package main demonstrates server plugins.
 //
-// It installs timing, a plugin which implements [a2asrv.Plugin] directly by embedding [a2asrv.PassthroughPlugin].
-// It wraps every call and logs its duration, including streams.
+// It installs two plugins:
+//   - audit, built with [a2aplugin.Server] from hooks. It logs every call with the experiment ID set by
+//     the client plugin, and every task state change.
+//   - timing, a plugin which implements [a2asrv.Plugin] directly by embedding [a2asrv.PassthroughPlugin].
+//     It wraps every call and logs its duration, including streams.
 //
 // Run with: go run .
 package main
@@ -31,10 +34,28 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aplugin"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 var port = flag.Int("port", 9001, "Port for the server to listen on.")
+
+func newAudit() a2asrv.Plugin {
+	return a2aplugin.Server("audit", a2aplugin.ServerHooks{
+		AfterCall: func(ctx context.Context, callCtx *a2asrv.CallContext, resp *a2asrv.Response) error {
+			experiment, _ := callCtx.ServiceParams().Get("x-experiment-id")
+			log.Printf("[audit] %s experiment=%v err=%v", callCtx.Method(), experiment, resp.Err)
+			return nil
+		},
+		AfterTaskWrite: func(ctx context.Context, w *a2aplugin.TaskWrite, err error) {
+			if w.PrevTask == nil {
+				log.Printf("[audit] task %s created in state %s, err=%v", w.Task.ID, w.Task.Status.State, err)
+				return
+			}
+			log.Printf("[audit] task %s: %s -> %s, err=%v", w.Task.ID, w.PrevTask.Status.State, w.Task.Status.State, err)
+		},
+	})
+}
 
 type timing struct{ a2asrv.PassthroughPlugin }
 
@@ -76,12 +97,12 @@ func main() {
 		}
 	})
 
-	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithPlugins(timing{}))
+	requestHandler := a2asrv.NewHandler(agentExecutor, a2asrv.WithPlugins(newAudit(), timing{}))
 
 	addr := fmt.Sprintf("http://127.0.0.1:%d/invoke", *port)
 	agentCard := &a2a.AgentCard{
 		Name:        "Plugins Agent",
-		Description: "An agent with a server plugin installed",
+		Description: "An agent with server plugins installed",
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(addr, a2a.TransportProtocolJSONRPC),
 		},
