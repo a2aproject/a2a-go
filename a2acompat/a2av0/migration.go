@@ -62,11 +62,16 @@ func (s *srvInterceptorAdapter) Before(ctx context.Context, callCtx *a2asrv.Call
 	if err != nil {
 		return ctx, nil, err
 	}
+	unmodifiedPayload, err := fromV1Payload(req.Payload)
+	if err != nil {
+		return ctx, nil, err
+	}
 	newCtx, err := s.CallInterceptor.Before(ctx, legacyCallCtx, legacyReq)
 	if err != nil {
 		return newCtx, nil, err
 	}
-	if legacyReq.Payload != nil {
+	// Legacy payloads can't represent every v1 value (e.g. an explicit zero history length), so the original is kept unless modified.
+	if legacyReq.Payload != nil && !reflect.DeepEqual(legacyReq.Payload, unmodifiedPayload) {
 		v1Payload, v1Err := toV1Payload(legacyReq.Payload)
 		if v1Err != nil {
 			return newCtx, nil, v1Err
@@ -115,11 +120,16 @@ func (s *clientInterceptorAdapter) Before(ctx context.Context, req *a2aclient.Re
 	if err != nil {
 		return ctx, nil, err
 	}
+	unmodifiedPayload, err := fromV1Payload(req.Payload)
+	if err != nil {
+		return ctx, nil, err
+	}
 	newCtx, err := s.CallInterceptor.Before(ctx, legacyReq)
 	if err != nil {
 		return newCtx, nil, err
 	}
-	if legacyReq.Payload != nil {
+	// Legacy payloads can't represent every v1 value (e.g. an explicit zero history length), so the original is kept unless modified.
+	if legacyReq.Payload != nil && !reflect.DeepEqual(legacyReq.Payload, unmodifiedPayload) {
 		v1Payload, v1Err := toV1Payload(legacyReq.Payload)
 		if v1Err != nil {
 			return newCtx, nil, v1Err
