@@ -168,6 +168,30 @@ func TestServer_BeforeExecuteError(t *testing.T) {
 	}
 }
 
+func TestServer_BeforeExecutePanic(t *testing.T) {
+	t.Parallel()
+	agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event { return nil })
+	afterCalls := make(chan afterExecuteCall, 1)
+	plugin := Server("panic", ServerHooks{
+		BeforeExecute: func(context.Context, *a2asrv.ExecutorContext) (context.Context, error) {
+			panic("before execute failed")
+		},
+		AfterExecute: func(ctx context.Context, _ *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
+			afterCalls <- afterExecuteCall{ctx: ctx, result: result, err: err}
+		},
+	})
+	handler := a2asrv.NewHandler(agent, a2asrv.WithPlugins(plugin))
+
+	if _, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage()}); err == nil {
+		t.Fatal("handler.SendMessage() error = nil, want the panic error")
+	}
+	after := waitAfterExecute(t, afterCalls)
+
+	if after.err == nil {
+		t.Fatal("AfterExecute() err = nil, want the panic error")
+	}
+}
+
 func TestServer_OnExecuteEventReplacesEvent(t *testing.T) {
 	t.Parallel()
 	agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event {

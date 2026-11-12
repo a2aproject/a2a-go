@@ -50,9 +50,9 @@ func (e *hookExecutor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorCont
 	return func(yield func(a2a.Event, error) bool) {
 		ctx := ctx
 		if e.hooks.BeforeExecute != nil {
+			e.started(ctx, execCtx)
 			hookCtx, err := e.hooks.BeforeExecute(ctx, execCtx)
 			if err != nil {
-				e.started(ctx, execCtx)
 				yield(nil, err)
 				return
 			}
