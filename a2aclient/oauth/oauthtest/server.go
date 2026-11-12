@@ -238,7 +238,7 @@ func (s *AuthServer) authorize(w http.ResponseWriter, r *http.Request) {
 	s.authQuery = q
 	s.mu.Unlock()
 	redirect, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil || redirect.Scheme != "http" || redirect.Hostname() != "127.0.0.1" || redirect.Path != "/oauth/callback" {
+	if err != nil || redirect.Scheme != "http" || !slices.Contains([]string{"127.0.0.1", "::1", "localhost"}, redirect.Hostname()) {
 		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
 		return
 	}

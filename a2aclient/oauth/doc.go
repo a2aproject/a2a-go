@@ -22,4 +22,15 @@
 // [Requirement]: the authorization server [Endpoints], the resource indicator
 // (RFC 8707) and the scopes the token must cover. A [Registration] names the
 // client ID to use with an authorization server.
+//
+// A [Grant] holds the tokens obtained from an authorization server with the
+// authorization code flow with PKCE (RFC 7636), tracked by an
+// [AuthorizationRequest], or with the device authorization grant (RFC 8628),
+// tracked by a [DeviceAuthorization], along with the endpoints to refresh them
+// with and revoke them at (RFC 7009). Authorization servers report failures as
+// an [*Error].
+//
+// Grants are identified by a [GrantKey] and kept in a [Store]. [MemoryStore]
+// keeps them for the life of the process; a store shared between processes
+// should implement [Locker].
 package oauth

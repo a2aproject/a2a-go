@@ -40,6 +40,10 @@ type Registration struct {
 	ClientID string `json:"client_id"`
 	// Scopes are requested when the agent names none.
 	Scopes []string `json:"scopes,omitempty"`
+	// OmitResource leaves the RFC 8707 resource indicator out of the requests to
+	// the authorization server, for servers that reject it, such as the
+	// Microsoft identity platform when the resource is not an application ID URI.
+	OmitResource bool `json:"omit_resource,omitempty"`
 }
 
 // ClientChoice is the client used with an authorization server.
