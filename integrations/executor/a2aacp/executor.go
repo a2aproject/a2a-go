@@ -44,8 +44,8 @@ type Config struct {
 	// StartTimeout limits starting and initializing an agent. Defaults to one minute.
 	StartTimeout time.Duration
 	// CancelTimeout is how long the agent may keep working on a canceled task
-	// before it is stopped, which fails all its tasks. Meanwhile the context
-	// accepts no new tasks. Defaults to one minute.
+	// before it is stopped, which fails its other tasks with [ErrAgentStopped].
+	// Meanwhile the context accepts no new tasks. Defaults to one minute.
 	CancelTimeout time.Duration
 	// InactivityTimeout fails a task with [ErrAgentInactive] if the agent
 	// sends no session update or question for this long while it works on a
@@ -205,6 +205,10 @@ var errClosed = errors.New("acp executor is closed")
 // ErrAgentInactive is the error, wrapped, of a task whose agent sent nothing
 // for [Config.InactivityTimeout].
 var ErrAgentInactive = errors.New("the agent sent no updates")
+
+// ErrAgentStopped is the error, wrapped, of a task whose agent the executor
+// stopped because a canceled turn didn't end within [Config.CancelTimeout].
+var ErrAgentStopped = errors.New("the agent was stopped because a canceled task didn't stop")
 
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
 var errQuestionGone = errors.New("the question is no longer pending: it timed out or the agent restarted. Send a new message to continue")
@@ -989,7 +993,7 @@ func (e *Executor) cancelTurn(t *turn) {
 				return
 			}
 			log.Warn(context.Background(), "acp agent didn't stop a canceled turn, stopping the agent", "session", t.sessionID)
-			e.stopAgent(t.agent)
+			e.stopAgent(t.agent, fmt.Errorf("%w (task %s): %w", ErrAgentStopped, t.taskID, acp.ErrAgentExited))
 		})
 	}
 }
