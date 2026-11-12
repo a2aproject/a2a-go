@@ -19,6 +19,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
@@ -51,6 +52,18 @@ type ServerHooks struct {
 
 	// WrapTaskStore wraps the task store outside the task store hooks.
 	WrapTaskStore func(next taskstore.Store) taskstore.Store
+
+	// BeforePush runs before every push notification delivery. It can add headers or skip the
+	// delivery through the [push.Delivery] fields. The returned context is passed to the delivery
+	// and to AfterPush. If it returns an error, the push is not delivered and the execution stops.
+	BeforePush func(ctx context.Context, d *push.Delivery) (context.Context, error)
+
+	// AfterPush runs after every push notification delivery with its result. If BeforePush failed,
+	// the result carries its error.
+	AfterPush func(ctx context.Context, d *push.Delivery, result *push.DeliveryResult)
+
+	// WrapPushDelivery wraps the push delivery outside the push hooks.
+	WrapPushDelivery func(next push.DeliveryHandler) push.DeliveryHandler
 }
 
 // Server returns an [a2asrv.Plugin] which runs the hooks. Execution hooks run for agent executions,
