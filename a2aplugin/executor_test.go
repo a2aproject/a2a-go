@@ -26,6 +26,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 )
 
 type afterExecuteCall struct {
@@ -192,26 +193,20 @@ func TestServer_OnExecuteEventReplacesEvent(t *testing.T) {
 
 func TestServer_AfterExecuteSkipsCancelation(t *testing.T) {
 	t.Parallel()
-	agent := newAgent(func(execCtx *a2asrv.ExecutorContext) []a2a.Event {
-		return []a2a.Event{
-			a2a.NewSubmittedTask(execCtx, execCtx.Message),
-			a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, nil),
-		}
-	})
-	afterCalls := make(chan afterExecuteCall, 2)
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
+	agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event { return nil })
+	afterCalls := make(chan afterExecuteCall, 1)
 	plugin := Server("after", ServerHooks{
 		AfterExecute: func(ctx context.Context, _ *a2asrv.ExecutorContext, result a2a.SendMessageResult, err error) {
 			afterCalls <- afterExecuteCall{ctx: ctx, result: result, err: err}
 		},
 	})
-	handler := a2asrv.NewHandler(agent, a2asrv.WithPlugins(plugin))
+	handler := a2asrv.NewHandler(agent,
+		a2asrv.WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, task)),
+		a2asrv.WithPlugins(plugin),
+	)
 
-	result, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage()})
-	if err != nil {
-		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
-	}
-	waitAfterExecute(t, afterCalls)
-	if _, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: result.TaskInfo().TaskID}); err != nil {
+	if _, err := handler.CancelTask(t.Context(), &a2a.CancelTaskRequest{ID: task.ID}); err != nil {
 		t.Fatalf("handler.CancelTask() error = %v, want nil", err)
 	}
 
