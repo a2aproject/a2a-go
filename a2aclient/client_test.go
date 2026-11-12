@@ -1174,11 +1174,11 @@ func TestClient_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
 
 	testCases := []struct {
 		name string
-		run  func(handler callHandler, ctx context.Context, req Request)
+		run  func(handler CallHandler, ctx context.Context, req Request)
 	}{
 		{
 			name: "same sequence iterated twice",
-			run: func(handler callHandler, ctx context.Context, req Request) {
+			run: func(handler CallHandler, ctx context.Context, req Request) {
 				seq := handler(ctx, req)
 				for range 2 {
 					for range seq {
@@ -1188,7 +1188,7 @@ func TestClient_InterceptorChangesDoNotLeakIntoRetries(t *testing.T) {
 		},
 		{
 			name: "handler called twice with the same request",
-			run: func(handler callHandler, ctx context.Context, req Request) {
+			run: func(handler CallHandler, ctx context.Context, req Request) {
 				for range 2 {
 					for range handler(ctx, req) {
 					}

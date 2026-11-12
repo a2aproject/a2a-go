@@ -56,6 +56,7 @@ type Client struct {
 	protocolVersion a2a.ProtocolVersion
 	endpoint        a2a.AgentInterface
 	interceptors    []CallInterceptor
+	plugins         []Plugin
 
 	card atomic.Pointer[a2a.AgentCard]
 }
@@ -194,7 +195,15 @@ func (c *Client) newRequest(ctx context.Context, method string, payload any) Req
 	}
 }
 
-func interceptCalls(c *Client, next callHandler) callHandler {
+func wrapCall(c *Client, next CallHandler) CallHandler {
+	next = interceptCalls(c, next)
+	for _, plugin := range slices.Backward(c.plugins) {
+		next = plugin.WrapCall(next)
+	}
+	return next
+}
+
+func interceptCalls(c *Client, next CallHandler) CallHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			ctx, req := ctx, req
@@ -233,7 +242,7 @@ func interceptAfter(ctx context.Context, c *Client, interceptors []CallIntercept
 	return resp.Payload, resp.Err
 }
 
-func unaryHandler[Req, Resp any](transportCall func(context.Context, ServiceParams, Req) (Resp, error)) callHandler {
+func unaryHandler[Req, Resp any](transportCall func(context.Context, ServiceParams, Req) (Resp, error)) CallHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
@@ -246,7 +255,7 @@ func unaryHandler[Req, Resp any](transportCall func(context.Context, ServicePara
 	}
 }
 
-func streamHandler[Req any](transportCall func(context.Context, ServiceParams, Req) iter.Seq2[a2a.Event, error]) callHandler {
+func streamHandler[Req any](transportCall func(context.Context, ServiceParams, Req) iter.Seq2[a2a.Event, error]) CallHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
@@ -263,7 +272,7 @@ func streamHandler[Req any](transportCall func(context.Context, ServiceParams, R
 	}
 }
 
-func sendStreamingMessage(c *Client) callHandler {
+func sendStreamingMessage(c *Client) CallHandler {
 	return func(ctx context.Context, req Request) iter.Seq2[any, error] {
 		if card := c.card.Load(); card != nil && !card.Capabilities.Streaming {
 			return unaryHandler(c.transport.SendMessage)(ctx, req)
@@ -276,15 +285,15 @@ func doCall[Req any, Resp any](
 	ctx context.Context, c *Client, method string, req Req,
 	transportCall func(context.Context, ServiceParams, Req) (Resp, error),
 ) (Resp, error) {
-	for payload, err := range interceptCalls(c, unaryHandler(transportCall))(ctx, c.newRequest(ctx, method, req)) {
+	for payload, err := range wrapCall(c, unaryHandler(transportCall))(ctx, c.newRequest(ctx, method, req)) {
 		return utils.CastResult[Resp](payload, err)
 	}
 	var zero Resp
 	return zero, fmt.Errorf("%s produced no result", method)
 }
 
-func streamCall(ctx context.Context, c *Client, method string, req any, handler callHandler, yield func(a2a.Event, error) bool) {
-	for payload, err := range interceptCalls(c, handler)(ctx, c.newRequest(ctx, method, req)) {
+func streamCall(ctx context.Context, c *Client, method string, req any, handler CallHandler, yield func(a2a.Event, error) bool) {
+	for payload, err := range wrapCall(c, handler)(ctx, c.newRequest(ctx, method, req)) {
 		event, err := utils.CastResult[a2a.Event](payload, err)
 		if err != nil {
 			yield(nil, err)
