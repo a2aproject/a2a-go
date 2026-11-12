@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/a2aproject/a2a-go/compare/v2.8.0...v2.9.0) (2026-11-12)
+
+
+### Features
+
+* add plugin interface ([#572](https://github.com/a2aproject/a2a-go/issues/572)) ([5216340](https://github.com/a2aproject/a2a-go/commit/5216340842ab8a2034c46472b1b98b89778fdbe1))
+
 ## [2.8.0](https://github.com/a2aproject/a2a-go/compare/v2.7.0...v2.8.0) (2026-11-06)
 
 
