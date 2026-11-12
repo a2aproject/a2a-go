@@ -22,21 +22,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 )
 
-// ClientHooks are the hooks of a client plugin. All fields are optional.
-type ClientHooks struct {
-	// BeforeCall runs before every call and can modify the request. The returned context is passed to
-	// the call and to AfterCall. If it returns a result or an error, the call is not sent and the value
-	// is returned to the caller.
-	BeforeCall func(ctx context.Context, req *a2aclient.Request) (context.Context, any, error)
-
-	// AfterCall runs on every response value: once for a unary call, once per event for a streaming call.
-	// It can modify the response. If it returns an error, the error is returned instead of the value.
-	AfterCall func(ctx context.Context, resp *a2aclient.Response) error
-
-	// WrapCall wraps every call outside the call hooks.
-	WrapCall func(next a2aclient.CallHandler) a2aclient.CallHandler
-}
-
 // Client returns an [a2aclient.Plugin] which runs the hooks.
 func Client(name string, hooks ClientHooks) a2aclient.Plugin {
 	return &clientPlugin{name: name, hooks: hooks}

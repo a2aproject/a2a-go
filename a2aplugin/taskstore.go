@@ -21,16 +21,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 )
 
-// TaskWrite describes a write performed on the task store. Its fields must not be modified.
-type TaskWrite struct {
-	// Task is the task state passed to the store.
-	Task *a2a.Task
-	// Event is the event that triggered the write. Nil on create.
-	Event a2a.Event
-	// PrevTask is the previous state of the task. Nil on create.
-	PrevTask *a2a.Task
-}
-
 func (p *serverPlugin) WrapTaskStore(next taskstore.Store) taskstore.Store {
 	if p.hooks.BeforeTaskWrite != nil || p.hooks.AfterTaskWrite != nil {
 		next = &hookStore{Store: next, hooks: p.hooks}
