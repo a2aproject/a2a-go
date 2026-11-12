@@ -18,6 +18,7 @@ package utils
 import (
 	"bytes"
 	"context"
+	"encoding"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -46,6 +47,8 @@ func DeepCopy[T any](task *T) (*T, error) {
 		return nil, err
 	}
 
+	// gob decodes non-nil empty slices as nil; restore their shape without changing nil values.
+	restoreEmptySlices(reflect.ValueOf(task).Elem(), reflect.ValueOf(&copy).Elem())
 	return &copy, nil
 }
 
@@ -124,4 +127,64 @@ func MustPrettyPrint(value any) {
 		panic(err.Error())
 	}
 	fmt.Println(string(raw))
+}
+
+func restoreEmptySlices(source, target reflect.Value) {
+	if !source.IsValid() || !target.IsValid() || source.Type() != target.Type() {
+		return
+	}
+	// gob selects GobEncoder before BinaryMarshaler; either codec owns its representation.
+	// TextMarshaler is not used by gob, so text-only types still need empty slices restored.
+	for _, encoder := range []reflect.Type{reflect.TypeFor[gob.GobEncoder](), reflect.TypeFor[encoding.BinaryMarshaler]()} {
+		if source.Type().Implements(encoder) || (source.Kind() != reflect.Pointer && reflect.PointerTo(source.Type()).Implements(encoder)) {
+			return
+		}
+	}
+	switch source.Kind() {
+	case reflect.Interface:
+		if source.IsNil() || target.IsNil() {
+			return
+		}
+		value := reflect.New(target.Elem().Type()).Elem()
+		value.Set(target.Elem())
+		restoreEmptySlices(source.Elem(), value)
+		if target.CanSet() {
+			target.Set(value)
+		}
+	case reflect.Pointer:
+		if !source.IsNil() && !target.IsNil() {
+			restoreEmptySlices(source.Elem(), target.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < source.NumField(); i++ {
+			if target.Field(i).CanSet() {
+				restoreEmptySlices(source.Field(i), target.Field(i))
+			}
+		}
+	case reflect.Map:
+		if source.IsNil() || target.IsNil() {
+			return
+		}
+		for iter := source.MapRange(); iter.Next(); {
+			previous := target.MapIndex(iter.Key())
+			if !previous.IsValid() {
+				continue
+			}
+			value := reflect.New(previous.Type()).Elem()
+			value.Set(previous)
+			restoreEmptySlices(iter.Value(), value)
+			target.SetMapIndex(iter.Key(), value)
+		}
+	case reflect.Slice:
+		if !source.IsNil() && source.Len() == 0 && target.IsNil() && target.CanSet() {
+			target.Set(reflect.MakeSlice(target.Type(), 0, 0))
+		}
+		for i := 0; i < min(source.Len(), target.Len()); i++ {
+			restoreEmptySlices(source.Index(i), target.Index(i))
+		}
+	case reflect.Array:
+		for i := 0; i < source.Len(); i++ {
+			restoreEmptySlices(source.Index(i), target.Index(i))
+		}
+	}
 }
