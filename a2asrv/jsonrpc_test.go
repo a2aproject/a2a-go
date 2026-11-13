@@ -301,8 +301,7 @@ func TestJSONRPC_Validations(t *testing.T) {
 			if !tc.omitVersion {
 				req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 			}
-			client := &http.Client{}
-			resp, err := client.Do(req)
+			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Errorf("client.Do() error = %v", err)
 			}
@@ -397,8 +396,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 			}
 			req.Header.Set("Accept", sse.ContentEventStream)
 			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
-			client := http.Client{}
-			resp, err := client.Do(req)
+			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("client.Do() error = %v", err)
 			}
@@ -564,8 +562,7 @@ func TestJSONRPC_StreamingErrors(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 			req.Header.Set("Accept", tc.acceptHeader)
-			client := http.Client{}
-			resp, err := client.Do(req)
+			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("client.Do() error = %v", err)
 			}

@@ -29,18 +29,22 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func get(t *testing.T, url, ifNoneMatch string) *http.Response {
+// get uses the server's own client instead of http.DefaultTransport. Every
+// httptest.Server.Close calls DefaultTransport.CloseIdleConnections, and for a
+// body-less response (e.g. 304) the connection goes back to the idle pool before
+// RoundTrip returns, so a server closed by a parallel test can fail the request.
+func get(t *testing.T, srv *httptest.Server, ifNoneMatch string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequestWithContext(t.Context(), "GET", url, nil)
+	req, err := http.NewRequestWithContext(t.Context(), "GET", srv.URL, nil)
 	if err != nil {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
 	if ifNoneMatch != "" {
 		req.Header.Set("If-None-Match", ifNoneMatch)
 	}
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := srv.Client().Do(req)
 	if err != nil {
-		t.Fatalf("GET %s error = %v", url, err)
+		t.Fatalf("GET %s error = %v", srv.URL, err)
 	}
 	return resp
 }
@@ -133,14 +137,14 @@ func TestAgentCardHandler(t *testing.T) {
 		return card, nil
 	})))
 	for _, tc := range testCases {
-		for srvType, url := range map[string]string{"dynamic": server.URL, "static": staticServer.URL} {
+		for srvType, srv := range map[string]*httptest.Server{"dynamic": server, "static": staticServer} {
 			name := tc.method
 			if len(tc.reqHeaders) > 0 {
 				name = tc.method + " with origin"
 			}
 			t.Run(name+" "+srvType, func(t *testing.T) {
 				t.Parallel()
-				req, err := http.NewRequestWithContext(t.Context(), tc.method, url, nil)
+				req, err := http.NewRequestWithContext(t.Context(), tc.method, srv.URL, nil)
 				if err != nil {
 					t.Errorf("http.NewRequestWithContext() error = %v", err)
 					return
@@ -148,8 +152,7 @@ func TestAgentCardHandler(t *testing.T) {
 				for k, v := range tc.reqHeaders {
 					req.Header.Set(k, v)
 				}
-				client := &http.Client{}
-				resp, err := client.Do(req)
+				resp, err := srv.Client().Do(req)
 				if err != nil {
 					t.Errorf("client.Do(req) error = %v", err)
 					return
@@ -183,7 +186,7 @@ func TestAgentCardHandler_ServerError(t *testing.T) {
 		return nil, fmt.Errorf("failed")
 	})))
 	defer server.Close()
-	resp := get(t, server.URL, "")
+	resp := get(t, server, "")
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("GET status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
@@ -221,7 +224,7 @@ func TestAgentCardHandler_ETagAnd304(t *testing.T) {
 			srv := httptest.NewServer(h)
 			defer srv.Close()
 
-			resp := get(t, srv.URL, "")
+			resp := get(t, srv, "")
 			defer func() { _ = resp.Body.Close() }()
 			etag := resp.Header.Get("ETag")
 			if !strings.HasPrefix(etag, `W/"`) || !strings.HasSuffix(etag, `"`) {
@@ -231,7 +234,7 @@ func TestAgentCardHandler_ETagAnd304(t *testing.T) {
 				t.Fatalf("first GET status = %d, want %d", resp.StatusCode, http.StatusOK)
 			}
 
-			condResp := get(t, srv.URL, etag)
+			condResp := get(t, srv, etag)
 			defer func() { _ = condResp.Body.Close() }()
 			if condResp.StatusCode != http.StatusNotModified {
 				t.Errorf("conditional GET status = %d, want %d", condResp.StatusCode, http.StatusNotModified)
@@ -261,7 +264,7 @@ func TestAgentCardHandler_VaryPreservesMiddlewareValues(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	resp := get(t, srv.URL, "")
+	resp := get(t, srv, "")
 	defer func() { _ = resp.Body.Close() }()
 
 	want := []string{"Accept-Encoding", "Origin"}
@@ -276,7 +279,7 @@ func TestAgentCardHandler_IfNoneMatchForms(t *testing.T) {
 	srv := httptest.NewServer(NewStaticAgentCardHandler(card))
 	t.Cleanup(srv.Close)
 
-	resp := get(t, srv.URL, "")
+	resp := get(t, srv, "")
 	defer func() { _ = resp.Body.Close() }()
 	etag := resp.Header.Get("ETag")
 
@@ -296,7 +299,7 @@ func TestAgentCardHandler_IfNoneMatchForms(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := get(t, srv.URL, tc.ifNoneMatch)
+			got := get(t, srv, tc.ifNoneMatch)
 			defer func() { _ = got.Body.Close() }()
 			if got.StatusCode != tc.wantStatus {
 				t.Errorf("If-None-Match=%q status = %d, want %d", tc.ifNoneMatch, got.StatusCode, tc.wantStatus)
@@ -313,7 +316,7 @@ func TestAgentCardHandler_CacheControl(t *testing.T) {
 		t.Parallel()
 		srv := httptest.NewServer(NewStaticAgentCardHandler(card))
 		defer srv.Close()
-		resp := get(t, srv.URL, "")
+		resp := get(t, srv, "")
 		defer func() { _ = resp.Body.Close() }()
 		if got := resp.Header.Get("Cache-Control"); got != "" {
 			t.Errorf("Cache-Control = %q, want empty by default", got)
@@ -324,14 +327,14 @@ func TestAgentCardHandler_CacheControl(t *testing.T) {
 		t.Parallel()
 		srv := httptest.NewServer(NewStaticAgentCardHandler(card, WithAgentCardCacheControl("public, max-age=60")))
 		defer srv.Close()
-		resp := get(t, srv.URL, "")
+		resp := get(t, srv, "")
 		if got, want := resp.Header.Get("Cache-Control"), "public, max-age=60"; got != want {
 			t.Fatalf("Cache-Control = %q, want %q", got, want)
 		}
 		etag := resp.Header.Get("ETag")
 		_ = resp.Body.Close()
 
-		condResp := get(t, srv.URL, etag)
+		condResp := get(t, srv, etag)
 		defer func() { _ = condResp.Body.Close() }()
 		if condResp.StatusCode != http.StatusNotModified {
 			t.Fatalf("conditional status = %d, want %d", condResp.StatusCode, http.StatusNotModified)
@@ -361,20 +364,20 @@ func TestAgentCardHandler_SignedCardStableETag(t *testing.T) {
 	})))
 	defer srv.Close()
 
-	first := get(t, srv.URL, "")
+	first := get(t, srv, "")
 	if first.StatusCode != http.StatusOK {
 		t.Fatalf("first status = %d, want 200", first.StatusCode)
 	}
 	etag1 := first.Header.Get("ETag")
 	_ = first.Body.Close()
 
-	cond := get(t, srv.URL, etag1)
+	cond := get(t, srv, etag1)
 	_ = cond.Body.Close()
 	if cond.StatusCode != http.StatusNotModified {
 		t.Errorf("conditional status = %d, want 304 despite re-signing", cond.StatusCode)
 	}
 
-	third := get(t, srv.URL, "")
+	third := get(t, srv, "")
 	_ = third.Body.Close()
 	if etag3 := third.Header.Get("ETag"); etag3 != etag1 {
 		t.Errorf("ETag changed across re-signings: %q != %q", etag3, etag1)
@@ -397,20 +400,20 @@ func TestAgentCardHandler_KeyRotationInvalidatesETag(t *testing.T) {
 	srv := httptest.NewServer(NewAgentCardHandler(rotatingKeyProducer(func() string { return kid })))
 	defer srv.Close()
 
-	first := get(t, srv.URL, "")
+	first := get(t, srv, "")
 	etag := first.Header.Get("ETag")
 	_ = first.Body.Close()
 	if first.StatusCode != http.StatusOK || etag == "" {
 		t.Fatalf("first status = %d, ETag = %q; want 200 with an ETag", first.StatusCode, etag)
 	}
-	cond := get(t, srv.URL, etag)
+	cond := get(t, srv, etag)
 	_ = cond.Body.Close()
 	if cond.StatusCode != http.StatusNotModified {
 		t.Errorf("conditional status before rotation = %d, want 304", cond.StatusCode)
 	}
 
 	kid = "kid-new"
-	rotated := get(t, srv.URL, etag)
+	rotated := get(t, srv, etag)
 	_ = rotated.Body.Close()
 	if rotated.StatusCode != http.StatusOK {
 		t.Errorf("conditional status after rotation = %d, want 200 so clients refetch the new signature", rotated.StatusCode)
@@ -439,7 +442,7 @@ func TestAgentCardHandler_RawJSONProducer(t *testing.T) {
 	srv := httptest.NewServer(NewAgentCardHandler(&rawJSONProducer{}))
 	defer srv.Close()
 
-	resp := get(t, srv.URL, "")
+	resp := get(t, srv, "")
 	etag := resp.Header.Get("ETag")
 	if !strings.HasPrefix(etag, `W/"`) {
 		t.Fatalf("ETag = %q, want weak ETag", etag)
@@ -449,7 +452,7 @@ func TestAgentCardHandler_RawJSONProducer(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	condResp := get(t, srv.URL, etag)
+	condResp := get(t, srv, etag)
 	defer func() { _ = condResp.Body.Close() }()
 	if condResp.StatusCode != http.StatusNotModified {
 		t.Errorf("conditional status = %d, want 304 despite changing raw signatures", condResp.StatusCode)
