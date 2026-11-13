@@ -750,6 +750,39 @@ func TestToProto_toProtoTask(t *testing.T) {
 	}
 }
 
+func TestToProtoListTasksRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		req  *a2a.ListTasksRequest
+		want *a2apb.ListTasksRequest
+	}{
+		{
+			name: "unset page size is left unset",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx-test"},
+			want: &a2apb.ListTasksRequest{ContextId: "ctx-test", IncludeArtifacts: new(false)},
+		},
+		{
+			name: "page size",
+			req:  &a2a.ListTasksRequest{PageSize: 10},
+			want: &a2apb.ListTasksRequest{PageSize: new(int32(10)), IncludeArtifacts: new(false)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ToProtoListTasksRequest(tt.req)
+			if err != nil {
+				t.Fatalf("ToProtoListTasksRequest() error = %v", err)
+			}
+			if !proto.Equal(got, tt.want) {
+				t.Fatalf("ToProtoListTasksRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToProto_toProtoListTasksResponse(t *testing.T) {
 	tests := []struct {
 		name string
