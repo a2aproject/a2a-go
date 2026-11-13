@@ -179,3 +179,61 @@ func TestAgentCard_V1ToLegacyToV1(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentCardSkillsConversion(t *testing.T) {
+	t.Parallel()
+	legacyCard := &a2alegacy.AgentCard{
+		Name: "agent",
+		Skills: []a2alegacy.AgentSkill{
+			{
+				ID:          "search",
+				Name:        "Search",
+				Description: "Searches the web",
+				Tags:        []string{"web"},
+				Examples:    []string{"find a2a"},
+				InputModes:  []string{"text/plain"},
+				OutputModes: []string{"application/json"},
+				Security:    []a2alegacy.SecurityRequirements{{"oauth": {"read"}}},
+			},
+		},
+	}
+	v1Card := &a2a.AgentCard{
+		Name: "agent",
+		Skills: []a2a.AgentSkill{
+			{
+				ID:                   "search",
+				Name:                 "Search",
+				Description:          "Searches the web",
+				Tags:                 []string{"web"},
+				Examples:             []string{"find a2a"},
+				InputModes:           []string{"text/plain"},
+				OutputModes:          []string{"application/json"},
+				SecurityRequirements: a2a.SecurityRequirementsOptions{{"oauth": {"read"}}},
+			},
+		},
+	}
+
+	t.Run("ToV1AgentCard", func(t *testing.T) {
+		t.Parallel()
+		got := ToV1AgentCard(legacyCard)
+		if diff := cmp.Diff(v1Card, got, cmpopts.EquateEmpty()); diff != "" {
+			t.Fatalf("ToV1AgentCard() wrong result (-want +got) diff = %s", diff)
+		}
+	})
+
+	t.Run("FromV1AgentCard", func(t *testing.T) {
+		t.Parallel()
+		got := FromV1AgentCard(v1Card)
+		if diff := cmp.Diff(legacyCard.Skills, got.Skills); diff != "" {
+			t.Fatalf("FromV1AgentCard() wrong result (-want +got) diff = %s", diff)
+		}
+	})
+
+	t.Run("RoundTrip", func(t *testing.T) {
+		t.Parallel()
+		got := ToV1AgentCard(FromV1AgentCard(v1Card))
+		if diff := cmp.Diff(v1Card.Skills, got.Skills); diff != "" {
+			t.Fatalf("ToV1AgentCard(FromV1AgentCard()) wrong result (-want +got) diff = %s", diff)
+		}
+	})
+}
