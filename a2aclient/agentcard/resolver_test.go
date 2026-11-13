@@ -269,3 +269,45 @@ func TestResolver_CompleteCardURL(t *testing.T) {
 		t.Errorf("AgentCards are different:\ngot %v\nwant %v\ndiff(-want +got):\n%v", got, want, diff)
 	}
 }
+
+func TestResolver_A2AVersionHeader(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		opts []ResolveOption
+		want []string
+	}{
+		{
+			name: "default",
+			want: []string{string(a2a.Version)},
+		},
+		{
+			name: "caller override",
+			opts: []ResolveOption{WithRequestHeader(a2a.SvcParamVersion, "0.3")},
+			want: []string{"0.3"},
+		},
+		{
+			name: "caller override with lowercase name",
+			opts: []ResolveOption{WithRequestHeader("a2a-version", "0.3")},
+			want: []string{"0.3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			card := &a2a.AgentCard{Name: "TestResolver_A2AVersionHeader"}
+			cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, card), func(req *http.Request) {
+				got = req.Header.Values(a2a.SvcParamVersion)
+			})
+
+			if _, err := NewResolver(nil).Resolve(t.Context(), cardURL, tt.opts...); err != nil {
+				t.Fatalf("Resolve() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("Resolve() wrong %s header (-want +got) diff = %s", a2a.SvcParamVersion, diff)
+			}
+		})
+	}
+}
