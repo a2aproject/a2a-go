@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
@@ -202,7 +203,8 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 
 // GetTask implements [a2a.Transport].
 func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
-	path := rest.MakeGetTaskPath(url.PathEscape(string(req.ID)))
+	// A colon in the ID must not be interpreted as the :subscribe action.
+	path := rest.MakeGetTaskPath(strings.ReplaceAll(url.PathEscape(string(req.ID)), ":", "%3A"))
 	q := url.Values{}
 	if req.HistoryLength != nil {
 		q.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))

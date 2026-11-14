@@ -246,6 +246,18 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 	}
 }
 
+// hasTaskAction checks the raw segment so an escaped colon remains part of the task ID.
+func hasTaskAction(req *http.Request, action string) bool {
+	path := req.URL.EscapedPath()
+	segment := path[strings.LastIndexByte(path, '/')+1:]
+	separator := strings.LastIndexByte(segment, ':')
+	if separator < 0 {
+		return false
+	}
+	decoded, err := url.PathUnescape(segment[separator+1:])
+	return err == nil && decoded == action
+}
+
 func (h *restHandler) handleCancelOrSubscribeTask(rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	idAndAction := req.PathValue("idAndAction")
@@ -253,11 +265,11 @@ func (h *restHandler) handleCancelOrSubscribeTask(rw http.ResponseWriter, req *h
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-	if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok {
+	if before, ok := strings.CutSuffix(idAndAction, ":cancel"); ok && hasTaskAction(req, "cancel") {
 		h.handleCancelTask(before, rw, req)
 		return
 	}
-	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok && hasTaskAction(req, "subscribe") {
 		h.handleSubscribeToTask(before, rw, req)
 		return
 	}
@@ -266,7 +278,7 @@ func (h *restHandler) handleCancelOrSubscribeTask(rw http.ResponseWriter, req *h
 
 func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http.Request) {
 	idAndAction := req.PathValue("idAndAction")
-	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok {
+	if before, ok := strings.CutSuffix(idAndAction, ":subscribe"); ok && hasTaskAction(req, "subscribe") {
 		h.handleSubscribeToTask(before, rw, req)
 		return
 	}
