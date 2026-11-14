@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,109 @@ func mustDecodeJSONRPC(t *testing.T, httpReq *http.Request, method string) jsonr
 
 func newResponse(req jsonrpc.ClientRequest, msg json.RawMessage) jsonrpc.ClientResponse {
 	return jsonrpc.ClientResponse{JSONRPC: "2.0", ID: req.ID, Result: msg}
+}
+
+func TestJSONRPCTransport_RejectsMismatchedResponseID(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		stream    bool
+		preflight bool
+		isError   bool
+		nonOK     bool
+	}{
+		{name: "single result"},
+		{name: "single error", isError: true},
+		{name: "stream result", stream: true},
+		{name: "stream error", stream: true, isError: true},
+		{name: "stream preflight error", stream: true, preflight: true, isError: true},
+		{name: "single HTTP error", isError: true, nonOK: true},
+		{name: "stream HTTP error", stream: true, preflight: true, isError: true, nonOK: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request jsonrpc.ClientRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("Decode() error = %v", err)
+					return
+				}
+				response := jsonrpc.ClientResponse{JSONRPC: "2.0", ID: request.ID + "-other"}
+				if tc.isError {
+					response.Error = &jsonrpc.Error{Code: -32001, Message: "not found"}
+				} else if tc.stream {
+					response.Result = json.RawMessage(`{"task":{"id":"unexpected","status":{"state":"TASK_STATE_COMPLETED"}}}`)
+				} else {
+					response.Result = json.RawMessage(`{"id":"unexpected","status":{"state":"TASK_STATE_COMPLETED"}}`)
+				}
+				if tc.stream && !tc.preflight {
+					w.Header().Set("Content-Type", "text/event-stream")
+					data, err := json.Marshal(response)
+					if err != nil {
+						t.Errorf("Marshal() error = %v", err)
+						return
+					}
+					if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+						t.Errorf("Write() error = %v", err)
+						return
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if tc.nonOK {
+					w.WriteHeader(http.StatusBadRequest)
+				}
+				if err := json.NewEncoder(w).Encode(response); err != nil {
+					t.Errorf("Encode() error = %v", err)
+				}
+			}))
+			defer server.Close()
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+			var got error
+			if tc.stream {
+				for _, err := range transport.SubscribeToTask(t.Context(), nil, &a2a.SubscribeToTaskRequest{ID: "task"}) {
+					got = err
+				}
+			} else {
+				_, got = transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task"})
+			}
+			if !errors.Is(got, a2a.ErrInvalidAgentResponse) {
+				t.Fatalf("response error = %v, want %v", got, a2a.ErrInvalidAgentResponse)
+			}
+		})
+	}
+}
+
+func TestJSONRPCTransport_NullAndMissingResponseIDs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{name: "null error", body: `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"bad request"}}`, want: a2a.ErrInvalidRequest},
+		{name: "null result", body: `{"jsonrpc":"2.0","id":null,"result":{"id":"task"}}`, want: a2a.ErrInvalidAgentResponse},
+		{name: "missing error id", body: `{"jsonrpc":"2.0","error":{"code":-32600,"message":"bad request"}}`, want: a2a.ErrInvalidAgentResponse},
+		{name: "empty error id", body: `{"jsonrpc":"2.0","id":"","error":{"code":-32600,"message":"bad request"}}`, want: a2a.ErrInvalidAgentResponse},
+		{name: "numeric error id", body: `{"jsonrpc":"2.0","id":42,"error":{"code":-32600,"message":"bad request"}}`, want: a2a.ErrInvalidAgentResponse},
+		{name: "object error id", body: `{"jsonrpc":"2.0","id":{},"error":{"code":-32600,"message":"bad request"}}`, want: a2a.ErrInvalidAgentResponse},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := w.Write([]byte(tc.body)); err != nil {
+					t.Errorf("Write() error = %v", err)
+				}
+			}))
+			defer server.Close()
+			transport := NewJSONRPCTransport(server.URL, nil)
+			_, got := transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task"})
+			if !errors.Is(got, tc.want) {
+				t.Fatalf("GetTask() error = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestJSONRPCTransport_SendMessage(t *testing.T) {
@@ -269,6 +373,7 @@ func TestJSONRPCTransport_ErrorHandling(t *testing.T) {
 
 func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request := mustDecodeJSONRPC(t, r, "SendStreamingMessage")
 		if r.Header.Get("Accept") != "text/event-stream, application/json" {
 			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
 		}
@@ -286,6 +391,7 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 		}
 
 		for _, event := range events {
+			event = strings.ReplaceAll(event, `"id":"test"`, `"id":"`+request.ID+`"`)
 			_, _ = w.Write([]byte(event + "\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
@@ -329,13 +435,13 @@ func TestJSONRPCTransport_SendStreamingMessage(t *testing.T) {
 func TestParseSSEStream(t *testing.T) {
 	sseData := `data: {"jsonrpc":"2.0","id":"1","result":{"task":{"id":"task-1"}}}
 
-data: {"jsonrpc":"2.0","id":"2","result":{"message":{"role":"agent"}}}
+data: {"jsonrpc":"2.0","id":"1","result":{"message":{"role":"agent"}}}
 
 `
 	body := io.NopCloser(bytes.NewBufferString(sseData))
 
 	results := []json.RawMessage{}
-	for result, err := range parseSSEStream(body) {
+	for result, err := range parseSSEStream(body, "1") {
 		if err != nil {
 			t.Fatalf("Parse error: %v", err)
 		}
@@ -349,7 +455,7 @@ data: {"jsonrpc":"2.0","id":"2","result":{"message":{"role":"agent"}}}
 
 func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = mustDecodeJSONRPC(t, r, "SubscribeToTask")
+		request := mustDecodeJSONRPC(t, r, "SubscribeToTask")
 
 		if r.Header.Get("Accept") != "text/event-stream, application/json" {
 			t.Errorf("got Accept %s, want text/event-stream, application/json", r.Header.Get("Accept"))
@@ -366,6 +472,7 @@ func TestJSONRPCTransport_ResubscribeToTask(t *testing.T) {
 		}
 
 		for _, event := range events {
+			event = strings.ReplaceAll(event, `"id":"test"`, `"id":"`+request.ID+`"`)
 			_, _ = w.Write([]byte(event + "\n"))
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
@@ -660,11 +767,13 @@ func TestJSONRPCTransport_ErrorWithNonTypedData(t *testing.T) {
 	// error code and message instead of failing the whole decode.
 	wantMsg := "real error message"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = mustDecodeJSONRPC(t, r, "GetTask")
+		request := mustDecodeJSONRPC(t, r, "GetTask")
 
 		// Write raw JSON with error.data as a plain object.
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"real error message","data":{"reason":"detail"}}}`))
+		if _, err := fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%q,"error":{"code":-32603,"message":"real error message","data":{"reason":"detail"}}}`, request.ID); err != nil {
+			t.Errorf("Write() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -697,9 +806,11 @@ func TestJSONRPCTransport_ErrorWithNonTypedData(t *testing.T) {
 func TestJSONRPCTransport_ErrorWithStringData(t *testing.T) {
 	// error.data may be any JSON value, including a plain string.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = mustDecodeJSONRPC(t, r, "GetTask")
+		request := mustDecodeJSONRPC(t, r, "GetTask")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":"1","error":{"code":-32600,"message":"bad request","data":"extra info"}}`))
+		if _, err := fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%q,"error":{"code":-32600,"message":"bad request","data":"extra info"}}`, request.ID); err != nil {
+			t.Errorf("Write() error = %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -1011,6 +1122,14 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 		wantErr     error
 		wantMsg     string
 	}{
+		{
+			name:        "HTTP middleware error without JSON-RPC envelope",
+			status:      http.StatusUnauthorized,
+			contentType: "application/json",
+			body:        `{"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantErr:     a2a.ErrUnauthenticated,
+			wantMsg:     "the token was revoked",
+		},
 		{
 			name:        "JSON-RPC error from auth middleware",
 			status:      http.StatusUnauthorized,

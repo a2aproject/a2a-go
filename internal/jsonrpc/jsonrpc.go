@@ -150,17 +150,36 @@ const maxErrorBodyBytes = 1 << 20
 // FromHTTPError converts a non-200 HTTP response to an error. A JSON body carrying a JSON-RPC error,
 // for example one written by an auth middleware, is converted with [FromJSONRPCError]. Any other
 // response is reported using its HTTP status.
-func FromHTTPError(resp *http.Response) error {
+func FromHTTPError(resp *http.Response, requestID string) error {
 	statusErr := fmt.Errorf("unexpected HTTP status: %s", resp.Status)
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || mediaType != ContentJSON {
 		return statusErr
 	}
-	var parsed ClientResponse
-	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &parsed); err != nil || parsed.Error == nil {
+	var body json.RawMessage
+	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &body); err != nil {
 		return statusErr
 	}
-	return FromJSONRPCError(parsed.Error)
+	var envelope struct {
+		JSONRPC string `json:"jsonrpc"`
+		Error   *Error `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Error == nil {
+		return statusErr
+	}
+	if envelope.JSONRPC == Version {
+		var parsed ClientResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			if errors.Is(err, a2a.ErrInvalidAgentResponse) {
+				return err
+			}
+			return statusErr
+		}
+		if err := parsed.ValidateID(requestID); err != nil {
+			return err
+		}
+	}
+	return FromJSONRPCError(envelope.Error)
 }
 
 // ToJSONRPCError converts an error to a JSON-RPC [Error].
@@ -266,4 +285,38 @@ type ClientResponse struct {
 	ID      string          `json:"id"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *Error          `json:"error,omitempty"`
+	nullID  bool
+}
+
+// UnmarshalJSON preserves the distinction between a null and absent response ID.
+func (r *ClientResponse) UnmarshalJSON(data []byte) error {
+	var id struct {
+		Value json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(data, &id); err != nil {
+		return err
+	}
+	if len(id.Value) > 0 && string(id.Value) != "null" {
+		var value string
+		if err := json.Unmarshal(id.Value, &value); err != nil {
+			return fmt.Errorf("invalid JSON-RPC response ID: %w", a2a.ErrInvalidAgentResponse)
+		}
+	}
+	type response ClientResponse
+	var decoded response
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = ClientResponse(decoded)
+	r.nullID = string(id.Value) == "null"
+	return nil
+}
+
+// ValidateID checks that a response is associated with its request.
+func (r *ClientResponse) ValidateID(requestID string) error {
+	// An error can have a null ID if the server could not identify the request.
+	if r.ID == requestID || (r.nullID && r.Error != nil) {
+		return nil
+	}
+	return fmt.Errorf("JSON-RPC response ID %q does not match request ID %q: %w", r.ID, requestID, a2a.ErrInvalidAgentResponse)
 }
