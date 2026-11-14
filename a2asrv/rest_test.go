@@ -1009,10 +1009,15 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 		name       string
 		status     string
 		wantStatus a2a.TaskState
+		wantErr    bool
 	}{
 		{name: "known status", status: "TASK_STATE_WORKING", wantStatus: a2a.TaskStateWorking},
-		{name: "unknown status", status: "BOGUS_STATE", wantStatus: a2a.TaskStateUnspecified},
-		{name: "lowercase known status", status: "task_state_working", wantStatus: a2a.TaskStateUnspecified},
+		{name: "unknown status", status: "BOGUS_STATE", wantErr: true},
+		{name: "lowercase known status", status: "task_state_working", wantErr: true},
+		{name: "omitted status"},
+		{name: "explicit unspecified status", status: "TASK_STATE_UNSPECIFIED"},
+		{name: "negative history length", status: "TASK_STATE_WORKING&historyLength=-5", wantErr: true},
+		{name: "zero history length", status: "TASK_STATE_WORKING&historyLength=0", wantStatus: a2a.TaskStateWorking},
 	}
 
 	for _, tc := range tests {
@@ -1032,6 +1037,15 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 			rw := httptest.NewRecorder()
 			handler.ServeHTTP(rw, req)
 
+			if tc.wantErr {
+				if rw.Code != http.StatusBadRequest {
+					t.Fatalf("handler.ServeHTTP() status = %d, want %d. body: %s", rw.Code, http.StatusBadRequest, rw.Body.String())
+				}
+				if capturedReq != nil {
+					t.Fatal("handler.ListTasks() called for invalid filters")
+				}
+				return
+			}
 			if rw.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d. body: %s", rw.Code, http.StatusOK, rw.Body.String())
 			}

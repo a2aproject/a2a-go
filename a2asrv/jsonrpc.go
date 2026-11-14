@@ -319,9 +319,20 @@ func (h *jsonrpcHandler) onGetTask(ctx context.Context, raw json.RawMessage) (*a
 
 func (h *jsonrpcHandler) onListTasks(ctx context.Context, raw json.RawMessage) (*a2a.ListTasksResponse, error) {
 	var request a2a.ListTasksRequest
-	if err := json.Unmarshal(raw, &request); err != nil {
+	// Preserve the raw filter until validation: TaskState.UnmarshalJSON maps
+	// unknown values to unspecified, which would silently remove the filter.
+	wire := struct {
+		*a2a.ListTasksRequest
+		Status string `json:"status"`
+	}{ListTasksRequest: &request}
+	if err := json.Unmarshal(raw, &wire); err != nil {
 		return nil, handleUnmarshalError(err)
 	}
+	request.Status = a2a.TaskState(wire.Status)
+	if err := validateListTasksFilters(&request); err != nil {
+		return nil, err
+	}
+	request.Status = a2a.TaskStateFromString(wire.Status)
 	return h.handler.ListTasks(ctx, &request)
 }
 

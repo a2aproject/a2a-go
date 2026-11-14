@@ -640,3 +640,61 @@ func mustUnmarshal(t *testing.T, data []byte) map[string]any {
 	}
 	return result
 }
+
+func TestJSONRPC_ListTasksFilterValidation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		params     string
+		wantStatus a2a.TaskState
+		wantErr    bool
+	}{
+		{name: "unknown status", params: `{"status":"BOGUS"}`, wantErr: true},
+		{name: "lowercase status", params: `{"status":"task_state_working"}`, wantErr: true},
+		{name: "negative history length", params: `{"historyLength":-5}`, wantErr: true},
+		{name: "omitted filters", params: `{}`},
+		{name: "explicit unspecified status", params: `{"status":"TASK_STATE_UNSPECIFIED"}`},
+		{name: "known status and zero history length", params: `{"status":"TASK_STATE_WORKING","historyLength":0}`, wantStatus: a2a.TaskStateWorking},
+		{name: "known status and positive history length", params: `{"status":"TASK_STATE_COMPLETED","historyLength":5}`, wantStatus: a2a.TaskStateCompleted},
+		{name: "other filters preserved", params: `{"tenant":"tenant","contextId":"context","status":"TASK_STATE_WORKING","pageSize":5,"pageToken":"next","historyLength":2,"statusTimestampAfter":"2026-11-14T00:00:00Z","includeArtifacts":true}`, wantStatus: a2a.TaskStateWorking},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var captured *a2a.ListTasksRequest
+			handler := NewJSONRPCHandler(&mockRequestHandler{
+				listTasksFunc: func(_ context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+					captured = req
+					return &a2a.ListTasksResponse{}, nil
+				},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"jsonrpc":"2.0","id":"test","method":"ListTasks","params":`+tc.params+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+			var response jsonrpc.ClientResponse
+			if err := json.Unmarshal(rw.Body.Bytes(), &response); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+			}
+			if tc.wantErr {
+				if got := jsonrpc.FromJSONRPCError(response.Error); !errors.Is(got, a2a.ErrInvalidParams) {
+					t.Fatalf("handler.ServeHTTP() error = %v, want %v", got, a2a.ErrInvalidParams)
+				}
+				if captured != nil {
+					t.Fatal("handler.ListTasks() called for invalid filters")
+				}
+				return
+			}
+			if response.Error != nil {
+				t.Fatalf("handler.ServeHTTP() error = %v, want nil", response.Error)
+			}
+			var want a2a.ListTasksRequest
+			if err := json.Unmarshal([]byte(tc.params), &want); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+			}
+			want.Status = tc.wantStatus
+			if diff := cmp.Diff(&want, captured); diff != "" {
+				t.Fatalf("handler.ListTasks() wrong request (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}

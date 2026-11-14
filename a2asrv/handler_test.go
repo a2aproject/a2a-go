@@ -2864,3 +2864,24 @@ func withAgentCardEnforcer(t *testing.T, card *a2a.AgentCard) RequestHandlerOpti
 	}
 	return WithCallInterceptors(enforcer)
 }
+
+func TestRequestHandler_ListTasksInvalidFilters(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		request *a2a.ListTasksRequest
+	}{
+		{name: "negative history length", request: &a2a.ListTasksRequest{HistoryLength: new(-5)}},
+		{name: "unknown status", request: &a2a.ListTasksRequest{Status: "BOGUS"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := testutil.NewTestTaskStoreWithConfig(&taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()})
+			handler := newTestHandler(WithTaskStore(store))
+			result, err := handler.ListTasks(t.Context(), tc.request)
+			if !errors.Is(err, a2a.ErrInvalidParams) {
+				t.Fatalf("handler.ListTasks() error = %v, want %v (result: %v)", err, a2a.ErrInvalidParams, result)
+			}
+		})
+	}
+}

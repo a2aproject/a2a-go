@@ -316,11 +316,25 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 
 // ListTasks implements RequestHandler.
 func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+	if err := validateListTasksFilters(req); err != nil {
+		return nil, err
+	}
 	listResponse, err := h.taskStore.List(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
 	return listResponse, nil
+}
+
+func validateListTasksFilters(req *a2a.ListTasksRequest) error {
+	if req.HistoryLength != nil && *req.HistoryLength < 0 {
+		return fmt.Errorf("historyLength must not be negative: %w", a2a.ErrInvalidParams)
+	}
+	status := string(req.Status)
+	if a2a.TaskStateFromString(status) == a2a.TaskStateUnspecified && status != "" && status != a2a.TaskStateUnspecified.String() {
+		return fmt.Errorf("unknown status %q: %w", status, a2a.ErrInvalidParams)
+	}
+	return nil
 }
 
 // CancelTask implements RequestHandler.
