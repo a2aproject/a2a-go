@@ -78,7 +78,7 @@ type jsonrpcTransport struct {
 
 var _ Transport = (*jsonrpcTransport)(nil)
 
-func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params ServiceParams, payload any) (*http.Request, error) {
+func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, params ServiceParams, payload any) (*http.Request, string, error) {
 	req := jsonrpc.ClientRequest{
 		JSONRPC: jsonrpc.Version,
 		Method:  method,
@@ -88,14 +88,14 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	requestURL := t.url
 	if extraQuery := HTTPQueryParamsFrom(ctx); len(extraQuery) > 0 {
 		u, err := url.Parse(t.url)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
+			return nil, "", fmt.Errorf("failed to parse endpoint URL: %w", err)
 		}
 		query := u.Query()
 		utils.MergeQueryParams(query, extraQuery)
@@ -105,7 +105,7 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
+		return nil, "", fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
@@ -116,12 +116,12 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 		}
 	}
 
-	return httpReq, nil
+	return httpReq, req.ID, nil
 }
 
 // sendRequest sends a non-streaming JSON-RPC request and returns the response.
 func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, params ServiceParams, req any) (json.RawMessage, error) {
-	httpReq, err := t.newHTTPRequest(ctx, method, params, req)
+	httpReq, requestID, err := t.newHTTPRequest(ctx, method, params, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -137,12 +137,15 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, jsonrpc.FromHTTPError(httpResp)
+		return nil, jsonrpc.FromHTTPError(httpResp, requestID)
 	}
 
 	var resp jsonrpc.ClientResponse
 	if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if err := resp.ValidateID(requestID); err != nil {
+		return nil, err
 	}
 
 	if resp.Error != nil {
@@ -153,30 +156,30 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 }
 
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
-func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params ServiceParams, req any) (io.ReadCloser, error) {
-	httpReq, err := t.newHTTPRequest(ctx, method, params, req)
+func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params ServiceParams, req any) (io.ReadCloser, string, error) {
+	httpReq, requestID, err := t.newHTTPRequest(ctx, method, params, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, "", fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	httpReq.Header.Set("Accept", sse.ContentEventStream+", "+jsonrpc.ContentJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
+		return nil, "", fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		statusErr := jsonrpc.FromHTTPError(httpResp)
+		statusErr := jsonrpc.FromHTTPError(httpResp, requestID)
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, statusErr
+		return nil, "", statusErr
 	}
 	// The server may refuse a streaming call before opening a stream (e.g. task in a terminal
 	// state) and answer with a plain JSON-RPC error instead of SSE.
 	mediaType, _, err := mime.ParseMediaType(httpResp.Header.Get("Content-Type"))
 	if err != nil || mediaType == sse.ContentEventStream {
-		return httpResp.Body, nil
+		return httpResp.Body, requestID, nil
 	}
 	defer func() {
 		if err := httpResp.Body.Close(); err != nil {
@@ -186,18 +189,21 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if mediaType == jsonrpc.ContentJSON {
 		var resp jsonrpc.ClientResponse
 		if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
-			return nil, fmt.Errorf("failed to decode non-streaming response: %w", err)
+			return nil, "", fmt.Errorf("failed to decode non-streaming response: %w", err)
+		}
+		if err := resp.ValidateID(requestID); err != nil {
+			return nil, "", err
 		}
 		if resp.Error != nil {
-			return nil, jsonrpc.FromJSONRPCError(resp.Error)
+			return nil, "", jsonrpc.FromJSONRPCError(resp.Error)
 		}
-		return nil, fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
+		return nil, "", fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
 	}
-	return nil, fmt.Errorf("unexpected Content-Type %q", mediaType)
+	return nil, "", fmt.Errorf("unexpected Content-Type %q", mediaType)
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
-func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
+func parseSSEStream(body io.Reader, requestID string) iter.Seq2[json.RawMessage, error] {
 	return func(yield func(json.RawMessage, error) bool) {
 		for data, err := range sse.ParseDataStream(body) {
 			if err != nil {
@@ -207,6 +213,10 @@ func parseSSEStream(body io.Reader) iter.Seq2[json.RawMessage, error] {
 			var resp jsonrpc.ClientResponse
 			if err := json.Unmarshal(data, &resp); err != nil {
 				yield(nil, fmt.Errorf("failed to parse SSE data: %w", err))
+				return
+			}
+			if err := resp.ValidateID(requestID); err != nil {
+				yield(nil, err)
 				return
 			}
 			if resp.Error != nil {
@@ -248,7 +258,7 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, params ServiceParams
 // It converts the SSE stream into a sequence of A2A events.
 func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params ServiceParams, req any) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		body, err := t.sendStreamingRequest(ctx, method, params, req)
+		body, requestID, err := t.sendStreamingRequest(ctx, method, params, req)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -259,7 +269,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 			}
 		}()
 
-		for result, err := range parseSSEStream(body) {
+		for result, err := range parseSSEStream(body, requestID) {
 			if err != nil {
 				yield(nil, err)
 				return

@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -32,13 +33,106 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestJSONRPCClientRejectsMismatchedResponseID(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                     string
+		stream, preflight, nonOK bool
+	}{
+		{name: "single"},
+		{name: "stream", stream: true},
+		{name: "preflight", stream: true, preflight: true},
+		{name: "HTTP error", nonOK: true},
+		{name: "stream HTTP error", stream: true, preflight: true, nonOK: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request jsonrpc.ClientRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("Decode() error = %v", err)
+					return
+				}
+				response := jsonrpc.ClientResponse{JSONRPC: "2.0", ID: request.ID + "-other", Result: json.RawMessage(`{"id":"unexpected","status":{"state":"completed"}}`)}
+				if tc.preflight || tc.nonOK {
+					response.Result = nil
+					response.Error = &jsonrpc.Error{Code: -32001, Message: "not found"}
+				}
+				data, err := json.Marshal(response)
+				if err != nil {
+					t.Errorf("Marshal() error = %v", err)
+					return
+				}
+				if tc.stream && !tc.preflight {
+					w.Header().Set("Content-Type", "text/event-stream")
+					data = fmt.Appendf(nil, "data: %s\n\n", data)
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+				}
+				if tc.nonOK {
+					w.WriteHeader(http.StatusBadRequest)
+				}
+				if _, err := w.Write(data); err != nil {
+					t.Errorf("Write() error = %v", err)
+				}
+			}))
+			defer server.Close()
+			transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+			var got error
+			if tc.stream {
+				for _, err := range transport.SubscribeToTask(t.Context(), nil, &a2a.SubscribeToTaskRequest{ID: "task"}) {
+					got = err
+				}
+			} else {
+				_, got = transport.GetTask(t.Context(), nil, &a2a.GetTaskRequest{ID: "task"})
+			}
+			if !errors.Is(got, a2a.ErrInvalidAgentResponse) {
+				t.Fatalf("response error = %v, want %v", got, a2a.ErrInvalidAgentResponse)
+			}
+		})
+	}
+}
+
+func TestJSONRPCClientStreamPreflightError(t *testing.T) {
+	t.Parallel()
+	for _, nullID := range []bool{false, true} {
+		t.Run(fmt.Sprintf("null ID=%v", nullID), func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request jsonrpc.ClientRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("Decode() error = %v", err)
+					return
+				}
+				id := fmt.Sprintf("%q", request.ID)
+				if nullID {
+					id = "null"
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":"not found"}}`, id); err != nil {
+					t.Errorf("Write() error = %v", err)
+				}
+			}))
+			defer server.Close()
+			transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+			var got error
+			for _, err := range transport.SubscribeToTask(t.Context(), nil, &a2a.SubscribeToTaskRequest{ID: "task"}) {
+				got = err
+			}
+			if !errors.Is(got, a2a.ErrTaskNotFound) {
+				t.Fatalf("SubscribeToTask() error = %v, want %v", got, a2a.ErrTaskNotFound)
+			}
+		})
+	}
+}
+
 func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
 	modernKey := strings.ToLower(a2a.SvcParamExtensions)
 	legacyKey := "x-" + modernKey
 
 	transport := &jsonrpcTransport{url: "http://localhost", httpClient: http.DefaultClient}
 
-	req, err := transport.newHTTPRequest(context.Background(), "test", a2aclient.ServiceParams{
+	req, _, err := transport.newHTTPRequest(context.Background(), "test", a2aclient.ServiceParams{
 		"other":   {"val"},
 		legacyKey: {"uri1"},
 	}, nil)
