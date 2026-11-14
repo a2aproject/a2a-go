@@ -16,11 +16,12 @@ package taskexec
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
-	"testing"
-	"time"
 )
 
 type handoffProbeExecutor struct {
