@@ -434,6 +434,8 @@ func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.
 		return nil, fmt.Errorf("message parts is required: %w", a2a.ErrInvalidParams)
 	case req.Message.Role == "":
 		return nil, fmt.Errorf("message role is required: %w", a2a.ErrInvalidParams)
+	case req.Message.Role != a2a.MessageRoleUser:
+		return nil, fmt.Errorf("client message role must be %s: %w", a2a.MessageRoleUser, a2a.ErrInvalidParams)
 	}
 	return h.execManager.Execute(ctx, req)
 }

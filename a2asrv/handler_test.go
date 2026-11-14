@@ -243,6 +243,18 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				wantErr: fmt.Errorf("message role is required: %w", a2a.ErrInvalidParams),
 			},
 			{
+				name:        "rejects agent role in client message",
+				input:       &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Test"))},
+				agentEvents: []a2a.Event{newAgentMessage("hello")},
+				wantErr:     a2a.ErrInvalidParams,
+			},
+			{
+				name:        "rejects unknown role in client message",
+				input:       &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRole("ROLE_BOGUS"), a2a.NewTextPart("Test"))},
+				agentEvents: []a2a.Event{newAgentMessage("hello")},
+				wantErr:     a2a.ErrInvalidParams,
+			},
+			{
 				name: "fails on non-existent task reference",
 				input: &a2a.SendMessageRequest{
 					Message: &a2a.Message{
@@ -1190,7 +1202,7 @@ func TestRequestHandler_SendMessage_QueueCreationFails(t *testing.T) {
 	handler := newTestHandler(WithEventQueueManager(qm))
 
 	result, err := handler.SendMessage(ctx, &a2a.SendMessageRequest{
-		Message: a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Work")),
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Work")),
 	})
 
 	if result != nil || !errors.Is(err, wantErr) {

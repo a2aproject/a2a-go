@@ -17,6 +17,7 @@ package e2e_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -26,6 +27,40 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testexecutor"
 )
+
+func TestClientMessageRoleValidation(t *testing.T) {
+	t.Parallel()
+	transports := []a2a.TransportProtocol{a2a.TransportProtocolJSONRPC, a2a.TransportProtocolHTTPJSON, a2a.TransportProtocolGRPC}
+	roles := []a2a.MessageRole{a2a.MessageRoleAgent, a2a.MessageRole("ROLE_BOGUS")}
+	for _, transport := range transports {
+		for _, role := range roles {
+			t.Run(string(transport)+"/"+string(role), func(t *testing.T) {
+				t.Parallel()
+				var executions atomic.Int32
+				executor := testexecutor.FromEventGenerator(func(*a2asrv.ExecutorContext) []a2a.Event {
+					executions.Add(1)
+					return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok"))}
+				})
+				client := startTransportServer(t, a2asrv.NewHandler(executor), transport)
+				req := &a2a.SendMessageRequest{Message: a2a.NewMessage(role, a2a.NewTextPart("hello"))}
+				_, err := client.SendMessage(t.Context(), req)
+				if !errors.Is(err, a2a.ErrInvalidParams) {
+					t.Fatalf("client.SendMessage() error = %v, want %v", err, a2a.ErrInvalidParams)
+				}
+				var streamErr error
+				for _, err := range client.SendStreamingMessage(t.Context(), req) {
+					streamErr = err
+				}
+				if !errors.Is(streamErr, a2a.ErrInvalidParams) {
+					t.Fatalf("client.SendStreamingMessage() error = %v, want %v", streamErr, a2a.ErrInvalidParams)
+				}
+				if got := executions.Load(); got != 0 {
+					t.Fatalf("executor executions = %d, want 0", got)
+				}
+			})
+		}
+	}
+}
 
 func TestErrorSanitizer(t *testing.T) {
 	t.Parallel()
