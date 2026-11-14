@@ -112,3 +112,24 @@ func TestLocalPipe_WriteBlocksWhenQueueFull(t *testing.T) {
 	}
 	<-completed
 }
+
+func TestLocalPipe_WriteTracked(t *testing.T) {
+	t.Parallel()
+	pipe := NewLocal()
+	event := &a2a.Message{ID: a2a.NewMessageID()}
+	stopped := make(chan struct{})
+	ack, err := pipe.WriteTracked(t.Context(), event, stopped)
+	if err != nil || ack == nil {
+		t.Fatalf("pipe.WriteTracked() = (%v, %v), want ack and nil", ack, err)
+	}
+	if diff := cmp.Diff(event, mustRead(t, pipe)); diff != "" {
+		t.Fatalf("pipe.Reader.Read() wrong result (-want +got) diff = %s", diff)
+	}
+	select {
+	case <-ack:
+	default:
+		t.Fatal("read was not acknowledged")
+	}
+	close(stopped)
+	pipe.Close()
+}

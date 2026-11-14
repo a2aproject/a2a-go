@@ -30,6 +30,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
+	"github.com/a2aproject/a2a-go/v2/internal/taskexec"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil/testlogger"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
@@ -2863,4 +2864,209 @@ func withAgentCardEnforcer(t *testing.T, card *a2a.AgentCard) RequestHandlerOpti
 		t.Fatalf("NewAgentCardEnforcer() error = %v, wantErr nil", err)
 	}
 	return WithCallInterceptors(enforcer)
+}
+
+func TestRequestHandler_CancelAfterExecutionNeedsInput(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	started, cancelStarted := make(chan struct{}), make(chan struct{})
+	finishExecution, finishCancel := make(chan struct{}), make(chan struct{})
+	firstPushed := make(chan struct{})
+	firstArtifact, secondArtifact := a2a.NewArtifactID(), a2a.NewArtifactID()
+	var cancelCalls atomic.Int32
+	var cancelCleanups atomic.Int32
+	var firstPushes, secondPushes atomic.Int32
+	artifactEvent := func(execCtx *ExecutorContext, id a2a.ArtifactID, text string) *a2a.TaskArtifactUpdateEvent {
+		event := a2a.NewArtifactEvent(execCtx, a2a.NewTextPart(text))
+		event.Artifact.ID = id
+		return event
+	}
+	agent := &mockAgentExecutor{
+		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				close(started)
+				<-finishExecution
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateInputRequired, nil), nil)
+			}
+		},
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				if cancelCalls.Add(1) == 1 {
+					close(cancelStarted)
+					if !yield(artifactEvent(execCtx, firstArtifact, "before interruption"), nil) {
+						return
+					}
+					<-finishCancel
+				}
+				if !yield(artifactEvent(execCtx, secondArtifact, "after interruption"), nil) {
+					return
+				}
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+		CleanupFn: func(ctx context.Context, result a2a.SendMessageResult, err error) {
+			if task, ok := result.(*a2a.Task); ok && task.Status.State == a2a.TaskStateCanceled {
+				cancelCleanups.Add(1)
+			}
+		},
+	}
+	pushStore := testutil.NewTestPushConfigStore()
+	sender := testutil.NewTestPushSender(t).SetSendPushError(nil)
+	sender.SendPushFunc = func(_ context.Context, _ *a2a.PushConfig, event a2a.Event) error {
+		if artifact, ok := event.(*a2a.TaskArtifactUpdateEvent); ok {
+			switch artifact.Artifact.ID {
+			case firstArtifact:
+				if firstPushes.Add(1) == 1 {
+					close(firstPushed)
+				}
+			case secondArtifact:
+				secondPushes.Add(1)
+			}
+		}
+		return nil
+	}
+	handler := NewHandler(agent, WithTaskStore(store), WithPushNotifications(pushStore, sender))
+	req := &a2a.SendMessageRequest{
+		Message: newUserMessage(task, "work"),
+		Config:  &a2a.SendMessageConfig{PushConfig: &a2a.PushConfig{URL: "https://example.com/notifications"}},
+	}
+	type executionResult struct {
+		events []a2a.Event
+		err    error
+	}
+	execution := make(chan executionResult, 1)
+	go func() {
+		events, err := collectEvents(handler.SendStreamingMessage(ctx, req))
+		execution <- executionResult{events: events, err: err}
+	}()
+	<-started
+	type cancelResult struct {
+		task *a2a.Task
+		err  error
+	}
+	canceled := make(chan cancelResult, 1)
+	go func() {
+		result, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
+		canceled <- cancelResult{task: result, err: err}
+	}()
+	<-cancelStarted
+	<-firstPushed
+	close(finishExecution)
+	gotExecution := <-execution
+	if gotExecution.err != nil {
+		t.Fatalf("handler.SendStreamingMessage() error = %v, want nil", gotExecution.err)
+	}
+	if len(gotExecution.events) == 0 {
+		t.Fatal("handler.SendStreamingMessage() returned no events")
+	}
+	last, ok := gotExecution.events[len(gotExecution.events)-1].(*a2a.TaskStatusUpdateEvent)
+	if !ok || last.Status.State != a2a.TaskStateInputRequired {
+		t.Fatalf("handler.SendStreamingMessage() last event = %v, want input-required status", gotExecution.events[len(gotExecution.events)-1])
+	}
+	inner := handler.(*InterceptedHandler).Handler.(*defaultRequestHandler)
+	if _, err := inner.execManager.Execute(ctx, req); !errors.Is(err, taskexec.ErrCancelationInProgress) {
+		t.Fatalf("manager.Execute() error = %v, want %v", err, taskexec.ErrCancelationInProgress)
+	}
+	close(finishCancel)
+	got := <-canceled
+	if got.err != nil {
+		t.Fatalf("handler.CancelTask() error = %v, want nil", got.err)
+	}
+	if got.task.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("handler.CancelTask() state = %v, want %v", got.task.Status.State, a2a.TaskStateCanceled)
+	}
+	queried, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: task.ID})
+	if err != nil || queried.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("handler.GetTask() = (%v, %v), want canceled task", queried, err)
+	}
+	stored, err := store.Get(ctx, task.ID)
+	if err != nil || stored.Task.Status.State != a2a.TaskStateCanceled {
+		t.Fatalf("store.Get() = (%v, %v), want canceled task", stored, err)
+	}
+	if len(stored.Task.Artifacts) != 2 {
+		t.Fatalf("store.Get() artifacts = %d, want 2", len(stored.Task.Artifacts))
+	}
+	if diff := cmp.Diff([]int32{1, 1}, []int32{firstPushes.Load(), secondPushes.Load()}); diff != "" {
+		t.Fatalf("artifact push counts wrong result (-want +got) diff = %s", diff)
+	}
+	if calls := cancelCalls.Load(); calls != 1 {
+		t.Fatalf("agent.Cancel() calls = %d, want 1", calls)
+	}
+	if calls := cancelCleanups.Load(); calls != 1 {
+		t.Fatalf("agent.Cleanup() calls for cancelation = %d, want 1", calls)
+	}
+}
+
+func TestRequestHandler_CancelAfterExecutionCompletes(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	task := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+	store := testutil.NewTestTaskStore().WithTasks(t, task)
+	started, cancelStarted := make(chan struct{}), make(chan struct{})
+	finishExecution, finishCancel := make(chan struct{}), make(chan struct{})
+	var cancelCalls, cleanupCalls atomic.Int32
+	agent := &mockAgentExecutor{
+		ExecuteFunc: func(_ context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				close(started)
+				<-finishExecution
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+			}
+		},
+		CancelFunc: func(_ context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				cancelCalls.Add(1)
+				close(cancelStarted)
+				<-finishCancel
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+		CleanupFn: func(context.Context, a2a.SendMessageResult, error) { cleanupCalls.Add(1) },
+	}
+	handler := NewHandler(agent, WithTaskStore(store))
+	req := &a2a.SendMessageRequest{Message: newUserMessage(task, "work")}
+	type streamResult struct {
+		events []a2a.Event
+		err    error
+	}
+	stream := make(chan streamResult, 1)
+	go func() {
+		events, err := collectEvents(handler.SendStreamingMessage(ctx, req))
+		stream <- streamResult{events: events, err: err}
+	}()
+	<-started
+	cancel := make(chan error, 1)
+	go func() {
+		_, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: task.ID})
+		cancel <- err
+	}()
+	<-cancelStarted
+	close(finishExecution)
+	gotStream := <-stream
+	if gotStream.err != nil {
+		t.Fatalf("handler.SendStreamingMessage() error = %v, want nil", gotStream.err)
+	}
+	if len(gotStream.events) == 0 || !a2aevent.IsFinal(gotStream.events[len(gotStream.events)-1]) {
+		t.Fatalf("handler.SendStreamingMessage() events = %v, want final event", gotStream.events)
+	}
+	inner := handler.(*InterceptedHandler).Handler.(*defaultRequestHandler)
+	if _, err := inner.execManager.Execute(ctx, req); !errors.Is(err, taskexec.ErrCancelationInProgress) {
+		t.Fatalf("manager.Execute() error = %v, want %v", err, taskexec.ErrCancelationInProgress)
+	}
+	close(finishCancel)
+	if err := <-cancel; !errors.Is(err, a2a.ErrTaskNotCancelable) {
+		t.Fatalf("handler.CancelTask() error = %v, want %v", err, a2a.ErrTaskNotCancelable)
+	}
+	got, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: task.ID})
+	if err != nil || got.Status.State != a2a.TaskStateCompleted {
+		t.Fatalf("handler.GetTask() = (%v, %v), want completed task", got, err)
+	}
+	if calls := cancelCalls.Load(); calls != 1 {
+		t.Fatalf("agent.Cancel() calls = %d, want 1", calls)
+	}
+	if calls := cleanupCalls.Load(); calls != 2 {
+		t.Fatalf("agent.Cleanup() calls = %d, want 2", calls)
+	}
 }
