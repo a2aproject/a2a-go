@@ -129,7 +129,8 @@ type agentSlot struct {
 
 	// Guarded by Executor.mu.
 	agent    *agent
-	refs     int // turns and turn setups using the agent
+	starting bool // a pool slot is reserved while Agent.Start and initialize run
+	refs     int  // turns and turn setups using the agent
 	lastUsed time.Time
 	idle     *time.Timer
 	startErr error     // the last failed start
@@ -206,15 +207,27 @@ func (e *Executor) stopIdle(s *agentSlot) {
 
 // stopIfIdle stops the agent of s if it is unused. The caller holds s.startMu.
 func (e *Executor) stopIfIdle(s *agentSlot) bool {
-	e.mu.Lock()
-	ag := s.agent
-	if s.refs > 0 || ag == nil {
-		e.mu.Unlock()
+	ag := e.takeIdle(s)
+	if ag == nil {
 		return false
 	}
-	s.agent = nil
-	e.mu.Unlock()
+	e.closeIdle(s, ag)
+	return true
+}
 
+// The caller holds s.startMu through takeIdle and closeIdle.
+func (e *Executor) takeIdle(s *agentSlot) *agent {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ag := s.agent
+	if s.refs > 0 || ag == nil {
+		return nil
+	}
+	s.agent = nil
+	return ag
+}
+
+func (e *Executor) closeIdle(s *agentSlot, ag *agent) {
 	if err := ag.client.Close(); err != nil {
 		log.Warn(context.Background(), "failed to stop acp agent", "key", s.key, "cause", err)
 	}
@@ -223,7 +236,6 @@ func (e *Executor) stopIfIdle(s *agentSlot) bool {
 		e.dropSlotLocked(s)
 	}
 	e.mu.Unlock()
-	return true
 }
 
 // Close stops all agents. Tasks in progress fail.
@@ -318,13 +330,26 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 	if startErr != nil && time.Now().Before(retryAt) {
 		return nil, fmt.Errorf("the agent failed to start, retrying after %s: %w", retryAt.Format(time.TimeOnly), startErr)
 	}
-	if err := e.makeRoom(s); err != nil {
+	e.poolMu.Lock()
+	victim, victimAgent, err := e.makeRoom(s)
+	if err != nil {
+		e.poolMu.Unlock()
 		return nil, err
 	}
+	e.mu.Lock()
+	s.starting = true
+	e.mu.Unlock()
+	e.poolMu.Unlock()
+	if victimAgent != nil {
+		e.closeIdle(victim, victimAgent)
+		victim.startMu.Unlock()
+		log.Info(context.Background(), "stopped idle acp agent to start another", "key", victim.key, "for", s.key)
+	}
 
-	ag, err := e.startAgent(ctx, s.key)
+	ag, err = e.startAgent(ctx, s.key)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	s.starting = false
 	if errors.Is(err, ErrNotOwner) {
 		return nil, err
 	}
@@ -337,39 +362,38 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 	return ag, nil
 }
 
-// makeRoom stops the least recently used idle agent if starting the agent of
-// s would exceed PoolConfig.MaxAgents.
-func (e *Executor) makeRoom(s *agentSlot) error {
+// makeRoom reserves the least recently used idle agent for stopping if
+// starting s would exceed the limit. The caller holds poolMu and must close
+// the returned agent and unlock its slot after releasing poolMu.
+func (e *Executor) makeRoom(s *agentSlot) (*agentSlot, *agent, error) {
 	if e.maxAgents <= 0 {
-		return nil
+		return nil, nil, nil
 	}
 	e.mu.Lock()
 	running := 0
 	var victim *agentSlot
 	for _, other := range e.agents {
-		if other == s || other.agent == nil {
+		if other == s || (other.agent == nil && !other.starting) {
 			continue
 		}
 		running++
-		if other.refs == 0 && (victim == nil || other.lastUsed.Before(victim.lastUsed)) {
+		if other.agent != nil && other.refs == 0 && (victim == nil || other.lastUsed.Before(victim.lastUsed)) {
 			victim = other
 		}
 	}
 	e.mu.Unlock()
 	if running < e.maxAgents {
-		return nil
+		return nil, nil, nil
 	}
 	// TryLock: the victim is idle, so its startMu is only held by an idle stop
 	// or a turn which just started using it, and then it isn't a victim.
 	if victim != nil && victim.startMu.TryLock() {
-		stopped := e.stopIfIdle(victim)
-		victim.startMu.Unlock()
-		if stopped {
-			log.Info(context.Background(), "stopped idle acp agent to start another", "key", victim.key, "for", s.key)
-			return nil
+		if agent := e.takeIdle(victim); agent != nil {
+			return victim, agent, nil
 		}
+		victim.startMu.Unlock()
 	}
-	return fmt.Errorf("all %d agents are busy, send the message again later", e.maxAgents)
+	return nil, nil, fmt.Errorf("all %d agents are busy, send the message again later", e.maxAgents)
 }
 
 // startAgent starts the agent and negotiates the protocol version within Config.StartTimeout.
