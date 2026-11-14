@@ -172,15 +172,13 @@ There are three distinct cancellation scenarios, all handled by `localManager.Ca
 
 **Scenario 2: Cancel with Active Execution (`handleCancelWithConcurrentRun`, line 309)**
 
-1. Creates a canceler but **no separate processor** -- the existing execution's processor handles events.
-2. Calls `canceler.Cancel(ctx, run.pipe.Writer)` -- writes the cancel signal to the **same pipe** the active execution uses.
-3. The execution's consumer sees the cancel event in the pipe and processes it through its own processor.
-4. Waits for the execution's promise to resolve: `run.result.wait(ctx)`.
-5. Copies the execution result to the cancelation result.
-
-The cancelation result is the same as the execution result. If the execution was already completing with a different state, the cancellation might not take effect (see the TODO comment in `handleCancelWithConcurrentRun`).
+1. Creates a canceler and sends its events to the active execution's pipe, tracking which events the consumer reads.
+2. Once the canceler returns, waits for the execution's promise to resolve: `run.result.wait(ctx)`.
+3. If the execution ends in a terminal state, uses that result. If it stops in a nonterminal state before all cancel events are read, processes only the unread events using a fresh cancelation processor.
 
 `AgentExecutor.Cancel` implementations often stop the running work before yielding their `CANCELED` event (e.g. `a2aacp` cancels the ACP turn first). The agent can then end the execution with its own terminal event, and `cleanupExecution` closes the pipe before the canceler writes. The write fails with `eventqueue.ErrQueueClosed`, which `handleCancelWithConcurrentRun` treats as "the execution already finished" and resolves the cancelation to the execution result instead of failing. Any other canceler error fails the cancelation.
+
+If an execution stops at `INPUT_REQUIRED` before cancellation events are processed, cancellation writes can race both pipe closure and the consumer's exit. The local pipe records whether each cancellation event was read, and the consumer signals when it stops; cancellation writes do not wait for the consumer. After the execution settles, unread events are processed using a fresh task snapshot. The agent's `Cancel` is called once, because the interface does not require it to be idempotent. If execution ends in a terminal state, the execution result remains authoritative.
 
 **Scenario 3: Duplicate Cancel (Cancelation Already in Progress)**
 

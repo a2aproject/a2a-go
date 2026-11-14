@@ -315,6 +315,16 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMess
 
 // CreateCanceler creates a new task canceler for the given cancel request.
 func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Canceler, taskexec.Processor, taskexec.Cleaner, error) {
+	canceler, processor, cleaner, err := f.createCanceler(ctx, params)
+	return canceler, processor, cleaner, err
+}
+
+func (f *factory) CreateCancelProcessor(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Processor, error) {
+	_, processor, _, err := f.createCanceler(ctx, params)
+	return processor, err
+}
+
+func (f *factory) createCanceler(ctx context.Context, params *a2a.CancelTaskRequest) (taskexec.Canceler, taskexec.Processor, taskexec.Cleaner, error) {
 	storedTask, err := f.taskStore.Get(ctx, params.ID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to load a task: %w", err)

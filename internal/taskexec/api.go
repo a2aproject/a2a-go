@@ -56,6 +56,7 @@ type Factory interface {
 
 	// CreateCanceler is used to create initialized Canceler and Processor for a Task cancelation which will run in separate goroutines.
 	CreateCanceler(context.Context, *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error)
+	CreateCancelProcessor(context.Context, *a2a.CancelTaskRequest) (Processor, error)
 }
 
 // Processor implementation handles events produced during AgentExecution.

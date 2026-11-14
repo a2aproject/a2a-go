@@ -45,7 +45,7 @@ var (
 // The following guarantees are provided:
 //   - If a Task is being canceled, a concurrent Execution can't be started.
 //   - If a Task is being canceled, a concurrent cancelation will await the existing cancelation.
-//   - If a Task is being executed, a concurrent cancelation will have the same result as the execution.
+//   - If a Task is being executed, a concurrent cancelation shares its events and observes its terminal result.
 //   - If a Task is being executed, a concurrent execution will be rejected.
 //
 // Both cancelations and executions are started in detached context and run until completion.
@@ -79,7 +79,9 @@ type localExecution struct {
 
 	// exiting flag is set to true after we know the execution is about to finish.
 	// a fast client might attempt to send a follow-up before the execution gets unregistered.
-	exiting atomic.Bool
+	exiting          atomic.Bool
+	consumerDone     chan struct{}
+	consumerDoneOnce sync.Once
 }
 
 var _ Manager = (*localManager)(nil)
@@ -128,6 +130,7 @@ func newLocalExecution(qm eventqueue.Manager, store taskstore.Store, tid a2a.Tas
 		store:        store,
 		pipe:         eventpipe.NewLocal(),
 		result:       newPromise(),
+		consumerDone: make(chan struct{}),
 	}
 }
 
@@ -273,6 +276,7 @@ func (m *localManager) cleanupExecution(ctx context.Context, execution *localExe
 // The returned value is set as Execution result.
 func (m *localManager) handleExecution(ctx context.Context, execution *localExecution, eventBroadcast eventqueue.Writer) {
 	defer m.cleanupExecution(ctx, execution)
+	defer execution.consumerDoneOnce.Do(func() { close(execution.consumerDone) })
 
 	executor, processor, cleaner, err := m.factory.CreateExecutor(ctx, execution.tid, execution.req)
 	if err != nil {
@@ -296,7 +300,10 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 	result, err := runProducerConsumer(
 		ctx,
 		func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) },
-		handler.processEvents,
+		func(ctx context.Context) (a2a.SendMessageResult, error) {
+			defer execution.consumerDoneOnce.Do(func() { close(execution.consumerDone) })
+			return handler.processEvents(ctx)
+		},
 		nil,
 		m.panicHandler,
 		tracker,
@@ -376,8 +383,75 @@ func (m *localManager) cancelationPanicError(ctx context.Context, r any) error {
 	return err
 }
 
-// Sends a cancelation request on the queue which is being used by an active execution.
-// Then waits for the execution to complete and resolves cancelation to the same result.
+type cancelHandoffWriter struct {
+	run     *localExecution
+	mu      sync.Mutex
+	records []cancelHandoffRecord
+}
+
+type cancelHandoffRecord struct {
+	event a2a.Event
+	read  <-chan struct{}
+}
+
+func (w *cancelHandoffWriter) Write(ctx context.Context, event a2a.Event) error {
+	read, err := w.run.pipe.WriteTracked(ctx, event, w.run.consumerDone)
+	if errors.Is(err, eventqueue.ErrQueueClosed) {
+		result, waitErr := w.run.result.wait(ctx)
+		if waitErr != nil {
+			return waitErr
+		}
+		task, ok := result.(*a2a.Task)
+		if !ok || task.Status.State.Terminal() {
+			return eventqueue.ErrQueueClosed
+		}
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.records = append(w.records, cancelHandoffRecord{event: event, read: read})
+	w.mu.Unlock()
+	return nil
+}
+
+func (w *cancelHandoffWriter) pending() []a2a.Event {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var pending []a2a.Event
+	for _, r := range w.records {
+		if r.read != nil {
+			select {
+			case <-r.read:
+				continue
+			default:
+			}
+		}
+		pending = append(pending, r.event)
+	}
+	return pending
+}
+
+func (m *localManager) processPendingCancelEvents(ctx context.Context, req *a2a.CancelTaskRequest, events []a2a.Event) (a2a.SendMessageResult, error) {
+	processor, err := m.factory.CreateCancelProcessor(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("canceler processor setup failed: %w", err)
+	}
+	for _, event := range events {
+		result, err := processor.Process(ctx, event)
+		if err != nil {
+			return nil, fmt.Errorf("processor error: %w", err)
+		}
+		if result.ExecutionResult != nil {
+			return result.ExecutionResult, nil
+		}
+	}
+	return nil, fmt.Errorf("cancelation finished without a final result: %w", a2a.ErrInvalidAgentResponse)
+}
+
+// Sends cancelation events to the active execution, then processes any unread events
+// after a nonterminal execution result using a fresh task snapshot.
 func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel *cancelation, run *localExecution) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -396,13 +470,8 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 		return
 	}
 
-	// TODO(yarolegovich): better handling for concurrent Execute() and Cancel() calls.
-	// Currently we try to send a cancelation signal on the same queue which active execution uses for events.
-	// This means a cancelation will fail if the concurrent execution fails or resolves to a
-	// non-terminal state (eg. input-required) before receiving the cancelation signal.
-	// In this case our cancel will resolve to ErrTaskNotCancelable. It would probably be more
-	// correct to restart the cancelation as if there was no concurrent execution at the moment of Cancel call.
-	if err := m.cancelOnPipe(ctx, canceler, run.pipe.Writer); err != nil {
+	writer := &cancelHandoffWriter{run: run}
+	if err := m.cancelOnPipe(ctx, canceler, writer); err != nil {
 		// The pipe is closed after the execution finishes. This happens when the agent ends the execution in
 		// response to the cancelation before the canceler writes its events, so we resolve to the execution result.
 		if !errors.Is(err, eventqueue.ErrQueueClosed) {
@@ -416,6 +485,13 @@ func (m *localManager) handleCancelWithConcurrentRun(ctx context.Context, cancel
 	log.Debug(ctx, "waiting for concurrent cancelation result")
 
 	result, err := run.result.wait(ctx)
+	if err == nil {
+		if task, ok := result.(*a2a.Task); ok && !task.Status.State.Terminal() {
+			if pending := writer.pending(); len(pending) > 0 {
+				result, err = m.processPendingCancelEvents(ctx, cancel.req, pending)
+			}
+		}
+	}
 
 	cleaner.Cleanup(ctx, result, err)
 
