@@ -295,12 +295,20 @@ func (t *turn) mergeTool(patch acp.ToolCall) *acp.ToolCall {
 	return tc
 }
 
-// toPrompt converts message parts to prompt content.
+// toPrompt converts message parts to prompt content. A part that carries no
+// content is dropped rather than sent: the ACP blocks marshal most content
+// fields with omitempty, so an empty part would reach the agent as a block
+// missing its required field ({"type":"text"}), and agents such as opencode
+// reject the whole prompt with "Invalid params" instead of failing one part.
 func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilities) ([]acp.ContentBlock, error) {
 	var out []acp.ContentBlock
 	for i, p := range parts {
 		switch c := p.Content.(type) {
 		case a2a.Text:
+			if string(c) == "" {
+				log.Warn(ctx, "dropped empty prompt part", "index", i, "type", "text")
+				continue
+			}
 			out = append(out, acp.ContentBlock{Type: "text", Text: string(c)})
 		case a2a.Data:
 			b, err := json.Marshal(c.Value)
@@ -309,12 +317,21 @@ func toPrompt(ctx context.Context, parts []*a2a.Part, caps acp.PromptCapabilitie
 			}
 			out = append(out, acp.ContentBlock{Type: "text", Text: string(b)})
 		case a2a.URL:
+			if string(c) == "" {
+				log.Warn(ctx, "dropped empty prompt part", "index", i, "type", "url")
+				continue
+			}
 			name := p.Filename
 			if name == "" {
 				name = string(c)
 			}
 			out = append(out, acp.ContentBlock{Type: "resource_link", URI: string(c), Name: name, MimeType: p.MediaType})
 		case a2a.Raw:
+			if len(c) == 0 {
+				log.Warn(ctx, "dropped empty prompt part", "index", i, "type", "file",
+					"mediaType", p.MediaType, "filename", p.Filename)
+				continue
+			}
 			block, err := rawBlock(i, p, c, caps)
 			if err != nil {
 				return nil, err
