@@ -1645,6 +1645,7 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	executor := newEventReplayAgent(executorEvents, nil)
 	handler := NewHandler(executor, WithTaskStore(ts))
 	firstEventConsumed := make(chan struct{})
+	subscribed := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
@@ -1653,7 +1654,12 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 				if !yield(event, err) {
 					return
 				}
-				once.Do(func() { time.Sleep(10 * time.Millisecond) })
+				once.Do(func() {
+					select {
+					case <-subscribed:
+					case <-ctx.Done():
+					}
+				})
 			}
 		}
 	}
@@ -1668,10 +1674,15 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 
 	<-firstEventConsumed
 
-	seq := handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID})
-	gotEvents, err := collectEvents(seq)
-	if err != nil {
-		t.Fatalf("collectEvents() failed: %v", err)
+	var gotEvents []a2a.Event
+	for event, err := range handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID}) {
+		if err != nil {
+			t.Fatalf("SubscribeToTask() error = %v", err)
+		}
+		if len(gotEvents) == 0 {
+			close(subscribed)
+		}
+		gotEvents = append(gotEvents, event)
 	}
 
 	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
