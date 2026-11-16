@@ -365,6 +365,72 @@ func TestAgentCard_OAuth2_AllFlows_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestAgentCard_OAuth2_PointerFlows(t *testing.T) {
+	t.Parallel()
+
+	scopes := map[string]string{"openid": "OpenID Connect"}
+	tests := []struct {
+		name string
+		flow a2a.OAuthFlows
+		want a2a.OAuthFlows
+	}{
+		{
+			name: "authorizationCode",
+			flow: &a2a.AuthorizationCodeOAuthFlow{AuthorizationURL: "https://example.com/authorize", TokenURL: "https://example.com/token", Scopes: scopes},
+			want: a2a.AuthorizationCodeOAuthFlow{AuthorizationURL: "https://example.com/authorize", TokenURL: "https://example.com/token", Scopes: scopes},
+		},
+		{
+			name: "clientCredentials",
+			flow: &a2a.ClientCredentialsOAuthFlow{TokenURL: "https://example.com/token", Scopes: scopes},
+			want: a2a.ClientCredentialsOAuthFlow{TokenURL: "https://example.com/token", Scopes: scopes},
+		},
+		{
+			name: "implicit",
+			flow: &a2a.ImplicitOAuthFlow{AuthorizationURL: "https://example.com/authorize", Scopes: scopes},
+			want: a2a.ImplicitOAuthFlow{AuthorizationURL: "https://example.com/authorize", Scopes: scopes},
+		},
+		{
+			name: "password",
+			flow: &a2a.PasswordOAuthFlow{TokenURL: "https://example.com/token", Scopes: scopes},
+			want: a2a.PasswordOAuthFlow{TokenURL: "https://example.com/token", Scopes: scopes},
+		},
+		{
+			name: "deviceCode",
+			flow: &a2a.DeviceCodeOAuthFlow{DeviceAuthorizationURL: "https://example.com/device", TokenURL: "https://example.com/token", Scopes: scopes},
+			want: a2a.DeviceCodeOAuthFlow{DeviceAuthorizationURL: "https://example.com/device", TokenURL: "https://example.com/token", Scopes: scopes},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			prod := &compatProducer{&staticCardProducer{card: oauth2Card(tc.flow)}}
+			body, err := prod.CardJSON(t.Context())
+			if err != nil {
+				t.Fatalf("compatProducer.CardJSON() error = %v", err)
+			}
+			got, err := NewAgentCardParser()(body)
+			if err != nil {
+				t.Fatalf("AgentCardParser() error = %v", err)
+			}
+			want := oauth2Card(tc.want).SecuritySchemes["oauth2"]
+			if diff := cmp.Diff(want, got.SecuritySchemes["oauth2"]); diff != "" {
+				t.Fatalf("AgentCardParser() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestAgentCard_OAuth2_NilPointerFlow(t *testing.T) {
+	t.Parallel()
+
+	prod := &compatProducer{&staticCardProducer{card: oauth2Card((*a2a.AuthorizationCodeOAuthFlow)(nil))}}
+	if body, err := prod.CardJSON(t.Context()); err == nil {
+		t.Fatalf("compatProducer.CardJSON() = %s, want error", body)
+	}
+}
+
 func keysOf(m map[string]json.RawMessage) []string {
 	if len(m) == 0 {
 		return nil

@@ -25,7 +25,9 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -126,6 +128,49 @@ func ToGRPCError(err error) error {
 		return st.Err()
 	}
 	return withDetails.Err()
+}
+
+// FromGRPCErrorWithMetadata translates gRPC errors into a2a errors like [FromGRPCError] and sets the
+// merged response metadata md, for example the header and trailer of the call, as
+// [a2a.Error.ServiceParams]. Errors which are not gRPC status errors are returned unchanged.
+func FromGRPCErrorWithMetadata(err error, md ...metadata.MD) error {
+	return utils.WithServiceParams(FromGRPCError(err), mergeMetadata(md...))
+}
+
+// CallMetadata collects the response header and trailer of a call made with its [CallMetadata.CallOptions].
+type CallMetadata struct {
+	Header  metadata.MD
+	Trailer metadata.MD
+}
+
+// CallOptions returns the options which make a call store its response header and trailer in m.
+func (m *CallMetadata) CallOptions() []grpc.CallOption {
+	return []grpc.CallOption{grpc.Header(&m.Header), grpc.Trailer(&m.Trailer)}
+}
+
+// FromGRPCError translates err with [FromGRPCErrorWithMetadata] using the collected metadata.
+func (m *CallMetadata) FromGRPCError(err error) error {
+	return FromGRPCErrorWithMetadata(err, m.Header, m.Trailer)
+}
+
+// StreamMetadata returns the response header and trailer of a stream which has ended.
+func StreamMetadata(stream grpc.ClientStream) []metadata.MD {
+	header, _ := stream.Header()
+	return []metadata.MD{header, stream.Trailer()}
+}
+
+// mergeMetadata joins md into a new map. metadata.MD keys are already lowercase.
+func mergeMetadata(md ...metadata.MD) map[string][]string {
+	var merged map[string][]string
+	for _, m := range md {
+		for k, vals := range m {
+			if merged == nil {
+				merged = make(map[string][]string)
+			}
+			merged[k] = append(merged[k], vals...)
+		}
+	}
+	return merged
 }
 
 // FromGRPCError translates gRPC errors into a2a errors.

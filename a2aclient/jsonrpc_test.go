@@ -1032,6 +1032,15 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 			status:      http.StatusUnauthorized,
 			contentType: "text/plain",
 			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantErr:     a2a.ErrUnauthenticated,
+			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
+		},
+		{
+			name:        "gateway JSON error that is not JSON-RPC",
+			status:      http.StatusUnauthorized,
+			contentType: "application/json",
+			body:        `{"error":{"code":401,"message":"Unauthorized"}}`,
+			wantErr:     a2a.ErrUnauthenticated,
 			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
 		},
 		{
@@ -1039,6 +1048,7 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 			status:      http.StatusBadGateway,
 			contentType: "application/json",
 			body:        `{"message":"upstream unavailable"}`,
+			wantErr:     a2a.ErrServerError,
 			wantMsg:     "unexpected HTTP status: 502 Bad Gateway",
 		},
 		{
@@ -1046,7 +1056,24 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 			status:      http.StatusForbidden,
 			contentType: "application/json",
 			body:        `{"jsonrpc":"2.0","error":{"code":-31403`,
+			wantErr:     a2a.ErrUnauthorized,
 			wantMsg:     "unexpected HTTP status: 403 Forbidden",
+		},
+		{
+			name:        "plain text server error",
+			status:      http.StatusInternalServerError,
+			contentType: "text/plain",
+			body:        "boom",
+			wantErr:     a2a.ErrServerError,
+			wantMsg:     "unexpected HTTP status: 500 Internal Server Error",
+		},
+		{
+			name:        "not found is not method not found",
+			status:      http.StatusNotFound,
+			contentType: "text/plain",
+			body:        "404 page not found",
+			wantErr:     a2a.ErrServerError,
+			wantMsg:     "unexpected HTTP status: 404 Not Found",
 		},
 	}
 
@@ -1056,6 +1083,7 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", tc.contentType)
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="x"`)
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))
 			}))
@@ -1068,16 +1096,92 @@ func TestJSONRPCTransport_NonOKStatus(t *testing.T) {
 				if err == nil {
 					t.Fatalf("transport.%s() error = nil, want non-nil", op)
 				}
-				if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("transport.%s() error = %v, want %v", op, err, tc.wantErr)
 				}
 				if !strings.Contains(err.Error(), tc.wantMsg) {
 					t.Fatalf("transport.%s() error = %v, want message containing %q", op, err, tc.wantMsg)
 				}
+				checkWWWAuthenticate(t, op, err)
 			}
 
 			_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
 			checkErr("GetTask", err)
+
+			var streamErr error
+			for _, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+			}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			checkErr("SendStreamingMessage", streamErr)
+		})
+	}
+}
+
+// checkWWWAuthenticate verifies that err is an [*a2a.Error] carrying the WWW-Authenticate response
+// header set by the test servers.
+func checkWWWAuthenticate(t *testing.T, op string, err error) {
+	t.Helper()
+	var a2aErr *a2a.Error
+	if !errors.As(err, &a2aErr) {
+		t.Fatalf("transport.%s() error = %T(%v), want *a2a.Error", op, err, err)
+	}
+	want := []string{`Bearer resource_metadata="x"`}
+	if diff := cmp.Diff(want, a2aErr.ServiceParams["www-authenticate"]); diff != "" {
+		t.Fatalf("transport.%s() error ServiceParams[www-authenticate] wrong (-want +got):\n%s", op, diff)
+	}
+}
+
+func TestJSONRPCTransport_ErrorServiceParams(t *testing.T) {
+	t.Parallel()
+
+	jsonrpcErr := `{"jsonrpc":"2.0","id":"1","error":{"code":-31401,"message":"token expired"}}`
+	testCases := []struct {
+		name        string
+		contentType string
+		body        string
+	}{
+		{
+			name:        "JSON-RPC error in a 200 response",
+			contentType: "application/json",
+			body:        jsonrpcErr,
+		},
+		{
+			name:        "JSON-RPC error event in an SSE stream",
+			contentType: "text/event-stream",
+			body:        "data: " + jsonrpcErr + "\n\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="x"`)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+
+			transport := NewJSONRPCTransport(server.URL, nil)
+
+			checkErr := func(op string, err error) {
+				t.Helper()
+				if !errors.Is(err, a2a.ErrUnauthenticated) || err.Error() != "token expired" {
+					t.Fatalf("transport.%s() error = %v, want %v with the server message", op, err, a2a.ErrUnauthenticated)
+				}
+				checkWWWAuthenticate(t, op, err)
+			}
+
+			if tc.contentType == "application/json" {
+				_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+				checkErr("GetTask", err)
+			}
 
 			var streamErr error
 			for _, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{

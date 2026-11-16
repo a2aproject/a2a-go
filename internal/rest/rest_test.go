@@ -397,6 +397,8 @@ func TestRESTError_RoundTrip(t *testing.T) {
 			}
 			if diff := cmp.Diff(*tc.want, *a2aBack,
 				cmpopts.EquateErrors(),
+				// ServiceParams holds the response headers, covered by TestFromRESTErrorServiceParams.
+				cmpopts.IgnoreFields(a2a.Error{}, "ServiceParams"),
 				cmpopts.IgnoreMapEntries(func(k string, _ string) bool {
 					return k == "timestamp"
 				}),
@@ -651,6 +653,76 @@ func TestFromRESTErrorHTTPStatusFallback(t *testing.T) {
 			}
 			if tt.wantMessage != "" && !strings.Contains(gotErr.Error(), tt.wantMessage) {
 				t.Fatalf("FromRESTError() error message %q does not contain %q", gotErr.Error(), tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestFromRESTErrorServiceParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		statusCode   int
+		contentType  string
+		responseBody string
+		wantError    error
+	}{
+		{
+			name:         "google.rpc.Status body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 401, "UNAUTHENTICATED", "token expired", "UNAUTHENTICATED"),
+			wantError:    a2a.ErrUnauthenticated,
+		},
+		{
+			name:         "plain text body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "text/plain",
+			responseBody: "unauthorized",
+			wantError:    a2a.ErrUnauthenticated,
+		},
+		{
+			name:         "trailing data after error body",
+			statusCode:   http.StatusBadRequest,
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS") + "TRAILING_GARBAGE",
+			wantError:    a2a.ErrParseError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{
+				StatusCode: tt.statusCode,
+				Header: http.Header{
+					"Content-Type":     []string{tt.contentType},
+					"Www-Authenticate": []string{`Bearer resource_metadata="x"`},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(tt.responseBody)),
+			}
+
+			gotErr := FromRESTError(resp)
+
+			if !errors.Is(gotErr, tt.wantError) {
+				t.Fatalf("FromRESTError() error = %v, want %v", gotErr, tt.wantError)
+			}
+			var a2aErr *a2a.Error
+			if !errors.As(gotErr, &a2aErr) {
+				t.Fatalf("FromRESTError() error = %T, want *a2a.Error", gotErr)
+			}
+			want := map[string][]string{
+				"content-type":     {tt.contentType},
+				"www-authenticate": {`Bearer resource_metadata="x"`},
+			}
+			if diff := cmp.Diff(want, a2aErr.ServiceParams); diff != "" {
+				t.Fatalf("FromRESTError() ServiceParams wrong (-want +got):\n%s", diff)
+			}
+			resp.Header.Set("Www-Authenticate", "changed")
+			if got := a2aErr.ServiceParams["www-authenticate"][0]; got != `Bearer resource_metadata="x"` {
+				t.Fatalf("FromRESTError() ServiceParams share values with the response headers, got %q", got)
 			}
 		})
 	}

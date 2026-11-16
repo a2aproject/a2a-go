@@ -183,7 +183,7 @@ func (t *restCompatTransport) doStreamingRequest(ctx context.Context, req *compa
 				return
 			}
 			if restErr := parseErrorBytes(data); restErr != nil {
-				yield(nil, restErr)
+				yield(nil, utils.WithServiceParams(restErr, utils.ServiceParamsFromHeader(resp.Header)))
 				return
 			}
 			event, err := pbjson.FromProtoStreamEvent(data)

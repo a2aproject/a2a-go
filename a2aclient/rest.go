@@ -189,7 +189,7 @@ func (t *RESTTransport) doStreamingRequest(ctx context.Context, req *restRequest
 
 			event, err := rest.ParseStreamResponse(data)
 			if err != nil {
-				yield(nil, err)
+				yield(nil, utils.WithServiceParams(err, utils.ServiceParamsFromHeader(resp.Header)))
 				return
 			}
 
