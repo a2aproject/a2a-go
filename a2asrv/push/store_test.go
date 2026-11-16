@@ -15,6 +15,7 @@
 package push
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -213,8 +214,8 @@ func TestInMemoryPushConfigStore_Get(t *testing.T) {
 					t.Fatalf("Get() (-want +got):\ngot = %v\nwant %v\ndiff = %s", got, tc.want, diff)
 				}
 			} else {
-				if err == nil || err.Error() != tc.wantErr.Error() {
-					t.Fatalf("Save() error = %v, want %v", err, tc.wantErr)
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("Get() error = %v, want %v", err, tc.wantErr)
 				}
 			}
 		})
