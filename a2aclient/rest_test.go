@@ -768,18 +768,10 @@ func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
 func TestRESTTransport_ErrorRedactsQueryParams(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	serverURL := server.URL
-	server.Close()
-
-	u, err := url.Parse(serverURL)
-	if err != nil {
-		t.Fatalf("url.Parse(%q) error = %v", serverURL, err)
-	}
-	transport := NewRESTTransport(u, nil)
+	transport := NewRESTTransport(&url.URL{Scheme: "http", Host: "agent.example.com"}, unreachableClient)
 	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
 
-	_, err = transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
 	if err == nil {
 		t.Fatalf("transport.GetTask() error = nil, want non-nil")
 	}
@@ -917,4 +909,12 @@ func TestRESTTransport_ErrorServiceParams(t *testing.T) {
 			checkErr("SendStreamingMessage", streamErr)
 		})
 	}
+}
+
+var unreachableClient = &http.Client{Transport: unreachableTransport{}}
+
+type unreachableTransport struct{}
+
+func (unreachableTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("connection refused")
 }
