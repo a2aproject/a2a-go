@@ -563,6 +563,9 @@ func TestWithPlugins_WrapPushDelivery(t *testing.T) {
 				d.Headers.Add("X-Plugin", name)
 				result, err := next(ctx, d)
 				recorder.add(fmt.Sprintf("%s-after-%d", name, result.StatusCode))
+				if result.Err != nil {
+					t.Errorf("push delivery error = %v", result.Err)
+				}
 				return result, err
 			}
 		}}

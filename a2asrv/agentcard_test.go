@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,8 +51,6 @@ func get(t *testing.T, srv *httptest.Server, ifNoneMatch string) *http.Response 
 func TestAgentCardHandler(t *testing.T) {
 	t.Parallel()
 	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
-
-	slog.SetDefault(slog.New(slog.DiscardHandler))
 
 	testCases := []struct {
 		name        string
