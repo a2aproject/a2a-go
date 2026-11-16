@@ -13,10 +13,10 @@ The SDK employs a **layered, transport-agnostic architecture**:
 ## 3. Directory Map
 *   **`a2a/`**: **Core Domain.** Universal primitives (`Task`, `Message`, `Event`) and their constructors (e.g., `a2a.NewMessage(...)`). Single source of truth.
 *   **`a2aclient/`**: **Client SDK.** High-level API structs and interfaces to connect to and interact with A2A servers.
-*   **`a2asrv/`**: **Server SDK.** Interfaces for server execution (`AgentExecutor`), handler patterns, middleware, and non-gRPC transports (REST, JSON-RPC).
+*   **`a2asrv/`**: **Server SDK.** Interfaces for server execution (`AgentExecutor`), handler patterns, middleware, task persistence adapters (`taskstore/`), and non-gRPC transports (REST, JSON-RPC).
 *   **`a2agrpc/` & `a2apb/`**: **gRPC Transport.** Logic for A2A over gRPC and underlying Protobuf definitions (`v1/pbconv/` for type conversions).
 *   **`integrations/executor/`**: Ready-made `AgentExecutor` implementations, e.g. `a2aacp` for Agent Client Protocol agents (see `ACP_EXECUTOR.md`).
-*   **`internal/`**: **Private Mechanisms.** Task lifecycle, state machine configuration (`taskexec/`), and task persistence adapters (`taskstore/`). `acp/` and `subprocess/` support `integrations/executor/a2aacp`, which asks questions with the Structured Input extension (`a2aext/structuredinput`).
+*   **`internal/`**: **Private Mechanisms.** Task lifecycle and state machine configuration (`taskexec/`). `acp/` and `subprocess/` support `integrations/executor/a2aacp`, which asks questions with the Structured Input extension (`a2aext/structuredinput`).
 *   **`e2e/` & `examples/`**: End-to-end tests and reference implementations (e.g., `helloworld`).
 *   **`docs/`**: Documentation, including AI developer guides (`ai/`).
 
