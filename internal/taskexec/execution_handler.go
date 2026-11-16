@@ -67,7 +67,10 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 
 			msg := &eventqueue.Message{Event: toEmit, TaskVersion: processResult.TaskVersion}
 			if err := h.handledEventQueue.Write(ctx, msg); err != nil {
-				return h.handleErrorFn(ctx, fmt.Errorf("context canceled on event broadcast: %w", context.Cause(ctx)))
+				if ctx.Err() != nil {
+					return h.handleErrorFn(ctx, fmt.Errorf("context canceled on event broadcast: %w", context.Cause(ctx)))
+				}
+				return h.handleErrorFn(ctx, fmt.Errorf("event broadcast failed: %w", err))
 			}
 		}
 
@@ -178,9 +181,13 @@ func runProducerConsumer(
 		})
 	}
 
+	var heartbeatInterval time.Duration
 	if heartbeater != nil {
+		heartbeatInterval = heartbeater.HeartbeatInterval()
+	}
+	if heartbeatInterval > 0 {
 		group.Go(func() error {
-			timer := time.NewTicker(heartbeater.HeartbeatInterval())
+			timer := time.NewTicker(heartbeatInterval)
 			for {
 				select {
 				case <-ctx.Done():

@@ -402,6 +402,26 @@ type TaskStatus struct {
 	Timestamp *time.Time `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
 }
 
+// MarshalJSON implements json.Marshaler. The timestamp is written in the format
+// the spec requires, see [jsonTimestamp].
+func (s TaskStatus) MarshalJSON() ([]byte, error) {
+	type wire TaskStatus
+	return json.Marshal(struct {
+		wire
+		Timestamp *jsonTimestamp `json:"timestamp,omitempty"`
+	}{wire: wire(s), Timestamp: (*jsonTimestamp)(s.Timestamp)})
+}
+
+const timestampLayout = "2006-01-02T15:04:05.000Z"
+
+// jsonTimestamp writes a time as ISO 8601 formatted strings in UTC timezone with Millisecond precision.
+type jsonTimestamp time.Time
+
+// MarshalJSON implements json.Marshaler.
+func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(t).UTC().Format(timestampLayout))
+}
+
 // Meta implements MetadataCarrier.
 func (t *Task) Meta() map[string]any {
 	return t.Metadata
@@ -543,7 +563,9 @@ type TaskStatusUpdateEvent struct {
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
 func NewStatusUpdateEvent(infoProvider TaskInfoProvider, state TaskState, msg *Message) *TaskStatusUpdateEvent {
-	now := time.Now()
+	// Millisecond precision is what the spec writes on the wire, so the event
+	// reads back equal to the one created here.
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	taskInfo := infoProvider.TaskInfo()
 	return &TaskStatusUpdateEvent{
 		ContextID: taskInfo.ContextID,
@@ -691,13 +713,13 @@ type Data struct {
 }
 
 type part struct {
-	Text      *Text          `json:"text,omitempty"`
-	Raw       *Raw           `json:"raw,omitempty"`
-	Data      *any           `json:"data,omitempty"`
-	URL       *URL           `json:"url,omitempty"`
-	Filename  string         `json:"filename,omitempty"`
-	MediaType string         `json:"mediaType,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Text      *Text           `json:"text,omitempty"`
+	Raw       *Raw            `json:"raw,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	URL       *URL            `json:"url,omitempty"`
+	Filename  string          `json:"filename,omitempty"`
+	MediaType string          `json:"mediaType,omitempty"`
+	Metadata  map[string]any  `json:"metadata,omitempty"`
 }
 
 // MarshalJSON custom serializer that flattens Content into the Part object.
@@ -711,9 +733,16 @@ func (p Part) MarshalJSON() ([]byte, error) {
 	case Text:
 		wrapper.Text = &v
 	case Raw:
+		if v == nil {
+			v = Raw{}
+		}
 		wrapper.Raw = &v
 	case Data:
-		wrapper.Data = &v.Value
+		data, err := json.Marshal(v.Value)
+		if err != nil {
+			return nil, err
+		}
+		wrapper.Data = data
 	case URL:
 		if v != "" {
 			wrapper.URL = &v
@@ -744,12 +773,17 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 		content = *wrapper.Raw
 		n++
 	}
-	if wrapper.Data != nil {
-		content = Data{Value: *wrapper.Data}
-		n++
-	}
 	if wrapper.URL != nil && *wrapper.URL != "" {
 		content = *wrapper.URL
+		n++
+	}
+	// An explicit null data value is content only when no other field is set.
+	if len(wrapper.Data) > 0 && (n == 0 || string(wrapper.Data) != "null") {
+		var data any
+		if err := json.Unmarshal(wrapper.Data, &data); err != nil {
+			return err
+		}
+		content = Data{Value: data}
 		n++
 	}
 
@@ -872,6 +906,16 @@ type ListTasksRequest struct {
 
 	// IncludeArtifacts is whether to include artifacts in the response.
 	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
+}
+
+// MarshalJSON implements json.Marshaler. StatusTimestampAfter is written in the
+// format the spec requires, see [jsonTimestamp].
+func (r ListTasksRequest) MarshalJSON() ([]byte, error) {
+	type wire ListTasksRequest
+	return json.Marshal(struct {
+		wire
+		StatusTimestampAfter *jsonTimestamp `json:"statusTimestampAfter,omitempty"`
+	}{wire: wire(r), StatusTimestampAfter: (*jsonTimestamp)(r.StatusTimestampAfter)})
 }
 
 // ListTasksResponse defines the response for a request to tasks/list.

@@ -637,7 +637,7 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 		input      *a2a.SendMessageRequest
 		wantResult a2a.SendMessageResult
 		wantErr    error
-		options    []RequestHandlerOption
+		card       *a2a.AgentCard
 	}{
 		{
 			name:       "no capability checks - success",
@@ -645,26 +645,22 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 			wantResult: newAgentMessage("hello"),
 		},
 		{
-			name:  "streaming supported",
-			input: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}),
-			},
+			name:       "streaming supported",
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			card:       &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}},
 			wantResult: newAgentMessage("hello"),
 		},
 		{
-			name:  "streaming not supported",
-			input: &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}),
-			},
+			name:    "streaming not supported",
+			input:   &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			card:    &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: false}},
 			wantErr: a2a.ErrUnsupportedOperation,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			handler := NewHandler(executor, tt.options...)
+			handler := NewHandler(executor, withAgentCardEnforcer(t, tt.card))
 			for event, err := range handler.SendStreamingMessage(ctx, tt.input) {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("SendStreamingMessage() error = %v, wantErr %v", err, tt.wantErr)
@@ -1145,14 +1141,14 @@ func TestRequestHandler_GetExtendedAgentCard(t *testing.T) {
 		{
 			name: "extendedAgentCard supported but not configured",
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: true}),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: true}}),
 			},
 			wantErr: a2a.ErrExtendedCardNotConfigured,
 		},
 		{
 			name: "extendedAgentCard not supported",
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{ExtendedAgentCard: false}),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{ExtendedAgentCard: false}}),
 				WithExtendedAgentCard(card),
 			},
 			wantErr: a2a.ErrUnsupportedOperation,
@@ -1688,7 +1684,7 @@ func TestRequestHandler_SubscribeToTask_NotFound(t *testing.T) {
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrTaskNotFound
 	executor := &mockAgentExecutor{}
-	handler := NewHandler(executor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	handler := NewHandler(executor, withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
@@ -1697,12 +1693,12 @@ func TestRequestHandler_SubscribeToTask_NotFound(t *testing.T) {
 	}
 }
 
-func TestRequestHandler_SubscribeToTask_NoCapabilityChecks(t *testing.T) {
+func TestRequestHandler_SubscribeToTask_StreamingNotSupported(t *testing.T) {
 	ctx := t.Context()
 	taskID := a2a.NewTaskID()
 	wantErr := a2a.ErrUnsupportedOperation
 	executor := &mockAgentExecutor{}
-	handler := NewHandler(executor, WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: false}))
+	handler := NewHandler(executor, withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: false}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskID}))
 
@@ -1726,6 +1722,37 @@ func TestRequestHandler_CancelTask_AgentCancelFails(t *testing.T) {
 	result, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
 	if result != nil || err.Error() != wantErr.Error() {
 		t.Fatalf("CancelTask() error = %v, wantErr %v", err, wantErr)
+	}
+}
+
+func TestRequestHandler_CancelTask_ConcurrentModificationExhaustsRetries(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	taskToCancel := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskToCancel)
+	// Every cancelation update conflicts, as if an execution on another server kept updating the task.
+	store.UpdateFunc = func(ctx context.Context, req *taskstore.UpdateRequest) (taskstore.TaskVersion, error) {
+		if event, ok := req.Event.(*a2a.TaskStatusUpdateEvent); ok && event.Status.State == a2a.TaskStateCanceled {
+			return taskstore.TaskVersionMissing, taskstore.ErrConcurrentModification
+		}
+		return store.InMemory.Update(ctx, req)
+	}
+	executor := &mockAgentExecutor{
+		CancelFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+			return func(yield func(a2a.Event, error) bool) {
+				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil), nil)
+			}
+		},
+	}
+	handler := NewHandler(executor, WithTaskStore(store))
+
+	_, err := handler.CancelTask(ctx, &a2a.CancelTaskRequest{ID: taskToCancel.ID})
+
+	if !errors.Is(err, taskstore.ErrConcurrentModification) {
+		t.Fatalf("handler.CancelTask() error = %v, want %v", err, taskstore.ErrConcurrentModification)
+	}
+	if got := store.MustGet(t, taskToCancel.ID).Task.Status.State; got != a2a.TaskStateWorking {
+		t.Fatalf("stored task state = %v, want %v", got, a2a.TaskStateWorking)
 	}
 }
 
@@ -1922,19 +1949,8 @@ func TestRequestHandler_CreateTaskPushConfig(t *testing.T) {
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
-			},
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req: &a2a.PushConfig{
-				TaskID: taskID,
-				ID:     "config-1",
-				URL:    "https://example.com/push",
-			},
-			wantErr: a2a.ErrInternalError,
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
+				WithPushNotifications(ps, pn),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 		},
 		{
@@ -2038,17 +2054,10 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			name: "pushNotifications not supported",
 			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+				WithPushNotifications(ps, pn),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name:    "without capability checks and pushNotifications not configured",
@@ -2135,21 +2144,10 @@ func TestRequestHandler_ListTaskPushConfigs(t *testing.T) {
 				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			}},
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+				WithPushNotifications(ps, pn),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.ListTaskPushConfigRequest{TaskID: taskID},
-			want: &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{
-				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
-				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
-			}},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name: "without capability checks and pushNotifications not configured",
@@ -2222,22 +2220,11 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
 				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
 			},
+			withPushConfigs: true,
 			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: false}),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: false}}),
 			},
 			wantErr: a2a.ErrPushNotificationNotSupported,
-		},
-		{
-			name: "pushNotifications supported but not configured",
-			req:  &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
-			wantRemain: []*a2a.PushConfig{
-				{TaskID: taskID, ID: config1.ID, URL: config1.URL},
-				{TaskID: taskID, ID: config2.ID, URL: config2.URL},
-			},
-			options: []RequestHandlerOption{
-				WithCapabilityChecks(&a2a.AgentCapabilities{PushNotifications: true}),
-			},
-			wantErr: a2a.ErrInternalError,
 		},
 		{
 			name: "without capability checks and pushNotifications not configured",
@@ -2279,6 +2266,44 @@ func TestRequestHandler_DeleteTaskPushConfig(t *testing.T) {
 	}
 }
 
+func TestNewHandler_PushNotificationsEnforcement(t *testing.T) {
+	t.Parallel()
+	pushEnabled := &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{PushNotifications: true}}
+	tests := []struct {
+		name      string
+		options   []RequestHandlerOption
+		wantPanic bool
+	}{
+		{
+			name:      "panics when push is advertised but not configured",
+			options:   []RequestHandlerOption{withAgentCardEnforcer(t, pushEnabled)},
+			wantPanic: true,
+		},
+		{
+			name: "accepts push advertised and configured",
+			options: []RequestHandlerOption{
+				withAgentCardEnforcer(t, pushEnabled),
+				WithPushNotifications(testutil.NewTestPushConfigStore(), testutil.NewTestPushSender(t)),
+			},
+		},
+		{
+			name:    "accepts push neither advertised nor configured",
+			options: []RequestHandlerOption{withAgentCardEnforcer(t, &a2a.AgentCard{})},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if gotPanic := recover() != nil; gotPanic != tt.wantPanic {
+					t.Fatalf("NewHandler() panicked = %v, want %v", gotPanic, tt.wantPanic)
+				}
+			}()
+			NewHandler(&mockAgentExecutor{}, tt.options...)
+		})
+	}
+}
+
 func TestRequestHandler_RequiredExtensions(t *testing.T) {
 	ctx := t.Context()
 	store := testutil.NewTestTaskStore()
@@ -2301,6 +2326,10 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			name:           "succeeds when required extension is declared",
 			clientSupports: []string{extensionURI},
 		},
+		{
+			name:           "succeeds when required extension is in a comma-separated list",
+			clientSupports: []string{"other-ext, " + extensionURI},
+		},
 	}
 
 	for _, tt := range tests {
@@ -2308,7 +2337,7 @@ func TestRequestHandler_RequiredExtensions(t *testing.T) {
 			handler := NewHandler(
 				executor,
 				WithTaskStore(store),
-				WithCapabilityChecks(&a2a.AgentCapabilities{Extensions: extensions}),
+				withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Extensions: extensions}}),
 			)
 
 			params := NewServiceParams(map[string][]string{
@@ -2553,13 +2582,13 @@ func newTestHandler(opts ...RequestHandlerOption) RequestHandler {
 
 func newAgentMessage(text string) *a2a.Message {
 	m := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "agent-" + text
 	return m
 }
 
 func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	m := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart(text))
-	m.ID = "message-id"
+	m.ID = "user-" + text
 	return m
 }
 
@@ -2673,7 +2702,7 @@ func TestRequestHandler_SubscribeToTask_TerminalTask(t *testing.T) {
 	ctx := t.Context()
 	completed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
 	ts := testutil.NewTestTaskStore().WithTasks(t, completed)
-	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	result, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: completed.ID}))
 
@@ -2686,7 +2715,7 @@ func TestRequestHandler_SubscribeToTask_InputRequiredTaskYieldsSnapshot(t *testi
 	ctx := t.Context()
 	parked := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 	ts := testutil.NewTestTaskStore().WithTasks(t, parked)
-	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), WithCapabilityChecks(&a2a.AgentCapabilities{Streaming: true}))
+	handler := NewHandler(&mockAgentExecutor{}, WithTaskStore(ts), withAgentCardEnforcer(t, &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}}))
 
 	gotEvents, err := collectEvents(handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: parked.ID}))
 	if err != nil {
@@ -2697,4 +2726,150 @@ func TestRequestHandler_SubscribeToTask_InputRequiredTaskYieldsSnapshot(t *testi
 	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
 		t.Fatalf("SubscribeToTask() events mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		card    *a2a.AgentCard
+		request *a2a.SendMessageRequest
+		wantErr error
+	}{
+		{
+			name: "accepts default input mode",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+		},
+		{
+			name: "ignores parameters and case in media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/text.txt"), "Text/Plain; charset=utf-8")),
+			},
+		},
+		{
+			name: "ignores parameters and case in card input modes",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "TEXT/PLAIN; charset=UTF-8"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/text.txt"), "text/plain")),
+			},
+		},
+		{
+			name: "rejects media type not in default input modes",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"image/jpeg", "text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/unsupported.unsupported"), "unsupported/unsupported")),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name: "accepts skill input modes",
+			card: &a2a.AgentCard{
+				Skills:            []a2a.AgentSkill{{Name: "test-skill", InputModes: []string{"application/custom"}}},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/custom.custom"), "application/custom")),
+			},
+		},
+		{
+			name: "rejects default input mode when every skill declares input modes",
+			card: &a2a.AgentCard{
+				Skills:            []a2a.AgentSkill{{Name: "test-skill", InputModes: []string{"application/custom"}}},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name: "accepts default input modes when a skill declares none",
+			card: &a2a.AgentCard{
+				Skills: []a2a.AgentSkill{
+					{Name: "test-skill"},
+					{Name: "test-skill-2", InputModes: []string{"application/custom"}},
+					{Name: "test-skill-3", InputModes: []string{"image/png"}},
+				},
+				DefaultInputModes: []string{"image/jpeg", "text/plain"},
+			},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewFileURLPart(a2a.URL("http://example.com/image.jpg"), "image/jpeg")),
+			},
+		},
+		{
+			name: "infers text/plain for text part without media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello")),
+			},
+		},
+		{
+			name: "infers application/json for data part without media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewDataPart([]byte("hello"))),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name: "infers application/octet-stream for raw part without media type",
+			card: &a2a.AgentCard{DefaultInputModes: []string{"text/plain"}},
+			request: &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewRawPart([]byte("hello"))),
+			},
+			wantErr: a2a.ErrUnsupportedContentType,
+		},
+		{
+			name:    "rejects nil message",
+			card:    &a2a.AgentCard{DefaultInputModes: []string{"text/plain"}},
+			request: &a2a.SendMessageRequest{Message: nil},
+			wantErr: a2a.ErrInvalidParams,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			ts := testutil.NewTestTaskStore()
+			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
+			handler := NewHandler(executor, WithTaskStore(ts), withAgentCardEnforcer(t, tt.card))
+
+			_, err := handler.SendMessage(ctx, tt.request)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" (streaming)", func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			ts := testutil.NewTestTaskStore()
+			card := *tt.card
+			card.Capabilities.Streaming = true
+			executor := newEventReplayAgent([]a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("Hello!"))}, nil)
+			handler := NewHandler(executor, WithTaskStore(ts), withAgentCardEnforcer(t, &card))
+
+			_, err := collectEvents(handler.SendStreamingMessage(ctx, tt.request))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SendStreamingMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func withAgentCardEnforcer(t *testing.T, card *a2a.AgentCard) RequestHandlerOption {
+	t.Helper()
+	enforcer, err := NewAgentCardEnforcer(card)
+	if err != nil {
+		t.Fatalf("NewAgentCardEnforcer() error = %v, wantErr nil", err)
+	}
+	return WithCallInterceptors(enforcer)
 }

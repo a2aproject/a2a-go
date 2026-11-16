@@ -129,9 +129,40 @@ func TestRecover(t *testing.T) {
 					ContextID: ti.ContextID, TaskID: ti.TaskID,
 					Artifact: &a2a.Artifact{
 						ID:       "a1",
-						Parts:    makeTextParts("World"), // artifact update can't be empty
-						Metadata: map[string]any{"b": "2"},
+						Parts:    makeTextParts("World"),
+						Metadata: map[string]any{"a": "1", "b": "2"},
 					},
+				},
+			},
+		},
+		{
+			name: "artifact metadata only",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{
+				ID: "a1", Name: "report", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "1"},
+			}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{
+				ID: "a1", Name: "report", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "1", "b": "2"},
+			}),
+			want: []a2a.Event{
+				&a2a.TaskArtifactUpdateEvent{
+					ContextID: ti.ContextID, TaskID: ti.TaskID,
+					Artifact: &a2a.Artifact{
+						ID:       "a1",
+						Name:     "report",
+						Parts:    makeTextParts("Hello"),
+						Metadata: map[string]any{"a": "1", "b": "2"},
+					},
+				},
+			},
+		},
+		{
+			name: "artifact name changed",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Name: "draft", Parts: makeTextParts("Hello")}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Name: "final", Parts: makeTextParts("Hello")}),
+			want: []a2a.Event{
+				&a2a.TaskArtifactUpdateEvent{
+					ContextID: ti.ContextID, TaskID: ti.TaskID,
+					Artifact: &a2a.Artifact{ID: "a1", Name: "final", Parts: makeTextParts("Hello")},
 				},
 			},
 		},
@@ -332,6 +363,30 @@ func TestRecover_ReappliedEventsReproduceState(t *testing.T) {
 			name: "replace artifact parts",
 			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello")}),
 			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Goodbye")}),
+		},
+		{
+			name: "change artifact metadata only",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "1"}}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "2"}}),
+		},
+		{
+			name: "replace artifact parts keeps name and metadata",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{
+				ID: "a1", Name: "report", Description: "weekly", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "1"},
+			}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{
+				ID: "a1", Name: "report", Description: "weekly", Parts: makeTextParts("World"), Metadata: map[string]any{"a": "1", "b": "2"},
+			}),
+		},
+		{
+			name: "change artifact name only",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Name: "draft", Parts: makeTextParts("Hello")}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Name: "final", Parts: makeTextParts("Hello")}),
+		},
+		{
+			name: "append parts and remove artifact metadata key",
+			prev: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello"), Metadata: map[string]any{"a": "1"}}),
+			curr: newTask(tip, a2a.TaskStateWorking, &a2a.Artifact{ID: "a1", Parts: makeTextParts("Hello", "more")}),
 		},
 		{
 			name: "status message move to history",

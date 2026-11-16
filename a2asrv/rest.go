@@ -17,8 +17,11 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"iter"
+	"mime"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -48,7 +51,6 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 
 	mux := http.NewServeMux()
 
-	// TODO: handle tenant
 	mux.HandleFunc("POST "+rest.MakeSendMessagePath(), h.handleSendMessage)
 	mux.HandleFunc("POST "+rest.MakeStreamMessagePath(), h.handleStreamMessage)
 	mux.HandleFunc("GET "+rest.MakeListTasksPath(), h.handleListTasks)
@@ -61,8 +63,9 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 	mux.HandleFunc("GET "+rest.MakeGetExtendedAgentCardPath(), h.handleGetExtendedAgentCard)
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		ctx, _ := NewCallContext(req.Context(), NewServiceParams(req.Header))
+		rw.Header().Set("Content-Type", negotiateContentType(req))
+		ctx, callCtx := NewCallContext(req.Context(), newHTTPServiceParams(req))
+		callCtx.ProtocolVersion = a2a.Version
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
 }
@@ -74,6 +77,9 @@ func NewRESTHandler(handler RequestHandler, opts ...TransportOption) http.Handle
 // - "/{*}"
 // - "/locations/*/projects/{*}"
 // - "/{locations/*/projects/*}"
+//
+// A tenant can also be sent as a single escaped path segment, e.g. "/locations%2Fx%2Fprojects%2Fy"
+// matches "/{locations/*/projects/*}" with tenant "locations/x/projects/y".
 func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ...TransportOption) http.Handler {
 	compiledTemplate, err := pathtemplate.New(tenantTemplate)
 	if err != nil {
@@ -81,9 +87,15 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 	}
 	restHandler := NewRESTHandler(handler, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		matchResult, ok := compiledTemplate.Match(r.URL.Path)
+		matchResult, ok := compiledTemplate.MatchEscaped(r.URL.EscapedPath())
 		if !ok {
 			http.NotFound(w, r)
+			return
+		}
+
+		path, err := url.PathUnescape(matchResult.Rest)
+		if err != nil {
+			http.Error(w, "invalid URL path", http.StatusBadRequest)
 			return
 		}
 
@@ -92,10 +104,35 @@ func NewTenantRESTHandler(tenantTemplate string, handler RequestHandler, opts ..
 		r2 = r2.WithContext(attachTenant(r.Context(), matchResult.Captured))
 		r2.URL = new(url.URL)
 		*r2.URL = *r.URL
-		r2.URL.Path = matchResult.Rest
-		r2.URL.RawPath = ""
+		r2.URL.Path = path
+		r2.URL.RawPath = matchResult.Rest
 		restHandler.ServeHTTP(w, r2)
 	})
+}
+
+func negotiateContentType(req *http.Request) string {
+	requestIsA2AJSON := isA2AJSON(req.Header.Get("Content-Type"))
+	accepts := req.Header.Values("Accept")
+	if len(accepts) == 0 && requestIsA2AJSON {
+		return rest.ContentA2AJSON
+	}
+	for _, accept := range accepts {
+		for mediaRange := range strings.SplitSeq(accept, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err != nil {
+				continue
+			}
+			if mediaType == rest.ContentA2AJSON || (mediaType == "*/*" && requestIsA2AJSON) {
+				return rest.ContentA2AJSON
+			}
+		}
+	}
+	return rest.ContentJSON
+}
+
+func isA2AJSON(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == rest.ContentA2AJSON
 }
 
 func (h *restHandler) handleSendMessage(rw http.ResponseWriter, req *http.Request) {
@@ -237,6 +274,11 @@ func (h *restHandler) handleGetOrSubscribeTask(rw http.ResponseWriter, req *http
 }
 
 func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodHead {
+		rw.Header().Set("Allow", "GET, POST")
+		rw.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	ctx := req.Context()
 	if taskID == "" {
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
@@ -250,12 +292,16 @@ func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWrite
 func (h *restHandler) handleCancelTask(taskID string, rw http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	id := &a2a.CancelTaskRequest{
-		ID: a2a.TaskID(taskID),
+	var params a2a.CancelTaskRequest
+	// io.EOF is returned for an empty body, which is a valid request without metadata.
+	if err := utils.DecodeJSON(req.Body, &params); err != nil && !errors.Is(err, io.EOF) {
+		writeRESTError(ctx, rw, a2a.ErrParseError, a2a.TaskID(taskID))
+		return
 	}
-	fillTenant(ctx, &id.Tenant)
+	params.ID = a2a.TaskID(taskID)
+	fillTenant(ctx, &params.Tenant)
 
-	result, err := h.handler.CancelTask(ctx, id)
+	result, err := h.handler.CancelTask(ctx, &params)
 
 	if err != nil {
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
@@ -275,9 +321,31 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 		writeRESTError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	sseWriter.WriteHeaders()
 
-	sseChan, panicChan := make(chan []byte), make(chan error, 1)
+	streamStarted := false
+	startStream := func() {
+		if !streamStarted {
+			sseWriter.WriteHeaders()
+			streamStarted = true
+		}
+	}
+	handleError := func(err error) {
+		if !streamStarted && acceptsJSONContent(req.Header) {
+			writeRESTError(ctx, rw, err, a2a.TaskID(""))
+			return
+		}
+		errResp := rest.ToRESTError(err, a2a.TaskID(""))
+		bytes, jErr := json.Marshal(errResp)
+		if jErr != nil {
+			log.Error(ctx, "failed to marshal error response", jErr)
+			return
+		}
+		startStream()
+		if err := sseWriter.WriteData(ctx, bytes); err != nil {
+			log.Error(ctx, "failed to write an event", err)
+		}
+	}
+	sseChan, panicChan := make(chan sseItem), make(chan error, 1)
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -286,40 +354,34 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 			if r := recover(); r != nil {
 				panicChan <- fmt.Errorf("%v\n%s", r, debug.Stack())
 			} else {
-				// Only close if not panice, otherwise <-sseChan would compete with <-panicChan in select
+				// Only close if not panicked, otherwise <-sseChan would compete with <-panicChan in select
 				close(sseChan)
 			}
 		}()
 
-		handleError := func(err error) {
-			errResp := rest.ToRESTError(err, a2a.TaskID(""))
-			bytes, jErr := json.Marshal(errResp)
-			if jErr != nil {
-				log.Error(ctx, "failed to marshal error response", jErr)
-				return
-			}
+		send := func(item sseItem) bool {
 			select {
 			case <-requestCtx.Done():
-			case sseChan <- bytes:
+				return false
+			case sseChan <- item:
+				return true
 			}
 		}
 
 		for event, err := range eventSequence {
 			if err != nil {
-				handleError(err)
+				send(sseItem{err: err})
 				return
 			}
 
 			bytes, jErr := json.Marshal(a2a.StreamResponse{Event: event})
 			if jErr != nil {
-				handleError(jErr)
+				send(sseItem{err: jErr})
 				return
 			}
 
-			select {
-			case <-requestCtx.Done():
+			if !send(sseItem{data: bytes}) {
 				return
-			case sseChan <- bytes:
 			}
 		}
 	}()
@@ -347,26 +409,47 @@ func (h *restHandler) handleStreamingRequest(eventSequence iter.Seq2[a2a.Event, 
 				log.Error(ctx, "failed to marshal panic error response", jErr)
 				return
 			}
+			startStream()
 			if err := sseWriter.WriteData(ctx, data); err != nil {
 				log.Error(ctx, "failed to write panic event", err)
 			}
 			// Prevent the handler from hanging
 			return
 		case <-keepAliveChan:
+			startStream()
 			if err := sseWriter.WriteKeepAlive(ctx); err != nil {
 				log.Error(ctx, "failed to write keep-alive", err)
 				return
 			}
-		case data, ok := <-sseChan:
+		case item, ok := <-sseChan:
 			if !ok {
+				// A sequence that ended without yielding anything is still answered with an (empty) stream.
+				startStream()
 				return
 			}
-			if err := sseWriter.WriteData(ctx, data); err != nil {
+			if item.err != nil {
+				handleError(item.err)
+				return
+			}
+			startStream()
+			if err := sseWriter.WriteData(ctx, item.data); err != nil {
 				log.Error(ctx, "failed to write an event", err)
 				return
 			}
 		}
 	}
+}
+
+func acceptsJSONContent(header http.Header) bool {
+	for _, value := range header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(value, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && (mediaType == rest.ContentJSON || mediaType == rest.ContentA2AJSON) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *restHandler) handleCreateTaskPushConfig(rw http.ResponseWriter, req *http.Request) {
@@ -491,7 +574,6 @@ func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *ht
 
 func writeRESTError(ctx context.Context, rw http.ResponseWriter, err error, taskID a2a.TaskID) {
 	errResp := rest.ToRESTError(err, taskID)
-	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(errResp.HTTPStatus())
 
 	if err := json.NewEncoder(rw).Encode(errResp); err != nil {

@@ -66,7 +66,8 @@ func NewRESTHandler(handler a2asrv.RequestHandler, opts ...a2asrv.TransportOptio
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		ctx, _ := a2asrv.NewCallContext(req.Context(), ToServiceParams(req.Header))
+		ctx, callCtx := a2asrv.NewCallContext(req.Context(), ToServiceParams(req.Header))
+		callCtx.ProtocolVersion = Version
 		mux.ServeHTTP(rw, req.WithContext(ctx))
 	})
 }
@@ -437,7 +438,7 @@ func (h *restCompatHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, r
 		writeRESTCompatError(ctx, rw, err, a2a.TaskID(""))
 		return
 	}
-	data, err := json.Marshal(FromV1AgentCard(result))
+	data, err := json.Marshal(toCompatCard(result))
 	if err != nil {
 		writeRESTCompatError(ctx, rw, fmt.Errorf("failed to marshal agent card: %w", err), a2a.TaskID(""))
 		return

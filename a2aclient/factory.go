@@ -32,6 +32,7 @@ import (
 type Factory struct {
 	config       Config
 	interceptors []CallInterceptor
+	plugins      []Plugin
 	transports   map[transportKey]TransportFactory
 }
 
@@ -57,6 +58,13 @@ type transportCandidate struct {
 	priority int
 	// semver is the version of the protocol with a 'v' prefix.
 	semver string
+}
+
+func (tc *transportCandidate) headerVersion() a2a.ProtocolVersion {
+	if mm := semver.MajorMinor(tc.semver); mm != "" {
+		return a2a.ProtocolVersion(mm[1:])
+	}
+	return a2a.ProtocolVersion(strings.TrimPrefix(tc.semver, "v"))
 }
 
 // defaultOptions is a set of default configurations applied to every Factory unless WithDefaultsDisabled was used.
@@ -109,8 +117,9 @@ func (f *Factory) CreateFromCard(ctx context.Context, card *a2a.AgentCard) (*Cli
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
+		plugins:         f.plugins,
 		endpoint:        *selected.endpoint,
-		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		protocolVersion: selected.headerVersion(),
 	}
 	client.card.Store(card)
 	return client, nil
@@ -137,7 +146,8 @@ func (f *Factory) CreateFromEndpoints(ctx context.Context, endpoints []*a2a.Agen
 		config:          f.config,
 		transport:       conn,
 		interceptors:    f.interceptors,
-		protocolVersion: a2a.ProtocolVersion(selected.semver[1:]),
+		plugins:         f.plugins,
+		protocolVersion: selected.headerVersion(),
 		endpoint:        *selected.endpoint,
 	}, nil
 }
@@ -310,6 +320,7 @@ func WithAdditionalOptions(f *Factory, opts ...FactoryOption) *Factory {
 		WithDefaultsDisabled(),
 		WithConfig(f.config),
 		WithCallInterceptors(f.interceptors...),
+		WithPlugins(f.plugins...),
 	}
 	for k, v := range f.transports {
 		options = append(options, WithCompatTransport(k.protocolSemver, k.protocol, v))

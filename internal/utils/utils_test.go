@@ -15,6 +15,7 @@
 package utils
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -42,5 +43,43 @@ func Test_MapStructCodec(t *testing.T) {
 	}
 	if diff := cmp.Diff(val, *gotVal); diff != "" {
 		t.Fatalf("FromMapStruct result different (-want,+got)\n%s", diff)
+	}
+}
+
+func TestCastResult(t *testing.T) {
+	t.Parallel()
+
+	errCall := errors.New("call failed")
+	str := "value"
+
+	testCases := []struct {
+		name         string
+		payload      any
+		err          error
+		want         *string
+		wantErr      error
+		wantMismatch bool
+	}{
+		{name: "matching type", payload: &str, want: &str},
+		{name: "matching type with error", payload: &str, err: errCall, want: &str, wantErr: errCall},
+		{name: "nil payload", payload: nil, err: errCall, wantErr: errCall},
+		{name: "type mismatch", payload: 42, err: errCall, wantMismatch: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := CastResult[*string](tc.payload, tc.err)
+			if tc.wantMismatch {
+				if err == nil || errors.Is(err, errCall) {
+					t.Fatalf("CastResult() error = %v, want type mismatch error", err)
+				}
+			} else if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("CastResult() error = %v, want %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Fatalf("CastResult() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

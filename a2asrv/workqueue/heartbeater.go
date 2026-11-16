@@ -37,7 +37,7 @@ func HeartbeaterFrom(ctx context.Context) (Heartbeater, bool) {
 // For [NewPullQueue] the interface must be implemented by [Message] structs returned from Read.
 // For [NewPushQueue] heartbeater needs to be attached to context passed to [HandlerFn] using [AttachHeartbeater].
 type Heartbeater interface {
-	// HeartbeatInterval returns the interval between heartbeats.
+	// HeartbeatInterval returns the interval between heartbeats. A zero or negative interval disables heartbeats.
 	HeartbeatInterval() time.Duration
 	// Heartbeat is called at heartbeat interval to mark the message as still being handled.
 	Heartbeat(ctx context.Context) error

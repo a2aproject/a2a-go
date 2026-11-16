@@ -34,15 +34,23 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	ctx := t.Context()
 
 	executionErrCauseChan := make(chan error, 1)
+	cancelCommitted := make(chan struct{})
 	executor := &testexecutor.TestAgentExecutor{}
-	// Execution will be creating task artifacts until a task is canceled. Cancelation will be detected using a failed task store update
+	// Execution starts creating task artifacts after the cancelation was committed by another server, so that
+	// the cancelation does not race with execution updates. Cancelation will be detected using a failed task store update.
 	executor.ExecuteFn = func(ctx context.Context, reqCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
 			if !yield(a2a.NewSubmittedTask(reqCtx, reqCtx.Message), nil) {
 				return
 			}
+			select {
+			case <-cancelCommitted:
+			case <-ctx.Done():
+			}
 			for ctx.Err() == nil {
+				// Yield returns false if the event write failed because the context got canceled.
 				if !yield(a2a.NewArtifactEvent(reqCtx, a2a.NewTextPart("work...")), nil) {
+					executionErrCauseChan <- context.Cause(ctx)
 					return
 				}
 				time.Sleep(5 * time.Millisecond)
@@ -85,6 +93,7 @@ func TestConcurrentCancellation_ExecutionResolvesToCanceledTask(t *testing.T) {
 	if canceledTask.Status.State != a2a.TaskStateCanceled {
 		t.Fatalf("client.CancelTask() wrong state = %v, want %v", canceledTask.Status.State, a2a.TaskStateCanceled)
 	}
+	close(cancelCommitted)
 
 	var lastExecutionEvent a2a.Event
 	for event := range executionEvents {

@@ -180,6 +180,20 @@ func TestFactory_TransportSelection(t *testing.T) {
 			wantInterface:     "jsonrpc:1.5",
 			wantClientVersion: "1.0",
 		},
+		{
+			name:              "patch version in card is not sent",
+			serverSupports:    []string{"jsonrpc:0.3.0"},
+			clientSupports:    []string{"jsonrpc:0.3"},
+			wantInterface:     "jsonrpc:0.3.0",
+			wantClientVersion: "0.3",
+		},
+		{
+			name:              "patch version in client transport is not sent",
+			serverSupports:    []string{"jsonrpc:0.3.0"},
+			clientSupports:    []string{"jsonrpc:0.3.0"},
+			wantInterface:     "jsonrpc:0.3.0",
+			wantClientVersion: "0.3",
+		},
 	}
 
 	for _, tc := range testCases {

@@ -33,7 +33,9 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
 	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestJSONRPC_RequestRouting(t *testing.T) {
@@ -156,11 +158,13 @@ func TestJSONRPC_Validations(t *testing.T) {
 	auth := func(ctx context.Context) (string, error) { return "TestUser", nil }
 
 	testCases := []struct {
-		name    string
-		method  string
-		request []byte
-		wantErr error
-		want    any
+		name        string
+		method      string
+		request     []byte
+		wantErr     error
+		want        any
+		omitVersion bool
+		urlQuery    string
 	}{
 		{
 			name:    "success",
@@ -247,6 +251,21 @@ func TestJSONRPC_Validations(t *testing.T) {
 			wantErr: a2a.ErrInvalidParams,
 		},
 		{
+			name:        "no version header",
+			method:      "POST",
+			request:     mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			wantErr:     a2a.ErrVersionNotSupported,
+			omitVersion: true,
+		},
+		{
+			name:        "version query parameter",
+			method:      "POST",
+			request:     mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query}),
+			want:        want,
+			omitVersion: true,
+			urlQuery:    "?A2A-Version=1.0",
+		},
+		{
 			name:    "trailing data after request",
 			method:  "POST",
 			request: append(mustMarshal(t, jsonrpc.ServerRequest{JSONRPC: "2.0", Method: jsonrpc.MethodTasksGet, Params: query, ID: "123"}), []byte("TRAILING_GARBAGE")...),
@@ -275,9 +294,12 @@ func TestJSONRPC_Validations(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
-			req, err := http.NewRequestWithContext(ctx, tc.method, server.URL, bytes.NewBuffer(tc.request))
+			req, err := http.NewRequestWithContext(ctx, tc.method, server.URL+tc.urlQuery, bytes.NewBuffer(tc.request))
 			if err != nil {
 				t.Errorf("http.NewRequestWithContext() error = %v", err)
+			}
+			if !tc.omitVersion {
+				req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 			}
 			client := &http.Client{}
 			resp, err := client.Do(req)
@@ -374,6 +396,7 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 			req.Header.Set("Accept", sse.ContentEventStream)
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 			client := http.Client{}
 			resp, err := client.Do(req)
 			if err != nil {
@@ -390,6 +413,9 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 					break
 				}
 			}
+			if err := scanner.Err(); err != nil {
+				t.Fatalf("scanner.Err() = %v, want nil", err)
+			}
 			if tc.wantEnabled && keepAlives == 0 {
 				t.Error("keep-alive enabled but none received")
 			}
@@ -402,51 +428,198 @@ func TestJSONRPC_StreamingKeepAlive(t *testing.T) {
 
 func TestJSONRPC_DeletePushConfigResponse(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-
-	taskID := a2a.NewTaskID()
-	config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
-	store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
-	pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
-	pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
-	reqHandler := NewHandler(
-		&mockAgentExecutor{},
-		WithTaskStore(store),
-		WithPushNotifications(pushStore, pushSender),
-	)
-	server := httptest.NewServer(NewJSONRPCHandler(reqHandler))
-	defer server.Close()
-
-	params := mustMarshal(t, &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config.ID})
-	request := jsonrpc.ServerRequest{
-		JSONRPC: "2.0",
-		Method:  jsonrpc.MethodPushConfigDelete,
-		Params:  params,
-		ID:      "delete-1",
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
-	if err != nil {
-		t.Fatalf("http.NewRequestWithContext() error = %v", err)
+	testCases := []struct {
+		name      string
+		deleteErr error
+		want      jsonrpc.ServerResponse
+	}{
+		{
+			name: "success",
+			want: jsonrpc.ServerResponse{JSONRPC: "2.0", ID: "delete-1", Result: struct{}{}},
+		},
+		{
+			name:      "delete error",
+			deleteErr: a2a.ErrInternalError,
+			want:      jsonrpc.ServerResponse{JSONRPC: "2.0", ID: "delete-1", Error: jsonrpc.ToJSONRPCError(a2a.ErrInternalError)},
+		},
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("http.DefaultClient.Do() error = %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			taskID := a2a.NewTaskID()
+			config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
+			store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
+			pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
+			if tc.deleteErr != nil {
+				pushStore.SetDeleteError(tc.deleteErr)
+			}
+			pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
+			reqHandler := NewHandler(
+				&mockAgentExecutor{},
+				WithTaskStore(store),
+				WithPushNotifications(pushStore, pushSender),
+			)
+			handler := NewJSONRPCHandler(reqHandler)
 
-	var payload jsonrpc.ServerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatalf("json.Decode() error = %v, want valid JSON-RPC response", err)
+			params := mustMarshal(t, &a2a.DeleteTaskPushConfigRequest{TaskID: taskID, ID: config.ID})
+			request := jsonrpc.ServerRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodPushConfigDelete,
+				Params:  params,
+				ID:      "delete-1",
+			}
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", bytes.NewReader(mustMarshal(t, request)))
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			want := mustUnmarshal(t, mustMarshal(t, tc.want))
+			got := mustUnmarshal(t, rw.Body.Bytes())
+			ignoreTimestamp := cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
+				return k == "timestamp"
+			})
+			if diff := cmp.Diff(want, got, ignoreTimestamp); diff != "" {
+				t.Fatalf("handler.ServeHTTP() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
-	if payload.JSONRPC != "2.0" {
-		t.Fatalf("payload.JSONRPC = %q, want %q", payload.JSONRPC, "2.0")
+}
+
+func TestJSONRPC_StreamingErrors(t *testing.T) {
+	t.Parallel()
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("first"))
+
+	testCases := []struct {
+		name            string
+		events          iter.Seq2[a2a.Event, error]
+		acceptHeader    string
+		wantContentType string
+		wantEvents      []a2a.Event
+		wantErr         error
+	}{
+		{
+			name: "error before first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrUnsupportedOperation)
+			},
+			acceptHeader:    "text/event-stream, application/json",
+			wantContentType: "application/json",
+			wantErr:         a2a.ErrUnsupportedOperation,
+		},
+		{
+			name: "error before first event but json not accepted",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrUnsupportedOperation)
+			},
+			acceptHeader:    "text/event-stream",
+			wantContentType: sse.ContentEventStream,
+			wantErr:         a2a.ErrUnsupportedOperation,
+		},
+		{
+			name: "error after first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				if !yield(msg, nil) {
+					return
+				}
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			acceptHeader:    "application/json, text/event-stream",
+			wantContentType: sse.ContentEventStream,
+			wantEvents:      []a2a.Event{msg},
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name:            "no events",
+			events:          func(yield func(a2a.Event, error) bool) {},
+			acceptHeader:    "application/json, text/event-stream",
+			wantContentType: sse.ContentEventStream,
+		},
 	}
-	if payload.Error != nil {
-		t.Fatalf("payload.Error = %v, want nil", payload.Error)
-	}
-	if payload.ID != "delete-1" {
-		t.Fatalf("payload.ID = %v, want %q", payload.ID, "delete-1")
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			mockHandler := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return tc.events
+				},
+			}
+			server := httptest.NewServer(NewJSONRPCHandler(mockHandler))
+			defer server.Close()
+
+			request := jsonrpc.ServerRequest{
+				JSONRPC: "2.0",
+				Method:  jsonrpc.MethodTasksResubscribe,
+				Params: mustMarshal(t, &a2a.SubscribeToTaskRequest{
+					ID: "task-123",
+				}),
+				ID: "1",
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "POST", server.URL, bytes.NewBuffer(mustMarshal(t, request)))
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("Accept", tc.acceptHeader)
+			client := http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("client.Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("resp.StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+			if resp.Header.Get("Content-Type") != tc.wantContentType {
+				t.Fatalf("resp.Header.Get(\"Content-Type\") = %q, want %q", resp.Header.Get("Content-Type"), tc.wantContentType)
+			}
+
+			if tc.wantContentType != sse.ContentEventStream {
+				var payload jsonrpc.ClientResponse
+				if err := utils.DecodeJSON(resp.Body, &payload); err != nil {
+					t.Fatalf("utils.DecodeJSON() error = %v, want valid JSON-RPC response", err)
+				}
+				if err := jsonrpc.FromJSONRPCError(payload.Error); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("jsonrpc.FromJSONRPCError(payload.Error) = %v, want %v", jsonrpc.FromJSONRPCError(payload.Error), tc.wantErr)
+				}
+				return
+			}
+
+			var gotEvents []a2a.Event
+			var gotErr error
+			for data, err := range sse.ParseDataStream(resp.Body) {
+				if err != nil {
+					t.Fatalf("sse.ParseDataStream() error = %v, want valid SSE stream", err)
+				}
+				var payload jsonrpc.ClientResponse
+				if err := json.Unmarshal(data, &payload); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, want valid JSON-RPC response", err)
+				}
+				if err := jsonrpc.FromJSONRPCError(payload.Error); err != nil {
+					gotErr = err
+					continue
+				}
+				var sr a2a.StreamResponse
+				if err := json.Unmarshal(payload.Result, &sr); err != nil {
+					t.Fatalf("json.Unmarshal() error = %v, want valid JSON-RPC response", err)
+				}
+				gotEvents = append(gotEvents, sr.Event)
+			}
+			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
+				t.Fatalf("SubscribeToTasks() wrong result (-want +got)\n%s", diff)
+			}
+			if !errors.Is(gotErr, tc.wantErr) {
+				t.Fatalf("SubscribeToTasks() wrong error = %v, want %v", gotErr, tc.wantErr)
+			}
+		})
 	}
 }
 

@@ -56,6 +56,7 @@ type ServerPropagatorConfig struct {
 	MetadataPredicate func(ctx context.Context, key string) bool
 	// HeaderPredicate determines which request headers will be propagated.
 	// If not provided, A2A-Extensions header value will be propagated.
+	// A2A-Extensions values are propagated as individual extension URIs.
 	HeaderPredicate func(ctx context.Context, key string) bool
 }
 
@@ -161,9 +162,13 @@ func (s *serverPropagator) Before(ctx context.Context, callCtx *a2asrv.CallConte
 	}
 
 	for headerName, headerValues := range callCtx.ServiceParams().List() {
-		if s.HeaderPredicate(ctx, headerName) {
-			propagatorCtx.requestHeaders[headerName] = headerValues
+		if !s.HeaderPredicate(ctx, headerName) {
+			continue
 		}
+		if strings.EqualFold(headerName, a2a.SvcParamExtensions) {
+			headerValues = callCtx.Extensions().RequestedURIs()
+		}
+		propagatorCtx.requestHeaders[headerName] = headerValues
 	}
 
 	return context.WithValue(ctx, propagatorCtxKeyType{}, propagatorCtx), nil, nil

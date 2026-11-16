@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -78,6 +79,93 @@ func TestContentPartsJSONCodecUnknownType(t *testing.T) {
 	}
 	if err.Error() != "unknown part content type: [unknown]" {
 		t.Fatalf("got: %v, want: %v", err, "unknown part content type: [unknown]")
+	}
+}
+
+func TestPartJSONCodecEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		part *Part
+		json string
+		want *Part
+	}{
+		{name: "null data", part: NewDataPart(nil), json: `{"data":null}`, want: NewDataPart(nil)},
+		{name: "null data with metadata", part: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}, json: `{"data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Data{}, Metadata: map[string]any{"k": "v"}}},
+		{name: "false data", part: NewDataPart(false), json: `{"data":false}`, want: NewDataPart(false)},
+		{name: "zero number data", part: NewDataPart(float64(0)), json: `{"data":0}`, want: NewDataPart(float64(0))},
+		{name: "empty string data", part: NewDataPart(""), json: `{"data":""}`, want: NewDataPart("")},
+		{name: "empty array data", part: NewDataPart([]any{}), json: `{"data":[]}`, want: NewDataPart([]any{})},
+		{name: "empty object data", part: NewDataPart(map[string]any{}), json: `{"data":{}}`, want: NewDataPart(map[string]any{})},
+		{name: "nil raw", part: NewRawPart(nil), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty raw", part: NewRawPart([]byte{}), json: `{"raw":""}`, want: NewRawPart([]byte{})},
+		{name: "empty text", part: NewTextPart(""), json: `{"text":""}`, want: NewTextPart("")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.part); got != tc.json {
+				t.Fatalf("json.Marshal() = %s, want %s", got, tc.json)
+			}
+			var got Part
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
+	}
+}
+
+func TestPartJSONUnmarshalNullContentFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		json    string
+		want    *Part
+		wantErr string
+	}{
+		{name: "text with null data", json: `{"text":"hello","data":null}`, want: NewTextPart("hello")},
+		{name: "raw with null data", json: `{"raw":"//4=","data":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "url with null data", json: `{"url":"https://cats.com/1.png","data":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "url with null data and null text", json: `{"url":"https://cats.com/1.png","data":null,"text":null}`, want: NewFileURLPart("https://cats.com/1.png", "")},
+		{name: "text with null data and metadata", json: `{"text":"hello","data":null,"metadata":{"k":"v"}}`, want: &Part{Content: Text("hello"), Metadata: map[string]any{"k": "v"}}},
+		{name: "data with null text", json: `{"data":{"a":1},"text":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null raw", json: `{"data":{"a":1},"raw":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "data with null url", json: `{"data":{"a":1},"url":null}`, want: NewDataPart(map[string]any{"a": float64(1)})},
+		{name: "text with null raw and url", json: `{"text":"hello","raw":null,"url":null}`, want: NewTextPart("hello")},
+		{name: "raw with null text", json: `{"raw":"//4=","text":null}`, want: NewRawPart([]byte{0xFF, 0xFE})},
+		{name: "null data with null text", json: `{"data":null,"text":null}`, want: NewDataPart(nil)},
+		{name: "null data with null raw and url", json: `{"data":null,"raw":null,"url":null}`, want: NewDataPart(nil)},
+		{name: "only null text", json: `{"text":null}`, wantErr: "unknown part content type: [text]"},
+		{name: "text with non-null data", json: `{"text":"hello","data":{"a":1}}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
+		{name: "text with raw and null data", json: `{"text":"hello","raw":"//4=","data":null}`, wantErr: "expected exactly one of text, raw, data, or url, got 2"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got Part
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("json.Unmarshal(%s) error = %v, want %v", tc.json, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("json.Unmarshal(%s) error = %v, want nil", tc.json, err)
+			}
+			if diff := cmp.Diff(tc.want, &got); diff != "" {
+				t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", tc.json, diff)
+			}
+		})
 	}
 }
 
@@ -553,6 +641,120 @@ func TestTaskStateUnmarshalJSON(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Fatalf("UnmarshalJSON(%s) = %q, want %q", tc.json, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONMarshal(t *testing.T) {
+	t.Parallel()
+
+	utcPlus2 := time.FixedZone("UTC+2", 2*60*60)
+	wholeSecond := time.Date(2026, 10, 1, 10, 30, 0, 0, utcPlus2)
+	millis := time.Date(2026, 10, 1, 10, 30, 0, 142000000, utcPlus2)
+	nanos := time.Date(2026, 10, 1, 6, 10, 55, 114002345, time.UTC)
+
+	tests := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{
+			name: "whole second",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}`,
+		},
+		{
+			name: "milliseconds",
+			in:   TaskStatus{State: TaskStateWorking, Timestamp: &millis},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.142Z"}`,
+		},
+		{
+			name: "nanoseconds truncated",
+			in:   &TaskStatus{State: TaskStateWorking, Timestamp: &nanos},
+			want: `{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "nil timestamp omitted",
+			in:   TaskStatus{State: TaskStateWorking},
+			want: `{"state":"TASK_STATE_WORKING"}`,
+		},
+		{
+			name: "status inside task",
+			in:   &Task{ID: "task-1", ContextID: "ctx-1", Status: TaskStatus{State: TaskStateWorking, Timestamp: &wholeSecond}},
+			want: `{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T08:30:00.000Z"}}`,
+		},
+		{
+			name: "list tasks request",
+			in:   &ListTasksRequest{ContextID: "ctx-1", StatusTimestampAfter: &nanos},
+			want: `{"contextId":"ctx-1","statusTimestampAfter":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "list tasks request nil timestamp omitted",
+			in:   ListTasksRequest{ContextID: "ctx-1"},
+			want: `{"contextId":"ctx-1"}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := mustMarshal(t, tc.in); got != tc.want {
+				t.Fatalf("Marshal() = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimestampJSONUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	noFraction := time.Date(2026, 10, 1, 8, 30, 0, 0, time.UTC)
+	threeDigits := noFraction.Add(123 * time.Millisecond)
+	sixDigits := noFraction.Add(123456 * time.Microsecond)
+	nineDigits := noFraction.Add(123456789 * time.Nanosecond)
+
+	tests := []struct {
+		name string
+		json string
+		want TaskStatus
+	}{
+		{
+			name: "no fraction",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &noFraction},
+		},
+		{
+			name: "3 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &threeDigits},
+		},
+		{
+			name: "6 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &sixDigits},
+		},
+		{
+			name: "9 digits",
+			json: `{"state":"TASK_STATE_COMPLETED","timestamp":"2026-10-01T08:30:00.123456789Z"}`,
+			want: TaskStatus{State: TaskStateCompleted, Timestamp: &nineDigits},
+		},
+		{
+			name: "no timestamp",
+			json: `{"state":"TASK_STATE_COMPLETED"}`,
+			want: TaskStatus{State: TaskStateCompleted},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got TaskStatus
+			mustUnmarshal(t, []byte(tc.json), &got)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}

@@ -122,8 +122,8 @@ func main() {
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(addr, a2a.TransportProtocolJSONRPC),
 		},
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		DefaultInputModes:  []string{"text/plain"},
+		DefaultOutputModes: []string{"text/plain"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: true},
 		Skills: []a2a.AgentSkill{
 			{

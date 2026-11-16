@@ -198,6 +198,23 @@ func TestDefaultPropagation(t *testing.T) {
 				a2a.SvcParamExtensions: {"extension1.com"},
 			},
 		},
+		{
+			name: "extensions requested in a comma-separated list",
+			clientSvcParams: map[string]any{
+				"extension1.com": "bar",
+				"extension2.com": map[string]string{"nested": "bar"},
+			},
+			clientReqHeaders: map[string][]string{
+				a2a.SvcParamExtensions: {"extension1.com, extension2.com"},
+			},
+			serverBSupports: []string{"extension1.com"},
+			wantBReceivedMeta: map[string]any{
+				"extension1.com": "bar",
+			},
+			wantBReceivedHeaders: map[string][]string{
+				a2a.SvcParamExtensions: {"extension1.com"},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -232,6 +249,7 @@ func TestDefaultPropagation(t *testing.T) {
 				t.Fatalf("a2aclient.NewFromCard() error = %v", err)
 			}
 
+			ctx = a2aclient.AttachServiceParams(ctx, tc.clientReqHeaders)
 			resp, err := client.SendMessage(ctx, &a2a.SendMessageRequest{
 				Message:  a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("Hi!")),
 				Metadata: tc.clientSvcParams,

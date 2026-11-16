@@ -109,8 +109,13 @@ func ParseDataStream(body io.Reader) iter.Seq2[[]byte, error] {
 			return yield(data, nil)
 		}
 
+		firstLine := true
 		for scanner.Scan() {
 			lineBytes := scanner.Bytes()
+			if firstLine {
+				lineBytes = bytes.TrimPrefix(lineBytes, []byte("\xef\xbb\xbf"))
+				firstLine = false
+			}
 			if len(lineBytes) == 0 {
 				if !flush() {
 					return

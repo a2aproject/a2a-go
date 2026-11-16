@@ -54,8 +54,8 @@ func TestJSONRPC_ClientHeaderCompat(t *testing.T) {
 	}
 }
 
-func TestJSONRPC_ServerExtensionsFrom(t *testing.T) {
-	mock := &mockExtensionHandler{}
+func TestJSONRPC_ServerExtensionsAndProtocolVersionFrom(t *testing.T) {
+	mock := &mockHeaderHandler{}
 	handler := NewJSONRPCHandler(mock)
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -78,16 +78,24 @@ func TestJSONRPC_ServerExtensionsFrom(t *testing.T) {
 	if len(mock.lastRequestedURIs) != 1 || mock.lastRequestedURIs[0] != "uri1" {
 		t.Errorf("expected RequestedURIs [uri1], got %v", mock.lastRequestedURIs)
 	}
+
+	if mock.lastProtocolVersion != Version {
+		t.Fatalf("mock.lastProtocolVersion = %v, want %v", mock.lastProtocolVersion, Version)
+	}
 }
 
-type mockExtensionHandler struct {
+type mockHeaderHandler struct {
 	a2asrv.RequestHandler
-	lastRequestedURIs []string
+	lastRequestedURIs   []string
+	lastProtocolVersion a2a.ProtocolVersion
 }
 
-func (h *mockExtensionHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+func (h *mockHeaderHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
 	if ext, ok := a2asrv.ExtensionsFrom(ctx); ok {
 		h.lastRequestedURIs = ext.RequestedURIs()
+	}
+	if callCtx, ok := a2asrv.CallContextFrom(ctx); ok {
+		h.lastProtocolVersion = callCtx.ProtocolVersion
 	}
 	return &a2a.Message{ID: "resp-1", Role: a2a.MessageRoleAgent, Parts: a2a.ContentParts{a2a.NewTextPart("ok")}}, nil
 }
@@ -152,5 +160,36 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 				t.Errorf("GetTask() wrong result (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestJSONRPC_ClientNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusUnauthorized)
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+
+	_, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	if !errors.Is(err, a2a.ErrUnauthenticated) || !strings.Contains(err.Error(), "the token was revoked") {
+		t.Fatalf("GetTask() error = %v, want %v with the server message", err, a2a.ErrUnauthenticated)
+	}
+
+	var streamErr error
+	for _, err := range transport.SendStreamingMessage(t.Context(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+	}) {
+		if err != nil {
+			streamErr = err
+			break
+		}
+	}
+	if !errors.Is(streamErr, a2a.ErrUnauthenticated) || !strings.Contains(streamErr.Error(), "the token was revoked") {
+		t.Fatalf("SendStreamingMessage() error = %v, want %v with the server message", streamErr, a2a.ErrUnauthenticated)
 	}
 }

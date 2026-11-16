@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"mime"
 	"net/http"
+	"net/url"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/internal/jsonrpc"
@@ -55,9 +57,9 @@ func WithJSONRPCTransport(client *http.Client) FactoryOption {
 //
 //	httpClient := &http.Client{Timeout: 5 * time.Minute}
 //	client := NewFromCard(ctx, card, WithJSONRPCTransport(httpClient))
-func NewJSONRPCTransport(url string, client *http.Client) Transport {
+func NewJSONRPCTransport(serverURL string, client *http.Client) Transport {
 	t := &jsonrpcTransport{
-		url:        url,
+		url:        serverURL,
 		httpClient: client,
 	}
 
@@ -89,9 +91,21 @@ func (t *jsonrpcTransport) newHTTPRequest(ctx context.Context, method string, pa
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", t.url, bytes.NewBuffer(reqBody))
+	requestURL := t.url
+	if extraQuery := HTTPQueryParamsFrom(ctx); len(extraQuery) > 0 {
+		u, err := url.Parse(t.url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse endpoint URL: %w", err)
+		}
+		query := u.Query()
+		utils.MergeQueryParams(query, extraQuery)
+		u.RawQuery = query.Encode()
+		requestURL = u.String()
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to create HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	httpReq.Header.Set("Content-Type", jsonrpc.ContentJSON)
@@ -114,7 +128,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 	defer func() {
 		if err := httpResp.Body.Close(); err != nil {
@@ -123,7 +137,7 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+		return nil, jsonrpc.FromHTTPError(httpResp)
 	}
 
 	var resp jsonrpc.ClientResponse
@@ -144,21 +158,42 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	httpReq.Header.Set("Accept", sse.ContentEventStream)
+	httpReq.Header.Set("Accept", sse.ContentEventStream+", "+jsonrpc.ContentJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
+		statusErr := jsonrpc.FromHTTPError(httpResp)
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, fmt.Errorf("unexpected HTTP status: %s", httpResp.Status)
+		return nil, statusErr
 	}
-
-	return httpResp.Body, nil
+	// The server may refuse a streaming call before opening a stream (e.g. task in a terminal
+	// state) and answer with a plain JSON-RPC error instead of SSE.
+	mediaType, _, err := mime.ParseMediaType(httpResp.Header.Get("Content-Type"))
+	if err != nil || mediaType == sse.ContentEventStream {
+		return httpResp.Body, nil
+	}
+	defer func() {
+		if err := httpResp.Body.Close(); err != nil {
+			log.Error(ctx, "failed to close http response body", err)
+		}
+	}()
+	if mediaType == jsonrpc.ContentJSON {
+		var resp jsonrpc.ClientResponse
+		if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to decode non-streaming response: %w", err)
+		}
+		if resp.Error != nil {
+			return nil, jsonrpc.FromJSONRPCError(resp.Error)
+		}
+		return nil, fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
+	}
+	return nil, fmt.Errorf("unexpected Content-Type %q", mediaType)
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.

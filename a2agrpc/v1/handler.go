@@ -273,6 +273,8 @@ func (h *Handler) GetExtendedAgentCard(ctx context.Context, pbReq *a2apb.GetExte
 		return nil, status.Errorf(codes.InvalidArgument, "failed to convert request: %v", err)
 	}
 
+	ctx, _ = withCallContext(ctx)
+
 	card, err := h.handler.GetExtendedAgentCard(ctx, req)
 	if err != nil {
 		return nil, grpcutil.ToGRPCError(err)
@@ -307,7 +309,9 @@ func withCallContext(ctx context.Context) (context.Context, *a2asrv.CallContext)
 	if meta, ok := metadata.FromIncomingContext(ctx); ok {
 		svcParams = a2asrv.NewServiceParams(meta)
 	}
-	return a2asrv.NewCallContext(ctx, svcParams)
+	ctx, callCtx := a2asrv.NewCallContext(ctx, svcParams)
+	callCtx.ProtocolVersion = a2a.Version
+	return ctx, callCtx
 }
 
 func toTrailer(callCtx *a2asrv.CallContext) metadata.MD {

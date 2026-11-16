@@ -493,8 +493,8 @@ func run() error {
 			Description: "Executes ITK traversal instructions and ACTS tck-* behaviours.",
 			Tags:        []string{"itk", "acts"},
 		}},
-		DefaultInputModes:  []string{"text"},
-		DefaultOutputModes: []string{"text"},
+		DefaultInputModes:  []string{"text/plain", "application/json", "application/x-protobuf"},
+		DefaultOutputModes: []string{"text/plain"},
 		SupportedInterfaces: []*a2a.AgentInterface{
 			{
 				URL:             fmt.Sprintf("http://127.0.0.1:%d/jsonrpc", *httpPort),
@@ -542,15 +542,19 @@ func run() error {
 	// of the default SSRF guard that rejects loopback and private targets.
 	pushSender := push.NewHTTPPushSender(&push.HTTPSenderConfig{AllowPrivateNetworks: true})
 
+	enforcer, err := a2asrv.NewAgentCardEnforcer(agentCard)
+	if err != nil {
+		return fmt.Errorf("failed to create agent card enforcer: %w", err)
+	}
 	executor := &V10AgentExecutor{}
 	requestHandler := a2asrv.NewHandler(
 		executor,
 		a2asrv.WithCallInterceptors(a2asrv.NewLoggingInterceptor(&a2asrv.LoggingConfig{LogPayload: true})),
 		a2asrv.WithPushNotifications(pushStore, pushSender),
 		a2asrv.WithTaskStore(taskStore),
-		// Makes the advertised capabilities enforcing rather than advisory, so
-		// the reduced pass actually refuses what its card no longer offers.
-		a2asrv.WithCapabilityChecks(&agentCard.Capabilities),
+		// Makes the advertised card enforcing rather than advisory, so the
+		// reduced pass actually refuses what its card no longer offers.
+		a2asrv.WithCallInterceptors(enforcer),
 		// The card advertises extendedAgentCard, and a capability is a promise:
 		// without a producer every binding answers the ACTS extended-card tests
 		// with ExtendedCardNotConfigured.
@@ -571,7 +575,8 @@ func run() error {
 	mux.Handle("/restv0/", http.StripPrefix("/restv0", a2av0.NewRESTHandler(requestHandler)))
 
 	cardProducer := a2av0.NewStaticAgentCardProducer(agentCard)
-	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer))
+	cacheControlOption := a2asrv.WithAgentCardCacheControl("public, max-age=3600") 
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewAgentCardHandler(cardProducer, cacheControlOption))
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", *httpPort),

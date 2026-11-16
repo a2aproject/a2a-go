@@ -20,10 +20,13 @@ import (
 	"iter"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/mod/semver"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -38,13 +41,7 @@ type InterceptedHandler struct {
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
 
-	capabilities *a2a.AgentCapabilities
-}
-
-type interceptBeforeResult[Req any, Resp any] struct {
-	reqOverride   Req
-	earlyResponse *Resp
-	earlyErr      error
+	plugins []Plugin
 }
 
 var _ RequestHandler = (*InterceptedHandler)(nil)
@@ -90,7 +87,7 @@ func (h *InterceptedHandler) SendMessage(ctx context.Context, req *a2a.SendMessa
 func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SendStreamingMessage", req.Tenant)
-		if err := checkRequiredExtensions(h, callCtx); err != nil {
+		if err := checkProtocolVersion(callCtx); err != nil {
 			yield(nil, err)
 			return
 		}
@@ -105,25 +102,7 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 		} else {
 			ctx = h.withLoggerContext(ctx)
 		}
-		ctx, res := interceptBefore[*a2a.SendMessageRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-		for event, err := range h.Handler.SendStreamingMessage(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, callCtx, h, req, h.Handler.SendStreamingMessage, yield)
 	}
 }
 
@@ -131,30 +110,12 @@ func (h *InterceptedHandler) SendStreamingMessage(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		ctx, callCtx := attachMethodCallContext(ctx, "SubscribeToTask", req.Tenant)
-		if err := checkRequiredExtensions(h, callCtx); err != nil {
+		if err := checkProtocolVersion(callCtx); err != nil {
 			yield(nil, err)
 			return
 		}
 		ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.ID)))
-		ctx, res := interceptBefore[*a2a.SubscribeToTaskRequest, a2a.SendMessageResult](ctx, h, callCtx, req)
-		if res.earlyErr != nil {
-			yield(nil, res.earlyErr)
-			return
-		}
-		if res.earlyResponse != nil {
-			yield(*res.earlyResponse, nil)
-			return
-		}
-		for event, err := range h.Handler.SubscribeToTask(ctx, res.reqOverride) {
-			interceptedEvent, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, event, err)
-			if errOverride != nil {
-				yield(nil, errOverride)
-				return
-			}
-			if !yield(interceptedEvent, nil) {
-				return
-			}
-		}
+		streamCall(ctx, callCtx, h, req, h.Handler.SubscribeToTask, yield)
 	}
 }
 
@@ -183,20 +144,10 @@ func (h *InterceptedHandler) CreateTaskPushConfig(ctx context.Context, req *a2a.
 func (h *InterceptedHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
 	ctx, callCtx := attachMethodCallContext(ctx, "DeleteTaskPushConfig", req.Tenant)
 	ctx = h.withLoggerContext(ctx, slog.String("task_id", string(req.TaskID)))
-	ctx, res := interceptBefore[*a2a.DeleteTaskPushConfigRequest, struct{}](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		return res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return nil
-	}
-	if err := checkRequiredExtensions(h, callCtx); err != nil {
-		return err
-	}
-	err := h.Handler.DeleteTaskPushConfig(ctx, res.reqOverride)
-	var emptyResponse struct{}
-	_, errOverride := interceptAfter(ctx, h.Interceptors, callCtx, emptyResponse, err)
-	return errOverride
+	_, err := doCall(ctx, callCtx, h, req, func(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) (struct{}, error) {
+		return struct{}{}, h.Handler.DeleteTaskPushConfig(ctx, req)
+	})
+	return err
 }
 
 // GetExtendedAgentCard implements RequestHandler.
@@ -206,71 +157,69 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
-func interceptBefore[Req any, Resp any](ctx context.Context, h *InterceptedHandler, callCtx *CallContext, payload Req) (context.Context, interceptBeforeResult[Req, Resp]) {
-	request := &Request{Payload: payload}
-
-	var zeroReq Req
-	outcome := interceptBeforeResult[Req, Resp]{
-		reqOverride:   zeroReq,
-		earlyResponse: nil,
-		earlyErr:      nil,
-	}
-
-	for i, interceptor := range h.Interceptors {
-		localCtx, result, err := interceptor.Before(ctx, callCtx, request)
-		if err != nil || result != nil {
-			var typedResult Resp
-			if result != nil {
-				r, ok := result.(Resp)
-				if !ok {
-					outcome.earlyErr = fmt.Errorf("result type changed from %T to %T", result, typedResult)
-					return ctx, outcome
-				}
-				typedResult = r
-			}
-			interceptors := h.Interceptors[:i+1]
-			resp, err := interceptAfter(ctx, interceptors, callCtx, typedResult, err)
-			outcome.earlyResponse = &resp
-			outcome.earlyErr = err
-			return ctx, outcome
-		}
-		ctx = localCtx
-	}
-
-	if request.Payload == nil {
-		return ctx, outcome
-	}
-
-	typed, ok := request.Payload.(Req)
-	if !ok {
-		outcome.earlyErr = fmt.Errorf("payload type changed from %T to %T", payload, request.Payload)
-		return ctx, outcome
-	}
-
-	outcome.reqOverride = typed
-	return ctx, outcome
+func wrapCall(h *InterceptedHandler, next CallHandler) CallHandler {
+	return wrapWithPlugins(interceptCalls(h, next), h.plugins, Plugin.WrapCall)
 }
 
-func interceptAfter[T any](ctx context.Context, interceptors []CallInterceptor, callCtx *CallContext, payload T, responseErr error) (T, error) {
-	response := &Response{Payload: payload, Err: responseErr}
-
-	var zero T
-	for _, interceptor := range slices.Backward(interceptors) {
-		if err := interceptor.After(ctx, callCtx, response); err != nil {
-			return zero, err
+func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
+	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			ctx, req := ctx, req
+			for i, interceptor := range h.Interceptors {
+				localCtx, result, err := interceptor.Before(ctx, callCtx, &req)
+				if err != nil || result != nil {
+					yield(interceptAfter(ctx, h.Interceptors[:i+1], callCtx, result, err))
+					return
+				}
+				ctx = localCtx
+			}
+			for payload, err := range next(ctx, callCtx, req) {
+				if !yield(interceptAfter(ctx, h.Interceptors, callCtx, payload, err)) {
+					return
+				}
+			}
 		}
 	}
+}
 
-	if response.Payload == nil {
-		return zero, response.Err
+func interceptAfter(ctx context.Context, interceptors []CallInterceptor, callCtx *CallContext, payload any, responseErr error) (any, error) {
+	response := &Response{Payload: payload, Err: responseErr}
+	for _, interceptor := range slices.Backward(interceptors) {
+		if err := interceptor.After(ctx, callCtx, response); err != nil {
+			return nil, err
+		}
 	}
+	return response.Payload, response.Err
+}
 
-	typed, ok := response.Payload.(T)
-	if !ok {
-		return zero, fmt.Errorf("payload type changed from %T to %T", payload, response.Payload)
+func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) CallHandler {
+	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			yield(handlerCall(ctx, typed))
+		}
 	}
+}
 
-	return typed, response.Err
+func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) CallHandler {
+	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
+		return func(yield func(any, error) bool) {
+			typed, err := utils.CastPayload[Req](req.Payload)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			for event, err := range handlerCall(ctx, typed) {
+				if !yield(event, err) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // withLoggerContext is a private utility function which attaches an slog.Logger with a2a-specific attributes
@@ -309,34 +258,56 @@ func doCall[Req any, Resp any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) (Resp, error),
 ) (Resp, error) {
-	ctx, res := interceptBefore[Req, Resp](ctx, h, callCtx, req)
-	if res.earlyErr != nil {
-		var zero Resp
-		return zero, res.earlyErr
-	}
-	if res.earlyResponse != nil {
-		return *res.earlyResponse, nil
-	}
-	if err := checkRequiredExtensions(h, callCtx); err != nil {
-		var zero Resp
+	var zero Resp
+	if err := checkProtocolVersion(callCtx); err != nil {
 		return zero, err
 	}
-	response, err := handlerCall(ctx, res.reqOverride)
-	return interceptAfter(ctx, h.Interceptors, callCtx, response, err)
+	for payload, err := range wrapCall(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+		return utils.CastResult[Resp](payload, err)
+	}
+	return zero, fmt.Errorf("%s produced no result", callCtx.Method())
 }
 
-func checkRequiredExtensions(h *InterceptedHandler, callCtx *CallContext) error {
-	if h.capabilities == nil || len(h.capabilities.Extensions) == 0 {
-		return nil
-	}
-	requestedURIs := callCtx.Extensions().RequestedURIs()
-	for _, ext := range h.capabilities.Extensions {
-		if ext.Required {
-			found := slices.Contains(requestedURIs, ext.URI)
-			if !found {
-				return a2a.ErrExtensionSupportRequired
-			}
+func streamCall[Req any](
+	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
+	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error], yield func(a2a.Event, error) bool,
+) {
+	for payload, err := range wrapCall(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+		event, err := utils.CastResult[a2a.Event](payload, err)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		if !yield(event, nil) {
+			return
 		}
 	}
+}
+
+// checkProtocolVersion checks if the client's protocol version is compatible with the server's.
+// Unset or empty A2A-Version values are treated as "0.3". Only Major.Minor are compared.
+func checkProtocolVersion(callCtx *CallContext) error {
+	if callCtx.ProtocolVersion == "" {
+		return nil
+	}
+	versions, _ := callCtx.ServiceParams().Get(a2a.SvcParamVersion)
+	if len(versions) > 1 {
+		return fmt.Errorf("%w: %d protocol versions specified", a2a.ErrInvalidRequest, len(versions))
+	}
+	clientVersion := a2a.ProtocolVersion("0.3")
+	if len(versions) == 1 && versions[0] != "" {
+		clientVersion = a2a.ProtocolVersion(versions[0])
+	}
+	if mm := majorMinor(clientVersion); mm == "" || mm != majorMinor(callCtx.ProtocolVersion) {
+		return fmt.Errorf("%w: requested %q, served %q", a2a.ErrVersionNotSupported, clientVersion, callCtx.ProtocolVersion)
+	}
 	return nil
+}
+
+func majorMinor(v a2a.ProtocolVersion) string {
+	s := string(v)
+	if !strings.HasPrefix(s, "v") {
+		s = "v" + s
+	}
+	return semver.MajorMinor(s)
 }

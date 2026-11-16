@@ -19,7 +19,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
+	"mime"
+	"net/http"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -139,6 +142,25 @@ func FromJSONRPCError(e *Error) error {
 	}
 	result.TypedDetails = append(result.TypedDetails, nonErrorInfoDetails...)
 	return result
+}
+
+// maxErrorBodyBytes limits how much of a non-200 HTTP response body is read.
+const maxErrorBodyBytes = 1 << 20
+
+// FromHTTPError converts a non-200 HTTP response to an error. A JSON body carrying a JSON-RPC error,
+// for example one written by an auth middleware, is converted with [FromJSONRPCError]. Any other
+// response is reported using its HTTP status.
+func FromHTTPError(resp *http.Response) error {
+	statusErr := fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || mediaType != ContentJSON {
+		return statusErr
+	}
+	var parsed ClientResponse
+	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &parsed); err != nil || parsed.Error == nil {
+		return statusErr
+	}
+	return FromJSONRPCError(parsed.Error)
 }
 
 // ToJSONRPCError converts an error to a JSON-RPC [Error].

@@ -114,12 +114,16 @@ func TestPushConfigs_ClientServerRoundtrip(t *testing.T) {
 
 func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtocol) *a2aclient.Client {
 	t.Helper()
-	ctx := t.Context()
 	pushstore := testutil.NewTestPushConfigStore()
 	pushsender := testutil.NewTestPushSender(t).SetSendPushError(nil)
 	store := testutil.NewTestTaskStore().WithTasks(t, task)
 	reqHandler := a2asrv.NewHandler(&testexecutor.TestAgentExecutor{}, a2asrv.WithTaskStore(store), a2asrv.WithPushNotifications(pushstore, pushsender))
+	return startTransportServer(t, reqHandler, transport)
+}
 
+func startTransportServer(t *testing.T, reqHandler a2asrv.RequestHandler, transport a2a.TransportProtocol) *a2aclient.Client {
+	t.Helper()
+	ctx := t.Context()
 	switch transport {
 	case a2a.TransportProtocolHTTPJSON:
 		server := httptest.NewServer(a2asrv.NewRESTHandler(reqHandler))
@@ -128,6 +132,7 @@ func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtoc
 			SupportedInterfaces: []*a2a.AgentInterface{
 				a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON),
 			},
+			Capabilities: a2a.AgentCapabilities{Streaming: true},
 		}
 		client, err := a2aclient.NewFromCard(ctx, card)
 		if err != nil {
@@ -141,6 +146,7 @@ func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtoc
 			SupportedInterfaces: []*a2a.AgentInterface{
 				a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC),
 			},
+			Capabilities: a2a.AgentCapabilities{Streaming: true},
 		}
 		client, err := a2aclient.NewFromCard(ctx, card)
 		if err != nil {
@@ -161,6 +167,7 @@ func startPushServer(t *testing.T, task *a2a.Task, transport a2a.TransportProtoc
 			SupportedInterfaces: []*a2a.AgentInterface{
 				a2a.NewAgentInterface("passthrough:///bufnet", a2a.TransportProtocolGRPC),
 			},
+			Capabilities: a2a.AgentCapabilities{Streaming: true},
 		}
 		client, err := a2aclient.NewFromCard(ctx, card, a2agrpc.WithGRPCTransport(
 			grpc.WithTransportCredentials(insecure.NewCredentials()),

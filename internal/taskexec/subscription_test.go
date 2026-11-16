@@ -32,15 +32,17 @@ func TestRemoteSubscription_Events(t *testing.T) {
 	tid := a2a.NewTaskID()
 
 	tests := []struct {
-		name            string
-		snapshot        *a2a.Task
-		snapshotVersion taskstore.TaskVersion
-		events          []a2a.Event
-		eventVersions   []taskstore.TaskVersion
-		wantEvents      []a2a.Event
-		getTaskErr      error
-		queueReadErr    error
-		wantErrContain  string
+		name              string
+		snapshot          *a2a.Task
+		snapshotVersion   taskstore.TaskVersion
+		cancel            bool
+		cancelFromVersion taskstore.TaskVersion
+		events            []a2a.Event
+		eventVersions     []taskstore.TaskVersion
+		wantEvents        []a2a.Event
+		getTaskErr        error
+		queueReadErr      error
+		wantErrContain    string
 	}{
 		{
 			name:       "terminal task state event subscription",
@@ -104,6 +106,36 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			},
 		},
 		{
+			name:              "cancel subscription skips non-terminal snapshot and older events",
+			snapshot:          &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+			snapshotVersion:   taskstore.TaskVersion(2),
+			cancel:            true,
+			cancelFromVersion: taskstore.TaskVersion(2),
+			events: []a2a.Event{
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+				&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+			},
+			eventVersions: []taskstore.TaskVersion{taskstore.TaskVersion(2), taskstore.TaskVersion(3)},
+			wantEvents:    []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}},
+		},
+		{
+			name:              "cancel subscription emits refusal persisted before snapshot was loaded",
+			snapshot:          &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+			snapshotVersion:   taskstore.TaskVersion(3),
+			cancel:            true,
+			cancelFromVersion: taskstore.TaskVersion(2),
+			events:            []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}},
+			eventVersions:     []taskstore.TaskVersion{taskstore.TaskVersion(3)},
+			wantEvents:        []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}},
+		},
+		{
+			name:       "cancel subscription emits terminal snapshot",
+			snapshot:   &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}},
+			cancel:     true,
+			events:     []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}}, // not received
+			wantEvents: []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}},
+		},
+		{
 			name:       "queue read error ends subscription",
 			snapshot:   &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			events:     []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}}, // not received
@@ -163,6 +195,9 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			}
 
 			sub := newRemoteSubscription(queue, store, tid)
+			if tc.cancel {
+				sub = newRemoteCancelSubscription(queue, store, tid, tc.cancelFromVersion)
+			}
 			var gotEvents []a2a.Event
 			var gotErr error
 			for event, err := range sub.Events(t.Context()) {

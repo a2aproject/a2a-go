@@ -73,10 +73,6 @@ var actsErrorCodes = []struct {
 }
 
 // actsFixedTransport answers every request with the payload under test.
-//
-// The status is always 200: the JSON-RPC transport checks the HTTP status
-// before it looks at the body, so an error envelope served at 4xx is discarded
-// as "unexpected HTTP status" and never parsed.
 type actsFixedTransport struct{ payload []byte }
 
 func (t actsFixedTransport) RoundTrip(r *http.Request) (*http.Response, error) {

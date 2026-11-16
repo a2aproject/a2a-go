@@ -357,3 +357,133 @@ func TestHTTPPushSender_SSRFProtection(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPPushSender_Deliver(t *testing.T) {
+	t.Parallel()
+	event := &a2a.Task{ID: "test-task", ContextID: "test-context"}
+
+	testCases := []struct {
+		name           string
+		failOnError    bool
+		status         int
+		wantStatusCode int
+		wantResultErr  bool
+		wantErr        bool
+	}{
+		{name: "success", status: http.StatusOK, wantStatusCode: http.StatusOK},
+		{name: "failure", status: http.StatusInternalServerError, wantStatusCode: http.StatusInternalServerError, wantResultErr: true},
+		{name: "failure with fail on error", failOnError: true, status: http.StatusInternalServerError, wantStatusCode: http.StatusInternalServerError, wantResultErr: true, wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var gotHeaders http.Header
+			called := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				gotHeaders = r.Header
+				w.WriteHeader(tc.status)
+			}))
+			defer server.Close()
+
+			sender := NewHTTPPushSender(&HTTPSenderConfig{FailOnError: tc.failOnError, AllowPrivateNetworks: true})
+			delivery := &Delivery{
+				Config:  &a2a.PushConfig{URL: server.URL, Token: "test-token"},
+				Event:   event,
+				Headers: http.Header{"X-Custom": {"custom"}, tokenHeader: {"overridden"}},
+			}
+			result, err := sender.Deliver(t.Context(), delivery)
+
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("sender.Deliver() error = %v, want error %v", err, tc.wantErr)
+			}
+			if (result.Err != nil) != tc.wantResultErr {
+				t.Fatalf("sender.Deliver() result.Err = %v, want error %v", result.Err, tc.wantResultErr)
+			}
+			if result.StatusCode != tc.wantStatusCode {
+				t.Fatalf("sender.Deliver() result.StatusCode = %d, want %d", result.StatusCode, tc.wantStatusCode)
+			}
+			if !called {
+				t.Fatal("sender.Deliver() didn't call the endpoint")
+			}
+			if result.Duration <= 0 {
+				t.Fatalf("sender.Deliver() result.Duration = %v, want > 0", result.Duration)
+			}
+			if got := gotHeaders.Get("X-Custom"); got != "custom" {
+				t.Fatalf("X-Custom header = %q, want %q", got, "custom")
+			}
+			if got := gotHeaders.Values(tokenHeader); !cmp.Equal(got, []string{"test-token"}) {
+				t.Fatalf("%q header = %q, want %q", tokenHeader, got, []string{"test-token"})
+			}
+		})
+	}
+}
+
+type sendPushFunc func(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error
+
+func (fn sendPushFunc) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
+	return fn(ctx, config, event)
+}
+
+func TestNewDeliveryHandler(t *testing.T) {
+	t.Parallel()
+	sendErr := errors.New("send failed")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	customSender := func(sent *int, err error) Sender {
+		return sendPushFunc(func(context.Context, *a2a.PushConfig, a2a.Event) error {
+			*sent++
+			time.Sleep(time.Millisecond)
+			return err
+		})
+	}
+	httpSender := func(*int, error) Sender {
+		return NewHTTPPushSender(&HTTPSenderConfig{AllowPrivateNetworks: true})
+	}
+
+	testCases := []struct {
+		name     string
+		sender   func(sent *int, err error) Sender
+		sendErr  error
+		skip     bool
+		wantSent int
+	}{
+		{name: "custom sender", sender: customSender, wantSent: 1},
+		{name: "custom sender failure", sender: customSender, sendErr: sendErr, wantSent: 1},
+		{name: "custom sender skip", sender: customSender, skip: true},
+		{name: "http sender", sender: httpSender},
+		{name: "http sender skip", sender: httpSender, skip: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sent := 0
+			deliver := NewDeliveryHandler(tc.sender(&sent, tc.sendErr))
+
+			delivery := &Delivery{Config: &a2a.PushConfig{URL: server.URL}, Event: &a2a.Task{}, Skip: tc.skip}
+			result, err := deliver(t.Context(), delivery)
+
+			if !errors.Is(err, tc.sendErr) {
+				t.Fatalf("deliver() error = %v, want %v", err, tc.sendErr)
+			}
+			if !errors.Is(result.Err, tc.sendErr) {
+				t.Fatalf("deliver() result.Err = %v, want %v", result.Err, tc.sendErr)
+			}
+			if sent != tc.wantSent {
+				t.Fatalf("sender.SendPush() calls = %d, want %d", sent, tc.wantSent)
+			}
+			if (result.Duration > 0) == tc.skip {
+				t.Fatalf("deliver() result.Duration = %v, want measured %v", result.Duration, !tc.skip)
+			}
+		})
+	}
+
+	if NewDeliveryHandler(nil) != nil {
+		t.Fatal("NewDeliveryHandler(nil) = non-nil, want nil")
+	}
+}

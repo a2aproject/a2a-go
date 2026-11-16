@@ -304,6 +304,7 @@ func ExampleServiceParams() {
 
 	req, _ := http.NewRequest("GET", server.URL+"/tasks/task-123", nil)
 	req.Header.Set("X-Custom-Header", "my-value")
+	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

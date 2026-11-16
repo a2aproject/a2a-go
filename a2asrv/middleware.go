@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"iter"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
@@ -47,6 +48,10 @@ type CallContext struct {
 	// User can be set by authentication middleware to provide information about
 	// the user who initiated the request.
 	User *User
+
+	// ProtocolVersion is the A2A protocol version served by the transport that received the request.
+	// When set, requests with a different A2A-Version are rejected with [a2a.ErrVersionNotSupported].
+	ProtocolVersion a2a.ProtocolVersion
 
 	// tenant is an optional ID of the agent owner.
 	tenant string
@@ -86,6 +91,11 @@ type Response struct {
 	// Err is set to indicate that request processing failed.
 	Err error
 }
+
+// CallHandler processes a call. A unary call yields one value, a streaming call yields one value per event.
+// It must not modify data shared with the caller's req, such as Payload, so that a middleware can call
+// next again with the original request. Changes are made on a copy.
+type CallHandler func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error]
 
 // CallInterceptor can be attached to an [RequestHandler]. If multiple interceptors are added:
 //   - Before will be executed in the order of attachment sequentially.

@@ -32,10 +32,58 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/rest"
+	"github.com/a2aproject/a2a-go/v2/internal/sse"
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestREST_SubscribeHead(t *testing.T) {
+	t.Parallel()
+	for _, tenant := range []string{"", "my-tenant"} {
+		t.Run(tenant, func(t *testing.T) {
+			t.Parallel()
+			subscribed := false
+			mock := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					subscribed = true
+					return func(yield func(a2a.Event, error) bool) {}
+				},
+			}
+			handler := NewRESTHandler(mock)
+			prefix := ""
+			if tenant != "" {
+				handler = NewTenantRESTHandler("/{*}", mock)
+				prefix = "/" + tenant
+			}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodHead, prefix+"/tasks/test-id:subscribe", nil)
+			handler.ServeHTTP(recorder, request)
+			if subscribed {
+				t.Fatal("SubscribeToTask() called for HEAD, want no subscription")
+			}
+			if got := recorder.Code; got != http.StatusMethodNotAllowed {
+				t.Fatalf("HEAD status = %d, want %d", got, http.StatusMethodNotAllowed)
+			}
+			if got := recorder.Header().Get("Allow"); got != "GET, POST" {
+				t.Fatalf("HEAD Allow = %q, want GET, POST", got)
+			}
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				subscribed = false
+				recorder = httptest.NewRecorder()
+				handler.ServeHTTP(recorder, httptest.NewRequest(method, prefix+"/tasks/test-id:subscribe", nil))
+				if !subscribed || recorder.Code != http.StatusOK {
+					t.Fatalf("%s subscription = %v, status = %d, want true and 200", method, subscribed, recorder.Code)
+				}
+			}
+			recorder = httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodHead, prefix+"/tasks/test-id", nil))
+			if got := recorder.Code; got != http.StatusOK {
+				t.Fatalf("HEAD task status = %d, want %d", got, http.StatusOK)
+			}
+		})
+	}
+}
 
 func TestREST_RequestRouting(t *testing.T) {
 	testCases := []struct {
@@ -196,6 +244,7 @@ func TestREST_Validations(t *testing.T) {
 			name:    "SendMessageStream",
 			methods: []string{http.MethodPost},
 			path:    "/message:stream",
+			body:    a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test"))},
 		},
 		{
 			name:    "GetTask",
@@ -208,14 +257,14 @@ func TestREST_Validations(t *testing.T) {
 			path:    "/tasks",
 		},
 		{
-			name:    "CancelTask",
-			methods: []string{http.MethodPost},
-			path:    "/tasks/" + string(taskID) + ":cancel",
-		},
-		{
 			name:    "ResubscribeToTask",
 			methods: []string{http.MethodGet, http.MethodPost},
 			path:    "/tasks/" + string(taskID) + ":subscribe",
+		},
+		{
+			name:    "CancelTask",
+			methods: []string{http.MethodPost},
+			path:    "/tasks/" + string(taskID) + ":cancel",
 		},
 		{
 			name:    "CreateAndListTaskPushConfig",
@@ -280,6 +329,8 @@ func TestREST_Validations(t *testing.T) {
 					if err != nil {
 						t.Fatalf("failed to create request: %v", err)
 					}
+
+					req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 
 					resp, err := server.Client().Do(req)
 					if err != nil {
@@ -361,6 +412,16 @@ func TestREST_InvalidPayloads(t *testing.T) {
 			name:    "CreateTaskPushConfig with trailing data",
 			path:    "/tasks/" + string(taskID) + "/pushNotificationConfigs",
 			payload: `{"url":"https://example.com/push"}}`,
+		},
+		{
+			name:    "CancelTask with invalid payload",
+			path:    "/tasks/" + string(taskID) + ":cancel",
+			payload: "[]",
+		},
+		{
+			name:    "CancelTask with trailing data",
+			path:    "/tasks/" + string(taskID) + ":cancel",
+			payload: emptyRequest + "TRAILING_GARBAGE",
 		},
 	}
 
@@ -445,6 +506,8 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+
 			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("server.Client().Do() error = %v", err)
@@ -458,6 +521,45 @@ func TestREST_ListTasksParseErrors(t *testing.T) {
 			gotErr := rest.FromRESTError(resp)
 			if !errors.Is(gotErr, a2a.ErrInvalidRequest) {
 				t.Fatalf("rest.FromRESTError() = %v, want %v", gotErr, a2a.ErrInvalidRequest)
+			}
+		})
+	}
+}
+
+func TestRESTTenantEscapedIdentifiers(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, template, path, tenant, taskID string
+	}{
+		{"task slash", "/{*}", "/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"tenant slash", "/{*}", "/tenant%2Fid/tasks/task", "tenant/id", "task"},
+		{"escaped percent", "/{*}", "/tenant%252Fid/tasks/task%252Fid", "tenant%2Fid", "task%2Fid"},
+		{"literal prefix", "/my location/{*}", "/my%20location/tenant/tasks/task%2Fid", "tenant", "task/id"},
+		{"multi-segment tenant", "/{locations/*/projects/*}", "/locations/us%2Feast/projects/project/tasks/task%2Fid", "locations/us/east/projects/project", "task/id"},
+		{"multi-segment tenant escaped as single segment", "/{locations/*/projects/*}", "/locations%2Fus%2Fprojects%2Fproject/tasks/task%2Fid", "locations/us/projects/project", "task/id"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got *a2a.GetTaskRequest
+			handler := &mockRequestHandler{
+				getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+					got = req
+					return &a2a.Task{ID: req.ID}, nil
+				},
+			}
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			originalURL := *req.URL
+			recorder := httptest.NewRecorder()
+			NewTenantRESTHandler(tt.template, handler).ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GetTask() status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body)
+			}
+			want := &a2a.GetTaskRequest{ID: a2a.TaskID(tt.taskID), Tenant: tt.tenant}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("GetTask() wrong request (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(originalURL, *req.URL); diff != "" {
+				t.Fatalf("request URL changed (-want +got) diff = %s", diff)
 			}
 		})
 	}
@@ -525,6 +627,8 @@ func TestRESTTenant(t *testing.T) {
 				t.Fatalf("http.NewRequestWithContext() error = %v", err)
 			}
 
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+
 			resp, err := server.Client().Do(req)
 			if err != nil {
 				t.Fatalf("server.Client().Do() error = %v", err)
@@ -576,7 +680,7 @@ func TestREST_ServiceParams(t *testing.T) {
 		t.Fatalf("http.NewRequestWithContext() error = %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer test-token")
-
+	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	resp, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatalf("server.Client().Do() error = %v", err)
@@ -603,6 +707,7 @@ type mockRequestHandler struct {
 	RequestHandler
 	listTasksFunc       func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error)
 	getTaskFunc         func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error)
+	cancelTaskFunc      func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error)
 	subscribeToTaskFunc func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error]
 }
 
@@ -618,6 +723,13 @@ func (m *mockRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReques
 		return m.getTaskFunc(ctx, req)
 	}
 	return &a2a.Task{ID: req.ID}, nil
+}
+
+func (m *mockRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+	if m.cancelTaskFunc != nil {
+		return m.cancelTaskFunc(ctx, req)
+	}
+	return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
 }
 
 func (m *mockRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
@@ -720,6 +832,104 @@ func TestREST_ListTasks_ClientRoundtrip(t *testing.T) {
 	}
 	if diff := cmp.Diff(req, capturedReq); diff != "" {
 		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestREST_CancelTask_Success(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		tenant  string
+		body    string
+		wantReq *a2a.CancelTaskRequest
+	}{
+		{
+			name:    "empty body",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "null body",
+			body:    "null",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "empty object",
+			body:    "{}",
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123"},
+		},
+		{
+			name:    "metadata",
+			body:    `{"metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+		},
+		{
+			name:    "id from path wins",
+			body:    `{"id":"task-456","metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}},
+		},
+		{
+			name:    "tenant from path wins",
+			tenant:  "my-tenant",
+			body:    `{"tenant":"other-tenant","metadata":{"reason":"rest"}}`,
+			wantReq: &a2a.CancelTaskRequest{ID: "task-123", Tenant: "my-tenant", Metadata: map[string]any{"reason": "rest"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var capturedReq *a2a.CancelTaskRequest
+			mock := &mockRequestHandler{
+				cancelTaskFunc: func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+					capturedReq = req
+					return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
+				},
+			}
+			handler, path := NewRESTHandler(mock), rest.MakeCancelTaskPath("task-123")
+			if tc.tenant != "" {
+				handler, path = NewTenantRESTHandler("/{*}", mock), "/"+tc.tenant+path
+			}
+
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(tc.body))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			if rw.Code != http.StatusOK {
+				t.Fatalf("POST %s status = %d, want %d, body: %s", path, rw.Code, http.StatusOK, rw.Body.String())
+			}
+			if diff := cmp.Diff(tc.wantReq, capturedReq); diff != "" {
+				t.Fatalf("CancelTask() wrong request (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestREST_CancelTask_ClientRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	var capturedReq *a2a.CancelTaskRequest
+	mock := &mockRequestHandler{
+		cancelTaskFunc: func(ctx context.Context, req *a2a.CancelTaskRequest) (*a2a.Task, error) {
+			capturedReq = req
+			return &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}, nil
+		},
+	}
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+	client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+	}
+
+	req := &a2a.CancelTaskRequest{ID: "task-123", Metadata: map[string]any{"reason": "rest"}}
+	if _, err := client.CancelTask(t.Context(), req); err != nil {
+		t.Fatalf("client.CancelTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(req, capturedReq); diff != "" {
+		t.Fatalf("CancelTask() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
@@ -830,6 +1040,340 @@ func TestREST_ListTasks_StatusMapping(t *testing.T) {
 			}
 			if capturedReq.Status != tc.wantStatus {
 				t.Fatalf("listTasks status = %q, want %q", capturedReq.Status, tc.wantStatus)
+			}
+		})
+	}
+}
+
+func TestREST_VersionNegotiation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		header   string
+		urlQuery string
+		wantErr  error
+	}{
+		{name: "supported version header", header: "1.0"},
+		{name: "no header", wantErr: a2a.ErrVersionNotSupported},
+		{name: "unsupported version header", header: "99.0", wantErr: a2a.ErrVersionNotSupported},
+		{name: "supported version query parameter", urlQuery: "?A2A-Version=1.0"},
+		{name: "unsupported version query parameter", urlQuery: "?A2A-Version=99.0", wantErr: a2a.ErrVersionNotSupported},
+		{name: "header takes precedence over query parameter", header: "99.0", urlQuery: "?A2A-Version=1.0", wantErr: a2a.ErrVersionNotSupported},
+	}
+
+	handler := &InterceptedHandler{Handler: &mockRequestHandler{}}
+	server := httptest.NewServer(NewRESTHandler(handler))
+	t.Cleanup(server.Close)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+rest.MakeGetTaskPath("task-id")+tc.urlQuery, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			if tc.header != "" {
+				req.Header.Set(a2a.SvcParamVersion, tc.header)
+			}
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+			if tc.wantErr == nil {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+				}
+			} else {
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+				}
+				if err := rest.FromRESTError(resp); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("error = %v, want %v", err, tc.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestREST_StreamingErrors(t *testing.T) {
+	t.Parallel()
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("first"))
+
+	testCases := []struct {
+		name            string
+		events          iter.Seq2[a2a.Event, error]
+		acceptHeader    string
+		wantStatus      int
+		wantContentType string
+		wantEvents      []a2a.Event
+		wantErr         error
+	}{
+		{
+			name: "error before first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			acceptHeader:    "text/event-stream, application/a2a+json",
+			wantStatus:      http.StatusNotFound,
+			wantContentType: "application/a2a+json",
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name: "error before first event (accepts text/event-stream)",
+			events: func(yield func(a2a.Event, error) bool) {
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			acceptHeader:    sse.ContentEventStream,
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name: "error after first event",
+			events: func(yield func(a2a.Event, error) bool) {
+				if !yield(msg, nil) {
+					return
+				}
+				yield(nil, a2a.ErrTaskNotFound)
+			},
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
+			wantEvents:      []a2a.Event{msg},
+			wantErr:         a2a.ErrTaskNotFound,
+		},
+		{
+			name:            "no events",
+			events:          func(yield func(a2a.Event, error) bool) {},
+			wantStatus:      http.StatusOK,
+			wantContentType: sse.ContentEventStream,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			mock := &mockRequestHandler{
+				subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+					return tc.events
+				},
+			}
+			server := httptest.NewServer(NewRESTHandler(mock))
+			t.Cleanup(server.Close)
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+rest.MakeSubscribeTaskPath("test-id"), nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("Accept", tc.acceptHeader)
+
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("resp.StatusCode = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			if got := resp.Header.Get("Content-Type"); got != tc.wantContentType {
+				t.Fatalf("resp.Header.Get(\"Content-Type\") = %q, want %q", got, tc.wantContentType)
+			}
+
+			if tc.wantContentType != sse.ContentEventStream {
+				if err := rest.FromRESTError(resp); !errors.Is(err, tc.wantErr) {
+					t.Fatalf("rest.FromRESTError() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+
+			var gotEvents []a2a.Event
+			var gotErr error
+			for data, err := range sse.ParseDataStream(resp.Body) {
+				if err != nil {
+					t.Fatalf("sse.ParseDataStream() error = %v", err)
+				}
+				event, err := rest.ParseStreamResponse(data)
+				if err != nil {
+					gotErr = err
+					continue
+				}
+				gotEvents = append(gotEvents, event)
+			}
+			if diff := cmp.Diff(tc.wantEvents, gotEvents); diff != "" {
+				t.Fatalf("rest.ParseStreamResponse() wrong result (-want +got) diff = %s", diff)
+			}
+			if !errors.Is(gotErr, tc.wantErr) {
+				t.Fatalf("rest.ParseStreamResponse() error = %v, want %v", gotErr, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestREST_NegotiateContentType(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockRequestHandler{
+		getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			if req.ID != "existing-task" {
+				return nil, a2a.ErrTaskNotFound
+			}
+			return &a2a.Task{ID: req.ID}, nil
+		},
+	}
+
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	tests := []struct {
+		name            string
+		path            string
+		contentType     string
+		accept          string
+		wantContentType string
+		wantStatus      int
+	}{
+		{
+			name:            "empty Accept header",
+			path:            "/tasks/existing-task",
+			accept:          "",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "empty content-type header",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			contentType:     "",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "json only",
+			path:            "/tasks/existing-task",
+			accept:          "application/json",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "a2a+json only",
+			path:            "/tasks/existing-task",
+			accept:          "application/a2a+json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "a2a+json preferred",
+			path:            "/tasks/existing-task",
+			accept:          "application/a2a+json, application/json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "fallback to json",
+			path:            "/tasks/existing-task",
+			accept:          "text/plain",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "*/* accept header",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "empty accept with content-type",
+			path:            "/tasks/existing-task",
+			accept:          "",
+			contentType:     "application/a2a+json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "*/* accept with content-type",
+			path:            "/tasks/existing-task",
+			accept:          "*/*",
+			contentType:     "application/a2a+json",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "text/event-stream accept header",
+			path:            "/tasks/existing-task",
+			accept:          "text/event-stream",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusOK,
+		},
+		{
+			name:            "error response a2a+json",
+			path:            "/tasks/non-existing-task",
+			accept:          "application/a2a+json, application/json, text/plain",
+			wantContentType: "application/a2a+json",
+			wantStatus:      http.StatusNotFound,
+		},
+		{
+			name:            "error response json",
+			path:            "/tasks/non-existing-task",
+			accept:          "application/json",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusNotFound,
+		},
+		{
+			name:            "error response text plain",
+			path:            "/tasks/non-existing-task",
+			accept:          "text/plain",
+			wantContentType: "application/json",
+			wantStatus:      http.StatusNotFound,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", server.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("http.NewRequestWithContext() error = %v", err)
+			}
+			if tc.accept != "" {
+				req.Header.Set("Accept", tc.accept)
+			}
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
+			}
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatalf("server.Client().Do() error = %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Fatalf("resp.Body.Close() error = %v", err)
+				}
+			}()
+
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+
+			if resp.Header.Get("Content-Type") != tc.wantContentType {
+				t.Fatalf("response Content-Type = %q, want %q", resp.Header.Get("Content-Type"), tc.wantContentType)
 			}
 		})
 	}

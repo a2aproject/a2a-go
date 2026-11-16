@@ -157,7 +157,7 @@ func (mgr *Manager) updateStatus(ctx context.Context, event *a2a.TaskStatusUpdat
 		}
 	}
 
-	return taskstore.TaskVersionMissing, fmt.Errorf("max task cancelation attempts reached")
+	return taskstore.TaskVersionMissing, fmt.Errorf("max task cancelation attempts reached: %w", taskstore.ErrConcurrentModification)
 }
 
 func (mgr *Manager) create(ctx context.Context, task *a2a.Task) (taskstore.TaskVersion, error) {

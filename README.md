@@ -3,14 +3,14 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Nightly Check](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml/badge.svg)](https://github.com/a2aproject/a2a-go/actions/workflows/nightly.yaml)
 [![Go Doc](https://img.shields.io/badge/Go%20Package-Doc-blue.svg)](https://pkg.go.dev/github.com/a2aproject/a2a-go/v2)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/a2aproject/a2a-go)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue.svg)](https://deepwiki.com/a2aproject/a2a-go)
 
 <!-- markdownlint-disable no-inline-html -->
 
 <div align="center">
-   <img src="https://raw.githubusercontent.com/a2aproject/A2A/refs/heads/main/docs/assets/a2a-logo-black.svg" width="256" alt="A2A Logo"/>
+   <img src="https://raw.githubusercontent.com/a2aproject/A2A/refs/heads/main/docs/assets/a2a_logo/color/SVG/a2a_color.svg" width="256" alt="A2A Logo"/>
    <h3>
-      A Go library for running agentic applications as A2A Servers, following the <a href="https://a2a-protocol.org">Agent2Agent (A2A) Protocol</a>.
+      A Go library for running agentic applications as A2A Servers, following the <a href="https://a2a-protocol.org">Agent2Agent&nbsp;(A2A)&nbsp;Protocol</a>.
    </h3>
 </div>
 
@@ -31,7 +31,7 @@
 
 ## 🚀 Getting Started
 
-Requires Go `1.25.0` or newer:
+Requires Go `1.26.0` or newer, as specified in `go.mod`:
 
 ```bash
 go get github.com/a2aproject/a2a-go/v2
@@ -91,7 +91,7 @@ For a full documentation visit [**pkg.go.dev/a2aclient**](https://pkg.go.dev/git
 1. Resolve an `AgentCard` to get an information about how an agent is exposed.
 
     ```go
-    card, err := agentcard.DefaultResolver.Resolve(ctx)
+    card, err := agentcard.DefaultResolver.Resolve(ctx, "https://a2a.example.com")
     ```
 
 2. Create a transport-agnostic client from the `AgentCard`:
