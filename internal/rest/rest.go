@@ -310,10 +310,15 @@ const (
 	maxErrorBodyQuoteBytes = 4096
 )
 
-// FromRESTError converts an HTTP error response to an a2a error.
+// FromRESTError converts an HTTP error response to an [a2a.Error] carrying the response headers as
+// [a2a.Error.ServiceParams].
 // Bodies in google.rpc.Status format are mapped using their ErrorInfo reason. Any other body, for example
 // an auth, proxy or gateway error, is mapped using the HTTP status code and quoted in the error message.
 func FromRESTError(resp *http.Response) error {
+	return utils.WithServiceParams(fromRESTError(resp), utils.ServiceParamsFromHeader(resp.Header))
+}
+
+func fromRESTError(resp *http.Response) error {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyReadBytes))
 	if isJSONErrorContentType(resp.Header.Get("Content-Type")) {
 		var parsed struct {
@@ -324,7 +329,7 @@ func FromRESTError(resp *http.Response) error {
 			return ConvertErrorBody(parsed.Error)
 		}
 		if errors.Is(err, utils.ErrTrailingData) {
-			return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
+			return &a2a.Error{Err: fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)}
 		}
 	}
 	return fromHTTPStatus(resp.StatusCode, body, readErr)

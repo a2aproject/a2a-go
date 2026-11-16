@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -435,5 +436,35 @@ func TestFromGRPCErrorEdgeCases(t *testing.T) {
 				t.Errorf("FromGRPCError() base error = %v, want %v", gotBaseErr, wantErr)
 			}
 		})
+	}
+}
+
+func TestFromGRPCErrorWithMetadata(t *testing.T) {
+	t.Parallel()
+
+	header := metadata.Pairs("www-authenticate", "Bearer", "x-both", "h")
+	trailer := metadata.Pairs("x-both", "t")
+
+	got := FromGRPCErrorWithMetadata(status.Error(codes.Unauthenticated, "token expired"), header, trailer)
+	var a2aErr *a2a.Error
+	if !errors.As(got, &a2aErr) || !errors.Is(got, a2a.ErrUnauthenticated) || got.Error() != "token expired" {
+		t.Fatalf("FromGRPCErrorWithMetadata() = %v, want *a2a.Error wrapping %v", got, a2a.ErrUnauthenticated)
+	}
+	want := map[string][]string{"www-authenticate": {"Bearer"}, "x-both": {"h", "t"}}
+	if diff := cmp.Diff(want, a2aErr.ServiceParams); diff != "" {
+		t.Fatalf("FromGRPCErrorWithMetadata() ServiceParams wrong (-want +got):\n%s", diff)
+	}
+
+	plain := errors.New("simple error")
+	if got := FromGRPCErrorWithMetadata(plain, header); got != plain {
+		t.Fatalf("FromGRPCErrorWithMetadata(non-status error) = %v, want the error unchanged", got)
+	}
+	if got := FromGRPCErrorWithMetadata(nil, header); got != nil {
+		t.Fatalf("FromGRPCErrorWithMetadata(nil) = %v, want nil", got)
+	}
+
+	got = FromGRPCErrorWithMetadata(status.Error(codes.Internal, "boom"))
+	if !errors.As(got, &a2aErr) || a2aErr.ServiceParams != nil {
+		t.Fatalf("FromGRPCErrorWithMetadata() without metadata = %#v, want nil ServiceParams", got)
 	}
 }
