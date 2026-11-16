@@ -468,15 +468,16 @@ func ToProtoListTasksRequest(request *a2a.ListTasksRequest) (*a2apb.ListTasksReq
 	if request.StatusTimestampAfter != nil {
 		lastUpdatedAfter = timestamppb.New(*request.StatusTimestampAfter)
 	}
-	pageSize := int32(request.PageSize)
 	pbReq := &a2apb.ListTasksRequest{
 		Tenant:               request.Tenant,
 		ContextId:            request.ContextID,
 		Status:               toProtoTaskState(request.Status),
-		PageSize:             &pageSize,
 		PageToken:            request.PageToken,
 		StatusTimestampAfter: lastUpdatedAfter,
 		IncludeArtifacts:     new(request.IncludeArtifacts),
+	}
+	if request.PageSize != 0 {
+		pbReq.PageSize = new(int32(request.PageSize))
 	}
 	if request.HistoryLength != nil {
 		pbReq.HistoryLength = new(int32(*request.HistoryLength))
