@@ -700,7 +700,6 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 			result.reason = resp.StopReason
 		}
 		paused, expired := t.end()
-		t.events.push(turnEvent{result: result})
 		if paused != nil {
 			e.abandon(promptCtx, paused, result, expired)
 		}
@@ -715,6 +714,9 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		e.checkDrainedLocked()
 		e.mu.Unlock()
 		done()
+		// The terminal event goes out only after the context is unlocked, so a
+		// caller which sends the next message once it sees it isn't rejected.
+		t.events.push(turnEvent{result: result})
 	}()
 	return t, nil
 }

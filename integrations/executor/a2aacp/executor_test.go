@@ -473,6 +473,24 @@ func TestExecutor_RejectsTurnInBusyContext(t *testing.T) {
 	}
 }
 
+func TestExecutor_ContextFreeOnceTurnCompletes(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	// A slow end hook widens the window between the agent's response and the
+	// release of the context, which a caller must never observe.
+	slowEnd := func(context.Context, *a2asrv.ExecutorContext) func() {
+		return func() { time.Sleep(50 * time.Millisecond) }
+	}
+	e := newTestExecutor(t, h, Config{RejectBusyContext: true, Turn: slowEnd})
+
+	for _, text := range []string{"first", "second"} {
+		got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart(text))))
+		if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+			t.Fatalf("Executor.Execute(%q) wrong result (-want +got) diff = %s", text, diff)
+		}
+	}
+}
+
 func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
