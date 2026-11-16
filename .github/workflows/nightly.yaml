@@ -17,6 +17,12 @@ jobs:
     - name: Setup
       uses: ./.github/actions/setup
 
+    # The test loop opens and closes loopback connections faster than their
+    # TIME_WAIT sockets expire. With the default range they can cover every
+    # ephemeral port, and listening on 127.0.0.1:0 fails with EADDRINUSE.
+    - name: Widen ephemeral port range
+      run: sudo sysctl -w net.ipv4.ip_local_port_range="1024 65535"
+
     - name: Race Detector
       run: go test -race -mod=readonly -v -count=1 -shuffle=on ./...
 
