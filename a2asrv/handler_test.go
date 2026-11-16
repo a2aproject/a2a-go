@@ -3020,11 +3020,11 @@ func TestRequestHandler_SendMessage_PushConfigEnforcement(t *testing.T) {
 					t.Fatalf("SendMessage() error = %v, want %v", err, tt.wantErr)
 				}
 				if tt.wantErr != nil && executor.executeCalled {
-					t.Fatal("SendMessage() executor called, want rejeceted before execution")
+					t.Fatal("SendMessage() executor called, want rejected before execution")
 				}
 				saved, err := ps.List(ctx, taskSeed.ID)
 				if err != nil {
-					t.Fatalf("PushConfigStore.Lust() err = %v", err)
+					t.Fatalf("PushConfigStore.List() err = %v", err)
 				}
 				if len(saved) != tt.wantSaved {
 					t.Fatalf("PushConfigStore.List() = %v, want %d configs", saved, tt.wantSaved)
