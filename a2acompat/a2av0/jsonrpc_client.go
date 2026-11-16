@@ -47,6 +47,8 @@ func WithJSONRPCTransport(cfg JSONRPCTransportConfig) a2aclient.FactoryOption {
 
 // JSONRPCTransportConfig holds the configuration for the JSON-RPC transport.
 type JSONRPCTransportConfig struct {
+	// URL is the JSON-RPC endpoint. If empty, the URL from the agent card
+	// interface will be used.
 	URL    string
 	Client *http.Client
 }
@@ -55,7 +57,9 @@ type JSONRPCTransportConfig struct {
 func NewJSONRPCTransportFactory(cfg JSONRPCTransportConfig) a2aclient.TransportFactory {
 	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
 		cfgCopy := cfg
-		cfgCopy.URL = iface.URL
+		if cfgCopy.URL == "" {
+			cfgCopy.URL = iface.URL
+		}
 		return NewJSONRPCTransport(cfgCopy), nil
 	})
 }

@@ -56,7 +56,9 @@ type RESTTransportConfig struct {
 func NewRESTTransportFactory(cfg RESTTransportConfig) a2aclient.TransportFactory {
 	return a2aclient.TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (a2aclient.Transport, error) {
 		cfgCopy := cfg
-		cfgCopy.URL = iface.URL
+		if cfgCopy.URL == "" {
+			cfgCopy.URL = iface.URL
+		}
 		return NewRESTTransport(cfgCopy)
 	})
 }
