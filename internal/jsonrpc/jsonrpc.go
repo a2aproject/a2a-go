@@ -151,35 +151,44 @@ const maxErrorBodyBytes = 1 << 20
 // for example one written by an auth middleware, is converted with [FromJSONRPCError]. Any other
 // response is reported using its HTTP status.
 func FromHTTPError(resp *http.Response, requestID string) error {
-	statusErr := fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	params := utils.ServiceParamsFromHeader(resp.Header)
+	statusErr := a2a.NewError(errorFromHTTPStatus(resp.StatusCode), fmt.Sprintf("unexpected HTTP status: %s", resp.Status))
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || mediaType != ContentJSON {
-		return statusErr
+		return utils.WithServiceParams(statusErr, params)
 	}
 	var body json.RawMessage
 	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &body); err != nil {
-		return statusErr
+		return utils.WithServiceParams(statusErr, params)
 	}
 	var envelope struct {
 		JSONRPC string `json:"jsonrpc"`
 		Error   *Error `json:"error"`
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Error == nil {
-		return statusErr
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Error == nil || envelope.JSONRPC != Version {
+		return utils.WithServiceParams(statusErr, params)
 	}
-	if envelope.JSONRPC == Version {
-		var parsed ClientResponse
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			if errors.Is(err, a2a.ErrInvalidAgentResponse) {
-				return err
-			}
-			return statusErr
+	var parsed ClientResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		if errors.Is(err, a2a.ErrInvalidAgentResponse) {
+			return utils.WithServiceParams(err, params)
 		}
-		if err := parsed.ValidateID(requestID); err != nil {
-			return err
-		}
+		return utils.WithServiceParams(statusErr, params)
 	}
-	return FromJSONRPCError(envelope.Error)
+	if err := parsed.ValidateID(requestID); err != nil {
+		return utils.WithServiceParams(err, params)
+	}
+	return utils.WithServiceParams(FromJSONRPCError(envelope.Error), params)
+}
+func errorFromHTTPStatus(statusCode int) error {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return a2a.ErrUnauthenticated
+	case http.StatusForbidden:
+		return a2a.ErrUnauthorized
+	default:
+		return a2a.ErrServerError
+	}
 }
 
 // ToJSONRPCError converts an error to a JSON-RPC [Error].

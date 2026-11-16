@@ -149,23 +149,23 @@ func (t *jsonrpcTransport) sendRequest(ctx context.Context, method string, param
 	}
 
 	if resp.Error != nil {
-		return nil, jsonrpc.FromJSONRPCError(resp.Error)
+		return nil, utils.WithServiceParams(jsonrpc.FromJSONRPCError(resp.Error), utils.ServiceParamsFromHeader(httpResp.Header))
 	}
 
 	return resp.Result, nil
 }
 
 // sendStreamingRequest sends a streaming JSON-RPC request and returns an SSE stream.
-func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params ServiceParams, req any) (io.ReadCloser, string, error) {
+func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method string, params ServiceParams, req any) (io.ReadCloser, http.Header, string, error) {
 	httpReq, requestID, err := t.newHTTPRequest(ctx, method, params, req)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	httpReq.Header.Set("Accept", sse.ContentEventStream+", "+jsonrpc.ContentJSON)
 
 	httpResp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
+		return nil, nil, "", fmt.Errorf("failed to send HTTP request: %w", utils.RedactURLError(err))
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
@@ -173,13 +173,13 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 		if err := httpResp.Body.Close(); err != nil {
 			log.Error(ctx, "failed to close http response body", err)
 		}
-		return nil, "", statusErr
+		return nil, nil, "", statusErr
 	}
 	// The server may refuse a streaming call before opening a stream (e.g. task in a terminal
 	// state) and answer with a plain JSON-RPC error instead of SSE.
 	mediaType, _, err := mime.ParseMediaType(httpResp.Header.Get("Content-Type"))
 	if err != nil || mediaType == sse.ContentEventStream {
-		return httpResp.Body, requestID, nil
+		return httpResp.Body, httpResp.Header, requestID, nil
 	}
 	defer func() {
 		if err := httpResp.Body.Close(); err != nil {
@@ -189,17 +189,17 @@ func (t *jsonrpcTransport) sendStreamingRequest(ctx context.Context, method stri
 	if mediaType == jsonrpc.ContentJSON {
 		var resp jsonrpc.ClientResponse
 		if err := utils.DecodeJSON(httpResp.Body, &resp); err != nil {
-			return nil, "", fmt.Errorf("failed to decode non-streaming response: %w", err)
+			return nil, nil, "", fmt.Errorf("failed to decode non-streaming response: %w", err)
 		}
 		if err := resp.ValidateID(requestID); err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 		if resp.Error != nil {
-			return nil, "", jsonrpc.FromJSONRPCError(resp.Error)
+			return nil, nil, "", utils.WithServiceParams(jsonrpc.FromJSONRPCError(resp.Error), utils.ServiceParamsFromHeader(httpResp.Header))
 		}
-		return nil, "", fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
+		return nil, nil, "", fmt.Errorf("expected %s, got a non-error %s response", sse.ContentEventStream, mediaType)
 	}
-	return nil, "", fmt.Errorf("unexpected Content-Type %q", mediaType)
+	return nil, nil, "", fmt.Errorf("unexpected Content-Type %q", mediaType)
 }
 
 // parseSSEStream parses Server-Sent Events and yields JSON-RPC responses.
@@ -258,7 +258,7 @@ func (t *jsonrpcTransport) SendMessage(ctx context.Context, params ServiceParams
 // It converts the SSE stream into a sequence of A2A events.
 func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method string, params ServiceParams, req any) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
-		body, requestID, err := t.sendStreamingRequest(ctx, method, params, req)
+		body, header, requestID, err := t.sendStreamingRequest(ctx, method, params, req)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -271,7 +271,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 
 		for result, err := range parseSSEStream(body, requestID) {
 			if err != nil {
-				yield(nil, err)
+				yield(nil, utils.WithServiceParams(err, utils.ServiceParamsFromHeader(header)))
 				return
 			}
 

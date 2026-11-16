@@ -120,6 +120,11 @@ type Error struct {
 	Details map[string]any
 	// TypedDetails contains typed details about the error.
 	TypedDetails []*errordetails.Typed
+	// ServiceParams holds the metadata of the response that carried the error, as a
+	// client transport received it: HTTP headers, or gRPC header and trailer metadata,
+	// with lowercase keys. It is nil when the error was not received from a server.
+	// Servers don't send it.
+	ServiceParams map[string][]string
 }
 
 // ErrorInfo returns the ErrorInfo typed detail. If not present, it will be created.

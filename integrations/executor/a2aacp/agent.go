@@ -338,7 +338,8 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 }
 
 // makeRoom stops the least recently used idle agent if starting the agent of
-// s would exceed PoolConfig.MaxAgents.
+// s would exceed PoolConfig.MaxAgents. Agents that already exited don't count,
+// and the slots of idle ones are dropped.
 func (e *Executor) makeRoom(s *agentSlot) error {
 	if e.maxAgents <= 0 {
 		return nil
@@ -346,8 +347,15 @@ func (e *Executor) makeRoom(s *agentSlot) error {
 	e.mu.Lock()
 	running := 0
 	var victim *agentSlot
+	var exited []*agentSlot
 	for _, other := range e.agents {
 		if other == s || other.agent == nil {
+			continue
+		}
+		if other.agent.exited() {
+			if other.refs == 0 {
+				exited = append(exited, other)
+			}
 			continue
 		}
 		running++
@@ -356,6 +364,12 @@ func (e *Executor) makeRoom(s *agentSlot) error {
 		}
 	}
 	e.mu.Unlock()
+	for _, dead := range exited {
+		if dead.startMu.TryLock() {
+			e.stopIfIdle(dead)
+			dead.startMu.Unlock()
+		}
+	}
 	if running < e.maxAgents {
 		return nil
 	}

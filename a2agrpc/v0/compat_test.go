@@ -16,15 +16,23 @@ package a2agrpc
 
 import (
 	"context"
+	"errors"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 func TestCompat_WithGRPCMetadata(t *testing.T) {
@@ -107,4 +115,79 @@ func TestCompat_ToTrailer(t *testing.T) {
 	if !reflect.DeepEqual(got[legacyKey], []string{"uri1"}) {
 		t.Errorf("expected trailer %s: %v, got %v", legacyKey, []string{"uri1"}, got[legacyKey])
 	}
+}
+
+// errorMetadataServer fails every GetTask and SendStreamingMessage call with codes.Unauthenticated
+// after setting response header and trailer metadata.
+type errorMetadataServer struct {
+	a2apb.UnimplementedA2AServiceServer
+}
+
+func (errorMetadataServer) GetTask(ctx context.Context, req *a2apb.GetTaskRequest) (*a2apb.Task, error) {
+	if err := grpc.SetHeader(ctx, metadata.Pairs("www-authenticate", `Bearer resource_metadata="x"`)); err != nil {
+		return nil, err
+	}
+	if err := grpc.SetTrailer(ctx, metadata.Pairs("x-trailer", "t")); err != nil {
+		return nil, err
+	}
+	return nil, status.Error(codes.Unauthenticated, "token expired")
+}
+
+func (errorMetadataServer) SendStreamingMessage(req *a2apb.SendMessageRequest, stream grpc.ServerStreamingServer[a2apb.StreamResponse]) error {
+	if err := stream.SetHeader(metadata.Pairs("www-authenticate", `Bearer resource_metadata="x"`)); err != nil {
+		return err
+	}
+	stream.SetTrailer(metadata.Pairs("x-trailer", "t"))
+	return status.Error(codes.Unauthenticated, "token expired")
+}
+
+func TestGRPCTransport_ErrorServiceParams(t *testing.T) {
+	t.Parallel()
+
+	lis := bufconn.Listen(1024 * 1024)
+	s := grpc.NewServer()
+	a2apb.RegisterA2AServiceServer(s, errorMetadataServer{})
+	go func() { _ = s.Serve(lis) }()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("grpc.NewClient() error = %v", err)
+	}
+	t.Cleanup(func() {
+		s.Stop()
+		_ = conn.Close()
+	})
+	transport := NewGRPCTransport(conn)
+
+	checkErr := func(op string, err error) {
+		t.Helper()
+		if !errors.Is(err, a2a.ErrUnauthenticated) {
+			t.Fatalf("transport.%s() error = %v, want %v", op, err, a2a.ErrUnauthenticated)
+		}
+		var a2aErr *a2a.Error
+		if !errors.As(err, &a2aErr) {
+			t.Fatalf("transport.%s() error = %T, want *a2a.Error", op, err)
+		}
+		if diff := cmp.Diff([]string{`Bearer resource_metadata="x"`}, a2aErr.ServiceParams["www-authenticate"]); diff != "" {
+			t.Errorf("transport.%s() ServiceParams[www-authenticate] wrong (-want +got):\n%s", op, diff)
+		}
+		if diff := cmp.Diff([]string{"t"}, a2aErr.ServiceParams["x-trailer"]); diff != "" {
+			t.Errorf("transport.%s() ServiceParams[x-trailer] wrong (-want +got):\n%s", op, diff)
+		}
+	}
+
+	_, err = transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+	checkErr("GetTask", err)
+
+	var streamErr error
+	for _, err := range transport.SendStreamingMessage(t.Context(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
+		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+	}) {
+		if err != nil {
+			streamErr = err
+			break
+		}
+	}
+	checkErr("SendStreamingMessage", streamErr)
 }
