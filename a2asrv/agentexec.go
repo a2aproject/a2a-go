@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"net/http"
 	"slices"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -153,9 +154,10 @@ type AgentExecutionCleaner interface {
 
 type factory struct {
 	taskStore          taskstore.Store
-	pushSender         push.Sender
+	pushDelivery       push.DeliveryHandler
 	pushConfigStore    push.ConfigStore
 	agent              AgentExecutor
+	cleaners           []AgentExecutionCleaner
 	interceptors       []ExecutorContextInterceptor
 	taskRetrySupported bool
 	materializer       taskstore.UpdateMaterializer
@@ -177,7 +179,7 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 	}
 
 	if params.Config != nil && params.Config.PushConfig != nil {
-		if f.pushConfigStore == nil || f.pushSender == nil {
+		if f.pushConfigStore == nil || f.pushDelivery == nil {
 			return nil, nil, nil, fmt.Errorf("bug: message with push config received bug push is not configured: %w", a2a.ErrPushNotificationNotSupported)
 		}
 		if _, err := f.pushConfigStore.Save(ctx, tid, params.Config.PushConfig); err != nil {
@@ -193,11 +195,11 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 	processor := newProcessor(
 		updateManager,
 		f.pushConfigStore,
-		f.pushSender,
+		f.pushDelivery,
 		execCtx.ctx,
 		f.taskStore,
 	)
-	return executor, processor, &cleaner{agent: f.agent, execCtx: execCtx.ctx}, nil
+	return executor, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx.ctx}, nil
 }
 
 type executionContext struct {
@@ -341,8 +343,8 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("taskupdate manager: %w", err)
 	}
-	processor := newProcessor(updateManager, f.pushConfigStore, f.pushSender, execCtx, f.taskStore)
-	return canceler, processor, &cleaner{agent: f.agent, execCtx: execCtx}, nil
+	processor := newProcessor(updateManager, f.pushConfigStore, f.pushDelivery, execCtx, f.taskStore)
+	return canceler, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx}, nil
 }
 
 type executor struct {
@@ -375,8 +377,8 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 }
 
 type cleaner struct {
-	agent   AgentExecutor
-	execCtx *ExecutorContext
+	cleaners []AgentExecutionCleaner
+	execCtx  *ExecutorContext
 }
 
 // Cleanup is called after an agent execution finishes with either result or an error.
@@ -396,7 +398,7 @@ func (e *cleaner) Cleanup(ctx context.Context, result a2a.SendMessageResult, err
 		}
 	}
 
-	if cleaner, ok := e.agent.(AgentExecutionCleaner); ok {
+	for _, cleaner := range e.cleaners {
 		cleaner.Cleanup(ctx, e.execCtx, result, err)
 	}
 }
@@ -441,18 +443,18 @@ type processor struct {
 	// gets initialized.
 	updateManager   *taskupdate.Manager
 	pushConfigStore push.ConfigStore
-	pushSender      push.Sender
+	pushDelivery    push.DeliveryHandler
 	execCtx         *ExecutorContext
 	store           taskstore.Store
 }
 
 var _ taskexec.Processor = (*processor)(nil)
 
-func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore, sender push.Sender, execCtx *ExecutorContext, store taskstore.Store) *processor {
+func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore, pushDelivery push.DeliveryHandler, execCtx *ExecutorContext, store taskstore.Store) *processor {
 	return &processor{
 		updateManager:   updateManager,
 		pushConfigStore: pushStore,
-		pushSender:      sender,
+		pushDelivery:    pushDelivery,
 		execCtx:         execCtx,
 		store:           store,
 	}
@@ -556,7 +558,7 @@ func (p *processor) loadResult(ctx context.Context) (*taskexec.ProcessorResult, 
 }
 
 func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) error {
-	if p.pushSender == nil || p.pushConfigStore == nil {
+	if p.pushDelivery == nil || p.pushConfigStore == nil {
 		return nil
 	}
 	taskID := p.execCtx.TaskID
@@ -568,7 +570,7 @@ func (p *processor) sendPushNotifications(ctx context.Context, event a2a.Event) 
 
 	// TODO(yarolegovich): consider dispatching in parallel with max concurrent calls cap
 	for _, config := range configs {
-		if err := p.pushSender.SendPush(ctx, config, event); err != nil {
+		if _, err := p.pushDelivery(ctx, &push.Delivery{Config: config, Event: event, Headers: http.Header{}}); err != nil {
 			return err
 		}
 	}
