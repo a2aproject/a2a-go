@@ -26,11 +26,11 @@ import (
 //
 // Put must copy what it keeps, Scopes and GrantedScopes included, since the
 // caller may reuse the grant. When its users serialize their writes with a
-// [Locker], Get, Put and Delete may be called with that lock held, as when a
-// grant is read, refreshed and written under it, so they must not take it
-// themselves. Writes may receive a context that is detached from the caller's
-// cancellation, so that a grant obtained just before the caller gave up is not
-// lost.
+// [Locker], as a [Manager] given one does, Get, Put and Delete may be called
+// with that lock held, as when a grant is read, refreshed and written under
+// it, so they must not take it themselves. Writes may receive a context that
+// is detached from the caller's cancellation, so that a grant obtained just
+// before the caller gave up is not lost.
 type Store interface {
 	// List returns every grant, in no particular order. It may leave
 	// AccessToken and RefreshToken empty, so a store that keeps tokens in a
@@ -48,7 +48,8 @@ type Store interface {
 // Locker serializes the refreshes and writes of grants between the users of a
 // shared [Store], such as processes sharing a file in the user's home directory.
 // They hold the lock around reading, refreshing and writing a grant, so two of
-// them don't both spend a refresh token the server rotates on use.
+// them don't both spend a refresh token the server rotates on use. Give it to a
+// [Manager] as Manager.Locker; without one, a Manager only locks within itself.
 type Locker interface {
 	// Lock takes the lock, waiting until ctx is done, and returns the function
 	// that releases it.
@@ -57,7 +58,8 @@ type Locker interface {
 
 // MemoryStore is a [Store] that keeps grants in memory, for clients that obtain
 // grants anew in every process. Its List returns the tokens too. It is also a
-// [Locker], for its users in one process. The zero value is an empty store.
+// [Locker], for its users in one process, such as several Managers sharing it.
+// The zero value is an empty store.
 type MemoryStore struct {
 	mu     sync.Mutex
 	grants map[string]Grant

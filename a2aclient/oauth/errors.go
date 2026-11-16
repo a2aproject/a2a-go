@@ -61,6 +61,62 @@ func isOAuthError(err error, code string) bool {
 	return errors.As(err, &oe) && oe.Code == code
 }
 
+// SignInRequiredError reports that a request needs a grant the user has to
+// sign in for first, with [Manager.SignIn] or [Manager.BeginSignIn].
+type SignInRequiredError struct {
+	// Requirement describes where and for what to sign in.
+	Requirement *Requirement
+	// Reason explains why a stored grant could not be used; empty when there
+	// was none.
+	Reason string
+	// Err is the error the agent's response produced; nil when the request was
+	// not sent.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *SignInRequiredError) Error() string {
+	if e.Requirement == nil {
+		return "sign-in required"
+	}
+	msg := fmt.Sprintf("%s requires signing in at %s", e.Requirement.Resource, e.Requirement.Endpoints.Issuer)
+	if len(e.Requirement.Scopes) > 0 {
+		msg += " for scopes " + strings.Join(e.Requirement.Scopes, " ")
+	}
+	if e.Reason != "" {
+		msg += ": " + e.Reason
+	}
+	return msg
+}
+
+// Unwrap returns the error the agent's response produced, so that, for
+// example, errors.Is(err, a2a.ErrUnauthenticated) holds after a 401.
+func (e *SignInRequiredError) Unwrap() error { return e.Err }
+
+// FailureError reports that a step of the authorization process failed:
+// discovery, metadata validation, reading or writing the grant store, taking
+// its lock, or a token refresh. It tells such a failure apart from the error
+// the agent itself returned for a call.
+type FailureError struct {
+	// Err is the cause.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *FailureError) Error() string {
+	if e.Err == nil {
+		return "OAuth authorization failed"
+	}
+	return e.Err.Error()
+}
+
+// Unwrap returns the cause.
+func (e *FailureError) Unwrap() error { return e.Err }
+
+func failure(format string, args ...any) error {
+	return &FailureError{Err: fmt.Errorf(format, args...)}
+}
+
 // NoClientError reports that no client registration can be used with an
 // authorization server.
 type NoClientError struct {
