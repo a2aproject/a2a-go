@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -230,10 +231,26 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		materializer = defaultMaterializer
 	}
 
+	if h.workQueue == nil && h.taskStore == nil {
+		h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
+			Authenticator: NewTaskStoreAuthenticator(),
+		})
+	}
+	if h.taskStore != nil {
+		h.taskStore = wrapWithPlugins(h.taskStore, ih.plugins, Plugin.WrapTaskStore)
+	}
+
+	pushDelivery := push.NewDeliveryHandler(h.pushSender)
+	if pushDelivery != nil {
+		pushDelivery = wrapWithPlugins(pushDelivery, ih.plugins, Plugin.WrapPushDelivery)
+	}
+
+	agent, cleaners := wrapExecutor(h.agentExecutor, ih.plugins)
 	execFactory := &factory{
-		agent:           h.agentExecutor,
+		agent:           agent,
+		cleaners:        cleaners,
 		taskStore:       h.taskStore,
-		pushSender:      h.pushSender,
+		pushDelivery:    pushDelivery,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
 		materializer:    materializer,
@@ -258,12 +275,6 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	} else {
 		if h.queueManager == nil {
 			h.queueManager = eventqueue.NewInMemoryManager()
-		}
-		if h.taskStore == nil {
-			h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
-				Authenticator: NewTaskStoreAuthenticator(),
-			})
-			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
 			QueueManager:           h.queueManager,
@@ -438,11 +449,14 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
+	if errors.Is(err, push.ErrPushConfigNotFound) {
+		return nil, fmt.Errorf("%w: %w", err, a2a.ErrTaskNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
-		return nil, push.ErrPushConfigNotFound
+		return nil, fmt.Errorf("%w: %w", push.ErrPushConfigNotFound, a2a.ErrTaskNotFound)
 	}
 	return config, nil
 }

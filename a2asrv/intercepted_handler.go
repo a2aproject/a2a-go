@@ -40,6 +40,8 @@ type InterceptedHandler struct {
 	// Logger is the logger which will be accessible from request scope context using log package
 	// methods. Defaults to slog.Default() if not set.
 	Logger *slog.Logger
+
+	plugins []Plugin
 }
 
 var _ RequestHandler = (*InterceptedHandler)(nil)
@@ -155,7 +157,11 @@ func (h *InterceptedHandler) GetExtendedAgentCard(ctx context.Context, req *a2a.
 	return doCall(ctx, callCtx, h, req, h.Handler.GetExtendedAgentCard)
 }
 
-func interceptCalls(h *InterceptedHandler, next callHandler) callHandler {
+func wrapCall(h *InterceptedHandler, next CallHandler) CallHandler {
+	return wrapWithPlugins(interceptCalls(h, next), h.plugins, Plugin.WrapCall)
+}
+
+func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
 	return func(ctx context.Context, callCtx *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			ctx, req := ctx, req
@@ -186,7 +192,7 @@ func interceptAfter(ctx context.Context, interceptors []CallInterceptor, callCtx
 	return response.Payload, response.Err
 }
 
-func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) callHandler {
+func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, error)) CallHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
@@ -199,7 +205,7 @@ func unaryHandler[Req, Resp any](handlerCall func(context.Context, Req) (Resp, e
 	}
 }
 
-func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) callHandler {
+func streamHandler[Req any](handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error]) CallHandler {
 	return func(ctx context.Context, _ *CallContext, req Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
 			typed, err := utils.CastPayload[Req](req.Payload)
@@ -256,7 +262,7 @@ func doCall[Req any, Resp any](
 	if err := checkProtocolVersion(callCtx); err != nil {
 		return zero, err
 	}
-	for payload, err := range interceptCalls(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+	for payload, err := range wrapCall(h, unaryHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
 		return utils.CastResult[Resp](payload, err)
 	}
 	return zero, fmt.Errorf("%s produced no result", callCtx.Method())
@@ -266,7 +272,7 @@ func streamCall[Req any](
 	ctx context.Context, callCtx *CallContext, h *InterceptedHandler, req Req,
 	handlerCall func(context.Context, Req) iter.Seq2[a2a.Event, error], yield func(a2a.Event, error) bool,
 ) {
-	for payload, err := range interceptCalls(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
+	for payload, err := range wrapCall(h, streamHandler(handlerCall))(ctx, callCtx, Request{Payload: req}) {
 		event, err := utils.CastResult[a2a.Event](payload, err)
 		if err != nil {
 			yield(nil, err)
