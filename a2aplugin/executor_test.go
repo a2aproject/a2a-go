@@ -52,6 +52,12 @@ func newUserMessage() *a2a.Message {
 	return a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))
 }
 
+func newAgentReply(contextID, text string) *a2a.Message {
+	m := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart(text))
+	m.ContextID = contextID
+	return m
+}
+
 func waitAfterExecute(t *testing.T, calls <-chan afterExecuteCall) afterExecuteCall {
 	t.Helper()
 	select {
@@ -199,9 +205,9 @@ func TestServer_BeforeExecutePanic(t *testing.T) {
 func TestServer_OnExecuteEventReplacesEvent(t *testing.T) {
 	t.Parallel()
 	agent := newAgent(func(*a2asrv.ExecutorContext) []a2a.Event {
-		return []a2a.Event{a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("original"))}
+		return []a2a.Event{newAgentReply("test-ctx", "original")}
 	})
-	replaced := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("replaced"))
+	replaced := newAgentReply("test-ctx", "replaced")
 	plugin := Server("replace", ServerHooks{
 		OnExecuteEvent: func(context.Context, *a2asrv.ExecutorContext, a2a.Event) (a2a.Event, error) {
 			return replaced, nil
@@ -209,7 +215,7 @@ func TestServer_OnExecuteEventReplacesEvent(t *testing.T) {
 	})
 	handler := a2asrv.NewHandler(agent, a2asrv.WithPlugins(plugin))
 
-	got, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage()})
+	got, err := handler.SendMessage(t.Context(), &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "test-ctx"}, a2a.NewTextPart("hi"))})
 	if err != nil {
 		t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 	}
