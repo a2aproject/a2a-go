@@ -181,9 +181,10 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
 - `makeRoom` enforces `PoolConfig.MaxAgents`: it stops the least recently used idle agent or fails
   the turn with "all N agents are busy". `poolMu` serializes capacity decisions and each start
   reserves a slot under `Executor.mu` before releasing `poolMu`; starting slots count toward the
-  limit until initialization succeeds or fails. An evicted agent is detached under the lock and
-  closed afterward, so unrelated starts need not wait for its close; its per-slot `startMu` stays
-  held until closing finishes. The pool lock is not held across close or initialization.
+  limit until initialization succeeds or fails. Exited agents do not count toward the limit;
+  unused exited agents and eviction victims are detached under the lock and closed afterward, so
+  unrelated starts need not wait for their close. Each detached slot's `startMu` stays held until
+  closing finishes. The pool lock is not held across close or initialization.
 - Turns are routed by `routeKey{agent, sessionID}`: processes of different keys can hand out the
   same session IDs.
 - `stopAgent` (used by `CancelTimeout`) closes the agent only if it is still the running one of

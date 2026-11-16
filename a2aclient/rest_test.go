@@ -848,3 +848,73 @@ func TestAuth_APIKeyQueryLocation_REST(t *testing.T) {
 		t.Errorf("query param api_key = %q, want %q", got, "secret")
 	}
 }
+
+func TestRESTTransport_ErrorServiceParams(t *testing.T) {
+	t.Parallel()
+
+	statusBody := `{"error":{"code":401,"status":"UNAUTHENTICATED","message":"token expired","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"UNAUTHENTICATED","domain":"a2a-protocol.org"}]}}`
+	testCases := []struct {
+		name        string
+		status      int
+		contentType string
+		body        string
+	}{
+		{
+			name:        "google.rpc.Status body",
+			status:      http.StatusUnauthorized,
+			contentType: "application/json",
+			body:        statusBody,
+		},
+		{
+			name:        "plain text body",
+			status:      http.StatusUnauthorized,
+			contentType: "text/plain",
+			body:        "unauthorized",
+		},
+		{
+			name:        "error event in an SSE stream",
+			status:      http.StatusOK,
+			contentType: "text/event-stream",
+			body:        "data: " + statusBody + "\n\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="x"`)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+			transport := newRESTTransport(t, server)
+
+			checkErr := func(op string, err error) {
+				t.Helper()
+				if !errors.Is(err, a2a.ErrUnauthenticated) {
+					t.Fatalf("transport.%s() error = %v, want %v", op, err, a2a.ErrUnauthenticated)
+				}
+				checkWWWAuthenticate(t, op, err)
+			}
+
+			if tc.status != http.StatusOK {
+				_, err := transport.GetTask(t.Context(), ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+				checkErr("GetTask", err)
+			}
+
+			var streamErr error
+			for _, err := range transport.SendStreamingMessage(t.Context(), ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+			}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			checkErr("SendStreamingMessage", streamErr)
+		})
+	}
+}

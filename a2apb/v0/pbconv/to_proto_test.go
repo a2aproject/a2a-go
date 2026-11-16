@@ -990,7 +990,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 	}{
 		{
 			name: "authorization code flow",
-			flows: &a2a.AuthorizationCodeOAuthFlow{
+			flows: a2a.AuthorizationCodeOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				TokenURL:         "https://auth.com/token",
 				RefreshURL:       "https://auth.com/refresh",
@@ -1009,7 +1009,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "client credentials flow",
-			flows: &a2a.ClientCredentialsOAuthFlow{
+			flows: a2a.ClientCredentialsOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"write": "write data"},
@@ -1026,7 +1026,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "implicit flow",
-			flows: &a2a.ImplicitOAuthFlow{
+			flows: a2a.ImplicitOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				RefreshURL:       "https://auth.com/refresh",
 				Scopes:           map[string]string{"profile": "read profile"},
@@ -1043,7 +1043,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "password flow",
-			flows: &a2a.PasswordOAuthFlow{
+			flows: a2a.PasswordOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"user": "user info"},
@@ -1057,6 +1057,26 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name: "pointer flow",
+			flows: &a2a.ClientCredentialsOAuthFlow{
+				TokenURL: "https://auth.com/token",
+				Scopes:   map[string]string{"write": "write data"},
+			},
+			want: &a2apb.OAuthFlows{
+				Flow: &a2apb.OAuthFlows_ClientCredentials{
+					ClientCredentials: &a2apb.ClientCredentialsOAuthFlow{
+						TokenUrl: "https://auth.com/token",
+						Scopes:   map[string]string{"write": "write data"},
+					},
+				},
+			},
+		},
+		{
+			name:    "nil pointer flow",
+			flows:   (*a2a.AuthorizationCodeOAuthFlow)(nil),
+			wantErr: true,
 		},
 		{
 			name:    "no flows specified",

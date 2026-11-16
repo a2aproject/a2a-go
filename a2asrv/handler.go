@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -448,11 +449,14 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
+	if errors.Is(err, push.ErrPushConfigNotFound) {
+		return nil, fmt.Errorf("%w: %w", err, a2a.ErrTaskNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
-		return nil, push.ErrPushConfigNotFound
+		return nil, fmt.Errorf("%w: %w", push.ErrPushConfigNotFound, a2a.ErrTaskNotFound)
 	}
 	return config, nil
 }

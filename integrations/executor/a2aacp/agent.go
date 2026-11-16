@@ -331,19 +331,20 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 		return nil, fmt.Errorf("the agent failed to start, retrying after %s: %w", retryAt.Format(time.TimeOnly), startErr)
 	}
 	e.poolMu.Lock()
-	victim, victimAgent, err := e.makeRoom(s)
-	if err != nil {
-		e.poolMu.Unlock()
-		return nil, err
+	idle, err := e.makeRoom(s)
+	if err == nil {
+		e.mu.Lock()
+		s.starting = true
+		e.mu.Unlock()
 	}
-	e.mu.Lock()
-	s.starting = true
-	e.mu.Unlock()
 	e.poolMu.Unlock()
-	if victimAgent != nil {
-		e.closeIdle(victim, victimAgent)
-		victim.startMu.Unlock()
-		log.Info(context.Background(), "stopped idle acp agent to start another", "key", victim.key, "for", s.key)
+	for _, item := range idle {
+		e.closeIdle(item.slot, item.agent)
+		item.slot.startMu.Unlock()
+		log.Info(context.Background(), "stopped idle acp agent to start another", "key", item.slot.key, "for", s.key)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	ag, err = e.startAgent(ctx, s.key)
@@ -362,38 +363,75 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 	return ag, nil
 }
 
-// makeRoom reserves the least recently used idle agent for stopping if
-// starting s would exceed the limit. The caller holds poolMu and must close
-// the returned agent and unlock its slot after releasing poolMu.
-func (e *Executor) makeRoom(s *agentSlot) (*agentSlot, *agent, error) {
+type idleAgent struct {
+	slot  *agentSlot
+	agent *agent
+}
+
+// makeRoom detaches idle exited agents and, when needed, the least recently
+// used idle agent. The caller holds poolMu and closes the detached agents and
+// unlocks their slots after releasing poolMu.
+func (e *Executor) makeRoom(s *agentSlot) ([]idleAgent, error) {
 	if e.maxAgents <= 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	e.mu.Lock()
 	running := 0
 	var victim *agentSlot
+	var exited []*agentSlot
 	for _, other := range e.agents {
-		if other == s || (other.agent == nil && !other.starting) {
+		if other == s {
+			continue
+		}
+		if other.agent == nil {
+			if other.starting {
+				running++
+			}
+			continue
+		}
+		if other.agent.exited() {
+			if other.refs == 0 {
+				exited = append(exited, other)
+			}
 			continue
 		}
 		running++
-		if other.agent != nil && other.refs == 0 && (victim == nil || other.lastUsed.Before(victim.lastUsed)) {
+		if other.refs == 0 && (victim == nil || other.lastUsed.Before(victim.lastUsed)) {
 			victim = other
 		}
 	}
 	e.mu.Unlock()
+	var idle []idleAgent
+	for _, dead := range exited {
+		if !dead.startMu.TryLock() {
+			continue
+		}
+		e.mu.Lock()
+		ag := dead.agent
+		if dead.refs == 0 && ag != nil && ag.exited() {
+			dead.agent = nil
+		} else {
+			ag = nil
+		}
+		e.mu.Unlock()
+		if ag != nil {
+			idle = append(idle, idleAgent{slot: dead, agent: ag})
+		} else {
+			dead.startMu.Unlock()
+		}
+	}
 	if running < e.maxAgents {
-		return nil, nil, nil
+		return idle, nil
 	}
 	// TryLock: the victim is idle, so its startMu is only held by an idle stop
 	// or a turn which just started using it, and then it isn't a victim.
 	if victim != nil && victim.startMu.TryLock() {
 		if agent := e.takeIdle(victim); agent != nil {
-			return victim, agent, nil
+			return append(idle, idleAgent{slot: victim, agent: agent}), nil
 		}
 		victim.startMu.Unlock()
 	}
-	return nil, nil, fmt.Errorf("all %d agents are busy, send the message again later", e.maxAgents)
+	return idle, fmt.Errorf("all %d agents are busy, send the message again later", e.maxAgents)
 }
 
 // startAgent starts the agent and negotiates the protocol version within Config.StartTimeout.
