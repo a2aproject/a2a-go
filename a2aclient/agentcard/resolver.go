@@ -154,10 +154,13 @@ func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers 
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct a request: %w", err)
 	}
-	// Servers with v0.3 compatibility pick the card format based on this header and assume v0.3 when it is missing.
-	req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	for h, val := range headers {
-		req.Header.Set(h, val)
+		req.Header.Add(h, val)
+	}
+	// Servers with v0.3 compatibility pick the card format based on this header and assume v0.3 when it is missing.
+	// A caller-provided A2A-Version header (via WithRequestHeader) takes precedence.
+	if len(req.Header.Values(a2a.SvcParamVersion)) == 0 {
+		req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	}
 
 	resp, err := client.Do(req)
