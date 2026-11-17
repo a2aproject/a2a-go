@@ -117,6 +117,8 @@ func (h *jsonrpcHandler) handleRequest(ctx context.Context, rw http.ResponseWrit
 		result, err = h.onSetTaskPushConfig(ctx, req.Params)
 	case methodPushConfigDelete:
 		err = h.onDeleteTaskPushConfig(ctx, req.Params)
+		// v0.3 defines a null result for a successful delete; a nil result would be omitted from the response.
+		result = json.RawMessage("null")
 	case methodGetExtendedAgentCard:
 		result, err = h.onGetAgentCard(ctx)
 	case "":
@@ -358,7 +360,10 @@ func (h *jsonrpcHandler) onListTaskPushConfigs(ctx context.Context, raw json.Raw
 	if err != nil {
 		return nil, err
 	}
-	return FromV1PushConfigs(configs.Configs), nil
+	if result := FromV1PushConfigs(configs.Configs); result != nil {
+		return result, nil
+	}
+	return []*a2alegacy.TaskPushConfig{}, nil
 }
 
 func (h *jsonrpcHandler) onSetTaskPushConfig(ctx context.Context, raw json.RawMessage) (*a2alegacy.TaskPushConfig, error) {
