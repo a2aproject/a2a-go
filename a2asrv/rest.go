@@ -554,6 +554,10 @@ func (h *restHandler) handleDeleteTaskPushConfig(rw http.ResponseWriter, req *ht
 		writeRESTError(ctx, rw, err, a2a.TaskID(taskID))
 		return
 	}
+
+	if err := json.NewEncoder(rw).Encode(struct{}{}); err != nil {
+		log.Error(ctx, "failed to encode response", err)
+	}
 }
 
 func (h *restHandler) handleGetExtendedAgentCard(rw http.ResponseWriter, req *http.Request) {
