@@ -16,6 +16,7 @@ package a2av0
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -81,11 +82,7 @@ func TestJSONRPCTransport_QueryParamsFromContext(t *testing.T) {
 func TestJSONRPCTransport_ErrorRedactsQueryParams(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	serverURL := server.URL
-	server.Close()
-
-	transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: serverURL})
+	transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: "http://agent.example.com", Client: unreachableClient})
 	ctx := a2aclient.AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
 
 	_, err := transport.GetTask(ctx, a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
@@ -134,11 +131,7 @@ func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
 func TestRESTTransport_ErrorRedactsQueryParams(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	serverURL := server.URL
-	server.Close()
-
-	transport, err := NewRESTTransport(RESTTransportConfig{URL: serverURL})
+	transport, err := NewRESTTransport(RESTTransportConfig{URL: "http://agent.example.com", Client: unreachableClient})
 	if err != nil {
 		t.Fatalf("NewRESTTransport() error = %v", err)
 	}
@@ -151,4 +144,12 @@ func TestRESTTransport_ErrorRedactsQueryParams(t *testing.T) {
 	if strings.Contains(err.Error(), "super-secret") {
 		t.Errorf("transport.GetTask() error = %v, must not contain query params", err)
 	}
+}
+
+var unreachableClient = &http.Client{Transport: unreachableTransport{}}
+
+type unreachableTransport struct{}
+
+func (unreachableTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("connection refused")
 }

@@ -922,11 +922,7 @@ func TestJSONRPCTransport_QueryParamsFromContext(t *testing.T) {
 func TestJSONRPCTransport_ErrorRedactsQueryParams(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	serverURL := server.URL
-	server.Close()
-
-	transport := NewJSONRPCTransport(serverURL, nil)
+	transport := NewJSONRPCTransport("http://agent.example.com", unreachableClient)
 	ctx := AttachHTTPQueryParams(t.Context(), url.Values{"api_key": []string{"super-secret"}})
 
 	_, err := transport.GetTask(ctx, ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
