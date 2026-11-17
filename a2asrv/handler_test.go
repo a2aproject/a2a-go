@@ -482,6 +482,66 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 	}
 }
 
+func TestRequestHandler_SendMessageStreaming_HistoryLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		config      *a2a.SendMessageConfig
+		wantHistory func(taskSeed *a2a.Task) []*a2a.Message
+	}{
+		{
+			name:   "0 HistoryLength clears task event history",
+			config: &a2a.SendMessageConfig{HistoryLength: new(0)},
+			wantHistory: func(*a2a.Task) []*a2a.Message {
+				return []*a2a.Message{}
+			},
+		},
+		{
+			name:   "HistoryLength limits task event history",
+			config: &a2a.SendMessageConfig{HistoryLength: new(1)},
+			wantHistory: func(*a2a.Task) []*a2a.Message {
+				return []*a2a.Message{newAgentMessage("Ack")}
+			},
+		},
+		{
+			name: "nil config keeps full task event history",
+			wantHistory: func(taskSeed *a2a.Task) []*a2a.Message {
+				return []*a2a.Message{newUserMessage(taskSeed, "Work"), newAgentMessage("Ack")}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+			taskEvent := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
+			taskEvent.History = []*a2a.Message{newUserMessage(taskSeed, "Work"), newAgentMessage("Ack")}
+			finalEvent := newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!")
+			executor := newEventReplayAgent([]a2a.Event{taskEvent, finalEvent}, nil)
+			handler := NewHandler(executor, WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)))
+
+			got, err := collectEvents(handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{
+				Message: newUserMessage(taskSeed, "Work"),
+				Config:  tt.config,
+			}))
+			if err != nil {
+				t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+			}
+
+			wantTask := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
+			wantTask.History = tt.wantHistory(taskSeed)
+			want := []a2a.Event{wantTask, finalEvent}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestRequestHandler_SendMessage_NonBlocking(t *testing.T) {
 	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}}
 

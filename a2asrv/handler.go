@@ -350,6 +350,9 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 		}
 
 		for ev, err := range subscription.Events(ctx) {
+			if task, ok := ev.(*a2a.Task); ok && req.Config != nil {
+				ev = trimTaskHistory(task, req.Config.HistoryLength)
+			}
 			if !yield(ev, err) {
 				return
 			}
@@ -555,7 +558,7 @@ func trimTaskHistory(task *a2a.Task, historyLength *int) *a2a.Task {
 		return task
 	}
 	hl := *historyLength
-	if hl > len(task.History) {
+	if hl >= len(task.History) {
 		return task
 	}
 	trimmed := *task
