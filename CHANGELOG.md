@@ -5,11 +5,20 @@
 
 ### Features
 
-* **a2aclient/oauth:** discover authorization servers and obtain OAuth grants ([#568](https://github.com/a2aproject/a2a-go/issues/568)) ([c42999a](https://github.com/a2aproject/a2a-go/commit/c42999aaa6ae523dcd4a5c821bc8fe69b9cebeee))
-* **a2aclient/oauth:** sign in and attach OAuth tokens with a client plugin ([#570](https://github.com/a2aproject/a2a-go/issues/570)) ([50dd177](https://github.com/a2aproject/a2a-go/commit/50dd177ce2dd18fb51f1e135406958e73be961da))
-* **a2aclient:** expose response metadata on client errors ([#595](https://github.com/a2aproject/a2a-go/issues/595)) ([d6a1d26](https://github.com/a2aproject/a2a-go/commit/d6a1d2605b3c41593ef5fee56c570c319329dd0d))
-* **a2aplugin:** add hook-based plugin helpers ([#581](https://github.com/a2aproject/a2a-go/issues/581)) ([b25d155](https://github.com/a2aproject/a2a-go/commit/b25d15533c547366944432be5484e17c73ead4c8))
-* add plugin interface ([#572](https://github.com/a2aproject/a2a-go/issues/572)) ([5216340](https://github.com/a2aproject/a2a-go/commit/5216340842ab8a2034c46472b1b98b89778fdbe1))
+* **plugins:** extend clients and servers with `a2aclient.WithPlugins` and `a2asrv.WithPlugins`. Client plugins wrap calls; server plugins wrap calls, the agent executor, the task store and push delivery. The `a2aplugin` package builds plugins from hooks ([#572](https://github.com/a2aproject/a2a-go/issues/572), [#581](https://github.com/a2aproject/a2a-go/issues/581)) ([5216340](https://github.com/a2aproject/a2a-go/commit/5216340842ab8a2034c46472b1b98b89778fdbe1), [b25d155](https://github.com/a2aproject/a2a-go/commit/b25d15533c547366944432be5484e17c73ead4c8))
+* **a2aclient/oauth:** OAuth 2.0 client support. `oauth.Manager` discovers authorization servers from agent cards and Protected Resource Metadata, signs users in (authorization code or device grant), and its plugin attaches and refreshes tokens ([#568](https://github.com/a2aproject/a2a-go/issues/568), [#570](https://github.com/a2aproject/a2a-go/issues/570)) ([c42999a](https://github.com/a2aproject/a2a-go/commit/c42999aaa6ae523dcd4a5c821bc8fe69b9cebeee), [50dd177](https://github.com/a2aproject/a2a-go/commit/50dd177ce2dd18fb51f1e135406958e73be961da))
+* **a2aclient:** errors received from a server carry the response HTTP headers or gRPC metadata in `a2a.Error.ServiceParams` ([#595](https://github.com/a2aproject/a2a-go/issues/595)) ([d6a1d26](https://github.com/a2aproject/a2a-go/commit/d6a1d2605b3c41593ef5fee56c570c319329dd0d))
+* **a2asrv:** pass the client's accepted output modes to agents in `ExecutorContext.AcceptedOutputModes` ([#603](https://github.com/a2aproject/a2a-go/issues/603)) ([57ee56c](https://github.com/a2aproject/a2a-go/commit/57ee56c589a386d6792fa5d8a71ef9866cb7291b))
+
+
+### Behavior Changes
+
+* **a2asrv:** `SendMessage` and `SendStreamingMessage` return at most `Config.HistoryLength` messages of task history ([#603](https://github.com/a2aproject/a2a-go/issues/603)) ([57ee56c](https://github.com/a2aproject/a2a-go/commit/57ee56c589a386d6792fa5d8a71ef9866cb7291b))
+* **a2asrv:** `NewAgentCardEnforcer` rejects messages with a push config when the card doesn't support push notifications ([#603](https://github.com/a2aproject/a2a-go/issues/603)) ([57ee56c](https://github.com/a2aproject/a2a-go/commit/57ee56c589a386d6792fa5d8a71ef9866cb7291b))
+* **a2asrv:** a message reply gets the execution's contextId when the agent doesn't set one, and its taskId is cleared ([#577](https://github.com/a2aproject/a2a-go/issues/577), [#609](https://github.com/a2aproject/a2a-go/issues/609)) ([eee75ec](https://github.com/a2aproject/a2a-go/commit/eee75ec0a19c34b7acdc7b73a2b6a60cae6db8d3), [97de334](https://github.com/a2aproject/a2a-go/commit/97de3341e6375a0e9746aeeaeaac1687a61c441f))
+* **a2asrv:** getting a missing push config returns `TaskNotFound` instead of an internal error, and a REST push config delete returns `{}` ([#578](https://github.com/a2aproject/a2a-go/issues/578), [#600](https://github.com/a2aproject/a2a-go/issues/600)) ([ff3fcf8](https://github.com/a2aproject/a2a-go/commit/ff3fcf8e0e8116ea632253a8c097604fd26566ae), [0d1ac2a](https://github.com/a2aproject/a2a-go/commit/0d1ac2ac3dc6d399beb46b17dedc7040da38b0ac))
+* **a2aclient:** a JSON-RPC HTTP error without a JSON-RPC body is an `*a2a.Error` (`ErrUnauthenticated` for 401, `ErrUnauthorized` for 403, `ErrServerError` otherwise) instead of a plain error ([#595](https://github.com/a2aproject/a2a-go/issues/595)) ([d6a1d26](https://github.com/a2aproject/a2a-go/commit/d6a1d2605b3c41593ef5fee56c570c319329dd0d))
+* **a2aclient:** stream responses of an unknown type are skipped instead of ending the stream with an error ([#532](https://github.com/a2aproject/a2a-go/issues/532)) ([212512b](https://github.com/a2aproject/a2a-go/commit/212512baed61debe155681fb0e6e34cb42d65313))
 
 
 ### Bug Fixes
@@ -17,17 +26,11 @@
 * **a2a:** accept pointer OAuth flow types when marshalling ([#541](https://github.com/a2aproject/a2a-go/issues/541)) ([fe407e3](https://github.com/a2aproject/a2a-go/commit/fe407e34cbe75643647b8682e42b5a3fd424d978))
 * **a2aacp:** don't count exited agents in makeRoom ([#563](https://github.com/a2aproject/a2a-go/issues/563)) ([6b0c5bd](https://github.com/a2aproject/a2a-go/commit/6b0c5bd4d85f4ba74ea594779d147a83a551c2b7))
 * **a2aacp:** drop empty parts instead of sending a block without content ([#594](https://github.com/a2aproject/a2a-go/issues/594)) ([d8323ce](https://github.com/a2aproject/a2a-go/commit/d8323ce3849fd8eade300c30aa142dffccac1638))
-* **a2aacp:** fail turns of a stopped agent with ErrAgentStopped ([#573](https://github.com/a2aproject/a2a-go/issues/573)) ([4acb390](https://github.com/a2aproject/a2a-go/commit/4acb3905cc11c9d888c4137fa87e03bdbdf0f22e))
+* **a2aacp:** fail turns of a stopped agent with `AgentStoppedError` ([#573](https://github.com/a2aproject/a2a-go/issues/573)) ([4acb390](https://github.com/a2aproject/a2a-go/commit/4acb3905cc11c9d888c4137fa87e03bdbdf0f22e))
+* **a2aacp:** release the context lock before reporting the end of a turn, so `RejectBusyContext` accepts the next message ([#601](https://github.com/a2aproject/a2a-go/issues/601)) ([964e814](https://github.com/a2aproject/a2a-go/commit/964e814b1020fd61f71ee6f68edaa16adacd8446))
 * **a2aacp:** reserve pool capacity during startup ([#587](https://github.com/a2aproject/a2a-go/issues/587)) ([621d73b](https://github.com/a2aproject/a2a-go/commit/621d73b85a90703fc32cc94337c051a6358d8046))
-* **a2asrv:** keep the agent's contextId on message replies ([#609](https://github.com/a2aproject/a2a-go/issues/609)) ([97de334](https://github.com/a2aproject/a2a-go/commit/97de3341e6375a0e9746aeeaeaac1687a61c441f))
-* **a2asrv:** return an empty object when a REST push config delete succeeds ([#600](https://github.com/a2aproject/a2a-go/issues/600)) ([0d1ac2a](https://github.com/a2aproject/a2a-go/commit/0d1ac2ac3dc6d399beb46b17dedc7040da38b0ac))
 * **a2av0:** keep unset ListTasks history length unset ([#527](https://github.com/a2aproject/a2a-go/issues/527)) ([9b4435f](https://github.com/a2aproject/a2a-go/commit/9b4435f73e642c19c9d3756a2c0214b4b92014b9))
-* **client:** skip unknown v1 streaming response payloads ([#532](https://github.com/a2aproject/a2a-go/issues/532)) ([212512b](https://github.com/a2aproject/a2a-go/commit/212512baed61debe155681fb0e6e34cb42d65313))
-* honor SendMessageConfigs ([#603](https://github.com/a2aproject/a2a-go/issues/603)) ([57ee56c](https://github.com/a2aproject/a2a-go/commit/57ee56c589a386d6792fa5d8a71ef9866cb7291b))
-* nightly test flakes ([#601](https://github.com/a2aproject/a2a-go/issues/601)) ([964e814](https://github.com/a2aproject/a2a-go/commit/964e814b1020fd61f71ee6f68edaa16adacd8446))
 * **pbconv:** leave an unset ListTasks page size unset ([#576](https://github.com/a2aproject/a2a-go/issues/576)) ([5a3d99d](https://github.com/a2aproject/a2a-go/commit/5a3d99df84ac36e9b83cde8fb3e2ada8c457b6b6))
-* return ErrTaskNotFound when push config not found ([#578](https://github.com/a2aproject/a2a-go/issues/578)) ([ff3fcf8](https://github.com/a2aproject/a2a-go/commit/ff3fcf8e0e8116ea632253a8c097604fd26566ae))
-* set contextId and clear taskId on message replies ([#577](https://github.com/a2aproject/a2a-go/issues/577)) ([eee75ec](https://github.com/a2aproject/a2a-go/commit/eee75ec0a19c34b7acdc7b73a2b6a60cae6db8d3))
 * **sse:** support carriage-return event line endings ([#487](https://github.com/a2aproject/a2a-go/issues/487)) ([ecaea9c](https://github.com/a2aproject/a2a-go/commit/ecaea9c5cb8f66f198267169c7e6c57f79b0940f))
 * **taskexec:** don't end remote subscriptions at the caller's message ([#575](https://github.com/a2aproject/a2a-go/issues/575)) ([d0710f5](https://github.com/a2aproject/a2a-go/commit/d0710f58993aae98b5d22e02dc1da1a0210028fc))
 
