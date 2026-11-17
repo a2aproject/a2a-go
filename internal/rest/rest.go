@@ -409,7 +409,7 @@ func ParseStreamResponse(ctx context.Context, data []byte) (a2a.Event, error) {
 		n++
 	}
 	if n == 0 {
-		fields, err := eventjson.NonNullJSONFields(data)
+		fields, err := eventjson.NonNullFields(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
 		}

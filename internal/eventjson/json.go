@@ -25,8 +25,8 @@ import (
 // The public event decoder stays strict; streaming clients may inspect its fields.
 var ErrUnknownEventType = errors.New("unknown event type")
 
-// NonNullJSONFields returns the sorted names of the non-null fields in a JSON object.
-func NonNullJSONFields(data []byte) ([]string, error) {
+// NonNullFields returns the sorted names of the non-null fields in a JSON object.
+func NonNullFields(data []byte) ([]string, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return nil, err

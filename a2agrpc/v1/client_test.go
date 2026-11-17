@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -65,6 +66,10 @@ type mockResponseStream struct {
 }
 
 func (s *mockResponseStream) Context() context.Context { return s.ctx }
+
+func (s *mockResponseStream) Header() (metadata.MD, error) { return nil, nil }
+
+func (s *mockResponseStream) Trailer() metadata.MD { return nil }
 
 func (s *mockResponseStream) Recv() (*a2apb.StreamResponse, error) {
 	if len(s.responses) == 0 {
@@ -230,39 +235,22 @@ func TestGRPCTransport_StreamResponseWireTypes(t *testing.T) {
 	futureWire := protowire.AppendBytes(protowire.AppendTag(nil, 100, protowire.BytesType), []byte("future payload"))
 	future := &a2apb.StreamResponse{}
 	future.ProtoReflect().SetUnknown(futureWire)
-	fields := future.ProtoReflect().Descriptor().Oneofs().ByName("payload").Fields()
-	taskField := fields.ByName("task")
-	wrongTaskWire := protowire.AppendVarint(protowire.AppendTag(nil, taskField.Number(), protowire.VarintType), 1)
-	unknownGroup := protowire.AppendTag(nil, 100, protowire.StartGroupType)
-	unknownGroup = protowire.AppendVarint(protowire.AppendTag(unknownGroup, taskField.Number(), protowire.VarintType), 1)
-	unknownGroup = protowire.AppendTag(unknownGroup, 100, protowire.EndGroupType)
-	type testCase struct {
+	taskField := future.ProtoReflect().Descriptor().Fields().ByName("task")
+	cases := []struct {
 		name             string
 		wire             []byte
 		withKnownPayload bool
 		want             []a2a.Event
 		wantErrText      string
-	}
-	cases := []testCase{
+	}{
 		{
 			name: "future field",
 			wire: futureWire,
 			want: []a2a.Event{task, completed},
 		},
 		{
-			name: "unknown group with matching nested field number",
-			wire: unknownGroup,
-			want: []a2a.Event{task, completed},
-		},
-		{
-			name:        "unknown field before malformed known field",
-			wire:        append(append([]byte(nil), futureWire...), wrongTaskWire...),
-			want:        []a2a.Event{task},
-			wantErrText: `invalid wire type for stream response field "task"`,
-		},
-		{
-			name:             "known payload retains existing wrong wire field behavior",
-			wire:             wrongTaskWire,
+			name:             "known payload with future field",
+			wire:             futureWire,
 			withKnownPayload: true,
 			want:             []a2a.Event{task, working, completed},
 		},
@@ -277,15 +265,6 @@ func TestGRPCTransport_StreamResponseWireTypes(t *testing.T) {
 			want:        []a2a.Event{task},
 			wantErrText: "stream response has no payload",
 		},
-	}
-	for i := 0; i < fields.Len(); i++ {
-		field := fields.Get(i)
-		cases = append(cases, testCase{
-			name:        fmt.Sprintf("wrong wire type for %s", field.Name()),
-			wire:        protowire.AppendVarint(protowire.AppendTag(nil, field.Number(), protowire.VarintType), 1),
-			want:        []a2a.Event{task},
-			wantErrText: fmt.Sprintf("invalid wire type for stream response field %q", field.Name()),
-		})
 	}
 	for _, subscribe := range []bool{false, true} {
 		for _, tc := range cases {

@@ -274,7 +274,7 @@ func (t *jsonrpcTransport) streamRequestToEvents(ctx context.Context, method str
 					yield(nil, err)
 					return
 				}
-				fields, err := eventjson.NonNullJSONFields(result)
+				fields, err := eventjson.NonNullFields(result)
 				if err != nil {
 					yield(nil, err)
 					return
