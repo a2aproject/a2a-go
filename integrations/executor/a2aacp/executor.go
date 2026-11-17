@@ -174,6 +174,7 @@ type Executor struct {
 
 	elicitations atomic.Int64
 
+	poolMu   sync.Mutex // serializes capacity decisions and start reservations
 	mu       sync.Mutex
 	agents   map[string]*agentSlot // agent key -> agent
 	closed   bool
