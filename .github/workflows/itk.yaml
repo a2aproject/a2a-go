@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: a2aproject/a2a-itk
-          ref: main
+          ref: ishymko/launcher-cache-evict
           path: itk/a2a-itk
 
       - name: Set up Docker Buildx
@@ -59,6 +59,19 @@ jobs:
           restore-keys: |
             itk-launcher-${{ runner.os }}-
 
+      - name: Launcher cache before run
+        run: |
+          cd ~/.cache/a2a-itk-launcher
+          du -sm -- *
+          printf '\n%-16s %5s  %-12s %-12s %s\n' BUILT MB REPO SHA IMAGE
+          for t in trees/*/; do
+            IFS=@ read -r repo sha image _ <<< "$(basename "$t")"
+            image=${image#sha256_}
+            printf '%-16s %5s  %-12s %-12s %s\n' \
+              "$(date -r "$t.itk-built" '+%F %H:%M' 2>/dev/null || echo partial)" \
+              "$(du -sm "$t" | cut -f1)" "${repo#a2aproject_}" "${sha:0:10}" "${image:0:8}"
+          done | sort
+
       - name: Run ITK Tests
         run: bash run_itk.sh
         working-directory: itk
@@ -66,3 +79,16 @@ jobs:
           A2A_ITK_REVISION: main
           ITK_SKIP_BUILD: "1"
 
+      - name: Launcher cache after run
+        if: always()
+        run: |
+          cd ~/.cache/a2a-itk-launcher
+          du -sm -- *
+          printf '\n%-16s %5s  %-12s %-12s %s\n' BUILT MB REPO SHA IMAGE
+          for t in trees/*/; do
+            IFS=@ read -r repo sha image _ <<< "$(basename "$t")"
+            image=${image#sha256_}
+            printf '%-16s %5s  %-12s %-12s %s\n' \
+              "$(date -r "$t.itk-built" '+%F %H:%M' 2>/dev/null || echo partial)" \
+              "$(du -sm "$t" | cut -f1)" "${repo#a2aproject_}" "${sha:0:10}" "${image:0:8}"
+          done | sort
