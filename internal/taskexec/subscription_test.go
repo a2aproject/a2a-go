@@ -136,6 +136,25 @@ func TestRemoteSubscription_Events(t *testing.T) {
 			wantEvents: []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}},
 		},
 		{
+			name:     "user message from history update is skipped",
+			snapshot: &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+			events: []a2a.Event{
+				&a2a.Message{ID: "user-msg", TaskID: tid, Role: a2a.MessageRoleUser},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+			},
+			wantEvents: []a2a.Event{
+				&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateWorking}},
+				&a2a.TaskStatusUpdateEvent{TaskID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
+			},
+		},
+		{
+			name:       "agent message ends subscription",
+			events:     []a2a.Event{&a2a.Message{ID: "agent-msg", TaskID: tid, Role: a2a.MessageRoleAgent}},
+			wantEvents: []a2a.Event{&a2a.Message{ID: "agent-msg", TaskID: tid, Role: a2a.MessageRoleAgent}},
+		},
+		{
 			name:       "queue read error ends subscription",
 			snapshot:   &a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}},
 			events:     []a2a.Event{&a2a.Task{ID: tid, Status: a2a.TaskStatus{State: a2a.TaskStateFailed}}}, // not received
