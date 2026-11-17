@@ -62,6 +62,9 @@ func (c *Client) Err() error { return c.conn.Err() }
 // Close closes the connection to the agent.
 func (c *Client) Close() error { return c.conn.Close() }
 
+// CloseWithError closes the connection to the agent, failing calls in flight with err.
+func (c *Client) CloseWithError(err error) error { return c.conn.CloseWithError(err) }
+
 // Initialize negotiates the protocol version and capabilities.
 func (c *Client) Initialize(ctx context.Context, req InitializeRequest) (*InitializeResponse, error) {
 	var resp InitializeResponse
