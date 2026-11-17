@@ -3109,10 +3109,10 @@ func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		contextID string
-		reply     func(execCtx *ExecutorContext) *a2a.Message
-		wantErr   error
+		name          string
+		contextID     string
+		reply         func(execCtx *ExecutorContext) *a2a.Message
+		wantContextID string
 	}{
 		{
 			name: "missing context ID is set",
@@ -3126,6 +3126,7 @@ func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
 			reply: func(*ExecutorContext) *a2a.Message {
 				return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi"))
 			},
+			wantContextID: "ctx-1",
 		},
 		{
 			name: "task ID is cleared",
@@ -3134,11 +3135,19 @@ func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
 			},
 		},
 		{
-			name: "mismatched context ID is rejected",
+			name: "agent context ID is kept",
 			reply: func(*ExecutorContext) *a2a.Message {
-				return a2a.NewMessageForTask(a2a.MessageRoleAgent, a2a.TaskInfo{ContextID: "other"}, a2a.NewTextPart("hi"))
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, a2a.TaskInfo{ContextID: "agent-ctx"}, a2a.NewTextPart("hi"))
 			},
-			wantErr: a2a.ErrInvalidAgentResponse,
+			wantContextID: "agent-ctx",
+		},
+		{
+			name:      "agent context ID different from client context ID is kept",
+			contextID: "ctx-1",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, a2a.TaskInfo{ContextID: "agent-ctx"}, a2a.NewTextPart("hi"))
+			},
+			wantContextID: "agent-ctx",
 		},
 	}
 	for _, tt := range tests {
@@ -3153,19 +3162,16 @@ func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
 			req := &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: tt.contextID}, a2a.NewTextPart("hello"))}
 
 			result, err := NewHandler(executor).SendMessage(t.Context(), req)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("handler.SendMessage() error = %v, want %v", err, tt.wantErr)
-			}
-			if tt.wantErr != nil {
-				return
+			if err != nil {
+				t.Fatalf("handler.SendMessage() error = %v, want nil", err)
 			}
 			msg, ok := result.(*a2a.Message)
 			if !ok {
 				t.Fatalf("handler.SendMessage() = %T, want *a2a.Message", result)
 			}
-			wantContextID := executor.capturedExecContext.ContextID
-			if tt.contextID != "" {
-				wantContextID = tt.contextID
+			wantContextID := tt.wantContextID
+			if wantContextID == "" {
+				wantContextID = executor.capturedExecContext.ContextID
 			}
 			if msg.ContextID != wantContextID || msg.TaskID != "" {
 				t.Fatalf("handler.SendMessage() IDs = (%q, %q), want (%q, \"\")", msg.ContextID, msg.TaskID, wantContextID)
