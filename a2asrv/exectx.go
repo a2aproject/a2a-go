@@ -49,6 +49,8 @@ type ExecutorContext struct {
 	RelatedTasks []*a2a.Task
 	// ContextID is a server-generated identifier for maintaining context across multiple related tasks or interactions. Matches the Task ContextID.
 	ContextID string
+	// AcceptedOutputModes is an advisory list of output MIME types the client accepts; an empty list means no preference.
+	AcceptedOutputModes []string
 	// Metadata of the request which triggered the call.
 	Metadata map[string]any
 	// User who made the request which triggered the execution.

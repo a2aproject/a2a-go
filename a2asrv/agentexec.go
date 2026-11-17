@@ -264,12 +264,13 @@ func (f *factory) loadExecutionContext(ctx context.Context, tid a2a.TaskID, para
 
 	return &executionContext{
 		ctx: &ExecutorContext{
-			Message:    message,
-			StoredTask: storedTask,
-			TaskID:     storedTask.ID,
-			ContextID:  storedTask.ContextID,
-			Metadata:   params.Metadata,
-			Tenant:     params.Tenant,
+			Message:             message,
+			StoredTask:          storedTask,
+			TaskID:              storedTask.ID,
+			ContextID:           storedTask.ContextID,
+			AcceptedOutputModes: acceptedOutputModes(params),
+			Metadata:            params.Metadata,
+			Tenant:              params.Tenant,
 		},
 		task: &taskstore.StoredTask{
 			Task:    trackedTask,
@@ -305,10 +306,11 @@ func (f *factory) createNewExecutionContext(tid a2a.TaskID, params *a2a.SendMess
 		contextID = a2a.NewContextID()
 	}
 	execCtx := &ExecutorContext{
-		Message:   msg,
-		TaskID:    tid,
-		ContextID: contextID,
-		Metadata:  params.Metadata,
+		Message:             msg,
+		TaskID:              tid,
+		ContextID:           contextID,
+		Metadata:            params.Metadata,
+		AcceptedOutputModes: acceptedOutputModes(params),
 	}
 	return &executionContext{ctx: execCtx, task: nil}, nil
 }
@@ -345,6 +347,13 @@ func (f *factory) CreateCanceler(ctx context.Context, params *a2a.CancelTaskRequ
 	}
 	processor := newProcessor(updateManager, f.pushConfigStore, f.pushDelivery, execCtx, f.taskStore)
 	return canceler, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx}, nil
+}
+
+func acceptedOutputModes(req *a2a.SendMessageRequest) []string {
+	if req.Config == nil {
+		return nil
+	}
+	return req.Config.AcceptedOutputModes
 }
 
 type executor struct {
