@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
 	"github.com/google/uuid"
 )
 
@@ -141,7 +142,7 @@ func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 		n++
 	}
 	if n == 0 {
-		return fmt.Errorf("unknown event type: %v", jsonKeys(data))
+		return fmt.Errorf("%w: %v", eventjson.ErrUnknownEventType, jsonKeys(data))
 	}
 	if n != 1 {
 		return fmt.Errorf("expected exactly one event type, got %d", n)
