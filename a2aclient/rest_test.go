@@ -740,6 +740,72 @@ func TestRESTTransport_EscapedPathSegments(t *testing.T) {
 	}
 }
 
+func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		historyLength *int
+		extraQuery    url.Values
+		wantQuery     url.Values
+	}{
+		{
+			name: "base URL only",
+			wantQuery: url.Values{
+				"api-version": {"2026-11-01"},
+				"tag":         {"base"},
+			},
+		},
+		{
+			name:          "with request and context parameters",
+			historyLength: new(2),
+			extraQuery: url.Values{
+				"api_key": {"secret"},
+				"tag":     {"context-1", "context-2"},
+			},
+			wantQuery: url.Values{
+				"api-version":   {"2026-11-01"},
+				"historyLength": {"2"},
+				"api_key":       {"secret"},
+				"tag":           {"base", "context-1", "context-2"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			queries := make(chan url.Values, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				queries <- r.URL.Query()
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := io.WriteString(w, `{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`); err != nil {
+					t.Errorf("io.WriteString() error = %v, want nil", err)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			u, err := url.Parse(server.URL + "/a2a?api-version=2026-11-01&tag=base")
+			if err != nil {
+				t.Fatalf("url.Parse() error = %v, want nil", err)
+			}
+			transport := NewRESTTransport(u, nil)
+			ctx := AttachHTTPQueryParams(t.Context(), tc.extraQuery)
+
+			for range 2 {
+				_, err := transport.GetTask(ctx, nil, &a2a.GetTaskRequest{ID: "task-123", HistoryLength: tc.historyLength})
+				if err != nil {
+					t.Fatalf("transport.GetTask() error = %v, want nil", err)
+				}
+				if diff := cmp.Diff(tc.wantQuery, <-queries); diff != "" {
+					t.Fatalf("transport.GetTask() wrong result (-want +got) diff = %s", diff)
+				}
+			}
+		})
+	}
+}
+
 func TestRESTTransport_QueryParamsFromContext(t *testing.T) {
 	t.Parallel()
 
