@@ -58,9 +58,9 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 		return []testCase{
 			{
 				name:        "message returned as a result",
-				input:       &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
-				agentEvents: []a2a.Event{newAgentMessage("hello")},
-				wantResult:  newAgentMessage("hello"),
+				input:       &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("hi"))},
+				agentEvents: []a2a.Event{newAgentReply("ctx-hello", "hello")},
+				wantResult:  newAgentReply("ctx-hello", "hello"),
 			},
 			{
 				name:        "cancelled",
@@ -209,6 +209,75 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 					},
 					History: []*a2a.Message{
 						newUserMessage(inputRequiredTaskSeed, "continue"),
+						newAgentMessage("Working..."),
+					},
+				},
+			},
+			{
+				name: "0 HistoryLength config clears task history",
+				input: &a2a.SendMessageRequest{
+					Message: newUserMessage(taskSeed, "Syn"),
+					Config:  &a2a.SendMessageConfig{HistoryLength: new(0)},
+				},
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status: a2a.TaskStatus{
+						State:     a2a.TaskStateCompleted,
+						Message:   newAgentMessage("Done!"),
+						Timestamp: &fixedTime,
+					},
+					History: []*a2a.Message{},
+				},
+			},
+			{
+				name: "HistoryLength config limits task history",
+				input: &a2a.SendMessageRequest{
+					Message: newUserMessage(taskSeed, "Syn"),
+					Config:  &a2a.SendMessageConfig{HistoryLength: new(1)},
+				},
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status: a2a.TaskStatus{
+						State:     a2a.TaskStateCompleted,
+						Message:   newAgentMessage("Done!"),
+						Timestamp: &fixedTime,
+					},
+					History: []*a2a.Message{newAgentMessage("Working...")},
+				},
+			},
+			{
+				name: "unset HistoryLength config returns full history",
+				input: &a2a.SendMessageRequest{
+					Message: newUserMessage(taskSeed, "Syn"),
+				},
+				agentEvents: []a2a.Event{
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateSubmitted, "Ack"),
+					newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working..."),
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status: a2a.TaskStatus{
+						State:     a2a.TaskStateCompleted,
+						Message:   newAgentMessage("Done!"),
+						Timestamp: &fixedTime,
+					},
+					History: []*a2a.Message{
+						newUserMessage(taskSeed, "Syn"),
+						newAgentMessage("Ack"),
 						newAgentMessage("Working..."),
 					},
 				},
@@ -410,6 +479,66 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 	task, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
 	if task.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("handler.GetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+	}
+}
+
+func TestRequestHandler_SendMessageStreaming_HistoryLength(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		config      *a2a.SendMessageConfig
+		wantHistory func(taskSeed *a2a.Task) []*a2a.Message
+	}{
+		{
+			name:   "0 HistoryLength clears task event history",
+			config: &a2a.SendMessageConfig{HistoryLength: new(0)},
+			wantHistory: func(*a2a.Task) []*a2a.Message {
+				return []*a2a.Message{}
+			},
+		},
+		{
+			name:   "HistoryLength limits task event history",
+			config: &a2a.SendMessageConfig{HistoryLength: new(1)},
+			wantHistory: func(*a2a.Task) []*a2a.Message {
+				return []*a2a.Message{newAgentMessage("Ack")}
+			},
+		},
+		{
+			name: "nil config keeps full task event history",
+			wantHistory: func(taskSeed *a2a.Task) []*a2a.Message {
+				return []*a2a.Message{newUserMessage(taskSeed, "Work"), newAgentMessage("Ack")}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+
+			taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+			taskEvent := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
+			taskEvent.History = []*a2a.Message{newUserMessage(taskSeed, "Work"), newAgentMessage("Ack")}
+			finalEvent := newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!")
+			executor := newEventReplayAgent([]a2a.Event{taskEvent, finalEvent}, nil)
+			handler := NewHandler(executor, WithTaskStore(testutil.NewTestTaskStore().WithTasks(t, taskSeed)))
+
+			got, err := collectEvents(handler.SendStreamingMessage(ctx, &a2a.SendMessageRequest{
+				Message: newUserMessage(taskSeed, "Work"),
+				Config:  tt.config,
+			}))
+			if err != nil {
+				t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+			}
+
+			wantTask := newTaskWithStatus(taskSeed, a2a.TaskStateWorking, "Working...")
+			wantTask.History = tt.wantHistory(taskSeed)
+			want := []a2a.Event{wantTask, finalEvent}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 
@@ -629,7 +758,7 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 }
 
 func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
-	agentEvents := []a2a.Event{newAgentMessage("hello")}
+	agentEvents := []a2a.Event{newAgentReply("ctx-hello", "hello")}
 	executor := newEventReplayAgent(agentEvents, nil)
 
 	tests := []struct {
@@ -641,14 +770,14 @@ func TestRequestHandler_SendMessageStreaming_Capabilities(t *testing.T) {
 	}{
 		{
 			name:       "no capability checks - success",
-			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hi"))},
-			wantResult: newAgentMessage("hello"),
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("hi"))},
+			wantResult: newAgentReply("ctx-hello", "hello"),
 		},
 		{
 			name:       "streaming supported",
-			input:      &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work"))},
+			input:      &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: "ctx-hello"}, a2a.NewTextPart("work"))},
 			card:       &a2a.AgentCard{Capabilities: a2a.AgentCapabilities{Streaming: true}},
-			wantResult: newAgentMessage("hello"),
+			wantResult: newAgentReply("ctx-hello", "hello"),
 		},
 		{
 			name:    "streaming not supported",
@@ -1645,6 +1774,7 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 	executor := newEventReplayAgent(executorEvents, nil)
 	handler := NewHandler(executor, WithTaskStore(ts))
 	firstEventConsumed := make(chan struct{})
+	subscribed := make(chan struct{})
 	originalExecuteFunc := executor.ExecuteFunc
 	executor.ExecuteFunc = func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
@@ -1653,7 +1783,12 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 				if !yield(event, err) {
 					return
 				}
-				once.Do(func() { time.Sleep(10 * time.Millisecond) })
+				once.Do(func() {
+					select {
+					case <-subscribed:
+					case <-ctx.Done():
+					}
+				})
 			}
 		}
 	}
@@ -1668,10 +1803,15 @@ func TestRequestHandler_ResubscribeToTask_Success(t *testing.T) {
 
 	<-firstEventConsumed
 
-	seq := handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID})
-	gotEvents, err := collectEvents(seq)
-	if err != nil {
-		t.Fatalf("collectEvents() failed: %v", err)
+	var gotEvents []a2a.Event
+	for event, err := range handler.SubscribeToTask(ctx, &a2a.SubscribeToTaskRequest{ID: taskSeed.ID}) {
+		if err != nil {
+			t.Fatalf("SubscribeToTask() error = %v", err)
+		}
+		if len(gotEvents) == 0 {
+			close(subscribed)
+		}
+		gotEvents = append(gotEvents, event)
 	}
 
 	if diff := cmp.Diff(wantEvents, gotEvents); diff != "" {
@@ -1817,11 +1957,12 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 		Status:    a2a.TaskStatus{State: a2a.TaskStateInputRequired},
 	}
 	testCases := []struct {
-		name            string
-		newRequest      func() *a2a.SendMessageRequest
-		wantExecCtxMeta map[string]any
-		wantStoredTask  *a2a.Task
-		wantContextID   string
+		name                    string
+		newRequest              func() *a2a.SendMessageRequest
+		wantExecCtxMeta         map[string]any
+		wantStoredTask          *a2a.Task
+		wantContextID           string
+		wantAcceptedOutputModes []string
 	}{
 		{
 			name: "new task",
@@ -1831,9 +1972,11 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 				return &a2a.SendMessageRequest{
 					Message:  msg,
 					Metadata: map[string]any{"foo2": "bar2"},
+					Config:   &a2a.SendMessageConfig{AcceptedOutputModes: []string{"text/plain", "application/json"}},
 				}
 			},
-			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
+			wantExecCtxMeta:         map[string]any{"foo2": "bar2"},
+			wantAcceptedOutputModes: []string{"text/plain", "application/json"},
 		},
 		{
 			name: "stored tasks",
@@ -1843,11 +1986,13 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 				return &a2a.SendMessageRequest{
 					Message:  msg,
 					Metadata: map[string]any{"foo2": "bar2"},
+					Config:   &a2a.SendMessageConfig{AcceptedOutputModes: []string{"text/plain", "application/json"}},
 				}
 			},
-			wantStoredTask:  taskSeed,
-			wantContextID:   taskSeed.ContextID,
-			wantExecCtxMeta: map[string]any{"foo2": "bar2"},
+			wantStoredTask:          taskSeed,
+			wantContextID:           taskSeed.ContextID,
+			wantExecCtxMeta:         map[string]any{"foo2": "bar2"},
+			wantAcceptedOutputModes: []string{"text/plain", "application/json"},
 		},
 		{
 			name: "preserve message context",
@@ -1885,6 +2030,9 @@ func TestRequestHandler_ExecuteRequestContextLoading(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantExecCtxMeta, gotExecCtx.Metadata); diff != "" {
 				t.Fatalf("wrong request context meta (-want +got): diff = %s", diff)
+			}
+			if diff := cmp.Diff(tc.wantAcceptedOutputModes, gotExecCtx.AcceptedOutputModes); diff != "" {
+				t.Fatalf("wrong request context AcceptedOutputModes (-want +got): diff = %s", diff)
 			}
 			if tc.wantContextID != "" {
 				if tc.wantContextID != gotExecCtx.ContextID {
@@ -2027,7 +2175,7 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 		{
 			name:    "non-existent config",
 			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: "non-existent"},
-			wantErr: push.ErrPushConfigNotFound,
+			wantErr: a2a.ErrTaskNotFound,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
 				withTestTask(t, taskID),
@@ -2039,6 +2187,15 @@ func TestRequestHandler_GetTaskPushConfig(t *testing.T) {
 			wantErr: a2a.ErrTaskNotFound,
 			options: []RequestHandlerOption{
 				WithPushNotifications(ps, pn),
+			},
+		},
+		{
+			name:    "nil config without error",
+			req:     &a2a.GetTaskPushConfigRequest{TaskID: taskID, ID: config1.ID},
+			wantErr: a2a.ErrTaskNotFound,
+			options: []RequestHandlerOption{
+				WithPushNotifications(testutil.NewTestPushConfigStore().SetGetOverride(nil, nil), pn),
+				withTestTask(t, taskID),
 			},
 		},
 		{
@@ -2577,6 +2734,12 @@ func newAgentMessage(text string) *a2a.Message {
 	return m
 }
 
+func newAgentReply(contextID, text string) *a2a.Message {
+	m := newAgentMessage(text)
+	m.ContextID = contextID
+	return m
+}
+
 func newUserMessage(task *a2a.Task, text string) *a2a.Message {
 	m := a2a.NewMessageForTask(a2a.MessageRoleUser, task, a2a.NewTextPart(text))
 	m.ID = "user-" + text
@@ -2851,6 +3014,161 @@ func TestRequestHandler_SendMessage_WithInputModeChecks(t *testing.T) {
 			_, err := collectEvents(handler.SendStreamingMessage(ctx, tt.request))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("SendStreamingMessage() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRequestHandler_SendMessage_PushConfigEnforcement(t *testing.T) {
+	t.Parallel()
+
+	pushConfig := &a2a.PushConfig{URL: "https://example.com/push"}
+
+	tests := []struct {
+		name      string
+		push      bool
+		config    *a2a.SendMessageConfig
+		wantErr   error
+		wantSaved int
+	}{
+		{
+			name:    "rejects push config when card disables push",
+			config:  &a2a.SendMessageConfig{PushConfig: pushConfig},
+			wantErr: a2a.ErrPushNotificationNotSupported,
+		},
+		{
+			name:      "accepts push config when card enables push",
+			push:      true,
+			config:    &a2a.SendMessageConfig{PushConfig: pushConfig},
+			wantSaved: 1,
+		},
+		{
+			name: "accepts nil config when card disables push",
+		},
+		{
+			name:   "accepts config without push config when card disables push",
+			config: &a2a.SendMessageConfig{HistoryLength: new(3)},
+		},
+	}
+	for _, streaming := range []bool{false, true} {
+		for _, tt := range tests {
+			name := tt.name
+			if streaming {
+				name += " (streaming)"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				ctx := t.Context()
+
+				taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+				store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+				executor := newEventReplayAgent([]a2a.Event{
+					newFinalTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "Done!"),
+				}, nil)
+				ps := testutil.NewTestPushConfigStore()
+				pn := testutil.NewTestPushSender(t).SetSendPushError(nil)
+				card := &a2a.AgentCard{
+					Capabilities: a2a.AgentCapabilities{
+						PushNotifications: tt.push,
+						Streaming:         streaming,
+					},
+				}
+				handler := NewHandler(executor,
+					WithTaskStore(store),
+					WithPushNotifications(ps, pn),
+					withAgentCardEnforcer(t, card),
+				)
+				req := &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Hi"), Config: tt.config}
+
+				var err error
+				if streaming {
+					_, err = collectEvents(handler.SendStreamingMessage(ctx, req))
+				} else {
+					_, err = handler.SendMessage(ctx, req)
+				}
+
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("SendMessage() error = %v, want %v", err, tt.wantErr)
+				}
+				if tt.wantErr != nil && executor.executeCalled {
+					t.Fatal("SendMessage() executor called, want rejected before execution")
+				}
+				saved, err := ps.List(ctx, taskSeed.ID)
+				if err != nil {
+					t.Fatalf("PushConfigStore.List() err = %v", err)
+				}
+				if len(saved) != tt.wantSaved {
+					t.Fatalf("PushConfigStore.List() = %v, want %d configs", saved, tt.wantSaved)
+				}
+			})
+		}
+	}
+}
+
+func TestRequestHandler_SendMessage_ReplyIDs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		contextID string
+		reply     func(execCtx *ExecutorContext) *a2a.Message
+		wantErr   error
+	}{
+		{
+			name: "missing context ID is set",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name:      "client context ID is kept",
+			contextID: "ctx-1",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name: "task ID is cleared",
+			reply: func(execCtx *ExecutorContext) *a2a.Message {
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, execCtx, a2a.NewTextPart("hi"))
+			},
+		},
+		{
+			name: "mismatched context ID is rejected",
+			reply: func(*ExecutorContext) *a2a.Message {
+				return a2a.NewMessageForTask(a2a.MessageRoleAgent, a2a.TaskInfo{ContextID: "other"}, a2a.NewTextPart("hi"))
+			},
+			wantErr: a2a.ErrInvalidAgentResponse,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			executor := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) { yield(tt.reply(execCtx), nil) }
+				},
+			}
+			req := &a2a.SendMessageRequest{Message: a2a.NewMessageForTask(a2a.MessageRoleUser, a2a.TaskInfo{ContextID: tt.contextID}, a2a.NewTextPart("hello"))}
+
+			result, err := NewHandler(executor).SendMessage(t.Context(), req)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("handler.SendMessage() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			msg, ok := result.(*a2a.Message)
+			if !ok {
+				t.Fatalf("handler.SendMessage() = %T, want *a2a.Message", result)
+			}
+			wantContextID := executor.capturedExecContext.ContextID
+			if tt.contextID != "" {
+				wantContextID = tt.contextID
+			}
+			if msg.ContextID != wantContextID || msg.TaskID != "" {
+				t.Fatalf("handler.SendMessage() IDs = (%q, %q), want (%q, \"\")", msg.ContextID, msg.TaskID, wantContextID)
 			}
 		})
 	}

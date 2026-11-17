@@ -21,8 +21,12 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
+	"slices"
+	"strings"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -115,6 +119,29 @@ func CastResult[T any](payload any, err error) (T, error) {
 		return typed, castErr
 	}
 	return typed, err
+}
+
+// ServiceParamsFromHeader returns a copy of the HTTP headers h with lowercase keys, in the form
+// of [a2a.Error.ServiceParams]. It returns nil if h is empty.
+func ServiceParamsFromHeader(h http.Header) map[string][]string {
+	if len(h) == 0 {
+		return nil
+	}
+	params := make(map[string][]string, len(h))
+	for k, vals := range h {
+		key := strings.ToLower(k)
+		params[key] = append(params[key], slices.Clone(vals)...)
+	}
+	return params
+}
+
+// WithServiceParams sets params as the [a2a.Error.ServiceParams] of err if err is an [*a2a.Error],
+// and returns err. Other errors, which were not received from a server, are returned unchanged.
+func WithServiceParams(err error, params map[string][]string) error {
+	if a2aErr, ok := err.(*a2a.Error); ok && len(params) > 0 {
+		a2aErr.ServiceParams = params
+	}
+	return err
 }
 
 // MustPrettyPrint is a debugging utility that prints indented JSON represenation of a value.

@@ -31,8 +31,6 @@
 
 ### AI learnings
 
-* For streaming compatibility regressions, assert the known events after an unknown payload and the specific subsequent error; a generic unknown-type error can make a broken receive path pass.
-
-* Before treating protobuf unknown bytes as a future payload, test known field numbers with incompatible wire types; successful proto.Unmarshal alone does not establish schema validity.
-
-* For diagnostics, assert the intended log record without assuming it is the only record, and check the full output for payload leakage.
+* When reviewing PRs, back every claim with checkable evidence: quote the spec section (and say whether it is normative MUST/SHOULD or only descriptive), cite file:line or a CI log, or reproduce the behavior. Don't call a bug "known" or a check "required by the spec" without that source.
+* When a PR changes what a client sends by default (headers, versions, parameters), check how every peer server treats the old and the new request, including v0.3-only and version-negotiating servers in other SDKs, before calling it non-breaking. Verifying only the case it fixes is not enough.
+* When rating the severity of a review finding, ask whether a realistic, correctly configured deployment hits it. For findings driven by attacker-controlled input (agent cards, metadata), name who is harmed and what the attacker gains beyond what it already controls; a contrived input with no real gain is a nit at most.

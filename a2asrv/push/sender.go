@@ -157,16 +157,68 @@ func limitPushRedirects(req *http.Request, via []*http.Request) error {
 // SendPush serializes the task to JSON and sends it as an HTTP POST request
 // to the URL specified in the push configuration.
 func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, event a2a.Event) error {
-	jsonData, err := json.Marshal(a2a.StreamResponse{Event: event})
+	_, err := s.Deliver(ctx, &Delivery{Config: config, Event: event})
+	return err
+}
+
+// Deliver implements [DeliveryHandler]. It sends the event like [HTTPPushSender.SendPush], adding [Delivery.Headers]
+// to the request, and reports the outcome. An error is returned only if [HTTPSenderConfig.FailOnError] is set.
+func (s *HTTPPushSender) Deliver(ctx context.Context, d *Delivery) (*DeliveryResult, error) {
+	return deliver(d, func() (*DeliveryResult, error) {
+		result := &DeliveryResult{}
+		if err := s.send(ctx, d, result); err != nil {
+			result.Err = err
+			return result, s.handleError(ctx, err)
+		}
+		return result, nil
+	})
+}
+
+// NewDeliveryHandler returns a [DeliveryHandler] which delivers push notifications with the sender.
+// [HTTPPushSender] reports the full outcome, other senders report only the error returned by [Sender.SendPush].
+// It returns nil if the sender is nil.
+func NewDeliveryHandler(sender Sender) DeliveryHandler {
+	if sender == nil {
+		return nil
+	}
+	if httpSender, ok := sender.(*HTTPPushSender); ok {
+		return httpSender.Deliver
+	}
+	return func(ctx context.Context, d *Delivery) (*DeliveryResult, error) {
+		return deliver(d, func() (*DeliveryResult, error) {
+			err := sender.SendPush(ctx, d.Config, d.Event)
+			return &DeliveryResult{Err: err}, err
+		})
+	}
+}
+
+func deliver(d *Delivery, send func() (*DeliveryResult, error)) (*DeliveryResult, error) {
+	if d.Skip {
+		return &DeliveryResult{}, nil
+	}
+	start := time.Now()
+	result, err := send()
+	result.Duration = time.Since(start)
+	return result, err
+}
+
+func (s *HTTPPushSender) send(ctx context.Context, d *Delivery, result *DeliveryResult) error {
+	config := d.Config
+	jsonData, err := json.Marshal(a2a.StreamResponse{Event: d.Event})
 	if err != nil {
-		return s.handleError(ctx, fmt.Errorf("failed to serialize event to JSON: %w", err))
+		return fmt.Errorf("failed to serialize event to JSON: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return s.handleError(ctx, fmt.Errorf("failed to create HTTP request: %w", err))
+		return fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
+	for key, values := range d.Headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if config.Token != "" {
 		req.Header.Set(tokenHeader, config.Token)
@@ -182,7 +234,7 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return s.handleError(ctx, fmt.Errorf("failed to send push notification: %w", err))
+		return fmt.Errorf("failed to send push notification: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -190,8 +242,9 @@ func (s *HTTPPushSender) SendPush(ctx context.Context, config *a2a.PushConfig, e
 		}
 	}()
 
+	result.StatusCode = resp.StatusCode
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return s.handleError(ctx, fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status))
+		return fmt.Errorf("push notification endpoint returned non-success status: %s", resp.Status)
 	}
 
 	return nil

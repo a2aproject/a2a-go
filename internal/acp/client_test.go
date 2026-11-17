@@ -249,6 +249,49 @@ func TestConn_PeerExitFailsCalls(t *testing.T) {
 	<-client.Done()
 }
 
+func TestConn_CloseWithError(t *testing.T) {
+	t.Parallel()
+	errStopped := errors.New("stopped")
+	tests := []struct {
+		name        string
+		agentExited bool
+		want        error
+	}{
+		{name: "fails calls with the error", want: errStopped},
+		{name: "keeps the error of an exited agent", agentExited: true, want: ErrAgentExited},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			received := make(chan struct{})
+			client, agent, _ := newTestClient(t, func(*Conn, *Message) { close(received) })
+			errs := make(chan error, 1)
+			go func() {
+				_, err := client.Prompt(testContext(t), PromptRequest{SessionID: "s1"})
+				errs <- err
+			}()
+			<-received
+			if tc.agentExited {
+				if err := agent.Close(); err != nil {
+					t.Fatalf("agent.Close() error = %v", err)
+				}
+				<-client.Done()
+			}
+
+			if err := client.CloseWithError(errStopped); err != nil {
+				t.Fatalf("client.CloseWithError() error = %v", err)
+			}
+
+			if err := <-errs; !errors.Is(err, tc.want) {
+				t.Fatalf("client.Prompt() error = %v, want %v", err, tc.want)
+			}
+			if err := client.Err(); !errors.Is(err, tc.want) {
+				t.Fatalf("client.Err() = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
 // newRawAgent connects a client to an agent played by the test through raw
 // lines: it reads what the client writes and writes agent output verbatim.
 func newRawAgent(t *testing.T) (*Client, *bufio.Reader, io.Writer) {

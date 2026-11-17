@@ -147,20 +147,38 @@ func FromJSONRPCError(e *Error) error {
 // maxErrorBodyBytes limits how much of a non-200 HTTP response body is read.
 const maxErrorBodyBytes = 1 << 20
 
-// FromHTTPError converts a non-200 HTTP response to an error. A JSON body carrying a JSON-RPC error,
-// for example one written by an auth middleware, is converted with [FromJSONRPCError]. Any other
-// response is reported using its HTTP status.
+// FromHTTPError converts a non-200 HTTP response to an [a2a.Error] carrying the response headers
+// as [a2a.Error.ServiceParams]. A JSON-RPC 2.0 response carrying an error, for example one written
+// by an auth middleware, is converted with [FromJSONRPCError]. Any other response is reported using
+// its HTTP status.
 func FromHTTPError(resp *http.Response) error {
-	statusErr := fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	params := utils.ServiceParamsFromHeader(resp.Header)
+	statusErr := a2a.NewError(errorFromHTTPStatus(resp.StatusCode), fmt.Sprintf("unexpected HTTP status: %s", resp.Status))
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || mediaType != ContentJSON {
-		return statusErr
+		return utils.WithServiceParams(statusErr, params)
 	}
+	// Only a JSON-RPC response counts: a proxy or gateway may answer with JSON of
+	// its own, such as {"error":{"code":401}}, which says nothing in JSON-RPC terms.
 	var parsed ClientResponse
-	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &parsed); err != nil || parsed.Error == nil {
-		return statusErr
+	if err := utils.DecodeJSON(io.LimitReader(resp.Body, maxErrorBodyBytes), &parsed); err != nil || parsed.Error == nil || parsed.JSONRPC != Version {
+		return utils.WithServiceParams(statusErr, params)
 	}
-	return FromJSONRPCError(parsed.Error)
+	return utils.WithServiceParams(FromJSONRPCError(parsed.Error), params)
+}
+
+// errorFromHTTPStatus maps the status of a non-200 response without a JSON-RPC error. Unlike the
+// REST binding, 404, 405 and 501 are not mapped to [a2a.ErrMethodNotFound]: JSON-RPC sends every
+// method to a single endpoint, so these statuses mean the endpoint itself is wrong.
+func errorFromHTTPStatus(statusCode int) error {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return a2a.ErrUnauthenticated
+	case http.StatusForbidden:
+		return a2a.ErrUnauthorized
+	default:
+		return a2a.ErrServerError
+	}
 }
 
 // ToJSONRPCError converts an error to a JSON-RPC [Error].

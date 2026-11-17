@@ -166,30 +166,86 @@ func TestJSONRPC_ClientResponseTrailingData(t *testing.T) {
 func TestJSONRPC_ClientNonOKStatus(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		rw.WriteHeader(http.StatusUnauthorized)
-		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`))
-	}))
-	t.Cleanup(server.Close)
-
-	transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
-
-	_, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
-	if !errors.Is(err, a2a.ErrUnauthenticated) || !strings.Contains(err.Error(), "the token was revoked") {
-		t.Fatalf("GetTask() error = %v, want %v with the server message", err, a2a.ErrUnauthenticated)
+	testCases := []struct {
+		name        string
+		contentType string
+		body        string
+		wantMsg     string
+		status      int
+	}{
+		{
+			name:        "JSON-RPC error",
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantMsg:     "the token was revoked",
+		},
+		{
+			name:        "non-JSON body",
+			contentType: "text/plain",
+			body:        "unauthorized",
+			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
+		},
+		{
+			name:        "gateway JSON body",
+			contentType: "application/json",
+			body:        `{"error":{"code":401,"message":"Unauthorized"}}`,
+			wantMsg:     "unexpected HTTP status: 401 Unauthorized",
+		},
+		{
+			name:        "JSON-RPC error answered with 200",
+			contentType: "application/json",
+			body:        `{"jsonrpc":"2.0","id":null,"error":{"code":-31401,"message":"the token was revoked"}}`,
+			wantMsg:     "the token was revoked",
+			status:      http.StatusOK,
+		},
 	}
 
-	var streamErr error
-	for _, err := range transport.SendStreamingMessage(t.Context(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
-		Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
-	}) {
-		if err != nil {
-			streamErr = err
-			break
-		}
-	}
-	if !errors.Is(streamErr, a2a.ErrUnauthenticated) || !strings.Contains(streamErr.Error(), "the token was revoked") {
-		t.Fatalf("SendStreamingMessage() error = %v, want %v with the server message", streamErr, a2a.ErrUnauthenticated)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			status := tc.status
+			if status == 0 {
+				status = http.StatusUnauthorized
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				rw.Header().Set("Content-Type", tc.contentType)
+				rw.Header().Set("WWW-Authenticate", `Bearer resource_metadata="x"`)
+				rw.WriteHeader(status)
+				_, _ = rw.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+
+			transport := NewJSONRPCTransport(JSONRPCTransportConfig{URL: server.URL})
+
+			checkErr := func(op string, err error) {
+				t.Helper()
+				if !errors.Is(err, a2a.ErrUnauthenticated) || !strings.Contains(err.Error(), tc.wantMsg) {
+					t.Fatalf("%s() error = %v, want %v with message %q", op, err, a2a.ErrUnauthenticated, tc.wantMsg)
+				}
+				var a2aErr *a2a.Error
+				if !errors.As(err, &a2aErr) {
+					t.Fatalf("%s() error = %T, want *a2a.Error", op, err)
+				}
+				want := []string{`Bearer resource_metadata="x"`}
+				if diff := cmp.Diff(want, a2aErr.ServiceParams["www-authenticate"]); diff != "" {
+					t.Fatalf("%s() error ServiceParams[www-authenticate] wrong (-want +got):\n%s", op, diff)
+				}
+			}
+
+			_, err := transport.GetTask(t.Context(), a2aclient.ServiceParams{}, &a2a.GetTaskRequest{ID: "task-123"})
+			checkErr("GetTask", err)
+
+			var streamErr error
+			for _, err := range transport.SendStreamingMessage(t.Context(), a2aclient.ServiceParams{}, &a2a.SendMessageRequest{
+				Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("test")),
+			}) {
+				if err != nil {
+					streamErr = err
+					break
+				}
+			}
+			checkErr("SendStreamingMessage", streamErr)
+		})
 	}
 }

@@ -62,10 +62,31 @@ func (a *agentCardEnforcer) Before(ctx context.Context, callCtx *CallContext, re
 	if err := a.checkCapabilities(ctx, callCtx); err != nil {
 		return ctx, nil, err
 	}
+	if err := a.checkPushConfig(callCtx, req); err != nil {
+		return ctx, nil, err
+	}
 	if err := a.checkInputModes(callCtx, req); err != nil {
 		return ctx, nil, err
 	}
 	return ctx, nil, nil
+}
+
+func (a *agentCardEnforcer) checkPushConfig(callCtx *CallContext, req *Request) error {
+	if a.capabilities.PushNotifications {
+		return nil
+	}
+	switch callCtx.Method() {
+	case "SendMessage", "SendStreamingMessage":
+		if req == nil || req.Payload == nil {
+			return nil
+		}
+		r, ok := req.Payload.(*a2a.SendMessageRequest)
+		if !ok || r == nil || r.Config == nil || r.Config.PushConfig == nil {
+			return nil
+		}
+		return a2a.ErrPushNotificationNotSupported
+	}
+	return nil
 }
 
 func (a *agentCardEnforcer) checkCapabilities(ctx context.Context, callCtx *CallContext) error {

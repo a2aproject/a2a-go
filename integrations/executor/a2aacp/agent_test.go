@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -104,6 +105,119 @@ func TestExecutor_CancelTimeoutStopsAgent(t *testing.T) {
 	}
 	if got := h.agentCount(); got != 2 {
 		t.Fatalf("started agents = %d, want 2", got)
+	}
+}
+
+func TestExecutor_CancelTimeoutFailsOtherTurns(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.text("m1", s.promptText()) }}
+	failures := make(chan error, 1)
+	e := newTestExecutor(t, h, Config{
+		CancelTimeout: 10 * time.Millisecond,
+		Failure: func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+			failures <- err
+			return nil
+		},
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	other := make(chan []eventSummary, 1)
+	otherWorking := make(chan struct{})
+	go func() {
+		var got []eventSummary
+		for ev, err := range e.Execute(ctx, newExecCtx("other", a2a.NewTextPart("other"))) {
+			if err != nil {
+				t.Errorf("Executor.Execute() error = %v", err)
+			}
+			got = append(got, summarize(ev))
+			if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+				close(otherWorking)
+			}
+		}
+		other <- got
+	}()
+	<-otherWorking
+
+	stuck := newExecCtx("stuck", a2a.NewTextPart("stuck"))
+	for ev, err := range e.Execute(ctx, stuck) {
+		if err != nil {
+			t.Fatalf("Executor.Execute() error = %v", err)
+		}
+		if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+			run(t, cancelTask(e, stuck))
+		}
+	}
+
+	want := []eventSummary{
+		submitted,
+		working,
+		{Kind: "artifact", Text: "other"},
+		failedWith("acp agent error: the agent was stopped because a canceled task didn't stop: acp agent exited"),
+	}
+	if diff := cmp.Diff(want, <-other); diff != "" {
+		t.Fatalf("Executor.Execute() of the other task wrong result (-want +got) diff = %s", diff)
+	}
+	checkAgentStopped(t, <-failures, stuck.TaskID)
+}
+
+func TestExecutor_CancelTimeoutAbandonsWaitingTasks(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "stuck" {
+			s.text("m1", "Working on it")
+			return
+		}
+		req := acp.RequestPermissionRequest{SessionID: s.req.SessionID, ToolCall: rmToolCall, Options: testPermissionOptions}
+		if err := s.agent.conn.Call(context.Background(), acp.MethodRequestPermission, req, nil); !errors.Is(err, acp.ErrAgentExited) {
+			s.t.Errorf("fake agent request_permission error = %v, want %v", err, acp.ErrAgentExited)
+		}
+	}}
+	abandoned := make(chan *a2a.TaskStatusUpdateEvent, 1)
+	failures := make(chan error, 1)
+	e := newTestExecutor(t, h, Config{
+		CancelTimeout: 10 * time.Millisecond,
+		Abandoned:     func(_ context.Context, ev *a2a.TaskStatusUpdateEvent) { abandoned <- ev },
+		Failure: func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+			failures <- err
+			return nil
+		},
+	})
+	waiting := newExecCtx("waiting", a2a.NewTextPart("delete x.txt"))
+	if got := run(t, execute(e, waiting)); got[len(got)-1].State != a2a.TaskStateInputRequired {
+		t.Fatalf("Executor.Execute() = %+v, want input-required", got)
+	}
+
+	stuck := newExecCtx("stuck", a2a.NewTextPart("stuck"))
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	for ev, err := range e.Execute(ctx, stuck) {
+		if err != nil {
+			t.Fatalf("Executor.Execute() error = %v", err)
+		}
+		if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+			run(t, cancelTask(e, stuck))
+		}
+	}
+
+	ev := <-abandoned
+	want := failedWith("acp agent error: the agent was stopped because a canceled task didn't stop: acp agent exited")
+	if diff := cmp.Diff(want, summarize(ev)); diff != "" {
+		t.Fatalf("Config.Abandoned() wrong result (-want +got) diff = %s", diff)
+	}
+	if ev.TaskID != waiting.TaskID {
+		t.Fatalf("Config.Abandoned() task = %s, want %s", ev.TaskID, waiting.TaskID)
+	}
+	checkAgentStopped(t, <-failures, stuck.TaskID)
+}
+
+func checkAgentStopped(t *testing.T, err error, stuckTask a2a.TaskID) {
+	t.Helper()
+	var stopped *AgentStoppedError
+	if !errors.As(err, &stopped) || !errors.Is(err, acp.ErrAgentExited) {
+		t.Fatalf("Config.Failure() error = %v, want %T wrapping %v", err, stopped, acp.ErrAgentExited)
+	}
+	if stopped.TaskID != stuckTask {
+		t.Fatalf("AgentStoppedError.TaskID = %s, want %s", stopped.TaskID, stuckTask)
 	}
 }
 
@@ -266,6 +380,320 @@ func TestExecutor_MaxAgents(t *testing.T) {
 	}
 	run(t, cancelTask(e, busy))
 	<-asked
+}
+
+type countedAgentConn struct {
+	io.ReadWriteCloser
+	live *atomic.Int32
+	once sync.Once
+}
+
+type blockedCloseConn struct {
+	io.ReadWriteCloser
+	started chan struct{}
+	release <-chan struct{}
+	once    sync.Once
+}
+
+func (c *blockedCloseConn) Close() error {
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+	return c.ReadWriteCloser.Close()
+}
+
+func TestExecutor_ConcurrentStartsDoNotWaitForUnrelatedAgentClose(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{t: t, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	closing := make(chan struct{})
+	releaseClose := make(chan struct{})
+	startedD := make(chan struct{})
+	var releaseOnce sync.Once
+	starter := AgentFunc(func(ctx context.Context, key string) (io.ReadWriteCloser, error) {
+		conn, err := h.start(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if key == "key-a" {
+			return &blockedCloseConn{ReadWriteCloser: conn, started: closing, release: releaseClose}, nil
+		}
+		if key == "key-d" {
+			close(startedD)
+		}
+		return conn, nil
+	})
+	e, err := NewExecutor(t.Context(), starter, &Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 2}})
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseClose) })
+		if err := e.Close(); err != nil {
+			t.Errorf("Executor.Close() error = %v", err)
+		}
+	})
+	for _, key := range []string{"a", "b"} {
+		got := run(t, execute(e, newExecCtx(key, a2a.NewTextPart("done"))))
+		if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+			t.Fatalf("Executor.Execute() initial result (-want +got) diff = %s", diff)
+		}
+	}
+	waitFor(t, func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for _, slot := range e.agents {
+			if slot.refs > 0 {
+				return false
+			}
+		}
+		return true
+	})
+	results := make(chan []eventSummary, 2)
+	launch := func(key string) {
+		go func() {
+			var got []eventSummary
+			for event, err := range e.Execute(t.Context(), newExecCtx(key, a2a.NewTextPart("done"))) {
+				if err != nil {
+					break
+				}
+				got = append(got, summarize(event))
+			}
+			results <- got
+		}()
+	}
+	launch("c")
+	select {
+	case <-closing:
+	case <-time.After(testTimeout):
+		t.Fatal("idle agent close did not start")
+	}
+	launch("d")
+	select {
+	case <-startedD:
+	case <-time.After(testTimeout):
+		t.Fatal("second agent did not start while an unrelated agent close was blocked")
+	}
+	releaseOnce.Do(func() { close(releaseClose) })
+	for range 2 {
+		select {
+		case got := <-results:
+			if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+			}
+		case <-time.After(testTimeout):
+			t.Fatal("Executor.Execute() timed out")
+		}
+	}
+}
+
+func (c *countedAgentConn) Close() error {
+	err := c.ReadWriteCloser.Close()
+	c.once.Do(func() { c.live.Add(-1) })
+	return err
+}
+
+func TestExecutor_ConcurrentStartsEvictDistinctIdleAgents(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{t: t, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	var live atomic.Int32
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	starter := AgentFunc(func(ctx context.Context, key string) (io.ReadWriteCloser, error) {
+		if live.Add(1) > 2 {
+			live.Add(-1)
+			return nil, errors.New("process capacity exhausted")
+		}
+		if key == "key-c" || key == "key-d" {
+			started <- key
+			select {
+			case <-release:
+			case <-ctx.Done():
+				live.Add(-1)
+				return nil, ctx.Err()
+			}
+		}
+		conn, err := h.start(ctx, key)
+		if err != nil {
+			live.Add(-1)
+			return nil, err
+		}
+		return &countedAgentConn{ReadWriteCloser: conn, live: &live}, nil
+	})
+	e, err := NewExecutor(t.Context(), starter, &Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 2}})
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		if err := e.Close(); err != nil {
+			t.Errorf("Executor.Close() error = %v", err)
+		}
+	})
+	for _, key := range []string{"a", "b"} {
+		got := run(t, execute(e, newExecCtx(key, a2a.NewTextPart("done"))))
+		if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+			t.Fatalf("Executor.Execute() initial result (-want +got) diff = %s", diff)
+		}
+	}
+	waitFor(t, func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for _, slot := range e.agents {
+			if slot.refs > 0 {
+				return false
+			}
+		}
+		return true
+	})
+	type result struct {
+		events []eventSummary
+		err    error
+	}
+	results := make(chan result, 2)
+	launch := func(key string) {
+		go func() {
+			var got result
+			for event, err := range e.Execute(t.Context(), newExecCtx(key, a2a.NewTextPart("done"))) {
+				if err != nil {
+					got.err = err
+					break
+				}
+				got.events = append(got.events, summarize(event))
+			}
+			results <- got
+		}()
+	}
+	launch("c")
+	select {
+	case <-started:
+	case <-time.After(testTimeout):
+		t.Fatal("first agent did not start")
+	}
+	launch("d")
+	select {
+	case <-started:
+	case got := <-results:
+		t.Fatalf("Executor.Execute() completed before the second agent started: %+v", got)
+	case <-time.After(testTimeout):
+		t.Fatal("second agent did not start")
+	}
+	releaseOnce.Do(func() { close(release) })
+	for range 2 {
+		select {
+		case got := <-results:
+			if got.err != nil {
+				t.Fatalf("Executor.Execute() error = %v, want nil", got.err)
+			}
+			if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got.events); diff != "" {
+				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+			}
+		case <-time.After(testTimeout):
+			t.Fatal("Executor.Execute() timed out")
+		}
+	}
+}
+
+func TestExecutor_StartingAgentConsumesCapacityUntilFailure(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{t: t, onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	starter := AgentFunc(func(ctx context.Context, key string) (io.ReadWriteCloser, error) {
+		if key == "key-a" {
+			close(started)
+			select {
+			case <-release:
+				return nil, errors.New("agent start failed")
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return h.start(ctx, key)
+	})
+	e, err := NewExecutor(t.Context(), starter, &Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 1}})
+	if err != nil {
+		t.Fatalf("NewExecutor() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		if err := e.Close(); err != nil {
+			t.Errorf("Executor.Close() error = %v", err)
+		}
+	})
+	firstDone := make(chan []eventSummary, 1)
+	go func() {
+		var got []eventSummary
+		for event, err := range e.Execute(t.Context(), newExecCtx("a", a2a.NewTextPart("first"))) {
+			if err != nil {
+				break
+			}
+			got = append(got, summarize(event))
+		}
+		firstDone <- got
+	}()
+	select {
+	case <-started:
+	case <-time.After(testTimeout):
+		t.Fatal("first agent did not start")
+	}
+	got := run(t, execute(e, newExecCtx("b", a2a.NewTextPart("busy"))))
+	if diff := cmp.Diff([]eventSummary{submitted, failedWith("all 1 agents are busy, send the message again later")}, got); diff != "" {
+		t.Fatalf("Executor.Execute() while starting wrong result (-want +got) diff = %s", diff)
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case got = <-firstDone:
+		if diff := cmp.Diff([]eventSummary{submitted, failedWith("starting acp agent: agent start failed")}, got); diff != "" {
+			t.Fatalf("Executor.Execute() failed start wrong result (-want +got) diff = %s", diff)
+		}
+	case <-time.After(testTimeout):
+		t.Fatal("first execution did not finish")
+	}
+	got = run(t, execute(e, newExecCtx("b", a2a.NewTextPart("after failure"))))
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() after failed start wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestExecutor_MaxAgentsSkipsExited(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+	e := newTestExecutor(t, h, Config{Pool: &PoolConfig{Key: keyByContext, MaxAgents: 2}})
+	idle := func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for _, s := range e.agents {
+			if s.refs > 0 {
+				return false
+			}
+		}
+		return true
+	}
+	run(t, execute(e, newExecCtx("b", a2a.NewTextPart("done"))))
+	waitFor(t, idle)
+	run(t, execute(e, newExecCtx("a", a2a.NewTextPart("done"))))
+	waitFor(t, idle)
+	h.agent(1).crash()
+	waitFor(t, func() bool {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.agents["key-a"].agent.exited()
+	})
+
+	got := run(t, execute(e, newExecCtx("c", a2a.NewTextPart("done"))))
+
+	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, got); diff != "" {
+		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s := e.agents["key-b"]; s == nil || s.agent == nil {
+		t.Fatalf("idle agent b was stopped, want only the exited agent a to make room")
+	}
+	if _, ok := e.agents["key-a"]; ok {
+		t.Fatalf("slot of exited agent a was kept, want it dropped")
+	}
 }
 
 func TestExecutor_NotOwnerDoesNotDelayStart(t *testing.T) {
