@@ -121,6 +121,7 @@ func TestExecutor_CancelTimeoutFailsOtherTurns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
 	defer cancel()
 	other := make(chan []eventSummary, 1)
+	otherWorking := make(chan struct{})
 	go func() {
 		var got []eventSummary
 		for ev, err := range e.Execute(ctx, newExecCtx("other", a2a.NewTextPart("other"))) {
@@ -128,10 +129,13 @@ func TestExecutor_CancelTimeoutFailsOtherTurns(t *testing.T) {
 				t.Errorf("Executor.Execute() error = %v", err)
 			}
 			got = append(got, summarize(ev))
+			if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+				close(otherWorking)
+			}
 		}
 		other <- got
 	}()
-	waitFor(t, func() bool { return h.agentCount() == 1 && len(promptTexts(h.agent(0))) == 1 })
+	<-otherWorking
 
 	stuck := newExecCtx("stuck", a2a.NewTextPart("stuck"))
 	for ev, err := range e.Execute(ctx, stuck) {
@@ -147,14 +151,72 @@ func TestExecutor_CancelTimeoutFailsOtherTurns(t *testing.T) {
 		submitted,
 		working,
 		{Kind: "artifact", Text: "other"},
-		failedWith(fmt.Sprintf("acp agent error: the agent was stopped because a canceled task didn't stop (task %s): acp agent exited", stuck.TaskID)),
+		failedWith("acp agent error: the agent was stopped because a canceled task didn't stop: acp agent exited"),
 	}
 	if diff := cmp.Diff(want, <-other); diff != "" {
 		t.Fatalf("Executor.Execute() of the other task wrong result (-want +got) diff = %s", diff)
 	}
-	err := <-failures
-	if !errors.Is(err, ErrAgentStopped) || !errors.Is(err, acp.ErrAgentExited) {
-		t.Fatalf("Config.Failure() error = %v, want %v wrapping %v", err, ErrAgentStopped, acp.ErrAgentExited)
+	checkAgentStopped(t, <-failures, stuck.TaskID)
+}
+
+func TestExecutor_CancelTimeoutAbandonsWaitingTasks(t *testing.T) {
+	t.Parallel()
+	h := &fakeHarness{onPrompt: func(s *promptScript) {
+		if s.promptText() == "stuck" {
+			s.text("m1", "Working on it")
+			return
+		}
+		req := acp.RequestPermissionRequest{SessionID: s.req.SessionID, ToolCall: rmToolCall, Options: testPermissionOptions}
+		if err := s.agent.conn.Call(context.Background(), acp.MethodRequestPermission, req, nil); !errors.Is(err, acp.ErrAgentExited) {
+			s.t.Errorf("fake agent request_permission error = %v, want %v", err, acp.ErrAgentExited)
+		}
+	}}
+	abandoned := make(chan *a2a.TaskStatusUpdateEvent, 1)
+	failures := make(chan error, 1)
+	e := newTestExecutor(t, h, Config{
+		CancelTimeout: 10 * time.Millisecond,
+		Abandoned:     func(_ context.Context, ev *a2a.TaskStatusUpdateEvent) { abandoned <- ev },
+		Failure: func(_ context.Context, _ *a2asrv.ExecutorContext, err error) []*a2a.Part {
+			failures <- err
+			return nil
+		},
+	})
+	waiting := newExecCtx("waiting", a2a.NewTextPart("delete x.txt"))
+	if got := run(t, execute(e, waiting)); got[len(got)-1].State != a2a.TaskStateInputRequired {
+		t.Fatalf("Executor.Execute() = %+v, want input-required", got)
+	}
+
+	stuck := newExecCtx("stuck", a2a.NewTextPart("stuck"))
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	for ev, err := range e.Execute(ctx, stuck) {
+		if err != nil {
+			t.Fatalf("Executor.Execute() error = %v", err)
+		}
+		if _, ok := ev.(*a2a.TaskArtifactUpdateEvent); ok {
+			run(t, cancelTask(e, stuck))
+		}
+	}
+
+	ev := <-abandoned
+	want := failedWith("acp agent error: the agent was stopped because a canceled task didn't stop: acp agent exited")
+	if diff := cmp.Diff(want, summarize(ev)); diff != "" {
+		t.Fatalf("Config.Abandoned() wrong result (-want +got) diff = %s", diff)
+	}
+	if ev.TaskID != waiting.TaskID {
+		t.Fatalf("Config.Abandoned() task = %s, want %s", ev.TaskID, waiting.TaskID)
+	}
+	checkAgentStopped(t, <-failures, stuck.TaskID)
+}
+
+func checkAgentStopped(t *testing.T, err error, stuckTask a2a.TaskID) {
+	t.Helper()
+	var stopped *AgentStoppedError
+	if !errors.As(err, &stopped) || !errors.Is(err, acp.ErrAgentExited) {
+		t.Fatalf("Config.Failure() error = %v, want %T wrapping %v", err, stopped, acp.ErrAgentExited)
+	}
+	if stopped.TaskID != stuckTask {
+		t.Fatalf("AgentStoppedError.TaskID = %s, want %s", stopped.TaskID, stuckTask)
 	}
 }
 

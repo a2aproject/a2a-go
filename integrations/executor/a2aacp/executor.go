@@ -44,7 +44,7 @@ type Config struct {
 	// StartTimeout limits starting and initializing an agent. Defaults to one minute.
 	StartTimeout time.Duration
 	// CancelTimeout is how long the agent may keep working on a canceled task
-	// before it is stopped, which fails its other tasks with [ErrAgentStopped].
+	// before it is stopped, which fails its other tasks with [AgentStoppedError].
 	// Meanwhile the context accepts no new tasks. Defaults to one minute.
 	CancelTimeout time.Duration
 	// InactivityTimeout fails a task with [ErrAgentInactive] if the agent
@@ -206,9 +206,22 @@ var errClosed = errors.New("acp executor is closed")
 // for [Config.InactivityTimeout].
 var ErrAgentInactive = errors.New("the agent sent no updates")
 
-// ErrAgentStopped is the error, wrapped, of a task whose agent the executor
+// AgentStoppedError is the error, wrapped, of a task whose agent the executor
 // stopped because a canceled turn didn't end within [Config.CancelTimeout].
-var ErrAgentStopped = errors.New("the agent was stopped because a canceled task didn't stop")
+// It wraps the error of an exited agent. Its text leaves out TaskID, since
+// the failed tasks may belong to other callers.
+type AgentStoppedError struct {
+	// TaskID is the canceled task whose turn didn't end.
+	TaskID a2a.TaskID
+}
+
+// Error implements error.
+func (e *AgentStoppedError) Error() string {
+	return fmt.Sprintf("the agent was stopped because a canceled task didn't stop: %v", acp.ErrAgentExited)
+}
+
+// Unwrap returns the error of an exited agent.
+func (e *AgentStoppedError) Unwrap() error { return acp.ErrAgentExited }
 
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
 var errQuestionGone = errors.New("the question is no longer pending: it timed out or the agent restarted. Send a new message to continue")
@@ -993,7 +1006,7 @@ func (e *Executor) cancelTurn(t *turn) {
 				return
 			}
 			log.Warn(context.Background(), "acp agent didn't stop a canceled turn, stopping the agent", "session", t.sessionID)
-			e.stopAgent(t.agent, fmt.Errorf("%w (task %s): %w", ErrAgentStopped, t.taskID, acp.ErrAgentExited))
+			e.stopAgent(t.agent, &AgentStoppedError{TaskID: t.taskID})
 		})
 	}
 }
