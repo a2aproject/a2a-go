@@ -15,6 +15,7 @@
 package utils
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -141,6 +142,8 @@ func TestDeepCopy(t *testing.T) {
 	message := a2a.NewMessage(a2a.MessageRoleUser, part)
 	task := a2a.NewSubmittedTask(message, message)
 	task.Metadata = map[string]any{"items": []any{}, "null": nil}
+	rawMessage := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewRawPart(bytes.Repeat([]byte{0x5a}, 4<<20)))
+	rawTask := a2a.NewSubmittedTask(rawMessage, rawMessage)
 	testCases := []struct {
 		name           string
 		copy           func() (any, error)
@@ -167,7 +170,17 @@ func TestDeepCopy(t *testing.T) {
 					t.Fatalf("DeepCopy() data part aliases source (-want +got) diff = %s", diff)
 				}
 			}},
+		{name: "large raw part", copy: deepCopyCase(*rawTask), want: *rawTask,
+			checkIsolation: func(t *testing.T, copied any) {
+				got := copied.(a2a.Task)
+				got.History[0].Parts[0].Raw()[0] = 0
+				if rawMessage.Parts[0].Raw()[0] != 0x5a {
+					t.Fatal("DeepCopy() raw part aliases source")
+				}
+			}},
 		{name: "empty bytes nil and arrays", copy: deepCopyCase(nonJSONSlices{Empty: []byte{}, Nested: [1][]int{{}}}), want: nonJSONSlices{Empty: []byte{}, Nested: [1][]int{{}}}},
+		{name: "empty raw bytes", copy: deepCopyCase(a2a.Raw{}), want: a2a.Raw{}},
+		{name: "nil raw bytes", copy: deepCopyCase(a2a.Raw(nil)), want: a2a.Raw(nil)},
 		{name: "named empty slice", copy: deepCopyCase(sliceAlias{}), want: sliceAlias{}},
 		{name: "gob codec owns its result", copy: deepCopyCase(gobSliceCodec{Values: []string{}}), want: gobSliceCodec{}},
 		{name: "binary codec owns its result", copy: deepCopyCase(binarySliceCodec{Values: []string{}}), want: binarySliceCodec{}},
@@ -188,12 +201,25 @@ func TestDeepCopy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("DeepCopy() error = %v, want nil", err)
 			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			if diff := cmp.Diff(tc.want, got, cmp.Comparer(func(a, b a2a.Raw) bool { return (a == nil) == (b == nil) && bytes.Equal(a, b) })); diff != "" {
 				t.Fatalf("DeepCopy() wrong result (-want +got) diff = %s", diff)
 			}
 			if tc.checkIsolation != nil {
 				tc.checkIsolation(t, got)
 			}
 		})
+	}
+}
+
+func BenchmarkDeepCopyRaw4MiB(b *testing.B) {
+	message := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewRawPart(bytes.Repeat([]byte{0x5a}, 4<<20)))
+	task := a2a.NewSubmittedTask(message, message)
+	b.SetBytes(4 << 20)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := DeepCopy(task); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

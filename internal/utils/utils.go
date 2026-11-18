@@ -206,6 +206,10 @@ func restoreEmptySlices(source, target reflect.Value) {
 		if !source.IsNil() && source.Len() == 0 && target.IsNil() && target.CanSet() {
 			target.Set(reflect.MakeSlice(target.Type(), 0, 0))
 		}
+		// Raw parts can contain megabytes of bytes, and bytes cannot contain slices to restore.
+		if source.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
 		for i := 0; i < min(source.Len(), target.Len()); i++ {
 			restoreEmptySlices(source.Index(i), target.Index(i))
 		}
