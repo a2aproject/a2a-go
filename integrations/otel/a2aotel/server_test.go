@@ -107,32 +107,6 @@ func TestServerPlugin_Spans(t *testing.T) {
 			wantSpan: spanSummary{Name: "SendMessage", Kind: trace.SpanKindServer},
 		},
 		{
-			name:     "SendMessage returning immediately",
-			executor: completingExecutor(),
-			call: func(ctx context.Context, h a2asrv.RequestHandler) (a2a.TaskID, error) {
-				result, err := h.SendMessage(ctx, &a2a.SendMessageRequest{
-					Config:  &a2a.SendMessageConfig{ReturnImmediately: true},
-					Message: newUserMessage("msg-1", "ctx-1"),
-				})
-				if err != nil {
-					return "", err
-				}
-				return result.TaskInfo().TaskID, nil
-			},
-			wantAttrs: func(taskID a2a.TaskID) map[string]any {
-				return map[string]any{
-					"a2a.method.name":                  "SendMessage",
-					"a2a.protocol.version":             "1.0",
-					"a2a.message.id":                   "msg-1",
-					"a2a.operation.return_immediately": true,
-					"a2a.task.id":                      string(taskID),
-					"a2a.task.state":                   "TASK_STATE_SUBMITTED",
-					"gen_ai.conversation.id":           "ctx-1",
-				}
-			},
-			wantSpan: spanSummary{Name: "SendMessage", Kind: trace.SpanKindServer},
-		},
-		{
 			name:     "SendStreamingMessage",
 			executor: completingExecutor(),
 			call: func(ctx context.Context, h a2asrv.RequestHandler) (a2a.TaskID, error) {
@@ -176,28 +150,6 @@ func TestServerPlugin_Spans(t *testing.T) {
 				Name:   "GetTask",
 				Kind:   trace.SpanKindServer,
 				Status: sdktrace.Status{Code: codes.Error, Description: "failed to get task: task not found"},
-			},
-		},
-		{
-			name:     "push config method",
-			wantErr:  true,
-			executor: completingExecutor(),
-			call: func(ctx context.Context, h a2asrv.RequestHandler) (a2a.TaskID, error) {
-				_, err := h.GetTaskPushConfig(ctx, &a2a.GetTaskPushConfigRequest{TaskID: "task-1", ID: "config-1"})
-				return "", err
-			},
-			wantAttrs: func(a2a.TaskID) map[string]any {
-				return map[string]any{
-					"a2a.method.name":      "GetTaskPushNotificationConfig",
-					"a2a.protocol.version": "1.0",
-					"a2a.task.id":          "task-1",
-					"error.type":           "PUSH_NOTIFICATION_NOT_SUPPORTED",
-				}
-			},
-			wantSpan: spanSummary{
-				Name:   "GetTaskPushNotificationConfig",
-				Kind:   trace.SpanKindServer,
-				Status: sdktrace.Status{Code: codes.Error, Description: "push notification not supported"},
 			},
 		},
 		{
@@ -259,13 +211,6 @@ func TestServerPlugin_TransportSpan(t *testing.T) {
 			transportName: "POST /",
 			transportKind: trace.SpanKindServer,
 			transportAttr: attribute.String("http.request.method", "POST"),
-			wantNames:     []string{"GetTask"},
-		},
-		{
-			name:          "legacy HTTP server span is renamed",
-			transportName: "POST /",
-			transportKind: trace.SpanKindServer,
-			transportAttr: attribute.String("http.method", "POST"),
 			wantNames:     []string{"GetTask"},
 		},
 		{

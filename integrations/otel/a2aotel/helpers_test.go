@@ -16,6 +16,7 @@ package a2aotel
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -47,6 +48,12 @@ func summarizeAll(spans []sdktrace.ReadOnlySpan) []spanSummary {
 		summaries[i] = summarize(span)
 	}
 	return summaries
+}
+
+func withAttrs(base, extra map[string]any) map[string]any {
+	m := maps.Clone(base)
+	maps.Copy(m, extra)
+	return m
 }
 
 func attrMap(attrs []attribute.KeyValue) map[string]any {

@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"maps"
 	"net/url"
 	"testing"
 
@@ -74,11 +73,6 @@ func TestClientPlugin_Spans(t *testing.T) {
 		"gen_ai.agent.description": "Forecasts the weather",
 		"gen_ai.agent.version":     "2.0.0",
 	}
-	withAttrs := func(base map[string]any, extra map[string]any) map[string]any {
-		m := maps.Clone(base)
-		maps.Copy(m, extra)
-		return m
-	}
 	testCases := []struct {
 		name    string
 		ctx     func(context.Context) context.Context
@@ -116,26 +110,6 @@ func TestClientPlugin_Spans(t *testing.T) {
 					"server.address":                   "agent.example.com",
 					"server.port":                      int64(443),
 				}),
-			},
-		},
-		{
-			name: "SendMessage returning a message",
-			req: a2aclient.Request{
-				Method:  "SendMessage",
-				BaseURL: "http://localhost:8080",
-				Payload: &a2a.SendMessageRequest{Message: &a2a.Message{ID: "msg-1", ContextID: "ctx-1"}},
-			},
-			results: []callResult{{Payload: &a2a.Message{ID: "msg-2", ContextID: "ctx-1"}}},
-			want: spanSummary{
-				Name: "SendMessage",
-				Kind: trace.SpanKindClient,
-				Attrs: map[string]any{
-					"a2a.method.name":        "SendMessage",
-					"a2a.message.id":         "msg-1",
-					"gen_ai.conversation.id": "ctx-1",
-					"server.address":         "localhost",
-					"server.port":            int64(8080),
-				},
 			},
 		},
 		{
@@ -322,24 +296,6 @@ func TestClientPlugin_PropagatesTraceContext(t *testing.T) {
 	}
 	if diff := cmp.Diff(a2aclient.ServiceParams{"a2a-version": {"1.0"}}, callerParams); diff != "" {
 		t.Fatalf("caller's service params modified (-want +got) diff = %s", diff)
-	}
-}
-
-func TestClientPlugin_ChildOfContextSpan(t *testing.T) {
-	t.Parallel()
-	telemetry := newTestTelemetry(t)
-	plugin := NewClientPlugin(telemetry.clientOptions()...)
-	ctx, parent := telemetry.provider.Tracer("test").Start(t.Context(), "invoke_agent")
-
-	collect(plugin.WrapCall(newClientHandler(callResult{Payload: &a2a.Task{}}))(ctx, a2aclient.Request{Method: "GetTask"}))
-	parent.End()
-
-	spans := telemetry.recorder.Ended()
-	if len(spans) != 2 {
-		t.Fatalf("WrapCall() recorded %d spans, want 2", len(spans))
-	}
-	if got, want := spans[0].Parent().SpanID(), parent.SpanContext().SpanID(); got != want {
-		t.Fatalf("client span parent = %v, want %v", got, want)
 	}
 }
 

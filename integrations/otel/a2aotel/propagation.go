@@ -16,7 +16,6 @@ package a2aotel
 
 import (
 	"context"
-	"maps"
 	"slices"
 	"strings"
 
@@ -29,32 +28,16 @@ import (
 // injectServiceParams returns a copy of params carrying the trace context of ctx. The caller's params
 // must stay unchanged so that a middleware can retry the call with the original request.
 func injectServiceParams(ctx context.Context, propagators propagation.TextMapPropagator, params a2aclient.ServiceParams) a2aclient.ServiceParams {
-	injected := make(a2aclient.ServiceParams, len(params)+len(propagators.Fields()))
+	carrier := propagation.MapCarrier{}
+	propagators.Inject(ctx, carrier)
+	injected := make(a2aclient.ServiceParams, len(params)+len(carrier))
 	for k, v := range params {
 		injected[k] = slices.Clone(v)
 	}
-	propagators.Inject(ctx, clientParamsCarrier(injected))
-	return injected
-}
-
-type clientParamsCarrier a2aclient.ServiceParams
-
-var _ propagation.TextMapCarrier = clientParamsCarrier(nil)
-
-func (c clientParamsCarrier) Get(key string) string {
-	values := a2aclient.ServiceParams(c).Get(key)
-	if len(values) == 0 {
-		return ""
+	for k, v := range carrier {
+		injected[strings.ToLower(k)] = []string{v}
 	}
-	return values[0]
-}
-
-func (c clientParamsCarrier) Set(key, value string) {
-	c[strings.ToLower(key)] = []string{value}
-}
-
-func (c clientParamsCarrier) Keys() []string {
-	return slices.Collect(maps.Keys(c))
+	return injected
 }
 
 type serverParamsCarrier struct {

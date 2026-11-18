@@ -15,10 +15,64 @@
 package a2aotel
 
 import (
+	"errors"
+
 	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
+
+const (
+	a2aMethodNameKey                 = attribute.Key("a2a.method.name")
+	a2aProtocolVersionKey            = attribute.Key("a2a.protocol.version")
+	a2aTenantKey                     = attribute.Key("a2a.tenant")
+	a2aMessageIDKey                  = attribute.Key("a2a.message.id")
+	a2aMessageReferenceTaskIDsKey    = attribute.Key("a2a.message.reference_task_ids")
+	a2aOperationReturnImmediatelyKey = attribute.Key("a2a.operation.return_immediately")
+	a2aTaskIDKey                     = attribute.Key("a2a.task.id")
+	a2aTaskStateKey                  = attribute.Key("a2a.task.state")
+	genAIAgentNameKey                = attribute.Key("gen_ai.agent.name")
+	genAIAgentDescriptionKey         = attribute.Key("gen_ai.agent.description")
+	genAIAgentVersionKey             = attribute.Key("gen_ai.agent.version")
+	genAIConversationIDKey           = attribute.Key("gen_ai.conversation.id")
+)
+
+const methodSendMessage = "SendMessage"
+
+// sdkMethodNames maps the SDK method names which differ from the a2a.method.name values.
+var sdkMethodNames = map[string]string{
+	"CreateTaskPushConfig": "CreateTaskPushNotificationConfig",
+	"GetTaskPushConfig":    "GetTaskPushNotificationConfig",
+	"ListTaskPushConfigs":  "ListTaskPushNotificationConfigs",
+	"DeleteTaskPushConfig": "DeleteTaskPushNotificationConfig",
+}
+
+func methodName(sdkMethod string) string {
+	if name, ok := sdkMethodNames[sdkMethod]; ok {
+		return name
+	}
+	return sdkMethod
+}
+
+// clientErrorType returns the A2A error reason if err is an A2A protocol error, or the Go type name of err otherwise.
+func clientErrorType(err error) string {
+	if isProtocolError(err) {
+		return a2a.ErrorReason(err)
+	}
+	return semconv.ErrorType(err).Value.AsString()
+}
+
+// isProtocolError reports whether err is an A2A protocol error. Client transports convert every
+// error response to an [a2a.Error], and [a2a.ErrorReason] falls back to the internal error reason
+// for errors which are not A2A errors.
+func isProtocolError(err error) bool {
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) || errors.Is(err, a2a.ErrInternalError) {
+		return true
+	}
+	return a2a.ErrorReason(err) != a2a.ErrorReason(a2a.ErrInternalError)
+}
 
 // requestAttributes returns the attributes which are known from the request payload alone.
 func requestAttributes(method string, payload any) []attribute.KeyValue {
@@ -168,16 +222,6 @@ func (o *callObserver) observe(payload any, err error) {
 	case *a2a.ListTasksResponse:
 		for _, task := range resp.Tasks {
 			o.observeTask(task)
-		}
-	case *a2a.PushConfig:
-		o.taskIDs.observe(string(resp.TaskID))
-	case *a2a.ListTaskPushConfigResponse:
-		for _, cfg := range resp.Configs {
-			o.taskIDs.observe(string(cfg.TaskID))
-		}
-	case []*a2a.PushConfig:
-		for _, cfg := range resp {
-			o.taskIDs.observe(string(cfg.TaskID))
 		}
 	}
 }
