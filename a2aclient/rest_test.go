@@ -743,18 +743,24 @@ func TestRESTTransport_EscapedPathSegments(t *testing.T) {
 func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 	t.Parallel()
 
+	const baseQuery = "tag=base&api-version=2026-11-01&flag&value=a%20b%2fc"
+
 	testCases := []struct {
 		name          string
 		historyLength *int
 		extraQuery    url.Values
 		wantQuery     url.Values
+		wantRawQuery  string
 	}{
 		{
 			name: "base URL only",
 			wantQuery: url.Values{
 				"api-version": {"2026-11-01"},
 				"tag":         {"base"},
+				"flag":        {""},
+				"value":       {"a b/c"},
 			},
+			wantRawQuery: baseQuery,
 		},
 		{
 			name:          "with request and context parameters",
@@ -768,6 +774,8 @@ func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 				"historyLength": {"2"},
 				"api_key":       {"secret"},
 				"tag":           {"base", "context-1", "context-2"},
+				"flag":          {""},
+				"value":         {"a b/c"},
 			},
 		},
 	}
@@ -776,9 +784,9 @@ func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			queries := make(chan url.Values, 1)
+			queries := make(chan url.URL, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				queries <- r.URL.Query()
+				queries <- *r.URL
 				w.Header().Set("Content-Type", "application/json")
 				if _, err := io.WriteString(w, `{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_COMPLETED"}}`); err != nil {
 					t.Errorf("io.WriteString() error = %v, want nil", err)
@@ -786,7 +794,7 @@ func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			u, err := url.Parse(server.URL + "/a2a?api-version=2026-11-01&tag=base")
+			u, err := url.Parse(server.URL + "/a2a?" + baseQuery)
 			if err != nil {
 				t.Fatalf("url.Parse() error = %v, want nil", err)
 			}
@@ -798,8 +806,12 @@ func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 				if err != nil {
 					t.Fatalf("transport.GetTask() error = %v, want nil", err)
 				}
-				if diff := cmp.Diff(tc.wantQuery, <-queries); diff != "" {
+				got := <-queries
+				if diff := cmp.Diff(tc.wantQuery, got.Query()); diff != "" {
 					t.Fatalf("transport.GetTask() wrong result (-want +got) diff = %s", diff)
+				}
+				if tc.wantRawQuery != "" && got.RawQuery != tc.wantRawQuery {
+					t.Fatalf("transport.GetTask() RawQuery = %q, want %q", got.RawQuery, tc.wantRawQuery)
 				}
 			}
 		})
