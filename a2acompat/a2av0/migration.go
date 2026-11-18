@@ -376,6 +376,9 @@ func toV1ResponsePayload(v1Payload, legacyPayload any) (any, error) {
 			return v, nil
 		}
 	case *a2a.ListTaskPushConfigResponse:
+		if v == nil {
+			return nil, nil
+		}
 		legacyConfigs, ok := legacyPayload.([]*legacya2a.TaskPushConfig)
 		if !ok {
 			break
@@ -386,6 +389,18 @@ func toV1ResponsePayload(v1Payload, legacyPayload any) (any, error) {
 		configs, err := ToV1PushConfigs(legacyConfigs)
 		if err != nil {
 			return nil, err
+		}
+		// Legacy push configs have no tenant, so restore it from the original config with the same ID.
+		tenants := make(map[string]string, len(v.Configs))
+		for _, c := range v.Configs {
+			if c != nil {
+				tenants[c.ID] = c.Tenant
+			}
+		}
+		for _, c := range configs {
+			if c != nil {
+				c.Tenant = tenants[c.ID]
+			}
 		}
 		return &a2a.ListTaskPushConfigResponse{Configs: configs, NextPageToken: v.NextPageToken}, nil
 	}
@@ -421,6 +436,9 @@ func fromV1Payload(payload any) (any, error) {
 	case []*a2a.PushConfig:
 		return FromV1PushConfigs(v), nil
 	case *a2a.ListTaskPushConfigResponse:
+		if v == nil {
+			return nil, nil
+		}
 		return FromV1PushConfigs(v.Configs), nil
 	case *a2a.ListTasksResponse:
 		return FromV1ListTasksResponse(v), nil

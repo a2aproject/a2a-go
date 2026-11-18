@@ -16,6 +16,7 @@ package a2av0
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -438,9 +439,25 @@ func TestInterceptors_PushConfigResponses(t *testing.T) {
 				return serverAfter(redactTokenServerInterceptor{}, newListResponse())
 			},
 			want: &a2a.ListTaskPushConfigResponse{
-				Configs:       []*a2a.PushConfig{{TaskID: "t1", ID: "p1", URL: "http://example.com"}},
+				Configs:       []*a2a.PushConfig{{Tenant: "tenant", TaskID: "t1", ID: "p1", URL: "http://example.com"}},
 				NextPageToken: "next",
 			},
+		},
+		{
+			name: "server list error",
+			after: func() (any, error) {
+				return serverAfter(legacysrv.PassthroughCallInterceptor{}, (*a2a.ListTaskPushConfigResponse)(nil))
+			},
+			want: (*a2a.ListTaskPushConfigResponse)(nil),
+		},
+		{
+			name: "client list error",
+			after: func() (any, error) {
+				resp := &a2aclient.Response{Payload: (*a2a.ListTaskPushConfigResponse)(nil), ServiceParams: a2aclient.ServiceParams{}}
+				err := NewClientInterceptor(legacyclient.PassthroughInterceptor{}).After(t.Context(), resp)
+				return resp.Payload, err
+			},
+			want: (*a2a.ListTaskPushConfigResponse)(nil),
 		},
 	}
 
@@ -455,5 +472,19 @@ func TestInterceptors_PushConfigResponses(t *testing.T) {
 				t.Fatalf("After() wrong result (-want +got) diff = %s", diff)
 			}
 		})
+	}
+}
+
+func TestServerInterceptor_ListTaskPushConfigsError(t *testing.T) {
+	t.Parallel()
+
+	// Without a push config store the handler fails and returns a nil *a2a.ListTaskPushConfigResponse.
+	handler := a2asrv.NewHandler(&replyingExecutor{}, a2asrv.WithCallInterceptors(NewServerInterceptor(legacysrv.PassthroughCallInterceptor{})))
+	resp, err := handler.ListTaskPushConfigs(t.Context(), &a2a.ListTaskPushConfigRequest{TaskID: "t1"})
+	if !errors.Is(err, a2a.ErrPushNotificationNotSupported) {
+		t.Fatalf("ListTaskPushConfigs() error = %v, want %v", err, a2a.ErrPushNotificationNotSupported)
+	}
+	if resp != nil {
+		t.Fatalf("ListTaskPushConfigs() = %v, want nil", resp)
 	}
 }
