@@ -397,6 +397,8 @@ func TestRESTError_RoundTrip(t *testing.T) {
 			}
 			if diff := cmp.Diff(*tc.want, *a2aBack,
 				cmpopts.EquateErrors(),
+				// ServiceParams holds the response headers, covered by TestFromRESTErrorServiceParams.
+				cmpopts.IgnoreFields(a2a.Error{}, "ServiceParams"),
 				cmpopts.IgnoreMapEntries(func(k string, _ string) bool {
 					return k == "timestamp"
 				}),
@@ -656,6 +658,76 @@ func TestFromRESTErrorHTTPStatusFallback(t *testing.T) {
 	}
 }
 
+func TestFromRESTErrorServiceParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		statusCode   int
+		contentType  string
+		responseBody string
+		wantError    error
+	}{
+		{
+			name:         "google.rpc.Status body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 401, "UNAUTHENTICATED", "token expired", "UNAUTHENTICATED"),
+			wantError:    a2a.ErrUnauthenticated,
+		},
+		{
+			name:         "plain text body",
+			statusCode:   http.StatusUnauthorized,
+			contentType:  "text/plain",
+			responseBody: "unauthorized",
+			wantError:    a2a.ErrUnauthenticated,
+		},
+		{
+			name:         "trailing data after error body",
+			statusCode:   http.StatusBadRequest,
+			contentType:  "application/json",
+			responseBody: makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_PARAMS") + "TRAILING_GARBAGE",
+			wantError:    a2a.ErrParseError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp := &http.Response{
+				StatusCode: tt.statusCode,
+				Header: http.Header{
+					"Content-Type":     []string{tt.contentType},
+					"Www-Authenticate": []string{`Bearer resource_metadata="x"`},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(tt.responseBody)),
+			}
+
+			gotErr := FromRESTError(resp)
+
+			if !errors.Is(gotErr, tt.wantError) {
+				t.Fatalf("FromRESTError() error = %v, want %v", gotErr, tt.wantError)
+			}
+			var a2aErr *a2a.Error
+			if !errors.As(gotErr, &a2aErr) {
+				t.Fatalf("FromRESTError() error = %T, want *a2a.Error", gotErr)
+			}
+			want := map[string][]string{
+				"content-type":     {tt.contentType},
+				"www-authenticate": {`Bearer resource_metadata="x"`},
+			}
+			if diff := cmp.Diff(want, a2aErr.ServiceParams); diff != "" {
+				t.Fatalf("FromRESTError() ServiceParams wrong (-want +got):\n%s", diff)
+			}
+			resp.Header.Set("Www-Authenticate", "changed")
+			if got := a2aErr.ServiceParams["www-authenticate"][0]; got != `Bearer resource_metadata="x"` {
+				t.Fatalf("FromRESTError() ServiceParams share values with the response headers, got %q", got)
+			}
+		})
+	}
+}
+
 func TestFromRESTErrorTruncatesLongBody(t *testing.T) {
 	t.Parallel()
 
@@ -785,7 +857,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("task event", func(t *testing.T) {
 		data := []byte(`{"task":{"id":"task-123","contextId":"ctx-123","status":{"state":"TASK_STATE_WORKING"}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -800,7 +872,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("message event", func(t *testing.T) {
 		data := []byte(`{"message":{"messageId":"msg-1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -811,7 +883,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("status update event", func(t *testing.T) {
 		data := []byte(`{"statusUpdate":{"taskId":"task-123","contextId":"ctx-123","final":false,"status":{"state":"TASK_STATE_COMPLETED"}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -822,7 +894,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("artifact update event", func(t *testing.T) {
 		data := []byte(`{"artifactUpdate":{"taskId":"task-123","contextId":"ctx-123","artifact":{"artifactId":"art-1","parts":[{"text":"x"}]}}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if err != nil {
 			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
 		}
@@ -833,7 +905,7 @@ func TestParseStreamResponse(t *testing.T) {
 
 	t.Run("error event", func(t *testing.T) {
 		data := []byte(makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -842,20 +914,9 @@ func TestParseStreamResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown type", func(t *testing.T) {
-		data := []byte(`{"foo":"bar"}`)
-		event, err := ParseStreamResponse(data)
-		if event != nil {
-			t.Fatalf("got event %v, want nil", event)
-		}
-		if err == nil {
-			t.Fatal("ParseStreamResponse() returned nil error, want error")
-		}
-	})
-
 	t.Run("multiple discriminators", func(t *testing.T) {
 		data := []byte(`{"task":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"}},"message":{"messageId":"m1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}}`)
-		event, err := ParseStreamResponse(data)
+		event, err := ParseStreamResponse(t.Context(), data)
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -865,7 +926,7 @@ func TestParseStreamResponse(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		event, err := ParseStreamResponse([]byte(`not json`))
+		event, err := ParseStreamResponse(t.Context(), []byte(`not json`))
 		if event != nil {
 			t.Fatalf("got event %v, want nil", event)
 		}
@@ -927,5 +988,118 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
+	}
+}
+
+func TestParseStreamResponse_UnknownPayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		data          string
+		wantErr       string
+		wantErrPrefix string
+	}{
+		{name: "unknown object", data: `{"futureEvent":{"taskId":"t1"}}`},
+		{name: "unknown zero", data: `{"futureEvent":0}`},
+		{name: "unknown false", data: `{"futureEvent":false}`},
+		{name: "unknown array", data: `{"futureEvent":[1,2]}`},
+		{name: "unknown string", data: `{"foo":"bar"}`},
+		{name: "unknown empty object", data: `{"futureEvent":{}}`},
+		{
+			name: "unknown with extra fields",
+			data: `{"futureEvent":{},"metadata":{},"optional":null}`,
+		},
+		{
+			name:    "empty object",
+			data:    `{}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:    "null wrapper",
+			data:    `null`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:    "unknown null",
+			data:    `{"futureEvent":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name: "all known fields null",
+			data: `{"task":null,"message":null,"statusUpdate":null,` +
+				`"artifactUpdate":null,"error":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name: "known null with unknown",
+			data: `{"task":null,"futureEvent":{}}`,
+		},
+		{
+			name: "case insensitive known null with unknown",
+			data: `{"TASK":null,"futureEvent":{}}`,
+		},
+		{
+			name: "unicode case insensitive known null with unknown",
+			data: `{"taſk":null,"futureEvent":{}}`,
+		},
+		{
+			name:    "case insensitive null fields",
+			data:    `{"StatusUpdate":null,"ſtatusUpdate":null}`,
+			wantErr: "stream response has no payload",
+		},
+		{
+			name:          "malformed known with unknown",
+			data:          `{"statusUpdate":{"status":42},"futureEvent":{}}`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "invalid JSON",
+			data:          `{"futureEvent":`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "trailing JSON",
+			data:          `{"futureEvent":{}} {}`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object array",
+			data:          `[]`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object number",
+			data:          `42`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+		{
+			name:          "non-object string",
+			data:          `"futureEvent"`,
+			wantErrPrefix: "failed to unmarshal stream response: ",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			event, err := ParseStreamResponse(t.Context(), []byte(tt.data))
+			switch {
+			case tt.wantErr != "":
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("ParseStreamResponse() error = %v, want %q", err, tt.wantErr)
+				}
+			case tt.wantErrPrefix != "":
+				if err == nil || !strings.HasPrefix(err.Error(), tt.wantErrPrefix) {
+					t.Fatalf("ParseStreamResponse() error = %v, want prefix %q", err, tt.wantErrPrefix)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+				}
+			}
+			if event != nil {
+				t.Fatalf("ParseStreamResponse() = %v, want nil", event)
+			}
+		})
 	}
 }

@@ -30,7 +30,9 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/errordetails"
+	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
+	"github.com/a2aproject/a2a-go/v2/log"
 )
 
 // Content-Type header values.
@@ -310,10 +312,15 @@ const (
 	maxErrorBodyQuoteBytes = 4096
 )
 
-// FromRESTError converts an HTTP error response to an a2a error.
+// FromRESTError converts an HTTP error response to an [a2a.Error] carrying the response headers as
+// [a2a.Error.ServiceParams].
 // Bodies in google.rpc.Status format are mapped using their ErrorInfo reason. Any other body, for example
 // an auth, proxy or gateway error, is mapped using the HTTP status code and quoted in the error message.
 func FromRESTError(resp *http.Response) error {
+	return utils.WithServiceParams(fromRESTError(resp), utils.ServiceParamsFromHeader(resp.Header))
+}
+
+func fromRESTError(resp *http.Response) error {
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyReadBytes))
 	if isJSONErrorContentType(resp.Header.Get("Content-Type")) {
 		var parsed struct {
@@ -324,7 +331,7 @@ func FromRESTError(resp *http.Response) error {
 			return ConvertErrorBody(parsed.Error)
 		}
 		if errors.Is(err, utils.ErrTrailingData) {
-			return fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)
+			return &a2a.Error{Err: fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)}
 		}
 	}
 	return fromHTTPStatus(resp.StatusCode, body, readErr)
@@ -370,9 +377,10 @@ type streamResponse struct {
 	Error          *ErrorBodyJSON               `json:"error,omitempty"`
 }
 
-// ParseStreamResponse parses raw SSE stream data in a single JSON unmarshal.
-// Returns (event, nil) for event payloads or (nil, err) for server-side errors.
-func ParseStreamResponse(data []byte) (a2a.Event, error) {
+// ParseStreamResponse parses raw SSE stream data.
+// It returns (nil, nil) for an unknown payload that the caller must skip,
+// (event, nil) for known events, or (nil, err) for invalid responses and server errors.
+func ParseStreamResponse(ctx context.Context, data []byte) (a2a.Event, error) {
 	var wrapper streamResponse
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
@@ -401,7 +409,15 @@ func ParseStreamResponse(data []byte) (a2a.Event, error) {
 		n++
 	}
 	if n == 0 {
-		return nil, fmt.Errorf("unknown stream response type")
+		fields, err := eventjson.NonNullFields(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal stream response: %w", err)
+		}
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("stream response has no payload")
+		}
+		log.Debug(ctx, "skipping unknown REST stream response", "fields", fields)
+		return nil, nil
 	}
 	if n != 1 {
 		return nil, fmt.Errorf("expected exactly one stream response type, got %d", n)

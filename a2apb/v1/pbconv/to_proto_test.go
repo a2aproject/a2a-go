@@ -750,6 +750,39 @@ func TestToProto_toProtoTask(t *testing.T) {
 	}
 }
 
+func TestToProtoListTasksRequest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		req  *a2a.ListTasksRequest
+		want *a2apb.ListTasksRequest
+	}{
+		{
+			name: "unset page size is left unset",
+			req:  &a2a.ListTasksRequest{ContextID: "ctx-test"},
+			want: &a2apb.ListTasksRequest{ContextId: "ctx-test", IncludeArtifacts: new(false)},
+		},
+		{
+			name: "page size",
+			req:  &a2a.ListTasksRequest{PageSize: 10},
+			want: &a2apb.ListTasksRequest{PageSize: new(int32(10)), IncludeArtifacts: new(false)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ToProtoListTasksRequest(tt.req)
+			if err != nil {
+				t.Fatalf("ToProtoListTasksRequest() error = %v", err)
+			}
+			if !proto.Equal(got, tt.want) {
+				t.Fatalf("ToProtoListTasksRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToProto_toProtoListTasksResponse(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1017,7 +1050,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 	}{
 		{
 			name: "authorization code flow",
-			flows: &a2a.AuthorizationCodeOAuthFlow{
+			flows: a2a.AuthorizationCodeOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				TokenURL:         "https://auth.com/token",
 				RefreshURL:       "https://auth.com/refresh",
@@ -1036,7 +1069,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "client credentials flow",
-			flows: &a2a.ClientCredentialsOAuthFlow{
+			flows: a2a.ClientCredentialsOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"write": "write data"},
@@ -1053,7 +1086,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "implicit flow",
-			flows: &a2a.ImplicitOAuthFlow{
+			flows: a2a.ImplicitOAuthFlow{
 				AuthorizationURL: "https://auth.com/auth",
 				RefreshURL:       "https://auth.com/refresh",
 				Scopes:           map[string]string{"profile": "read profile"},
@@ -1070,7 +1103,7 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 		},
 		{
 			name: "password flow",
-			flows: &a2a.PasswordOAuthFlow{
+			flows: a2a.PasswordOAuthFlow{
 				TokenURL:   "https://auth.com/token",
 				RefreshURL: "https://auth.com/refresh",
 				Scopes:     map[string]string{"user": "user info"},
@@ -1084,6 +1117,28 @@ func TestToProto_toProtoOAuthFlows(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			name: "pointer flow",
+			flows: &a2a.DeviceCodeOAuthFlow{
+				DeviceAuthorizationURL: "https://auth.com/device",
+				TokenURL:               "https://auth.com/token",
+				Scopes:                 map[string]string{"user": "user info"},
+			},
+			want: &a2apb.OAuthFlows{
+				Flow: &a2apb.OAuthFlows_DeviceCode{
+					DeviceCode: &a2apb.DeviceCodeOAuthFlow{
+						DeviceAuthorizationUrl: "https://auth.com/device",
+						TokenUrl:               "https://auth.com/token",
+						Scopes:                 map[string]string{"user": "user info"},
+					},
+				},
+			},
+		},
+		{
+			name:    "nil pointer flow",
+			flows:   (*a2a.AuthorizationCodeOAuthFlow)(nil),
+			wantErr: true,
 		},
 		{
 			name:    "no flows specified",

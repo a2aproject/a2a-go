@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -230,10 +231,26 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		materializer = defaultMaterializer
 	}
 
+	if h.workQueue == nil && h.taskStore == nil {
+		h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
+			Authenticator: NewTaskStoreAuthenticator(),
+		})
+	}
+	if h.taskStore != nil {
+		h.taskStore = wrapWithPlugins(h.taskStore, ih.plugins, Plugin.WrapTaskStore)
+	}
+
+	pushDelivery := push.NewDeliveryHandler(h.pushSender)
+	if pushDelivery != nil {
+		pushDelivery = wrapWithPlugins(pushDelivery, ih.plugins, Plugin.WrapPushDelivery)
+	}
+
+	agent, cleaners := wrapExecutor(h.agentExecutor, ih.plugins)
 	execFactory := &factory{
-		agent:           h.agentExecutor,
+		agent:           agent,
+		cleaners:        cleaners,
 		taskStore:       h.taskStore,
-		pushSender:      h.pushSender,
+		pushDelivery:    pushDelivery,
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
 		materializer:    materializer,
@@ -258,12 +275,6 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 	} else {
 		if h.queueManager == nil {
 			h.queueManager = eventqueue.NewInMemoryManager()
-		}
-		if h.taskStore == nil {
-			h.taskStore = taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{
-				Authenticator: NewTaskStoreAuthenticator(),
-			})
-			execFactory.taskStore = h.taskStore
 		}
 		h.execManager = taskexec.NewLocalManager(taskexec.LocalManagerConfig{
 			QueueManager:           h.queueManager,
@@ -290,16 +301,7 @@ func (h *defaultRequestHandler) GetTask(ctx context.Context, req *a2a.GetTaskReq
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
 
-	task := storedTask.Task
-	if req.HistoryLength != nil {
-		historyLength := *req.HistoryLength
-
-		if historyLength <= 0 {
-			task.History = []*a2a.Message{}
-		} else if historyLength < len(task.History) {
-			task.History = task.History[len(task.History)-historyLength:]
-		}
-	}
+	task := trimTaskHistory(storedTask.Task, req.HistoryLength)
 
 	return task, nil
 }
@@ -328,40 +330,14 @@ func (h *defaultRequestHandler) CancelTask(ctx context.Context, req *a2a.CancelT
 
 // SendMessage implements RequestHandler.
 func (h *defaultRequestHandler) SendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
-	subscription, err := h.handleSendMessage(ctx, req)
+	result, err := h.sendMessage(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-
-	var lastEvent a2a.Event
-	for event, err := range subscription.Events(ctx) {
-		if err != nil {
-			return nil, err
-		}
-
-		if taskID, interrupt := shouldInterruptNonStreaming(req, event); interrupt {
-			storedTask, err := h.taskStore.Get(ctx, taskID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load task on event processing interrupt: %w", err)
-			}
-			return storedTask.Task, nil
-		}
-		lastEvent = event
+	if task, ok := result.(*a2a.Task); ok && req.Config != nil {
+		return trimTaskHistory(task, req.Config.HistoryLength), nil
 	}
-
-	if res, ok := lastEvent.(a2a.SendMessageResult); ok {
-		return res, nil
-	}
-
-	if lastEvent == nil {
-		return nil, fmt.Errorf("execution finished without producing any events: %w", a2a.ErrInvalidAgentResponse)
-	}
-
-	task, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
-	}
-	return task.Task, nil
+	return result, nil
 }
 
 // SendStreamingMessage implements RequestHandler.
@@ -374,6 +350,9 @@ func (h *defaultRequestHandler) SendStreamingMessage(ctx context.Context, req *a
 		}
 
 		for ev, err := range subscription.Events(ctx) {
+			if task, ok := ev.(*a2a.Task); ok && req.Config != nil {
+				ev = trimTaskHistory(task, req.Config.HistoryLength)
+			}
 			if !yield(ev, err) {
 				return
 			}
@@ -412,6 +391,44 @@ func (h *defaultRequestHandler) SubscribeToTask(ctx context.Context, req *a2a.Su
 	}
 }
 
+func (h *defaultRequestHandler) sendMessage(ctx context.Context, req *a2a.SendMessageRequest) (a2a.SendMessageResult, error) {
+	subscription, err := h.handleSendMessage(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastEvent a2a.Event
+	for event, err := range subscription.Events(ctx) {
+		if err != nil {
+			return nil, err
+		}
+
+		if taskID, interrupt := shouldInterruptNonStreaming(req, event); interrupt {
+			storedTask, err := h.taskStore.Get(ctx, taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load task on event processing interrupt: %w", err)
+			}
+			return storedTask.Task, nil
+		}
+		lastEvent = event
+	}
+
+	if res, ok := lastEvent.(a2a.SendMessageResult); ok {
+		return res, nil
+	}
+
+	if lastEvent == nil {
+		return nil, fmt.Errorf("execution finished without producing any events: %w", a2a.ErrInvalidAgentResponse)
+	}
+
+	task, err := h.taskStore.Get(ctx, lastEvent.TaskInfo().TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load result after execution finished: %w", err)
+	}
+
+	return task.Task, nil
+}
+
 func (h *defaultRequestHandler) handleSendMessage(ctx context.Context, req *a2a.SendMessageRequest) (taskexec.Subscription, error) {
 	switch {
 	case req == nil:
@@ -438,11 +455,14 @@ func (h *defaultRequestHandler) GetTaskPushConfig(ctx context.Context, req *a2a.
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	config, err := h.pushConfigStore.Get(ctx, req.TaskID, req.ID)
+	if errors.Is(err, push.ErrPushConfigNotFound) {
+		return nil, fmt.Errorf("%w: %w", err, a2a.ErrTaskNotFound)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get push config: %w", err)
 	}
 	if config == nil {
-		return nil, push.ErrPushConfigNotFound
+		return nil, fmt.Errorf("%w: %w", push.ErrPushConfigNotFound, a2a.ErrTaskNotFound)
 	}
 	return config, nil
 }
@@ -531,4 +551,21 @@ func checkPushNotificationConfigs(h *defaultRequestHandler) error {
 		return a2a.ErrPushNotificationNotSupported
 	}
 	return nil
+}
+
+func trimTaskHistory(task *a2a.Task, historyLength *int) *a2a.Task {
+	if task == nil || historyLength == nil {
+		return task
+	}
+	hl := *historyLength
+	if hl >= len(task.History) {
+		return task
+	}
+	trimmed := *task
+	if hl <= 0 {
+		trimmed.History = []*a2a.Message{}
+	} else if hl < len(task.History) {
+		trimmed.History = task.History[len(task.History)-hl:]
+	}
+	return &trimmed
 }

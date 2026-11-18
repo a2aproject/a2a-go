@@ -16,6 +16,8 @@ package a2agrpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"strings"
@@ -25,8 +27,10 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1/pbconv"
 	"github.com/a2aproject/a2a-go/v2/internal/grpcutil"
+	"github.com/a2aproject/a2a-go/v2/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 // WithGRPCTransport create a gRPC transport implementation which will use the provided [grpc.DialOption]s during connection establishment.
@@ -76,9 +80,10 @@ func (c *grpcTransport) GetTask(ctx context.Context, params a2aclient.ServicePar
 		return nil, err
 	}
 
-	pbTask, err := c.client.GetTask(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbTask, err := c.client.GetTask(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoTask(pbTask)
@@ -90,9 +95,10 @@ func (c *grpcTransport) ListTasks(ctx context.Context, params a2aclient.ServiceP
 		return nil, err
 	}
 
-	pbResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbResp, err := c.client.ListTasks(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoListTasksResponse(pbResp)
@@ -104,9 +110,10 @@ func (c *grpcTransport) CancelTask(ctx context.Context, params a2aclient.Service
 		return nil, err
 	}
 
-	pbTask, err := c.client.CancelTask(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbTask, err := c.client.CancelTask(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoTask(pbTask)
@@ -118,9 +125,10 @@ func (c *grpcTransport) SendMessage(ctx context.Context, params a2aclient.Servic
 		return nil, err
 	}
 
-	pbResp, err := c.client.SendMessage(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbResp, err := c.client.SendMessage(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoSendMessageResponse(pbResp)
@@ -134,9 +142,10 @@ func (c *grpcTransport) SubscribeToTask(ctx context.Context, params a2aclient.Se
 			return
 		}
 
-		stream, err := c.client.SubscribeToTask(withGRPCMetadata(ctx, params), pbReq)
+		var md grpcutil.CallMetadata
+		stream, err := c.client.SubscribeToTask(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
+			yield(nil, md.FromGRPCError(err))
 			return
 		}
 
@@ -152,9 +161,10 @@ func (c *grpcTransport) SendStreamingMessage(ctx context.Context, params a2aclie
 			return
 		}
 
-		stream, err := c.client.SendStreamingMessage(withGRPCMetadata(ctx, params), pbReq)
+		var md grpcutil.CallMetadata
+		stream, err := c.client.SendStreamingMessage(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
+			yield(nil, md.FromGRPCError(err))
 			return
 		}
 
@@ -169,11 +179,24 @@ func drainEventStream(stream grpc.ServerStreamingClient[a2apb.StreamResponse], y
 			return
 		}
 		if err != nil {
-			yield(nil, grpcutil.FromGRPCError(err))
+			yield(nil, grpcutil.FromGRPCErrorWithMetadata(err, grpcutil.StreamMetadata(stream)...))
 			return
 		}
 
 		resp, err := pbconv.FromProtoStreamResponse(pResp)
+		if errors.Is(err, pbconv.ErrUnsupportedStreamResponse) {
+			var fields []protowire.Number
+			for data := pResp.ProtoReflect().GetUnknown(); len(data) > 0; {
+				number, _, n := protowire.ConsumeField(data)
+				if n < 0 {
+					break
+				}
+				fields = append(fields, number)
+				data = data[n:]
+			}
+			log.Debug(stream.Context(), "skipping unsupported gRPC stream response", "payload_type", fmt.Sprintf("%T", pResp.Payload), "unknown_fields", fields)
+			continue
+		}
 		if err != nil {
 			yield(nil, err)
 			return
@@ -191,9 +214,10 @@ func (c *grpcTransport) GetTaskPushConfig(ctx context.Context, params a2aclient.
 		return nil, err
 	}
 
-	pbConfig, err := c.client.GetTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbConfig, err := c.client.GetTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoTaskPushConfig(pbConfig)
@@ -205,9 +229,10 @@ func (c *grpcTransport) ListTaskPushConfigs(ctx context.Context, params a2aclien
 		return nil, err
 	}
 
-	pbResp, err := c.client.ListTaskPushNotificationConfigs(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbResp, err := c.client.ListTaskPushNotificationConfigs(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 	resp, err := pbconv.FromProtoListTaskPushConfigResponse(pbResp)
 	if err != nil {
@@ -223,9 +248,10 @@ func (c *grpcTransport) CreateTaskPushConfig(ctx context.Context, params a2aclie
 		return nil, err
 	}
 
-	pbConfig, err := c.client.CreateTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	pbConfig, err := c.client.CreateTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoTaskPushConfig(pbConfig)
@@ -237,9 +263,10 @@ func (c *grpcTransport) DeleteTaskPushConfig(ctx context.Context, params a2aclie
 		return err
 	}
 
-	_, err = c.client.DeleteTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq)
+	var md grpcutil.CallMetadata
+	_, err = c.client.DeleteTaskPushNotificationConfig(withGRPCMetadata(ctx, params), pbReq, md.CallOptions()...)
 
-	return grpcutil.FromGRPCError(err)
+	return md.FromGRPCError(err)
 }
 
 func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclient.ServiceParams, req *a2a.GetExtendedAgentCardRequest) (*a2a.AgentCard, error) {
@@ -248,9 +275,10 @@ func (c *grpcTransport) GetExtendedAgentCard(ctx context.Context, params a2aclie
 		return nil, err
 	}
 
-	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), pReq)
+	var md grpcutil.CallMetadata
+	pCard, err := c.client.GetExtendedAgentCard(withGRPCMetadata(ctx, params), pReq, md.CallOptions()...)
 	if err != nil {
-		return nil, grpcutil.FromGRPCError(err)
+		return nil, md.FromGRPCError(err)
 	}
 
 	return pbconv.FromProtoAgentCard(pCard)

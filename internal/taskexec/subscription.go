@@ -194,6 +194,12 @@ func (s *remoteSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, er
 				log.Info(ctx, "skipping old event", "event", msg.Event, "version", msg.TaskVersion)
 				continue
 			}
+			// A task store which publishes its updates delivers the history update made for
+			// the caller's message. It is not an agent response and must not end the subscription.
+			if m, ok := msg.Event.(*a2a.Message); ok && m.Role == a2a.MessageRoleUser {
+				log.Debug(ctx, "skipping user message", "id", m.ID)
+				continue
+			}
 			if !yield(msg.Event, nil) {
 				return
 			}

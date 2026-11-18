@@ -36,6 +36,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/internal/testutil"
 	"github.com/a2aproject/a2a-go/v2/log"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestREST_SubscribeHead(t *testing.T) {
@@ -933,6 +934,67 @@ func TestREST_CancelTask_ClientRoundtrip(t *testing.T) {
 	}
 }
 
+func TestREST_DeletePushConfigResponse(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name       string
+		deleteErr  error
+		wantStatus int
+	}{
+		{
+			name:       "success",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "delete error",
+			deleteErr:  a2a.ErrInternalError,
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			taskID := a2a.NewTaskID()
+			config := &a2a.PushConfig{ID: "config-1", URL: "https://example.com/push"}
+			store := testutil.NewTestTaskStore().WithTasks(t, &a2a.Task{ID: taskID})
+			pushStore := testutil.NewTestPushConfigStore().WithConfigs(t, taskID, config)
+			if tc.deleteErr != nil {
+				pushStore.SetDeleteError(tc.deleteErr)
+			}
+			pushSender := testutil.NewTestPushSender(t).SetSendPushError(nil)
+			reqHandler := NewHandler(
+				&mockAgentExecutor{},
+				WithTaskStore(store),
+				WithPushNotifications(pushStore, pushSender),
+			)
+			handler := NewRESTHandler(reqHandler)
+
+			path := rest.MakeDeletePushConfigPath(string(taskID), config.ID)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, path, nil)
+			req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			if rw.Code != tc.wantStatus {
+				t.Fatalf("DELETE %s status = %d, want %d, body: %s", path, rw.Code, tc.wantStatus, rw.Body.String())
+			}
+			var wantBody any = struct{}{}
+			if tc.deleteErr != nil {
+				wantBody = rest.ToRESTError(tc.deleteErr, taskID)
+			}
+			want := mustUnmarshal(t, mustMarshal(t, wantBody))
+			got := mustUnmarshal(t, rw.Body.Bytes())
+			ignoreTimestamp := cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
+				return k == "timestamp"
+			})
+			if diff := cmp.Diff(want, got, ignoreTimestamp); diff != "" {
+				t.Fatalf("handler.ServeHTTP() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestREST_GetTask_Success(t *testing.T) {
 	var capturedReq *a2a.GetTaskRequest
 
@@ -1208,7 +1270,7 @@ func TestREST_StreamingErrors(t *testing.T) {
 				if err != nil {
 					t.Fatalf("sse.ParseDataStream() error = %v", err)
 				}
-				event, err := rest.ParseStreamResponse(data)
+				event, err := rest.ParseStreamResponse(t.Context(), data)
 				if err != nil {
 					gotErr = err
 					continue

@@ -44,8 +44,8 @@ type Config struct {
 	// StartTimeout limits starting and initializing an agent. Defaults to one minute.
 	StartTimeout time.Duration
 	// CancelTimeout is how long the agent may keep working on a canceled task
-	// before it is stopped, which fails all its tasks. Meanwhile the context
-	// accepts no new tasks. Defaults to one minute.
+	// before it is stopped, which fails its other tasks with [AgentStoppedError].
+	// Meanwhile the context accepts no new tasks. Defaults to one minute.
 	CancelTimeout time.Duration
 	// InactivityTimeout fails a task with [ErrAgentInactive] if the agent
 	// sends no session update or question for this long while it works on a
@@ -174,6 +174,7 @@ type Executor struct {
 
 	elicitations atomic.Int64
 
+	poolMu   sync.Mutex // serializes capacity decisions and start reservations
 	mu       sync.Mutex
 	agents   map[string]*agentSlot // agent key -> agent
 	closed   bool
@@ -205,6 +206,23 @@ var errClosed = errors.New("acp executor is closed")
 // ErrAgentInactive is the error, wrapped, of a task whose agent sent nothing
 // for [Config.InactivityTimeout].
 var ErrAgentInactive = errors.New("the agent sent no updates")
+
+// AgentStoppedError is the error, wrapped, of a task whose agent the executor
+// stopped because a canceled turn didn't end within [Config.CancelTimeout].
+// It wraps the error of an exited agent. Its text leaves out TaskID, since
+// the failed tasks may belong to other callers.
+type AgentStoppedError struct {
+	// TaskID is the canceled task whose turn didn't end.
+	TaskID a2a.TaskID
+}
+
+// Error implements error.
+func (e *AgentStoppedError) Error() string {
+	return fmt.Sprintf("the agent was stopped because a canceled task didn't stop: %v", acp.ErrAgentExited)
+}
+
+// Unwrap returns the error of an exited agent.
+func (e *AgentStoppedError) Unwrap() error { return acp.ErrAgentExited }
 
 // errQuestionGone is reported to a caller who answers a question the executor no longer tracks.
 var errQuestionGone = errors.New("the question is no longer pending: it timed out or the agent restarted. Send a new message to continue")
@@ -700,7 +718,6 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 			result.reason = resp.StopReason
 		}
 		paused, expired := t.end()
-		t.events.push(turnEvent{result: result})
 		if paused != nil {
 			e.abandon(promptCtx, paused, result, expired)
 		}
@@ -715,6 +732,9 @@ func (e *Executor) promptAgent(ctx context.Context, execCtx *a2asrv.ExecutorCont
 		e.checkDrainedLocked()
 		e.mu.Unlock()
 		done()
+		// The terminal event goes out only after the context is unlocked, so a
+		// caller which sends the next message once it sees it isn't rejected.
+		t.events.push(turnEvent{result: result})
 	}()
 	return t, nil
 }
@@ -989,7 +1009,7 @@ func (e *Executor) cancelTurn(t *turn) {
 				return
 			}
 			log.Warn(context.Background(), "acp agent didn't stop a canceled turn, stopping the agent", "session", t.sessionID)
-			e.stopAgent(t.agent)
+			e.stopAgent(t.agent, &AgentStoppedError{TaskID: t.taskID})
 		})
 	}
 }
