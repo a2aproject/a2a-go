@@ -451,6 +451,63 @@ func TestInMemoryTaskStore_List_Pagination(t *testing.T) {
 	}
 }
 
+func TestInMemoryTaskStore_List_PaginationTaskIDs(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		ids           []a2a.TaskID
+		sameTimestamp bool
+	}{
+		{name: "UUIDs", ids: []a2a.TaskID{a2a.NewTaskID(), a2a.NewTaskID(), a2a.NewTaskID()}},
+		{name: "prefixed IDs", ids: []a2a.TaskID{"job_alpha_01", "job_alpha_02", "job_alpha_03"}},
+		{name: "prefixed IDs at the same time", ids: []a2a.TaskID{"job_alpha_01", "job_alpha_02", "job_alpha_03"}, sameTimestamp: true},
+	}
+	for _, tc := range testCases {
+		for _, pageSize := range []int{1, 2} {
+			t.Run(fmt.Sprintf("%s/page size %d", tc.name, pageSize), func(t *testing.T) {
+				t.Parallel()
+				timeProvider := newIncreasingTimeProvider(startTime)
+				if tc.sameTimestamp {
+					timeProvider = func() time.Time { return startTime }
+				}
+				store := NewInMemory(&InMemoryStoreConfig{Authenticator: getAuthInfo, TimeProvider: timeProvider})
+				for _, id := range tc.ids {
+					task := a2a.NewSubmittedTask(a2a.TaskInfo{TaskID: id, ContextID: "ctx"}, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("work")))
+					mustCreate(t, store, task)
+					if got := mustGet(t, store, id); got.ID != id {
+						t.Fatalf("store.Get() = %v, want %v", got.ID, id)
+					}
+				}
+
+				var got []a2a.TaskID
+				var token string
+				for range len(tc.ids) {
+					page, err := store.List(t.Context(), &a2a.ListTasksRequest{PageSize: pageSize, PageToken: token})
+					if err != nil {
+						t.Fatalf("store.List() error = %v, want nil", err)
+					}
+					for _, task := range page.Tasks {
+						got = append(got, task.ID)
+					}
+					token = page.NextPageToken
+					if token == "" {
+						break
+					}
+				}
+				if token != "" {
+					t.Fatalf("store.List() next token = %q, want empty after all tasks", token)
+				}
+				want := slices.Clone(tc.ids)
+				slices.Reverse(want)
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Fatalf("store.List() wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
 func TestInMemoryTaskStore_VersionIncrements(t *testing.T) {
 	store := NewInMemory(nil)
 
