@@ -16,6 +16,7 @@ The SDK employs a **layered, transport-agnostic architecture**:
 *   **`a2asrv/`**: **Server SDK.** Interfaces for server execution (`AgentExecutor`), handler patterns, middleware, task persistence adapters (`taskstore/`), and non-gRPC transports (REST, JSON-RPC).
 *   **`a2agrpc/` & `a2apb/`**: **gRPC Transport.** Logic for A2A over gRPC and underlying Protobuf definitions (`v1/pbconv/` for type conversions).
 *   **`integrations/executor/`**: Ready-made `AgentExecutor` implementations, e.g. `a2aacp` for Agent Client Protocol agents (see `ACP_EXECUTOR.md`).
+*   **`integrations/otel/a2aotel/`**: OpenTelemetry client and server plugins built on `a2aplugin`.
 *   **`internal/`**: **Private Mechanisms.** Task lifecycle and state machine configuration (`taskexec/`). `acp/` and `subprocess/` support `integrations/executor/a2aacp`, which asks questions with the Structured Input extension (`a2aext/structuredinput`).
 *   **`e2e/` & `examples/`**: End-to-end tests and reference implementations (e.g., `helloworld`).
 *   **`docs/`**: Documentation, including AI developer guides (`ai/`).
