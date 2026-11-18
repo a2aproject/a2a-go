@@ -23,12 +23,12 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
-	"github.com/a2aproject/a2a-go/v2/integrations/otel/a2aotel/internal/semconv"
 )
 
 // NewClientPlugin returns an [a2aclient.Plugin] which reports an A2A client span for every call
@@ -50,14 +50,14 @@ type clientInstrumentation struct {
 func (c *clientInstrumentation) wrapCall(next a2aclient.CallHandler) a2aclient.CallHandler {
 	return func(ctx context.Context, req a2aclient.Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
-			method := semconv.MethodName(req.Method)
+			method := methodName(req.Method)
 			spanCtx, span := c.tracer.Start(ctx, method,
 				trace.WithSpanKind(trace.SpanKindClient),
 				trace.WithAttributes(clientRequestAttributes(ctx, method, req)...),
 			)
 			observer := newCallObserver(req.Payload)
 			defer func() {
-				finishSpan(span, observer, semconv.ClientErrorType)
+				finishSpan(span, observer, clientErrorType)
 				span.End()
 			}()
 
@@ -75,10 +75,10 @@ func (c *clientInstrumentation) wrapCall(next a2aclient.CallHandler) a2aclient.C
 func clientRequestAttributes(ctx context.Context, method string, req a2aclient.Request) []attribute.KeyValue {
 	attrs := requestAttributes(method, req.Payload)
 	if versions := req.ServiceParams.Get(a2a.SvcParamVersion); len(versions) > 0 && versions[0] != "" {
-		attrs = append(attrs, semconv.A2AProtocolVersionKey.String(versions[0]))
+		attrs = append(attrs, a2aProtocolVersionKey.String(versions[0]))
 	}
 	if tenant := clientTenant(ctx, req); tenant != "" {
-		attrs = append(attrs, semconv.A2ATenantKey.String(tenant))
+		attrs = append(attrs, a2aTenantKey.String(tenant))
 	}
 	attrs = append(attrs, agentAttributes(req.Card)...)
 	return append(attrs, serverAddressAttributes(req.BaseURL)...)

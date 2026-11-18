@@ -17,9 +17,8 @@ package a2aotel
 import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/a2aproject/a2a-go/v2/integrations/otel/a2aotel/internal/semconv"
 )
 
 // finishSpan records the attributes known after the call and the call error, following the

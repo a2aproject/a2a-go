@@ -18,30 +18,29 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/integrations/otel/a2aotel/internal/semconv"
 )
 
 // requestAttributes returns the attributes which are known from the request payload alone.
 func requestAttributes(method string, payload any) []attribute.KeyValue {
-	attrs := []attribute.KeyValue{semconv.A2AMethodNameKey.String(method)}
+	attrs := []attribute.KeyValue{a2aMethodNameKey.String(method)}
 	req, ok := payload.(*a2a.SendMessageRequest)
 	if !ok {
 		return attrs
 	}
 	if msg := req.Message; msg != nil {
 		if msg.ID != "" {
-			attrs = append(attrs, semconv.A2AMessageIDKey.String(msg.ID))
+			attrs = append(attrs, a2aMessageIDKey.String(msg.ID))
 		}
 		if len(msg.ReferenceTasks) > 0 {
 			ids := make([]string, len(msg.ReferenceTasks))
 			for i, id := range msg.ReferenceTasks {
 				ids[i] = string(id)
 			}
-			attrs = append(attrs, semconv.A2AMessageReferenceTaskIDsKey.StringSlice(ids))
+			attrs = append(attrs, a2aMessageReferenceTaskIDsKey.StringSlice(ids))
 		}
 	}
-	if method == semconv.MethodSendMessage && req.Config != nil && req.Config.ReturnImmediately {
-		attrs = append(attrs, semconv.A2AOperationReturnImmediatelyKey.Bool(true))
+	if method == methodSendMessage && req.Config != nil && req.Config.ReturnImmediately {
+		attrs = append(attrs, a2aOperationReturnImmediatelyKey.Bool(true))
 	}
 	return attrs
 }
@@ -52,13 +51,13 @@ func agentAttributes(card *a2a.AgentCard) []attribute.KeyValue {
 	}
 	var attrs []attribute.KeyValue
 	if card.Name != "" {
-		attrs = append(attrs, semconv.GenAIAgentNameKey.String(card.Name))
+		attrs = append(attrs, genAIAgentNameKey.String(card.Name))
 	}
 	if card.Description != "" {
-		attrs = append(attrs, semconv.GenAIAgentDescriptionKey.String(card.Description))
+		attrs = append(attrs, genAIAgentDescriptionKey.String(card.Description))
 	}
 	if card.Version != "" {
-		attrs = append(attrs, semconv.GenAIAgentVersionKey.String(card.Version))
+		attrs = append(attrs, genAIAgentVersionKey.String(card.Version))
 	}
 	return attrs
 }
@@ -162,7 +161,7 @@ func (o *callObserver) observe(payload any, err error) {
 	case *a2a.TaskStatusUpdateEvent:
 		o.taskIDs.observe(string(resp.TaskID))
 		o.contextIDs.observe(resp.ContextID)
-		o.taskStates.observe(semconv.TaskState(resp.Status.State))
+		o.taskStates.observe(resp.Status.State.String())
 	case *a2a.TaskArtifactUpdateEvent:
 		o.taskIDs.observe(string(resp.TaskID))
 		o.contextIDs.observe(resp.ContextID)
@@ -189,19 +188,19 @@ func (o *callObserver) observeTask(task *a2a.Task) {
 	}
 	o.taskIDs.observe(string(task.ID))
 	o.contextIDs.observe(task.ContextID)
-	o.taskStates.observe(semconv.TaskState(task.Status.State))
+	o.taskStates.observe(task.Status.State.String())
 }
 
 func (o *callObserver) attributes() []attribute.KeyValue {
 	var attrs []attribute.KeyValue
 	if id, ok := o.taskIDs.get(); ok {
-		attrs = append(attrs, semconv.A2ATaskIDKey.String(id))
+		attrs = append(attrs, a2aTaskIDKey.String(id))
 	}
 	if state, ok := o.taskStates.get(); ok {
-		attrs = append(attrs, semconv.A2ATaskStateKey.String(state))
+		attrs = append(attrs, a2aTaskStateKey.String(state))
 	}
 	if id, ok := o.contextIDs.get(); ok {
-		attrs = append(attrs, semconv.GenAIConversationIDKey.String(id))
+		attrs = append(attrs, genAIConversationIDKey.String(id))
 	}
 	return attrs
 }

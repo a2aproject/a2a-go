@@ -25,7 +25,6 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aplugin"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/a2aproject/a2a-go/v2/integrations/otel/a2aotel/internal/semconv"
 )
 
 // NewServerPlugin returns an [a2asrv.Plugin] which traces every call handled by the server.
@@ -57,11 +56,11 @@ type serverInstrumentation struct {
 func (s *serverInstrumentation) wrapCall(next a2asrv.CallHandler) a2asrv.CallHandler {
 	return func(ctx context.Context, callCtx *a2asrv.CallContext, req a2asrv.Request) iter.Seq2[any, error] {
 		return func(yield func(any, error) bool) {
-			method := semconv.MethodName(callCtx.Method())
+			method := methodName(callCtx.Method())
 			spanCtx, span, owned := s.startSpan(ctx, callCtx, method, s.requestAttributes(callCtx, method, req))
 			observer := newCallObserver(req.Payload)
 			defer func() {
-				finishSpan(span, observer, semconv.ServerErrorType)
+				finishSpan(span, observer, a2a.ErrorReason)
 				if owned {
 					span.End()
 				}
@@ -100,10 +99,10 @@ func (s *serverInstrumentation) startSpan(ctx context.Context, callCtx *a2asrv.C
 func (s *serverInstrumentation) requestAttributes(callCtx *a2asrv.CallContext, method string, req a2asrv.Request) []attribute.KeyValue {
 	attrs := requestAttributes(method, req.Payload)
 	if version := serverProtocolVersion(callCtx); version != "" {
-		attrs = append(attrs, semconv.A2AProtocolVersionKey.String(version))
+		attrs = append(attrs, a2aProtocolVersionKey.String(version))
 	}
 	if tenant := callCtx.Tenant(); tenant != "" {
-		attrs = append(attrs, semconv.A2ATenantKey.String(tenant))
+		attrs = append(attrs, a2aTenantKey.String(tenant))
 	}
 	return append(attrs, s.agentAttributes...)
 }
