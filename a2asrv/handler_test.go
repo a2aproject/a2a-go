@@ -16,6 +16,7 @@ package a2asrv
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -1604,6 +1605,19 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
 		},
 		{
+			name:         "no tasks",
+			request:      &a2a.ListTasksRequest{},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{}, PageSize: 50},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
+		},
+		{
+			name:         "no tasks match filters",
+			givenTasks:   []*a2a.Task{{ID: id1, ContextID: "context1"}},
+			request:      &a2a.ListTasksRequest{ContextID: "context2"},
+			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{}, PageSize: 50},
+			storeConfig:  &taskstore.InMemoryStoreConfig{Authenticator: testAuthenticator()},
+		},
+		{
 			name:        "invalid pageToken",
 			givenTasks:  []*a2a.Task{{ID: id1}, {ID: id2}, {ID: id3}},
 			request:     &a2a.ListTasksRequest{PageToken: "invalidPageToken"},
@@ -1632,6 +1646,15 @@ func TestRequestHandler_ListTasks(t *testing.T) {
 				}
 				if diff := cmp.Diff(result, tt.wantResponse); diff != "" {
 					t.Errorf("ListTasks() mismatch (-want +got): %s", diff)
+				}
+				if len(tt.wantResponse.Tasks) == 0 {
+					got, err := json.Marshal(result)
+					if err != nil {
+						t.Fatalf("json.Marshal() error = %v", err)
+					}
+					if !strings.Contains(string(got), `"tasks":[]`) {
+						t.Errorf("json.Marshal(ListTasks()) = %s, want \"tasks\":[]", got)
+					}
 				}
 			} else {
 				if err == nil {
