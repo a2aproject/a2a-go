@@ -15,6 +15,8 @@
 package a2av0
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	a2alegacy "github.com/a2aproject/a2a-go/a2a"
@@ -117,6 +119,11 @@ func TestToV1Payload(t *testing.T) {
 			name:  "AgentCard",
 			input: &a2alegacy.AgentCard{Name: "agent1", Description: "desc"},
 			want:  &a2a.AgentCard{Name: "agent1", Description: "desc"},
+		},
+		{
+			name:  "struct{} passthrough",
+			input: struct{}{},
+			want:  struct{}{},
 		},
 		{
 			name:  "Event - Task",
@@ -256,6 +263,16 @@ func TestFromV1Payload(t *testing.T) {
 			want:  &a2alegacy.AgentCard{Name: "agent1", Description: "desc"},
 		},
 		{
+			name: "ListTaskPushConfigResponse",
+			input: &a2a.ListTaskPushConfigResponse{
+				Configs:       []*a2a.PushConfig{{TaskID: "t1", ID: "p1", URL: "http://example.com"}},
+				NextPageToken: "next",
+			},
+			want: []*a2alegacy.TaskPushConfig{
+				{TaskID: "t1", Config: a2alegacy.PushConfig{ID: "p1", URL: "http://example.com"}},
+			},
+		},
+		{
 			name:  "struct{} passthrough",
 			input: struct{}{},
 			want:  struct{}{},
@@ -359,5 +376,115 @@ func TestClientInterceptor_ListTasksHistoryLength(t *testing.T) {
 				t.Fatalf("interceptor.Before() wrong result (-want +got) diff = %s", diff)
 			}
 		})
+	}
+}
+
+type redactTokenServerInterceptor struct {
+	legacysrv.PassthroughCallInterceptor
+}
+
+func (redactTokenServerInterceptor) After(ctx context.Context, callCtx *legacysrv.CallContext, resp *legacysrv.Response) error {
+	for _, config := range resp.Payload.([]*a2alegacy.TaskPushConfig) {
+		config.Config.Token = ""
+	}
+	return nil
+}
+
+func TestInterceptors_PushConfigResponses(t *testing.T) {
+	t.Parallel()
+
+	newListResponse := func() *a2a.ListTaskPushConfigResponse {
+		return &a2a.ListTaskPushConfigResponse{
+			Configs:       []*a2a.PushConfig{{Tenant: "tenant", TaskID: "t1", ID: "p1", URL: "http://example.com", Token: "secret"}},
+			NextPageToken: "next",
+		}
+	}
+	serverAfter := func(interceptor legacysrv.CallInterceptor, payload any) (any, error) {
+		resp := &a2asrv.Response{Payload: payload}
+		err := NewServerInterceptor(interceptor).After(t.Context(), &a2asrv.CallContext{}, resp)
+		return resp.Payload, err
+	}
+
+	tests := []struct {
+		name  string
+		after func() (any, error)
+		want  any
+	}{
+		{
+			name: "server delete",
+			after: func() (any, error) {
+				return serverAfter(legacysrv.PassthroughCallInterceptor{}, struct{}{})
+			},
+			want: struct{}{},
+		},
+		{
+			name: "client delete",
+			after: func() (any, error) {
+				resp := &a2aclient.Response{Payload: struct{}{}, ServiceParams: a2aclient.ServiceParams{}}
+				err := NewClientInterceptor(legacyclient.PassthroughInterceptor{}).After(t.Context(), resp)
+				return resp.Payload, err
+			},
+			want: struct{}{},
+		},
+		{
+			name: "server list without changes",
+			after: func() (any, error) {
+				return serverAfter(legacysrv.PassthroughCallInterceptor{}, newListResponse())
+			},
+			want: newListResponse(),
+		},
+		{
+			name: "server list modified by the interceptor",
+			after: func() (any, error) {
+				return serverAfter(redactTokenServerInterceptor{}, newListResponse())
+			},
+			want: &a2a.ListTaskPushConfigResponse{
+				Configs:       []*a2a.PushConfig{{Tenant: "tenant", TaskID: "t1", ID: "p1", URL: "http://example.com"}},
+				NextPageToken: "next",
+			},
+		},
+		{
+			name: "server list error",
+			after: func() (any, error) {
+				return serverAfter(legacysrv.PassthroughCallInterceptor{}, (*a2a.ListTaskPushConfigResponse)(nil))
+			},
+			want: (*a2a.ListTaskPushConfigResponse)(nil),
+		},
+		{
+			name: "client list error",
+			after: func() (any, error) {
+				resp := &a2aclient.Response{Payload: (*a2a.ListTaskPushConfigResponse)(nil), ServiceParams: a2aclient.ServiceParams{}}
+				err := NewClientInterceptor(legacyclient.PassthroughInterceptor{}).After(t.Context(), resp)
+				return resp.Payload, err
+			},
+			want: (*a2a.ListTaskPushConfigResponse)(nil),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := tc.after()
+			if err != nil {
+				t.Fatalf("After() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("After() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestServerInterceptor_ListTaskPushConfigsError(t *testing.T) {
+	t.Parallel()
+
+	// Without a push config store the handler fails and returns a nil *a2a.ListTaskPushConfigResponse.
+	handler := a2asrv.NewHandler(&replyingExecutor{}, a2asrv.WithCallInterceptors(NewServerInterceptor(legacysrv.PassthroughCallInterceptor{})))
+	resp, err := handler.ListTaskPushConfigs(t.Context(), &a2a.ListTaskPushConfigRequest{TaskID: "t1"})
+	if !errors.Is(err, a2a.ErrPushNotificationNotSupported) {
+		t.Fatalf("ListTaskPushConfigs() error = %v, want %v", err, a2a.ErrPushNotificationNotSupported)
+	}
+	if resp != nil {
+		t.Fatalf("ListTaskPushConfigs() = %v, want nil", resp)
 	}
 }
