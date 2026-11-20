@@ -1830,3 +1830,60 @@ func TestExecutor_UnusableAnswerAskedAgain(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutor_RetriesNewSessionOnInternalError(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		onNewSession func(attempt int) *acp.Error
+		want         []eventSummary
+		wantCalls    int
+	}{
+		{
+			name: "succeeds on retry after internal error",
+			onNewSession: func(attempt int) *acp.Error {
+				if attempt == 1 {
+					return &acp.Error{Code: acp.CodeInternalError, Message: "internal error"}
+				}
+				return nil
+			},
+			want:      []eventSummary{submitted, working, completed},
+			wantCalls: 2,
+		},
+		{
+			name: "fails after single retry on persistent internal error",
+			onNewSession: func(int) *acp.Error {
+				return &acp.Error{Code: acp.CodeInternalError, Message: "internal error"}
+			},
+			want:      []eventSummary{submitted, failedWith("creating acp session: internal error (code -32603)")},
+			wantCalls: 2,
+		},
+		{
+			name: "does not retry on invalid params",
+			onNewSession: func(int) *acp.Error {
+				return &acp.Error{Code: acp.CodeInvalidParams, Message: "invalid params"}
+			},
+			want:      []eventSummary{submitted, failedWith("creating acp session: invalid params (code -32602)")},
+			wantCalls: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{
+				onNewSession: tc.onNewSession,
+				onPrompt:     func(s *promptScript) { s.end(acp.StopEndTurn) },
+			}
+			e := newTestExecutor(t, h, Config{})
+
+			got := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("hi"))))
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+			}
+			if got := h.agent(0).newSessionCount(); got != tc.wantCalls {
+				t.Fatalf("agent.newSessionCount() = %d, want %d", got, tc.wantCalls)
+			}
+		})
+	}
+}
