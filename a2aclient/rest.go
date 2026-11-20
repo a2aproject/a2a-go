@@ -102,9 +102,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	} else {
 		u = u.JoinPath(rel.EscapedPath())
 	}
-	u.RawQuery = rel.RawQuery
-	if extraQuery := HTTPQueryParamsFrom(ctx); len(extraQuery) > 0 {
+	if extraQuery := HTTPQueryParamsFrom(ctx); rel.RawQuery != "" || len(extraQuery) > 0 {
 		query := u.Query()
+		utils.MergeQueryParams(query, rel.Query())
 		utils.MergeQueryParams(query, extraQuery)
 		u.RawQuery = query.Encode()
 	}
