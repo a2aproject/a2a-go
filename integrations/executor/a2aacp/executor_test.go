@@ -713,6 +713,15 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 	pdf.Filename = "doc.pdf"
 	png := a2a.NewRawPart([]byte("png"))
 	png.MediaType = "image/png"
+	svgText := `<svg xmlns="http://www.w3.org/2000/svg"><text>HELLO</text></svg>`
+	svg := a2a.NewRawPart([]byte(svgText))
+	svg.MediaType = "image/svg+xml"
+	svg.Filename = "s.svg"
+	svgWithParams := a2a.NewRawPart([]byte(svgText))
+	svgWithParams.MediaType = "IMAGE/SVG+XML; charset=utf-8"
+	svgWithParams.Filename = "s.svg"
+	invalidSVG := a2a.NewRawPart([]byte{0xff, 0xfe})
+	invalidSVG.MediaType = "image/svg+xml"
 	link := a2a.NewFileURLPart("https://example.com/a.txt", "text/plain")
 	blob := a2a.NewRawPart([]byte{0x00, 0xff, 0xfe, 0x01})
 	blob.Filename = "blob.bin"
@@ -745,6 +754,45 @@ func TestExecutor_ConvertsPrompt(t *testing.T) {
 			parts:      []*a2a.Part{png},
 			wantPrompt: []acp.ContentBlock{{Type: "image", Data: "cG5n", MimeType: "image/png"}},
 			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:  "SVG is text even when images are supported",
+			caps:  acp.PromptCapabilities{Image: true, EmbeddedContext: true},
+			parts: []*a2a.Part{svg},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:s.svg", MimeType: "text/plain", Text: svgText,
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:  "SVG only needs embedded context support",
+			caps:  acp.PromptCapabilities{EmbeddedContext: true},
+			parts: []*a2a.Part{svg},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:s.svg", MimeType: "text/plain", Text: svgText,
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:  "SVG media type with case and parameters",
+			caps:  acp.PromptCapabilities{Image: true, EmbeddedContext: true},
+			parts: []*a2a.Part{svgWithParams},
+			wantPrompt: []acp.ContentBlock{{Type: "resource", Resource: &acp.EmbeddedResource{
+				URI: "attachment:s.svg", MimeType: "text/plain", Text: svgText,
+			}}},
+			wantEvents: []eventSummary{submitted, working, completed},
+		},
+		{
+			name:       "SVG requires embedded context support",
+			caps:       acp.PromptCapabilities{Image: true},
+			parts:      []*a2a.Part{svg},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept image/svg+xml attachments")},
+		},
+		{
+			name:       "SVG which is not UTF-8",
+			caps:       acp.PromptCapabilities{Image: true, EmbeddedContext: true},
+			parts:      []*a2a.Part{invalidSVG},
+			wantEvents: []eventSummary{submitted, failedWith("the agent does not accept image/svg+xml attachments which are not UTF-8")},
 		},
 		{
 			name:       "url",
