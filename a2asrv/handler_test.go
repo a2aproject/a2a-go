@@ -485,21 +485,6 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 func TestRequestHandler_InBandAuth(t *testing.T) {
 	t.Parallel()
 
-	executor := &mockAgentExecutor{
-		ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
-			return func(yield func(a2a.Event, error) bool) {
-				if execCtx.StoredTask != nil {
-					yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
-					return
-				}
-				if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
-					return
-				}
-				yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil), nil)
-			}
-		},
-	}
-
 	tests := []struct {
 		name string
 		send func(context.Context, RequestHandler, *a2a.SendMessageRequest) (a2a.Event, error)
@@ -529,6 +514,20 @@ func TestRequestHandler_InBandAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
+			executor := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) {
+						if execCtx.StoredTask != nil {
+							yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+							return
+						}
+						if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+							return
+						}
+						yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil), nil)
+					}
+				},
+			}
 			handler := NewHandler(executor, WithInBandAuth())
 
 			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("perform protected operation"))
