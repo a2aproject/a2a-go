@@ -777,7 +777,13 @@ func (e *Executor) session(ctx context.Context, ag *agent, execCtx *a2asrv.Execu
 		log.Warn(ctx, "failed to load acp session, starting a new one", "session", id, "cause", err)
 	}
 
-	resp, err := ag.client.NewSession(ctx, acp.NewSessionRequest{Cwd: params.Cwd, MCPServers: params.MCPServers})
+	req := acp.NewSessionRequest{Cwd: params.Cwd, MCPServers: params.MCPServers}
+	resp, err := ag.client.NewSession(ctx, req)
+	var rpcErr *acp.Error
+	if errors.As(err, &rpcErr) && rpcErr.Code == acp.CodeInternalError && ctx.Err() == nil {
+		log.Warn(ctx, "failed to create acp session, retrying", "cause", err)
+		resp, err = ag.client.NewSession(ctx, req)
+	}
 	if err != nil {
 		return "", fmt.Errorf("creating acp session: %w", err)
 	}
