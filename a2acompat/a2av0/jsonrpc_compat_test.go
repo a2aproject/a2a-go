@@ -249,3 +249,54 @@ func TestJSONRPC_ClientNonOKStatus(t *testing.T) {
 		})
 	}
 }
+
+type mockPushConfigHandler struct {
+	a2asrv.RequestHandler
+}
+
+func (h *mockPushConfigHandler) ListTaskPushConfigs(ctx context.Context, req *a2a.ListTaskPushConfigRequest) (*a2a.ListTaskPushConfigResponse, error) {
+	return &a2a.ListTaskPushConfigResponse{Configs: []*a2a.PushConfig{}}, nil
+}
+
+func (h *mockPushConfigHandler) DeleteTaskPushConfig(ctx context.Context, req *a2a.DeleteTaskPushConfigRequest) error {
+	return nil
+}
+
+func TestJSONRPC_ServerPushConfigResults(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		body string
+		want map[string]any
+	}{
+		{
+			name: "list without configs",
+			body: `{"jsonrpc":"2.0","id":1,"method":"tasks/pushNotificationConfig/list","params":{"id":"task-1"}}`,
+			want: map[string]any{"jsonrpc": "2.0", "id": float64(1), "result": []any{}},
+		},
+		{
+			name: "delete",
+			body: `{"jsonrpc":"2.0","id":1,"method":"tasks/pushNotificationConfig/delete","params":{"id":"task-1","pushNotificationConfigId":"config-1"}}`,
+			want: map[string]any{"jsonrpc": "2.0", "id": float64(1), "result": nil},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			handler := NewJSONRPCHandler(&mockPushConfigHandler{})
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader(tc.body))
+			rw := httptest.NewRecorder()
+			handler.ServeHTTP(rw, req)
+
+			var got map[string]any
+			if err := json.Unmarshal(rw.Body.Bytes(), &got); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("handler.ServeHTTP() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
