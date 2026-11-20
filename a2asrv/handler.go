@@ -94,7 +94,6 @@ type defaultRequestHandler struct {
 	reqContextInterceptors []ExecutorContextInterceptor
 
 	agentInactivityTimeout time.Duration
-	inBandAuth             bool
 
 	authenticatedCardProducer ExtendedAgentCardProducer
 }
@@ -171,15 +170,6 @@ func WithPushNotifications(store push.ConfigStore, sender push.Sender) RequestHa
 	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
 		h.pushConfigStore = store
 		h.pushSender = sender
-	}
-}
-
-// WithInBandAuth makes [a2a.TaskStateAuthRequired] end the execution, like [a2a.TaskStateInputRequired] does,
-// so that a client can continue the task by sending the credentials in a new message.
-// By default the execution stays active and the agent is expected to continue after it is authorized out-of-band.
-func WithInBandAuth() RequestHandlerOption {
-	return func(ih *InterceptedHandler, h *defaultRequestHandler) {
-		h.inBandAuth = true
 	}
 }
 
@@ -264,7 +254,6 @@ func NewHandler(executor AgentExecutor, options ...RequestHandlerOption) Request
 		pushConfigStore: h.pushConfigStore,
 		interceptors:    h.reqContextInterceptors,
 		materializer:    materializer,
-		inBandAuth:      h.inBandAuth,
 		// TODO(yarolegovich): there should be a flag to specify whether workqueue implementation supports
 		// retries or not to be able to opt-out of extra GetTask RPC
 		taskRetrySupported: h.workQueue != nil,

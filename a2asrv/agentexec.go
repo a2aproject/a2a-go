@@ -161,7 +161,6 @@ type factory struct {
 	interceptors       []ExecutorContextInterceptor
 	taskRetrySupported bool
 	materializer       taskstore.UpdateMaterializer
-	inBandAuth         bool
 }
 
 var _ taskexec.Factory = (*factory)(nil)
@@ -200,7 +199,6 @@ func (f *factory) CreateExecutor(ctx context.Context, tid a2a.TaskID, params *a2
 		execCtx.ctx,
 		f.taskStore,
 	)
-	processor.inBandAuth = f.inBandAuth
 	return executor, processor, &cleaner{cleaners: f.cleaners, execCtx: execCtx.ctx}, nil
 }
 
@@ -457,7 +455,6 @@ type processor struct {
 	pushDelivery    push.DeliveryHandler
 	execCtx         *ExecutorContext
 	store           taskstore.Store
-	inBandAuth      bool
 }
 
 var _ taskexec.Processor = (*processor)(nil)
@@ -519,7 +516,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return p.setTaskFailed(ctx, err)
 	}
 
-	if !a2aevent.IsFinal(event) && !(p.inBandAuth && isAuthRequired(event)) {
+	if !a2aevent.IsFinal(event) {
 		return &taskexec.ProcessorResult{TaskVersion: version}, nil
 	}
 	result, err := p.loadResult(ctx)
@@ -527,16 +524,6 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return nil, fmt.Errorf("load result: %w", err)
 	}
 	return result, nil
-}
-
-func isAuthRequired(event a2a.Event) bool {
-	switch v := event.(type) {
-	case *a2a.Task:
-		return v.Status.State == a2a.TaskStateAuthRequired
-	case *a2a.TaskStatusUpdateEvent:
-		return v.Status.State == a2a.TaskStateAuthRequired
-	}
-	return false
 }
 
 // ProcessError implements taskexec.ProcessError interface method.

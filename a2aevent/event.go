@@ -193,5 +193,5 @@ func IsFinal(event a2a.Event) bool {
 		return false
 	}
 
-	return state.Terminal() || state == a2a.TaskStateInputRequired
+	return state.Terminal() || state == a2a.TaskStateInputRequired || state == a2a.TaskStateAuthRequired
 }
