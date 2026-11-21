@@ -175,9 +175,10 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
   its agent. At zero refs, `PoolConfig.IdleTimeout` (default 10m) arms `slot.idle`; `stopIfIdle` re-checks refs
   under `Executor.mu` before closing. A slot is removed only after its agent closed, so a new
   start of the key waits on `startMu` instead of racing a closing process.
-- `ensureAgent` runs `Agent.Start` + `initialize` within `StartTimeout`; a failed start refuses
+- `ensureAgent` runs `Agent.Start` + `initialize` within `StartTimeout`. A failed start refuses
   further starts of the key for a backoff (1s doubling to 1m) and reports `startErr`. Errors
-  wrapping `ErrNotOwner` (another node owns the key) skip the backoff.
+  wrapping `ErrNotOwner` (another node owns the key) or `ErrAgentBusy` (a temporary external
+  capacity limit) skip the backoff.
 - `makeRoom` enforces `PoolConfig.MaxAgents`: it stops the least recently used idle agent or fails
   the turn with "all N agents are busy". `poolMu` serializes capacity decisions and each start
   reserves a slot under `Executor.mu` before releasing `poolMu`; starting slots count toward the

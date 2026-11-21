@@ -696,26 +696,37 @@ func TestExecutor_MaxAgentsSkipsExited(t *testing.T) {
 	}
 }
 
-func TestExecutor_NotOwnerDoesNotDelayStart(t *testing.T) {
+func TestExecutor_TransientRefusalDoesNotDelayStart(t *testing.T) {
 	t.Parallel()
-	h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
-	e := newTestExecutor(t, h, Config{Pool: &PoolConfig{Key: keyByContext}})
-	var starts atomic.Int32
-	e.agentStarter = AgentFunc(func(ctx context.Context, key string) (io.ReadWriteCloser, error) {
-		if starts.Add(1) == 1 {
-			return nil, fmt.Errorf("%w: node-2", ErrNotOwner)
-		}
-		return h.start(ctx, key)
-	})
+	for _, tc := range []struct {
+		name    string
+		refusal error
+	}{
+		{name: "not owner", refusal: fmt.Errorf("%w: node-2", ErrNotOwner)},
+		{name: "busy", refusal: fmt.Errorf("workspace pool: %w", ErrAgentBusy)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &fakeHarness{onPrompt: func(s *promptScript) { s.end(acp.StopEndTurn) }}
+			e := newTestExecutor(t, h, Config{Pool: &PoolConfig{Key: keyByContext}})
+			var starts atomic.Int32
+			e.agentStarter = AgentFunc(func(ctx context.Context, key string) (io.ReadWriteCloser, error) {
+				if starts.Add(1) == 1 {
+					return nil, tc.refusal
+				}
+				return h.start(ctx, key)
+			})
 
-	first := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("one"))))
-	second := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("two"))))
+			first := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("one"))))
+			second := run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("two"))))
 
-	if diff := cmp.Diff([]eventSummary{submitted, failedWith("starting acp agent: the agent is owned by another node: node-2")}, first); diff != "" {
-		t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
-	}
-	if diff := cmp.Diff([]eventSummary{submitted, working, completed}, second); diff != "" {
-		t.Fatalf("Executor.Execute() after ErrNotOwner wrong result (-want +got) diff = %s", diff)
+			if diff := cmp.Diff([]eventSummary{submitted, failedWith("starting acp agent: " + tc.refusal.Error())}, first); diff != "" {
+				t.Fatalf("Executor.Execute() wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff([]eventSummary{submitted, working, completed}, second); diff != "" {
+				t.Fatalf("Executor.Execute() after refusal wrong result (-want +got) diff = %s", diff)
+			}
+		})
 	}
 }
 

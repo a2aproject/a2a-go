@@ -117,6 +117,11 @@ func (a *agent) configMethod(sessionID, configID string) (string, acp.SessionCon
 // doesn't delay the next start.
 var ErrNotOwner = errors.New("the agent is owned by another node")
 
+// ErrAgentBusy is returned, wrapped, by [Agent.Start] when an external capacity
+// limit temporarily prevents an agent from starting. The task fails with the
+// error, and the next request can retry the start without waiting for backoff.
+var ErrAgentBusy = errors.New("agent capacity is temporarily unavailable")
+
 var errDraining = errors.New("the executor is shutting down, send the message again later")
 
 // agentSlot holds the agent process of one key.
@@ -351,7 +356,7 @@ func (e *Executor) ensureAgent(ctx context.Context, s *agentSlot) (*agent, error
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s.starting = false
-	if errors.Is(err, ErrNotOwner) {
+	if errors.Is(err, ErrNotOwner) || errors.Is(err, ErrAgentBusy) {
 		return nil, err
 	}
 	if err != nil {
