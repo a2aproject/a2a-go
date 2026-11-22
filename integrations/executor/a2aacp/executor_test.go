@@ -491,6 +491,67 @@ func TestExecutor_ContextFreeOnceTurnCompletes(t *testing.T) {
 	}
 }
 
+func TestExecutor_InterruptedQueuedTurn(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		cause error
+	}{
+		{name: "request canceled", cause: context.Canceled},
+		{name: "service shutting down", cause: errors.New("service shutting down")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			release := make(chan struct{})
+			h := &fakeHarness{onPrompt: func(s *promptScript) {
+				if s.promptText() == "first" {
+					<-release
+				}
+				s.end(acp.StopEndTurn)
+			}}
+			e := newTestExecutor(t, h, Config{})
+			firstResult := make(chan []eventSummary, 1)
+			go func() { firstResult <- run(t, execute(e, newExecCtx("ctx", a2a.NewTextPart("first")))) }()
+			defer func() {
+				close(release)
+				<-firstResult
+			}()
+			waitFor(t, func() bool { _, _, _, p := h.agent(0).snapshot(); return len(p) == 1 })
+
+			ctx, interrupt := context.WithCancelCause(t.Context())
+			defer interrupt(nil)
+			queued := newExecCtx("ctx", a2a.NewTextPart("second"))
+			queuedResult := make(chan []eventSummary, 1)
+			go func() {
+				queuedResult <- run(t, func(context.Context) func(func(a2a.Event, error) bool) {
+					return e.Execute(ctx, queued)
+				})
+			}()
+			waitFor(t, func() bool { return e.isWaiting(queued.TaskID) })
+
+			interrupt(tc.cause)
+			var got []eventSummary
+			select {
+			case got = <-queuedResult:
+			case <-time.After(testTimeout):
+				t.Fatal("Executor.Execute() did not stop after context interruption")
+			}
+			if diff := cmp.Diff([]eventSummary{submitted}, got); diff != "" {
+				t.Fatalf("Executor.Execute() interrupted turn wrong result (-want +got) diff = %s", diff)
+			}
+			_, _, _, prompts := h.agent(0).snapshot()
+			var gotText []string
+			for _, p := range prompts {
+				gotText = append(gotText, p.Prompt[0].Text)
+			}
+			if diff := cmp.Diff([]string{"first"}, gotText); diff != "" {
+				t.Fatalf("session/prompt wrong content (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestExecutor_CancelQueuedTurn(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
