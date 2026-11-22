@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -104,9 +105,7 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	}
 	if extraQuery := HTTPQueryParamsFrom(ctx); rel.RawQuery != "" || len(extraQuery) > 0 {
 		query := u.Query()
-		for key, values := range rel.Query() {
-			query[key] = values
-		}
+		maps.Copy(query, rel.Query())
 		utils.MergeQueryParams(query, extraQuery)
 		u.RawQuery = query.Encode()
 	}
