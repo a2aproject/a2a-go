@@ -104,7 +104,9 @@ func (t *RESTTransport) sendRequest(ctx context.Context, req *restRequest) (*htt
 	}
 	if extraQuery := HTTPQueryParamsFrom(ctx); rel.RawQuery != "" || len(extraQuery) > 0 {
 		query := u.Query()
-		utils.MergeQueryParams(query, rel.Query())
+		for key, values := range rel.Query() {
+			query[key] = values
+		}
 		utils.MergeQueryParams(query, extraQuery)
 		u.RawQuery = query.Encode()
 	}

@@ -743,7 +743,7 @@ func TestRESTTransport_EscapedPathSegments(t *testing.T) {
 func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 	t.Parallel()
 
-	const baseQuery = "tag=base&api-version=2026-11-01&flag&value=a%20b%2fc"
+	const baseQuery = "tag=base-1&api-version=2026-11-01&flag&tag=base-2&value=a%20b%2fc&historyLength=2"
 
 	testCases := []struct {
 		name          string
@@ -755,25 +755,26 @@ func TestRESTTransport_BaseURLQueryParams(t *testing.T) {
 		{
 			name: "base URL only",
 			wantQuery: url.Values{
-				"api-version": {"2026-11-01"},
-				"tag":         {"base"},
-				"flag":        {""},
-				"value":       {"a b/c"},
+				"api-version":   {"2026-11-01"},
+				"tag":           {"base-1", "base-2"},
+				"historyLength": {"2"},
+				"flag":          {""},
+				"value":         {"a b/c"},
 			},
 			wantRawQuery: baseQuery,
 		},
 		{
-			name:          "with request and context parameters",
-			historyLength: new(2),
+			name:          "request overrides base URL default",
+			historyLength: new(0),
 			extraQuery: url.Values{
 				"api_key": {"secret"},
 				"tag":     {"context-1", "context-2"},
 			},
 			wantQuery: url.Values{
 				"api-version":   {"2026-11-01"},
-				"historyLength": {"2"},
+				"historyLength": {"0"},
 				"api_key":       {"secret"},
-				"tag":           {"base", "context-1", "context-2"},
+				"tag":           {"base-1", "base-2", "context-1", "context-2"},
 				"flag":          {""},
 				"value":         {"a b/c"},
 			},
