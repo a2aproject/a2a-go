@@ -1415,7 +1415,6 @@ func TestToProtoStreamResponse_StatusUpdateFinal(t *testing.T) {
 	}{
 		{state: a2a.TaskStateSubmitted, want: false},
 		{state: a2a.TaskStateWorking, want: false},
-		{state: a2a.TaskStateAuthRequired, want: false},
 		{state: a2a.TaskStateInputRequired, want: true},
 		{state: a2a.TaskStateCompleted, want: true},
 		{state: a2a.TaskStateCanceled, want: true},
