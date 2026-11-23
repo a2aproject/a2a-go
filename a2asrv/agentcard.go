@@ -17,9 +17,12 @@ package a2asrv
 import (
 	"context"
 	"encoding/json"
+	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -170,6 +173,7 @@ func writePublicCardHTTPOptions(rw http.ResponseWriter, req *http.Request) {
 
 func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *http.Request, body []byte, etag string, cfg *agentCardHandlerConfig) {
 	writeCORSHeaders(rw, req)
+	rw.Header().Add("Vary", "Accept")
 	if cfg.cacheControl != "" {
 		rw.Header().Set("Cache-Control", cfg.cacheControl)
 	}
@@ -180,10 +184,22 @@ func writeAgentCardResponse(ctx context.Context, rw http.ResponseWriter, req *ht
 			return
 		}
 	}
-	rw.Header().Set("Content-Type", "application/json")
+	rw.Header().Set("Content-Type", negotiateAgentCardContentType(req))
 	if _, err := rw.Write(body); err != nil {
 		log.Error(ctx, "failed to write agent card response", err)
 	}
+}
+
+func negotiateAgentCardContentType(req *http.Request) string {
+	for _, accept := range req.Header.Values("Accept") {
+		for mediaRange := range strings.SplitSeq(accept, ",") {
+			mediaType, _, err := mime.ParseMediaType(mediaRange)
+			if err == nil && mediaType == rest.ContentA2AAgentCardJSON {
+				return rest.ContentA2AAgentCardJSON
+			}
+		}
+	}
+	return rest.ContentJSON
 }
 
 func writeCORSHeaders(rw http.ResponseWriter, req *http.Request) {

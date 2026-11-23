@@ -39,6 +39,7 @@ import (
 const (
 	ContentJSON    = "application/json"
 	ContentA2AJSON = "application/a2a+json"
+	ContentA2AAgentCardJSON = "application/a2a-agent-card+json"
 )
 
 // Query parameter names for the v1 HTTP+JSON binding.

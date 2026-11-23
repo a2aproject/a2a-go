@@ -27,6 +27,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2acrypto"
+	"github.com/a2aproject/a2a-go/v2/internal/rest"
 	"github.com/a2aproject/a2a-go/v2/log"
 )
 
@@ -152,8 +153,9 @@ func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers 
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct a request: %w", err)
 	}
+	req.Header.Set("Accept", rest.ContentA2AAgentCardJSON+", "+rest.ContentJSON)
 	for h, val := range headers {
-		req.Header.Add(h, val)
+		req.Header.Set(h, val)
 	}
 
 	resp, err := client.Do(req)
