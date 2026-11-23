@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/a2aproject/a2a-go/compare/v2.9.0...v2.10.0) (2026-11-23)
+
+
+### Features
+
+* add OpenTelemetry plugin with traces ([#616](https://github.com/a2aproject/a2a-go/issues/616)) ([cac6958](https://github.com/a2aproject/a2a-go/commit/cac6958547cde518f84c982da71baded5af9d6e2))
+
 ## [2.9.0](https://github.com/a2aproject/a2a-go/compare/v2.8.0...v2.9.0) (2026-11-17)
 
 
