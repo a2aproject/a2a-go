@@ -112,7 +112,11 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
 		log.Debug(ctx, "subscription waiting for execution promise")
-		yield(s.execution.result.wait(ctx))
+		result, err := s.execution.result.wait(ctx)
+		if task, ok := result.(*a2a.Task); ok && task.Status.State == a2a.TaskStateAuthRequired {
+			return // the agent returned after auth-required, which was already reported
+		}
+		yield(result, err)
 	}
 }
 
