@@ -69,7 +69,7 @@ func NewLocal(opts ...LocalPipeOption) *Local {
 	writer := &pipeWriter{events: events, closeChan: make(chan struct{})}
 	pipe := &Local{
 		Writer:      writer,
-		Reader:      &pipeReader{events: events},
+		Reader:      &pipeReader{events: events, closeChan: writer.closeChan},
 		closeWriter: writer.close,
 	}
 	return pipe
@@ -106,18 +106,23 @@ func (w *pipeWriter) close() {
 }
 
 type pipeReader struct {
-	events chan a2a.Event
+	events    chan a2a.Event
+	closeChan chan struct{}
 }
 
 func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
-	select { // readers are allowed to drain the channel after pipe is closed
-	case event, ok := <-r.events:
-		if !ok {
-			return nil, eventqueue.ErrQueueClosed
-		}
+	select {
+	case event := <-r.events:
 		return event, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-r.closeChan: // readers are allowed to drain the channel after pipe is closed
+		select {
+		case event := <-r.events:
+			return event, nil
+		default:
+			return nil, eventqueue.ErrQueueClosed
+		}
 	}
 }
 

@@ -166,7 +166,11 @@ func (e *testExecutor) Execute(ctx context.Context, queue eventpipe.Writer) erro
 		}
 	}
 
-	return e.executeErr
+	if e.executeErr != nil {
+		return e.executeErr
+	}
+	<-ctx.Done()
+	return nil
 }
 
 func (e *testProcessor) Cleanup(ctx context.Context, result a2a.SendMessageResult, err error) {

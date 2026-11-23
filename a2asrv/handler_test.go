@@ -129,6 +129,28 @@ func TestRequestHandler_SendMessage(t *testing.T) {
 				},
 			},
 			{
+				name:        "agent returns in a non-terminal state",
+				input:       &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Syn")},
+				agentEvents: []a2a.Event{newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working...")},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: newAgentMessage("Working..."), Timestamp: &fixedTime},
+					History:   []*a2a.Message{newUserMessage(taskSeed, "Syn")},
+				},
+			},
+			{
+				name:        "agent returns in a non-terminal state",
+				input:       &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Syn")},
+				agentEvents: []a2a.Event{newTaskStatusUpdate(taskSeed, a2a.TaskStateWorking, "Working...")},
+				wantResult: &a2a.Task{
+					ID:        taskSeed.ID,
+					ContextID: taskSeed.ContextID,
+					Status:    a2a.TaskStatus{State: a2a.TaskStateWorking, Message: newAgentMessage("Working..."), Timestamp: &fixedTime},
+					History:   []*a2a.Message{newUserMessage(taskSeed, "Syn")},
+				},
+			},
+			{
 				name:  "input-required task status update",
 				input: &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "Syn")},
 				agentEvents: []a2a.Event{
@@ -754,6 +776,85 @@ func TestRequestHandler_SendMessageStreaming_AuthRequired(t *testing.T) {
 		}
 	} else {
 		t.Fatalf("SendStreamingMessage() = %v, want a2a.TaskStatusUpdateEvent", lastEvent)
+	}
+}
+
+func TestRequestHandler_SendMessageStreaming_InputRequiredKeepsStreamOpen(t *testing.T) {
+	t.Parallel()
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	events := []a2a.Event{
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateInputRequired, "need input"),
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done"),
+	}
+	handler := NewHandler(newEventReplayAgent(events, nil), WithTaskStore(store))
+
+	var got []a2a.Event
+	for event, err := range handler.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")}) {
+		if err != nil {
+			t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+		}
+		got = append(got, event)
+	}
+	if diff := cmp.Diff(events, got); diff != "" {
+		t.Fatalf("SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestRequestHandler_SendMessage_AgentReturnsInNonTerminalState(t *testing.T) {
+	t.Parallel()
+	for _, state := range []a2a.TaskState{a2a.TaskStateWorking, a2a.TaskStateInputRequired} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s streaming=%v", state, streaming), func(t *testing.T) {
+				t.Parallel()
+				taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+				store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+				agent := newEventReplayAgent([]a2a.Event{newTaskStatusUpdate(taskSeed, state, "paused")}, nil)
+				handler := NewHandler(agent, WithTaskStore(store))
+				req := &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")}
+
+				var got a2a.Event
+				if streaming {
+					for event, err := range handler.SendStreamingMessage(t.Context(), req) {
+						if err != nil {
+							t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+						}
+						got = event
+					}
+				} else {
+					result, err := handler.SendMessage(t.Context(), req)
+					if err != nil {
+						t.Fatalf("SendMessage() error = %v, want nil", err)
+					}
+					got = result
+				}
+				if task, ok := got.(*a2a.Task); !ok || task.Status.State != state {
+					t.Fatalf("SendMessage() = %v, want a2a.Task in %q state", got, state)
+				}
+			})
+		}
+	}
+}
+
+func TestRequestHandler_SendMessageStreaming_InputRequiredKeepsStreamOpen(t *testing.T) {
+	t.Parallel()
+	taskSeed := &a2a.Task{ID: a2a.NewTaskID(), ContextID: a2a.NewContextID()}
+	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
+	events := []a2a.Event{
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateInputRequired, "need input"),
+		newTaskStatusUpdate(taskSeed, a2a.TaskStateCompleted, "done"),
+	}
+	handler := NewHandler(newEventReplayAgent(events, nil), WithTaskStore(store))
+
+	var got []a2a.Event
+	for event, err := range handler.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{Message: newUserMessage(taskSeed, "work")}) {
+		if err != nil {
+			t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+		}
+		got = append(got, event)
+	}
+	if diff := cmp.Diff(events, got); diff != "" {
+		t.Fatalf("SendStreamingMessage() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
