@@ -64,6 +64,7 @@ type Processor interface {
 	Process(context.Context, a2a.Event) (*ProcessorResult, error)
 
 	// ProcessError is called when an execution error is encountered to try recovering from it.
+	// It is called with [eventqueue.ErrQueueClosed] when the execution finished without a terminal event.
 	// If it returns a result, the returned value becomes the result of the execution. If an error can't be handled
 	// either a modified error or the original error cause must be returned.
 	ProcessError(context.Context, error) (a2a.SendMessageResult, error)
