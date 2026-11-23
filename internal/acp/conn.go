@@ -39,6 +39,7 @@ const (
 	CodeInvalidRequest = -32600
 	CodeMethodNotFound = -32601
 	CodeInvalidParams  = -32602
+	CodeInternalError  = -32603
 )
 
 // ErrAgentExited is reported for calls in flight when the peer closes its output or the connection is closed.

@@ -37,10 +37,11 @@ const testTimeout = 5 * time.Second
 // fakeHarness starts in-process ACP agents connected over pipes. Every
 // session/prompt runs onPrompt in its own goroutine.
 type fakeHarness struct {
-	t        *testing.T
-	caps     acp.AgentCapabilities
-	state    acp.SessionState
-	onPrompt func(*promptScript)
+	t            *testing.T
+	caps         acp.AgentCapabilities
+	state        acp.SessionState
+	onPrompt     func(*promptScript)
+	onNewSession func(attempt int) *acp.Error
 	// hangInitialize makes agents never answer initialize.
 	hangInitialize bool
 
@@ -54,17 +55,18 @@ type fakeAgent struct {
 	conn   *acp.Conn
 	client *exitingRWC
 
-	mu         sync.Mutex
-	nextID     int
-	created    []string
-	loaded     []string
-	prompts    []acp.PromptRequest
-	canceled   []string
-	settings   []string
-	values     map[string]any // config option ID -> value set by the client
-	mcpServers []json.RawMessage
-	cwds       []string
-	crashed    bool
+	mu              sync.Mutex
+	nextID          int
+	newSessionCalls int
+	created         []string
+	loaded          []string
+	prompts         []acp.PromptRequest
+	canceled        []string
+	settings        []string
+	values          map[string]any // config option ID -> value set by the client
+	mcpServers      []json.RawMessage
+	cwds            []string
+	crashed         bool
 }
 
 func (h *fakeHarness) start(_ context.Context, key string) (io.ReadWriteCloser, error) {
@@ -131,6 +133,15 @@ func (f *fakeAgent) handle(m *acp.Message) {
 		}
 		result = acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersion, AgentCapabilities: f.h.caps}
 	case acp.MethodSessionNew:
+		f.newSessionCalls++
+		if f.h.onNewSession != nil {
+			if rpcErr := f.h.onNewSession(f.newSessionCalls); rpcErr != nil {
+				if err := f.conn.RespondError(m.ID, rpcErr); err != nil {
+					t.Errorf("fake agent RespondError() error = %v", err)
+				}
+				return
+			}
+		}
 		var req acp.NewSessionRequest
 		mustUnmarshal(t, m.Params, &req)
 		f.mcpServers = req.MCPServers
@@ -225,6 +236,12 @@ func (f *fakeAgent) sessionParams() ([]string, []json.RawMessage) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.cwds, f.mcpServers
+}
+
+func (f *fakeAgent) newSessionCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.newSessionCalls
 }
 
 func (f *fakeAgent) recordedSettings() []string {
