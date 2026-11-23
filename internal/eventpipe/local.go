@@ -56,6 +56,12 @@ type Local struct {
 	Writer Writer
 
 	closeWriter func()
+	writer      *pipeWriter
+}
+
+type pipeEvent struct {
+	event    a2a.Event
+	dequeued chan struct{}
 }
 
 // NewLocal creates a new local event pipe.
@@ -64,19 +70,20 @@ func NewLocal(opts ...LocalPipeOption) *Local {
 	for _, opt := range opts {
 		opt(options)
 	}
-	events := make(chan a2a.Event, options.bufferSize)
+	events := make(chan pipeEvent, options.bufferSize)
 
 	writer := &pipeWriter{events: events, closeChan: make(chan struct{})}
 	pipe := &Local{
 		Writer:      writer,
 		Reader:      &pipeReader{events: events},
 		closeWriter: writer.close,
+		writer:      writer,
 	}
 	return pipe
 }
 
 type pipeWriter struct {
-	events chan a2a.Event
+	events chan pipeEvent
 
 	closed    atomic.Bool
 	closeChan chan struct{}
@@ -85,6 +92,10 @@ type pipeWriter struct {
 var _ Writer = (*pipeWriter)(nil)
 
 func (w *pipeWriter) Write(ctx context.Context, event a2a.Event) error {
+	return w.enqueue(ctx, pipeEvent{event: event})
+}
+
+func (w *pipeWriter) enqueue(ctx context.Context, event pipeEvent) error {
 	if w.closed.Load() {
 		return eventqueue.ErrQueueClosed
 	}
@@ -106,7 +117,7 @@ func (w *pipeWriter) close() {
 }
 
 type pipeReader struct {
-	events chan a2a.Event
+	events chan pipeEvent
 }
 
 func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
@@ -115,7 +126,10 @@ func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
 		if !ok {
 			return nil, eventqueue.ErrQueueClosed
 		}
-		return event, nil
+		if event.dequeued != nil {
+			close(event.dequeued)
+		}
+		return event.event, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -124,4 +138,24 @@ func (r *pipeReader) Read(ctx context.Context) (a2a.Event, error) {
 // Close closes the local event pipe.
 func (q *Local) Close() {
 	q.closeWriter()
+}
+
+// WriteTracked enqueues an event without waiting for its consumption. The
+// returned channel is closed if the event is read. A nil channel means the
+// consumer had already stopped before the event could be enqueued.
+func (q *Local) WriteTracked(ctx context.Context, event a2a.Event, consumerDone <-chan struct{}) (<-chan struct{}, error) {
+	dequeued := make(chan struct{})
+	if q.writer.closed.Load() {
+		return nil, eventqueue.ErrQueueClosed
+	}
+	select {
+	case q.writer.events <- pipeEvent{event: event, dequeued: dequeued}:
+		return dequeued, nil
+	case <-consumerDone:
+		return nil, nil
+	case <-q.writer.closeChan:
+		return nil, eventqueue.ErrQueueClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }

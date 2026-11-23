@@ -54,6 +54,11 @@ func (f *testFactory) CreateCanceler(ctx context.Context, req *a2a.CancelTaskReq
 	return nil, nil, nil, fmt.Errorf("not implemented")
 }
 
+func (f *testFactory) CreateCancelProcessor(ctx context.Context, req *a2a.CancelTaskRequest) (Processor, error) {
+	_, processor, _, err := f.CreateCanceler(ctx, req)
+	return processor, err
+}
+
 func newStaticFactory(executor *testExecutor, canceler *testCanceler) Factory {
 	return &testFactory{
 		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
@@ -999,5 +1004,153 @@ func TestManager_AgentInactivityTimeout(t *testing.T) {
 	}
 	if !errors.Is(executorCause, ErrAgentInactivityTimeout) {
 		t.Fatalf("context.Cause(executorCtx) = %v, want errors.Is(_, ErrAgentInactivityTimeout)", executorCause)
+	}
+}
+
+func TestManager_CancelAfterConcurrentExecutionNeedsInput(t *testing.T) {
+	t.Parallel()
+	for _, state := range []a2a.TaskState{a2a.TaskStateInputRequired} {
+		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			executor := newExecutor()
+			executor.nextEventTerminal = true
+			first, retry := newCanceler(), newCanceler()
+			first.block = make(chan struct{})
+			retry.nextEventTerminal = true
+			var calls atomic.Int32
+			factory := &testFactory{
+				CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
+					return executor, executor, executor, nil
+				},
+				CreateCancelerFn: func(_ context.Context, req *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
+					c := first
+					if calls.Add(1) > 1 {
+						c = retry
+					}
+					c.emitTask = &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+					return c, c, c, nil
+				},
+			}
+			manager := NewLocalManager(LocalManagerConfig{Factory: factory, TaskStore: testutil.NewTestTaskStore()})
+			sub, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+			if err != nil {
+				t.Fatalf("manager.Execute() error = %v, want nil", err)
+			}
+			_, _ = consumeEvents(t, sub)
+			<-executor.executeCalled
+			type cancelResult struct {
+				task *a2a.Task
+				err  error
+			}
+			result := make(chan cancelResult, 1)
+			go func() {
+				task, err := manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: sub.TaskID()})
+				result <- cancelResult{task: task, err: err}
+			}()
+			<-first.cancelCalled
+			executor.mustWrite(t, &a2a.Task{ID: sub.TaskID(), Status: a2a.TaskStatus{State: state}})
+			if _, err := sub.(*localSubscription).execution.result.wait(ctx); err != nil {
+				t.Fatalf("execution result error = %v, want nil", err)
+			}
+			close(first.block)
+			got := <-result
+			if got.err != nil {
+				t.Fatalf("manager.Cancel() error = %v, want nil", got.err)
+			}
+			want := &a2a.Task{ID: sub.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+			if diff := cmp.Diff(want, got.task); diff != "" {
+				t.Fatalf("manager.Cancel() wrong result (-want +got) diff = %s", diff)
+			}
+			select {
+			case <-retry.cancelCalled:
+				t.Fatal("manager.Cancel() invoked the agent more than once")
+			default:
+			}
+		})
+	}
+}
+
+type testDestroyGate struct {
+	eventqueue.Manager
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (m *testDestroyGate) Destroy(ctx context.Context, tid a2a.TaskID) error {
+	close(m.entered)
+	<-m.release
+	return m.Manager.Destroy(ctx, tid)
+}
+
+type testNotifyingCanceler struct {
+	*testCanceler
+	started chan struct{}
+}
+
+func (c *testNotifyingCanceler) Cancel(ctx context.Context, writer eventpipe.Writer) error {
+	close(c.cancelCalled)
+	<-c.block
+	close(c.started)
+	return writer.Write(ctx, c.emitTask)
+}
+
+func TestManager_CancelEventQueuedAfterExecutionStops(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	executor, first, retry := newExecutor(), newCanceler(), newCanceler()
+	executor.nextEventTerminal = true
+	first.block = make(chan struct{})
+	retry.nextEventTerminal = true
+	notifying := &testNotifyingCanceler{testCanceler: first, started: make(chan struct{})}
+	queue := &testDestroyGate{Manager: eventqueue.NewInMemoryManager(), entered: make(chan struct{}), release: make(chan struct{})}
+	var calls atomic.Int32
+	factory := &testFactory{
+		CreateExecutorFn: func(context.Context, a2a.TaskID, *a2a.SendMessageRequest) (Executor, Processor, Cleaner, error) {
+			return executor, executor, executor, nil
+		},
+		CreateCancelerFn: func(_ context.Context, req *a2a.CancelTaskRequest) (Canceler, Processor, Cleaner, error) {
+			if calls.Add(1) == 1 {
+				first.emitTask = &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+				return notifying, first, first, nil
+			}
+			retry.emitTask = &a2a.Task{ID: req.ID, Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+			return retry, retry, retry, nil
+		},
+	}
+	manager := NewLocalManager(LocalManagerConfig{Factory: factory, QueueManager: queue, TaskStore: testutil.NewTestTaskStore()})
+	sub, err := manager.Execute(ctx, &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser)})
+	if err != nil {
+		t.Fatalf("manager.Execute() error = %v, want nil", err)
+	}
+	_, _ = consumeEvents(t, sub)
+	<-executor.executeCalled
+	type cancelResult struct {
+		task *a2a.Task
+		err  error
+	}
+	result := make(chan cancelResult, 1)
+	go func() {
+		task, err := manager.Cancel(ctx, &a2a.CancelTaskRequest{ID: sub.TaskID()})
+		result <- cancelResult{task: task, err: err}
+	}()
+	<-first.cancelCalled
+	executor.mustWrite(t, &a2a.Task{ID: sub.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateInputRequired}})
+	<-queue.entered
+	close(first.block)
+	<-notifying.started
+	close(queue.release)
+	got := <-result
+	if got.err != nil {
+		t.Fatalf("manager.Cancel() error = %v, want nil", got.err)
+	}
+	want := &a2a.Task{ID: sub.TaskID(), Status: a2a.TaskStatus{State: a2a.TaskStateCanceled}}
+	if diff := cmp.Diff(want, got.task); diff != "" {
+		t.Fatalf("manager.Cancel() wrong result (-want +got) diff = %s", diff)
+	}
+	select {
+	case <-retry.cancelCalled:
+		t.Fatal("manager.Cancel() invoked the agent more than once")
+	default:
 	}
 }
