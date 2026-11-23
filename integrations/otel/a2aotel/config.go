@@ -94,6 +94,15 @@ func WithAgentCard(card *a2a.AgentCard) ServerOption {
 	})
 }
 
+// WithPublicEndpoint configures the server plugin to start a new root trace instead of parenting
+// server spans to the trace context received in call service parameters. Any valid incoming span
+// context is attached to the server span as a link.
+func WithPublicEndpoint() ServerOption {
+	return serverOptionFunc(func(c *serverConfig) {
+		c.publicEndpoint = true
+	})
+}
+
 type config struct {
 	enabled        bool
 	tracerProvider trace.TracerProvider
@@ -102,7 +111,8 @@ type config struct {
 
 type serverConfig struct {
 	config
-	agentCard *a2a.AgentCard
+	agentCard      *a2a.AgentCard
+	publicEndpoint bool
 }
 
 func defaultConfig() config {

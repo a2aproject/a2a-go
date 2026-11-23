@@ -343,10 +343,12 @@ func TestServerPlugin_Parent(t *testing.T) {
 	remoteSpanID := "00f067aa0ba902b7"
 	traceparent := "00-" + remoteTraceID + "-" + remoteSpanID + "-01"
 	testCases := []struct {
-		name          string
-		params        map[string][]string
-		withLocalSpan bool
-		wantRemote    bool
+		name           string
+		params         map[string][]string
+		withLocalSpan  bool
+		publicEndpoint bool
+		wantRemote     bool
+		wantRemoteLink bool
 	}{
 		{
 			name:       "trace context from service params",
@@ -361,12 +363,26 @@ func TestServerPlugin_Parent(t *testing.T) {
 		{
 			name: "no trace context",
 		},
+		{
+			name:           "public endpoint links remote trace context",
+			params:         map[string][]string{"Traceparent": {traceparent}},
+			publicEndpoint: true,
+			wantRemoteLink: true,
+		},
+		{
+			name:           "public endpoint without trace context",
+			publicEndpoint: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			telemetry := newTestTelemetry(t)
-			handler := a2asrv.NewHandler(completingExecutor(), a2asrv.WithPlugins(NewServerPlugin(telemetry.serverOptions()...)))
+			var extraOpts []ServerOption
+			if tc.publicEndpoint {
+				extraOpts = append(extraOpts, WithPublicEndpoint())
+			}
+			handler := a2asrv.NewHandler(completingExecutor(), a2asrv.WithPlugins(NewServerPlugin(telemetry.serverOptions(extraOpts...)...)))
 			ctx := t.Context()
 			var localSpan trace.Span
 			if tc.withLocalSpan {
@@ -395,6 +411,18 @@ func TestServerPlugin_Parent(t *testing.T) {
 				if parent.IsValid() {
 					t.Fatalf("server span parent = %v, want none", parent)
 				}
+			}
+			links := spans[0].Links()
+			if tc.wantRemoteLink {
+				if len(links) != 1 {
+					t.Fatalf("server span links count = %d, want 1", len(links))
+				}
+				link := links[0].SpanContext
+				if !link.IsRemote() || link.TraceID().String() != remoteTraceID || link.SpanID().String() != remoteSpanID {
+					t.Fatalf("server span link = %v, want remote %s/%s", link, remoteTraceID, remoteSpanID)
+				}
+			} else if len(links) != 0 {
+				t.Fatalf("server span links count = %d, want 0", len(links))
 			}
 		})
 	}

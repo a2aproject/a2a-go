@@ -44,6 +44,7 @@ func NewServerPlugin(opts ...ServerOption) a2asrv.Plugin {
 		tracer:          cfg.tracer(),
 		propagators:     cfg.propagators,
 		agentAttributes: agentAttributes(cfg.agentCard),
+		publicEndpoint:  cfg.publicEndpoint,
 	}
 	return a2aplugin.Server(pluginName, a2aplugin.ServerHooks{WrapCall: s.wrapCall})
 }
@@ -52,6 +53,7 @@ type serverInstrumentation struct {
 	tracer          trace.Tracer
 	propagators     propagation.TextMapPropagator
 	agentAttributes []attribute.KeyValue
+	publicEndpoint  bool
 }
 
 func (s *serverInstrumentation) wrapCall(next a2asrv.CallHandler) a2asrv.CallHandler {
@@ -94,10 +96,22 @@ func (s *serverInstrumentation) startSpan(ctx context.Context, callCtx *a2asrv.C
 		return ctx, current, false
 	}
 
-	if !trace.SpanContextFromContext(ctx).IsValid() {
-		ctx = s.propagators.Extract(ctx, serverParamsCarrier{params: callCtx.ServiceParams()})
+	spanOpts := []trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(attrs...),
 	}
-	spanCtx, span := s.tracer.Start(ctx, method, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attrs...))
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		extracted := s.propagators.Extract(ctx, serverParamsCarrier{params: callCtx.ServiceParams()})
+		if s.publicEndpoint {
+			spanOpts = append(spanOpts, trace.WithNewRoot())
+			if remote := trace.SpanContextFromContext(extracted); remote.IsValid() {
+				spanOpts = append(spanOpts, trace.WithLinks(trace.Link{SpanContext: remote}))
+			}
+		} else {
+			ctx = extracted
+		}
+	}
+	spanCtx, span := s.tracer.Start(ctx, method, spanOpts...)
 	return spanCtx, span, true
 }
 
