@@ -58,7 +58,7 @@ func (h *executionHandler) processEvents(ctx context.Context) (a2a.SendMessageRe
 			return nil, fmt.Errorf("processor error: %w", err)
 		}
 
-		if h.handledEventQueue != nil {
+		if h.handledEventQueue != nil && event != nil {
 			toEmit := event
 			if processResult.EventOverride != nil {
 				log.Debug(ctx, "event overridden by processor", "cause", processResult.ExecutionFailureCause)

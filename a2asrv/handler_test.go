@@ -468,17 +468,92 @@ func TestRequestHandler_SendMessage_AuthRequired(t *testing.T) {
 		t.Fatalf("SendMessage() = %v, want a2a.Task", result)
 	}
 
-	_, err = handler.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
-	if !strings.Contains(err.Error(), "execution is already in progress") {
-		t.Fatalf("SendMessage() error = %v, want err to contain 'execution is already in progress'", err)
-	}
-
 	authCredentialsChan <- struct{}{}
 	<-execEndChan
 
 	task, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
 	if task.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("handler.GetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+	}
+}
+
+func TestRequestHandler_AuthRequired_AgentReturns(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		send     func(context.Context, RequestHandler, *a2a.SendMessageRequest) (a2a.Event, error)
+		wantLast string
+	}{
+		{
+			name: "SendMessage",
+			send: func(ctx context.Context, h RequestHandler, req *a2a.SendMessageRequest) (a2a.Event, error) {
+				return h.SendMessage(ctx, req)
+			},
+			wantLast: "*a2a.Task",
+		},
+		{
+			name: "SendStreamingMessage",
+			send: func(ctx context.Context, h RequestHandler, req *a2a.SendMessageRequest) (a2a.Event, error) {
+				var last a2a.Event
+				for event, err := range h.SendStreamingMessage(ctx, req) {
+					if err != nil {
+						return nil, err
+					}
+					last = event
+				}
+				return last, nil
+			},
+			wantLast: "*a2a.TaskStatusUpdateEvent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			executor := &mockAgentExecutor{
+				ExecuteFunc: func(ctx context.Context, execCtx *ExecutorContext) iter.Seq2[a2a.Event, error] {
+					return func(yield func(a2a.Event, error) bool) {
+						if execCtx.StoredTask != nil {
+							yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCompleted, nil), nil)
+							return
+						}
+						if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+							return
+						}
+						if !yield(a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateAuthRequired, nil), nil) {
+							return
+						}
+						time.Sleep(15 * time.Millisecond) // lets the next message arrive before the agent returns
+					}
+				},
+			}
+			handler := NewHandler(executor)
+
+			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("perform protected operation"))
+			last, err := tt.send(ctx, handler, &a2a.SendMessageRequest{Message: msg})
+			if err != nil {
+				t.Fatalf("%s() error = %v, want nil", tt.name, err)
+			}
+			if got := fmt.Sprintf("%T", last); got != tt.wantLast {
+				t.Fatalf("%s() = %s, want %s", tt.name, got, tt.wantLast)
+			}
+			taskID := last.TaskInfo().TaskID
+			task, err := handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
+			if err != nil || task.Status.State != a2a.TaskStateAuthRequired {
+				t.Fatalf("handler.GetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateAuthRequired)
+			}
+
+			credentials := a2a.NewMessageForTask(a2a.MessageRoleUser, last, a2a.NewTextPart("credentials"))
+			if _, err := tt.send(ctx, handler, &a2a.SendMessageRequest{Message: credentials}); err != nil {
+				t.Fatalf("%s() error = %v, want nil", tt.name, err)
+			}
+			task, err = handler.GetTask(ctx, &a2a.GetTaskRequest{ID: taskID})
+			if err != nil || task.Status.State != a2a.TaskStateCompleted {
+				t.Fatalf("handler.GetTask() = (%v, %v), want a task in state %q", task, err, a2a.TaskStateCompleted)
+			}
+		})
 	}
 }
 

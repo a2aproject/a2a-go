@@ -77,8 +77,8 @@ type localExecution struct {
 	queueManager eventqueue.Manager
 	store        taskstore.Store
 
-	// exiting flag is set to true after we know the execution is about to finish.
-	// a fast client might attempt to send a follow-up before the execution gets unregistered.
+	// exiting flag is set to true after we know the execution is about to finish or the task is in auth-required.
+	// a follow-up message waits for the execution to get unregistered instead of being rejected.
 	exiting atomic.Bool
 }
 
@@ -286,7 +286,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		handledEventQueue: eventBroadcast,
 		handleEventFn: func(ctx context.Context, e a2a.Event) (*ProcessorResult, error) {
 			result, err := processor.Process(ctx, e)
-			execution.exiting.Store(err != nil || result.ExecutionResult != nil)
+			execution.exiting.Store(err != nil || result.ExecutionResult != nil || IsAuthRequired(e))
 			return result, err
 		},
 		handleErrorFn: processor.ProcessError,

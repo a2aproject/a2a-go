@@ -374,6 +374,7 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 		}
 	}
 
+	authRequired := false
 	for event, err := range e.agent.Execute(ctx, e.execCtx) {
 		if err != nil {
 			return err
@@ -381,6 +382,11 @@ func (e *executor) Execute(ctx context.Context, q eventpipe.Writer) error {
 		if err := q.Write(ctx, event); err != nil {
 			return err
 		}
+		authRequired = taskexec.IsAuthRequired(event)
+	}
+	if authRequired {
+		// A nil event tells the processor that the agent returned and expects a new message for the task.
+		return q.Write(ctx, nil)
 	}
 	return nil
 }
@@ -473,6 +479,14 @@ func newProcessor(updateManager *taskupdate.Manager, pushStore push.ConfigStore,
 // A (nil, nil) result means the processing should continue.
 // A non-nill result becomes the result of the execution.
 func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.ProcessorResult, error) {
+	if event == nil { // the agent returned after auth-required
+		result, err := p.loadResult(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load result: %w", err)
+		}
+		return result, nil
+	}
+
 	version, processingErr := p.updateManager.Process(ctx, event)
 
 	if processingErr != nil && errors.Is(processingErr, taskstore.ErrConcurrentModification) {

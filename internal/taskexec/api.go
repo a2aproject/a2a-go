@@ -61,6 +61,7 @@ type Factory interface {
 // Processor implementation handles events produced during AgentExecution.
 type Processor interface {
 	// Process is called for each event produced by the started Execution. Called in a separate goroutine.
+	// A nil event means the agent returned after reporting [a2a.TaskStateAuthRequired].
 	Process(context.Context, a2a.Event) (*ProcessorResult, error)
 
 	// ProcessError is called when an execution error is encountered to try recovering from it.
@@ -82,6 +83,17 @@ type ProcessorResult struct {
 	// EventOverride can be returned by the processor to change which event gets emitted to subscribers.
 	// This is useful when we failed to process a malformed event and moved the task to failed state.
 	EventOverride a2a.Event
+}
+
+// IsAuthRequired returns true for a task or a status update in the [a2a.TaskStateAuthRequired] state.
+func IsAuthRequired(event a2a.Event) bool {
+	switch v := event.(type) {
+	case *a2a.Task:
+		return v.Status.State == a2a.TaskStateAuthRequired
+	case *a2a.TaskStatusUpdateEvent:
+		return v.Status.State == a2a.TaskStateAuthRequired
+	}
+	return false
 }
 
 // Executor implementation starts an agent execution.
