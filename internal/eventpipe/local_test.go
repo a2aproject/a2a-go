@@ -61,6 +61,9 @@ func TestLocalPipe_WriteCloseRead(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("Read() wrong result (-want +got) diff = %s", diff)
 	}
+	if _, err := pipe.Reader.Read(t.Context()); !errors.Is(err, eventqueue.ErrQueueClosed) {
+		t.Fatalf("pipe.Reader.Read() error = %v, want %v", err, eventqueue.ErrQueueClosed)
+	}
 }
 
 func TestLocalPipe_CloseWrite(t *testing.T) {

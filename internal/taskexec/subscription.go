@@ -104,7 +104,7 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 			if !yield(event, nil) {
 				return
 			}
-			if a2aevent.IsFinal(event) {
+			if a2aevent.IsTerminal(event) {
 				return
 			}
 		}
@@ -112,7 +112,9 @@ func (s *localSubscription) Events(ctx context.Context) iter.Seq2[a2a.Event, err
 		// execution might not report the terminal event in case execution context.Context was canceled which
 		// might happen if event producer panics.
 		log.Debug(ctx, "subscription waiting for execution promise")
-		yield(s.execution.result.wait(ctx))
+		if result, err := s.execution.result.wait(ctx); err != nil || a2aevent.IsTerminal(result) {
+			yield(result, err)
+		}
 	}
 }
 

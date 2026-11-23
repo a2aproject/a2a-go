@@ -66,10 +66,10 @@ There are two subscription types:
 
 **`localSubscription`** (used by `localManager`): reads from the eventqueue reader and yields events. Key behaviors:
 - Skips events with version <= previously emitted version (dedup for resubscription).
-- Returns immediately when it receives a final event (`IsFinal`).
-- **Fallback**: after the queue is closed (execution cleanup), it calls `execution.result.wait(ctx)` to yield the final result. This handles cases where the terminal event wasn't broadcast (e.g., producer panic).
+- Returns immediately when it receives a terminal event (`IsTerminal`: a `Message` or a terminal task state).
+- **Fallback**: after the queue is closed (execution cleanup), it calls `execution.result.wait(ctx)` to yield the final result. This handles cases where the terminal event wasn't broadcast (e.g., producer panic) and executions where the agent returned in a non-terminal state (the result is the latest task snapshot).
 
-**`remoteSubscription`** (used by `distributedManager`): similar but always starts with a task snapshot from the store and has **no promise fallback** since the execution may be on a different node. On queue read errors, it returns the error directly.
+**`remoteSubscription`** (used by `distributedManager`): similar but always starts with a task snapshot from the store and has **no promise fallback** since the execution may be on a different node. It stops on `IsFinal` (`IsTerminal` or `INPUT_REQUIRED`), because it can't observe a remote agent returning. On queue read errors, it returns the error directly.
 
 ## Local Mode
 
@@ -131,7 +131,7 @@ The detached context is critical: even if the client disconnects, the execution 
 1. Delegates to `updateManager.Process(ctx, event)` to validate and persist the event.
 2. Handles OCC errors from concurrent cancelation (see "OCC Error Handling in the Processor" below).
 3. Sends push notifications.
-4. Returns `ProcessorResult` with `ExecutionResult` set only for terminal events (`IsFinal`).
+4. Returns `ProcessorResult` with `ExecutionResult` set only for terminal events (`IsTerminal`). If the agent returns without one, the producer closes the pipe, the consumer drains it and `ProcessError(eventqueue.ErrQueueClosed)` returns the latest task as the result.
 
 `updateManager.Process` (taskupdate/manager.go:69) handles different event types:
 

@@ -177,21 +177,28 @@ func validateUpdate(task *a2a.Task, event a2a.Event) error {
 	return nil
 }
 
-// IsFinal returns true for events which end the agent execution.
+// IsFinal returns true for events after which the agent is expected to stop the execution:
+// the events reported by [IsTerminal] and events in [a2a.TaskStateInputRequired] state.
 func IsFinal(event a2a.Event) bool {
+	return IsTerminal(event) || taskState(event) == a2a.TaskStateInputRequired
+}
+
+// IsTerminal returns true for events which end the agent execution: an [a2a.Message] or
+// a task event in a terminal state.
+func IsTerminal(event a2a.Event) bool {
 	if _, ok := event.(*a2a.Message); ok {
 		return true
 	}
+	return taskState(event).Terminal()
+}
 
-	var state a2a.TaskState
+func taskState(event a2a.Event) a2a.TaskState {
 	switch v := event.(type) {
 	case *a2a.TaskStatusUpdateEvent:
-		state = v.Status.State
+		return v.Status.State
 	case *a2a.Task:
-		state = v.Status.State
+		return v.Status.State
 	default:
-		return false
+		return a2a.TaskStateUnspecified
 	}
-
-	return state.Terminal() || state == a2a.TaskStateInputRequired
 }

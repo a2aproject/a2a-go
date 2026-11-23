@@ -535,12 +535,12 @@ func shouldInterruptNonStreaming(req *a2a.SendMessageRequest, event a2a.Event) (
 		return taskInfo.TaskID, true
 	}
 
-	// Non-streaming clients need to be notified when auth is required
+	// Non-streaming clients need to be notified when the task is interrupted
 	switch v := event.(type) {
 	case *a2a.Task:
-		return v.ID, v.Status.State == a2a.TaskStateAuthRequired
+		return v.ID, v.Status.State == a2a.TaskStateAuthRequired || v.Status.State == a2a.TaskStateInputRequired
 	case *a2a.TaskStatusUpdateEvent:
-		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired
+		return v.TaskID, v.Status.State == a2a.TaskStateAuthRequired || v.Status.State == a2a.TaskStateInputRequired
 	}
 
 	return "", false

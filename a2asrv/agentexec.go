@@ -24,6 +24,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aevent"
+	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
 	"github.com/a2aproject/a2a-go/v2/internal/eventpipe"
@@ -47,7 +48,8 @@ import (
 // A2A server stops processing events after one of these events:
 //   - An [a2a.Message] with any payload.
 //   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] with a [a2a.TaskState.Terminal] equal to true.
-//   - An [a2a.Task] or [a2a.TaskStatusUpdateEvent] in [a2a.TaskStateInputRequired] state.
+//
+// Execution also ends when Execute returns, which is expected after an [a2a.TaskStateInputRequired] event.
 //
 // In general, the executor should not emit an error after the first event was emitted,
 // but an [a2a.TaskStatusUpdateEvent] with a failed state.
@@ -516,7 +518,7 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 		return p.setTaskFailed(ctx, err)
 	}
 
-	if !a2aevent.IsFinal(event) {
+	if !a2aevent.IsTerminal(event) {
 		return &taskexec.ProcessorResult{TaskVersion: version}, nil
 	}
 	result, err := p.loadResult(ctx)
@@ -529,6 +531,14 @@ func (p *processor) Process(ctx context.Context, event a2a.Event) (*taskexec.Pro
 // ProcessError implements taskexec.ProcessError interface method.
 // Here we can try handling producer or queue error by moving the task to failed state and making it the execution result.
 func (p *processor) ProcessError(ctx context.Context, cause error) (a2a.SendMessageResult, error) {
+	if errors.Is(cause, eventqueue.ErrQueueClosed) {
+		result, err := p.loadResult(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load result: %w: %w", err, cause)
+		}
+		return result.ExecutionResult, nil
+	}
+
 	if err := p.updateManager.SetTaskFailed(ctx); err != nil {
 		return nil, fmt.Errorf("set failed: %w: %w", err, cause)
 	}

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/eventqueue"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/limiter"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/taskstore"
@@ -286,7 +287,7 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 		handledEventQueue: eventBroadcast,
 		handleEventFn: func(ctx context.Context, e a2a.Event) (*ProcessorResult, error) {
 			result, err := processor.Process(ctx, e)
-			execution.exiting.Store(err != nil || result.ExecutionResult != nil)
+			execution.exiting.Store(err != nil || result.ExecutionResult != nil || a2aevent.IsFinal(e))
 			return result, err
 		},
 		handleErrorFn: processor.ProcessError,
@@ -295,7 +296,13 @@ func (m *localManager) handleExecution(ctx context.Context, execution *localExec
 	producerWriter := newActivityTrackingWriter(execution.pipe.Writer, tracker)
 	result, err := runProducerConsumer(
 		ctx,
-		func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) },
+		func(ctx context.Context) error {
+			if err := executor.Execute(ctx, producerWriter); err != nil {
+				return err
+			}
+			execution.pipe.Close()
+			return nil
+		},
 		handler.processEvents,
 		nil,
 		m.panicHandler,

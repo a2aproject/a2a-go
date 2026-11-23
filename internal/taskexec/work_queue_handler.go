@@ -95,7 +95,13 @@ func (b *workQueueHandler) handle(ctx context.Context, payload *workqueue.Payloa
 		if err != nil {
 			return nil, fmt.Errorf("executor setup failed: %w", err)
 		}
-		eventProducer = func(ctx context.Context) error { return executor.Execute(ctx, producerWriter) }
+		eventProducer = func(ctx context.Context) error {
+			if err := executor.Execute(ctx, producerWriter); err != nil {
+				return err
+			}
+			pipe.Close()
+			return nil
+		}
 		eventProcessor = processor
 		cleaner = localCleaner
 
