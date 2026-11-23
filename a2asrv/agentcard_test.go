@@ -177,6 +177,56 @@ func TestAgentCardHandler(t *testing.T) {
 	}
 }
 
+func TestAgentCardHandler_ContentNegotiation(t *testing.T) {
+	t.Parallel()
+	card := &a2a.AgentCard{Name: "Agent", Description: "Test"}
+	staticServer := httptest.NewServer(NewStaticAgentCardHandler(card))
+	t.Cleanup(staticServer.Close)
+	server := httptest.NewServer(NewAgentCardHandler(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
+		return card, nil
+	})))
+	t.Cleanup(server.Close)
+
+	testCases := []struct {
+		name            string
+		accept          []string
+		wantContentType string
+	}{
+		{name: "no accept", wantContentType: "application/json"},
+		{name: "json", accept: []string{"application/json"}, wantContentType: "application/json"},
+		{name: "wildcard", accept: []string{"*/*"}, wantContentType: "application/json"},
+		{name: "unsupported", accept: []string{"text/html"}, wantContentType: "application/json"},
+		{name: "agent card", accept: []string{"application/a2a-agent-card+json"}, wantContentType: "application/a2a-agent-card+json"},
+		{name: "agent card in list", accept: []string{"application/json, application/a2a-agent-card+json;q=0.9"}, wantContentType: "application/a2a-agent-card+json"},
+		{name: "agent card in second header", accept: []string{"application/json", "application/a2a-agent-card+json"}, wantContentType: "application/a2a-agent-card+json"},
+	}
+	for _, tc := range testCases {
+		for srvType, srv := range map[string]*httptest.Server{"dynamic": server, "static": staticServer} {
+			t.Run(tc.name+" "+srvType, func(t *testing.T) {
+				t.Parallel()
+				req, err := http.NewRequestWithContext(t.Context(), "GET", srv.URL, nil)
+				if err != nil {
+					t.Fatalf("http.NewRequestWithContext() error = %v", err)
+				}
+				for _, v := range tc.accept {
+					req.Header.Add("Accept", v)
+				}
+				resp, err := srv.Client().Do(req)
+				if err != nil {
+					t.Fatalf("client.Do(req) error = %v", err)
+				}
+				defer func() { _ = resp.Body.Close() }()
+				if got := resp.Header.Get("Content-Type"); got != tc.wantContentType {
+					t.Fatalf("resp.Header(Content-Type) = %q, want %q", got, tc.wantContentType)
+				}
+				if diff := cmp.Diff([]string{"Origin", "Accept"}, resp.Header.Values("Vary")); diff != "" {
+					t.Fatalf("resp.Header(Vary) wrong result (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
+
 func TestAgentCardHandler_ServerError(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(NewAgentCardHandler(AgentCardProducerFn(func(context.Context) (*a2a.AgentCard, error) {
@@ -264,7 +314,7 @@ func TestAgentCardHandler_VaryPreservesMiddlewareValues(t *testing.T) {
 	resp := get(t, srv, "")
 	defer func() { _ = resp.Body.Close() }()
 
-	want := []string{"Accept-Encoding", "Origin"}
+	want := []string{"Accept-Encoding", "Origin", "Accept"}
 	if diff := cmp.Diff(want, resp.Header.Values("Vary")); diff != "" {
 		t.Errorf("wrong Vary header values (-want +got) diff = %s", diff)
 	}

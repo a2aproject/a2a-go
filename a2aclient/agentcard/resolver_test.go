@@ -179,6 +179,40 @@ func TestResolver_CustomHeader(t *testing.T) {
 	}
 }
 
+func TestResolver_AcceptHeader(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name string
+		opts []ResolveOption
+		want []string
+	}{
+		{
+			name: "default",
+			want: []string{"application/a2a-agent-card+json, application/json"},
+		},
+		{
+			name: "overridden",
+			opts: []ResolveOption{WithRequestHeader("Accept", "application/json")},
+			want: []string{"application/json"},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			cardURL := mustServe(t, defaultAgentCardPath, mustMarshal(t, &a2a.AgentCard{}), func(req *http.Request) {
+				got = req.Header.Values("Accept")
+			})
+			if _, err := NewResolver(nil).Resolve(t.Context(), cardURL, tc.opts...); err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Resolve() wrong Accept header (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
 func TestResolver_MalformedJSON(t *testing.T) {
 	cardURL := mustServe(t, defaultAgentCardPath, []byte(`}{`), nil)
 
