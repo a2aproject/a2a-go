@@ -37,8 +37,8 @@ import (
 
 // Content-Type header values.
 const (
-	ContentJSON    = "application/json"
-	ContentA2AJSON = "application/a2a+json"
+	ContentJSON             = "application/json"
+	ContentA2AJSON          = "application/a2a+json"
 	ContentA2AAgentCardJSON = "application/a2a-agent-card+json"
 )
 
