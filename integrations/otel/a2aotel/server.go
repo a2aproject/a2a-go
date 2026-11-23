@@ -16,6 +16,7 @@ package a2aotel
 
 import (
 	"context"
+	"errors"
 	"iter"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -67,7 +68,11 @@ func (s *serverInstrumentation) wrapCall(next a2asrv.CallHandler) a2asrv.CallHan
 			}()
 
 			for payload, err := range next(spanCtx, callCtx, req) {
-				observer.observe(payload, err)
+				observedErr := err
+				if errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled) {
+					observedErr = nil
+				}
+				observer.observe(payload, observedErr)
 				if !yield(payload, err) {
 					return
 				}

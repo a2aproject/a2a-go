@@ -75,6 +75,8 @@ func TestServerPlugin_Spans(t *testing.T) {
 		"gen_ai.agent.description": "Forecasts the weather",
 		"gen_ai.agent.version":     "2.0.0",
 	}
+	disconnectDone := make(chan struct{})
+	t.Cleanup(func() { close(disconnectDone) })
 	testCases := []struct {
 		name      string
 		executor  a2asrv.AgentExecutor
@@ -173,6 +175,68 @@ func TestServerPlugin_Spans(t *testing.T) {
 				Name:   "SendMessage",
 				Kind:   trace.SpanKindServer,
 				Status: sdktrace.Status{Code: codes.Error, Description: "model unavailable"},
+			},
+		},
+		{
+			name:    "client disconnect",
+			wantErr: true,
+			executor: a2asrv.AgentExecutorFunc(func(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+				return func(yield func(a2a.Event, error) bool) {
+					if !yield(a2a.NewSubmittedTask(execCtx, execCtx.Message), nil) {
+						return
+					}
+					select {
+					case <-ctx.Done():
+					case <-disconnectDone:
+					}
+				}
+			}),
+			call: func(ctx context.Context, h a2asrv.RequestHandler) (a2a.TaskID, error) {
+				reqCtx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				var taskID a2a.TaskID
+				for event, err := range h.SendStreamingMessage(reqCtx, &a2a.SendMessageRequest{Message: newUserMessage("msg-1", "ctx-1")}) {
+					if err != nil {
+						return taskID, err
+					}
+					taskID = event.TaskInfo().TaskID
+					cancel()
+				}
+				return taskID, nil
+			},
+			wantAttrs: func(taskID a2a.TaskID) map[string]any {
+				return map[string]any{
+					"a2a.method.name":        "SendStreamingMessage",
+					"a2a.protocol.version":   "1.0",
+					"a2a.message.id":         "msg-1",
+					"a2a.task.id":            string(taskID),
+					"a2a.task.state":         "TASK_STATE_SUBMITTED",
+					"gen_ai.conversation.id": "ctx-1",
+				}
+			},
+			wantSpan: spanSummary{Name: "SendStreamingMessage", Kind: trace.SpanKindServer},
+		},
+		{
+			name:     "internal context canceled",
+			wantErr:  true,
+			executor: failingExecutor(context.Canceled),
+			call: func(ctx context.Context, h a2asrv.RequestHandler) (a2a.TaskID, error) {
+				_, err := h.SendMessage(ctx, &a2a.SendMessageRequest{Message: newUserMessage("msg-1", "ctx-1")})
+				return "", err
+			},
+			wantAttrs: func(a2a.TaskID) map[string]any {
+				return map[string]any{
+					"a2a.method.name":        "SendMessage",
+					"a2a.protocol.version":   "1.0",
+					"a2a.message.id":         "msg-1",
+					"gen_ai.conversation.id": "ctx-1",
+					"error.type":             "INTERNAL_ERROR",
+				}
+			},
+			wantSpan: spanSummary{
+				Name:   "SendMessage",
+				Kind:   trace.SpanKindServer,
+				Status: sdktrace.Status{Code: codes.Error, Description: "context canceled"},
 			},
 		},
 	}
