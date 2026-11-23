@@ -38,7 +38,10 @@ const (
 	genAIConversationIDKey           = attribute.Key("gen_ai.conversation.id")
 )
 
-const methodSendMessage = "SendMessage"
+const (
+	methodSendMessage   = "SendMessage"
+	maxReferenceTaskIDs = 100
+)
 
 // sdkMethodNames maps the SDK method names which differ from the a2a.method.name values.
 var sdkMethodNames = map[string]string{
@@ -86,8 +89,12 @@ func requestAttributes(method string, payload any) []attribute.KeyValue {
 			attrs = append(attrs, a2aMessageIDKey.String(msg.ID))
 		}
 		if len(msg.ReferenceTasks) > 0 {
-			ids := make([]string, len(msg.ReferenceTasks))
-			for i, id := range msg.ReferenceTasks {
+			refTasks := msg.ReferenceTasks
+			if len(refTasks) > maxReferenceTaskIDs {
+				refTasks = refTasks[:maxReferenceTaskIDs]
+			}
+			ids := make([]string, len(refTasks))
+			for i, id := range refTasks {
 				ids[i] = string(id)
 			}
 			attrs = append(attrs, a2aMessageReferenceTaskIDsKey.StringSlice(ids))

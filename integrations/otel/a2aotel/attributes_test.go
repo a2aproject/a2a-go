@@ -21,6 +21,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 )
 
@@ -95,6 +98,45 @@ func TestClientErrorType(t *testing.T) {
 			t.Parallel()
 			if got := clientErrorType(tc.err); got != tc.want {
 				t.Fatalf("clientErrorType(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRequestAttributes_ReferenceTaskIDsCap(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name    string
+		count   int
+		wantLen int
+	}{
+		{name: "at cap", count: maxReferenceTaskIDs, wantLen: maxReferenceTaskIDs},
+		{name: "above cap", count: maxReferenceTaskIDs + 25, wantLen: maxReferenceTaskIDs},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			refs := make([]a2a.TaskID, tc.count)
+			for i := range refs {
+				refs[i] = a2a.TaskID(fmt.Sprintf("task-%d", i))
+			}
+			want := make([]string, tc.wantLen)
+			for i := range want {
+				want[i] = fmt.Sprintf("task-%d", i)
+			}
+
+			msg := a2a.NewMessage(a2a.MessageRoleUser)
+			msg.ReferenceTasks = refs
+			attrs := requestAttributes(methodSendMessage, &a2a.SendMessageRequest{Message: msg})
+
+			var got []string
+			for _, attr := range attrs {
+				if attr.Key == a2aMessageReferenceTaskIDsKey && attr.Value.Type() == attribute.STRINGSLICE {
+					got = attr.Value.AsStringSlice()
+				}
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Fatalf("requestAttributes() wrong result (-want +got) diff = %s", diff)
 			}
 		})
 	}
