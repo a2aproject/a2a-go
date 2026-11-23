@@ -312,6 +312,10 @@ func (h *defaultRequestHandler) ListTasks(ctx context.Context, req *a2a.ListTask
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
+	// tasks is a required array: return [] rather than null when nothing matches.
+	if listResponse != nil && listResponse.Tasks == nil {
+		listResponse.Tasks = []*a2a.Task{}
+	}
 	return listResponse, nil
 }
 
