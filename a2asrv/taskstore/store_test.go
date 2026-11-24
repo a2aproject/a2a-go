@@ -286,7 +286,7 @@ func TestInMemoryTaskStore_List_WithFilters(t *testing.T) {
 				ID:     id1,
 				Status: a2a.TaskStatus{State: a2a.TaskStateWorking, Timestamp: &startTime},
 			}, {ID: id2}, {ID: id3}},
-			wantResponse: &a2a.ListTasksResponse{Tasks: []*a2a.Task{{ID: id3}, {ID: id2}}},
+			wantResponse: &a2a.ListTasksResponse{},
 		},
 		{
 			name:         "HistoryLength filter",
@@ -575,5 +575,47 @@ func TestInMemoryTaskStore_CrossTenantIsolation(t *testing.T) {
 	}
 	if stored.Task.ID != aliceTask.ID {
 		t.Fatalf("alice task ID mismatch")
+	}
+}
+
+func TestInMemoryTaskStore_List_StatusTimestampMissing(t *testing.T) {
+	t.Parallel()
+	cutoff := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	before, after := cutoff.Add(-time.Nanosecond), cutoff.Add(time.Nanosecond)
+	for _, tc := range []struct {
+		name    string
+		filter  *time.Time
+		wantIDs []a2a.TaskID
+	}{
+		{name: "unfiltered includes missing timestamps", wantIDs: []a2a.TaskID{"missing", "before", "boundary", "after"}},
+		{name: "filtered excludes missing timestamps and keeps boundary", filter: &cutoff, wantIDs: []a2a.TaskID{"boundary", "after"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := NewInMemory(&InMemoryStoreConfig{Authenticator: getAuthInfo})
+			mustCreate(t, store,
+				&a2a.Task{ID: "missing"},
+				&a2a.Task{ID: "before", Status: a2a.TaskStatus{Timestamp: &before}},
+				&a2a.Task{ID: "boundary", Status: a2a.TaskStatus{Timestamp: &cutoff}},
+				&a2a.Task{ID: "after", Status: a2a.TaskStatus{Timestamp: &after}},
+			)
+			got, err := store.List(t.Context(), &a2a.ListTasksRequest{StatusTimestampAfter: tc.filter})
+			if err != nil {
+				t.Fatalf("store.List() error = %v, want nil", err)
+			}
+			var gotIDs []a2a.TaskID
+			for _, task := range got.Tasks {
+				gotIDs = append(gotIDs, task.ID)
+			}
+			slices.Sort(gotIDs)
+			wantIDs := slices.Clone(tc.wantIDs)
+			slices.Sort(wantIDs)
+			if diff := cmp.Diff(wantIDs, gotIDs); diff != "" {
+				t.Fatalf("store.List() wrong result (-want +got) diff = %s", diff)
+			}
+			if got.TotalSize != len(tc.wantIDs) {
+				t.Fatalf("store.List().TotalSize = %d, want %d", got.TotalSize, len(tc.wantIDs))
+			}
+		})
 	}
 }
