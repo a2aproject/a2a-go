@@ -115,6 +115,10 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
   `ErrQueueClosed`, which a2asrv treats as already finished. Registration checks the cause
   under `Executor.mu`, so a canceled task never starts a prompt. In local mode the a2asrv also
   cancels the producer context, but in cluster mode `Cancel` may be the only signal.
+- If the `Execute` context ends during startup (including while queued for the context lock),
+  its iterator ends without a terminal task event, matching interruption during `pump`.
+  Embedders can then apply their interruption/shutdown handling. Explicit `Executor.Cancel`
+  still produces the queued task's `canceled` event through `startFailed`.
 - `Config.Prompt` replaces the message parts sent as the prompt; the task history keeps the
   caller's message, since `Execute` yields the submitted task from `execCtx.Message`.
 - The connection's read goroutine routes `session/update` and `session/request_permission` by

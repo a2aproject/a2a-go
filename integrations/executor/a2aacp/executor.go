@@ -405,7 +405,9 @@ func (e *Executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 		default:
 			var err error
 			if t, err = e.startTurn(ctx, execCtx, !e.cfg.RejectBusyContext); err != nil {
-				yield(e.startFailed(ctx, execCtx, err), nil)
+				if event := e.startFailed(ctx, execCtx, err); event != nil {
+					yield(event, nil)
+				}
 				return
 			}
 		}
@@ -566,20 +568,26 @@ func (e *Executor) interrupt(ctx context.Context, execCtx *a2asrv.ExecutorContex
 	e.cancelTurn(t)
 	next, err := e.startTurn(ctx, execCtx, true)
 	if err != nil {
-		yield(e.startFailed(ctx, execCtx, err), nil)
+		if event := e.startFailed(ctx, execCtx, err); event != nil {
+			yield(event, nil)
+		}
 		return nil, false
 	}
 	next.out = t.out
 	return next, true
 }
 
-// startFailed returns the event ending a task whose turn failed to start. A
-// canceled task ends with its own canceled event although [Executor.Cancel]
+// startFailed returns the event ending a task whose turn failed to start,
+// or nil when the execution context was interrupted. An explicitly canceled
+// task ends with its own canceled event although [Executor.Cancel]
 // emits one too: in cluster mode Cancel runs in a different execution, which
 // would otherwise wait for a terminal event forever.
 func (e *Executor) startFailed(ctx context.Context, execCtx *a2asrv.ExecutorContext, err error) a2a.Event {
 	if errors.Is(err, errTaskCanceled) {
 		return a2a.NewStatusUpdateEvent(execCtx, a2a.TaskStateCanceled, nil)
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	return e.fail(ctx, execCtx, err)
 }
