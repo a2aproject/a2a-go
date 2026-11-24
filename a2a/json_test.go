@@ -847,3 +847,175 @@ func TestTimestampJSONUnmarshal(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskView_Codec(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		view  TaskView
+		label string
+	}{
+		{TaskViewUnspecified, "TASK_VIEW_UNSPECIFIED"},
+		{TaskViewFull, "TASK_VIEW_FULL"},
+		{TaskViewMetadata, "TASK_VIEW_METADATA"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.label, func(t *testing.T) {
+			t.Parallel()
+
+			wantJSON := `"` + tc.label + `"`
+			if got := mustMarshal(t, tc.view); got != wantJSON {
+				t.Fatalf("json.Marshal() = %v, want %v", got, wantJSON)
+			}
+			var got TaskView
+			mustUnmarshal(t, []byte(wantJSON), &got)
+			if got != tc.view {
+				t.Fatalf("json.Unmarshal() = %v, want %v", got, tc.view)
+			}
+		})
+	}
+}
+
+func TestInt64FieldsJSONCodec(t *testing.T) {
+	t.Parallel()
+
+	gen0 := TaskGeneration(0)
+	gen5 := TaskGeneration(5)
+	msg := &Message{ID: "m1", Role: MessageRoleUser, Parts: ContentParts{NewTextPart("hi")}}
+
+	tests := []struct {
+		name       string
+		in         any
+		wantJSON   string
+		numberJSON string
+		newOut     func() any
+	}{
+		{
+			name: "Task with generation and timeline",
+			in: &Task{
+				ID:         "t1",
+				ContextID:  "c1",
+				Status:     TaskStatus{State: TaskStateWorking},
+				Generation: 5,
+				Timeline: []*TimelineEntry{
+					{Message: msg, Generation: 1},
+					{Status: &TaskStatus{State: TaskStateWorking}, Generation: 2},
+					{Generation: 3},
+				},
+			},
+			wantJSON:   `{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"generation":"5","timeline":[{"message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":"1"},{"status":{"state":"TASK_STATE_WORKING"},"generation":"2"},{"generation":"3"}]}`,
+			numberJSON: `{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"generation":5,"timeline":[{"message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":1},{"status":{"state":"TASK_STATE_WORKING"},"generation":2},{"futureEntry":{},"generation":3}]}`,
+			newOut:     func() any { return &Task{} },
+		},
+		{
+			name: "Artifact start and end generation",
+			in: &Artifact{
+				ID:              "a1",
+				Parts:           ContentParts{NewTextPart("out")},
+				StartGeneration: 2,
+				EndGeneration:   4,
+			},
+			wantJSON:   `{"artifactId":"a1","parts":[{"text":"out"}],"startGeneration":"2","endGeneration":"4"}`,
+			numberJSON: `{"artifactId":"a1","parts":[{"text":"out"}],"startGeneration":2,"endGeneration":4}`,
+			newOut:     func() any { return &Artifact{} },
+		},
+		{
+			name: "TaskStatusUpdateEvent generation",
+			in: &TaskStatusUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Status:     TaskStatus{State: TaskStateWorking},
+				Generation: 7,
+			},
+			wantJSON:   `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"taskId":"t1","generation":"7"}`,
+			numberJSON: `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"taskId":"t1","generation":7}`,
+			newOut:     func() any { return &TaskStatusUpdateEvent{} },
+		},
+		{
+			name: "TaskArtifactUpdateEvent generation",
+			in: &TaskArtifactUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Artifact:   &Artifact{ID: "a1", Parts: ContentParts{NewTextPart("out")}},
+				Generation: 8,
+			},
+			wantJSON:   `{"artifact":{"artifactId":"a1","parts":[{"text":"out"}]},"contextId":"c1","taskId":"t1","generation":"8"}`,
+			numberJSON: `{"artifact":{"artifactId":"a1","parts":[{"text":"out"}]},"contextId":"c1","taskId":"t1","generation":8}`,
+			newOut:     func() any { return &TaskArtifactUpdateEvent{} },
+		},
+		{
+			name: "TaskMessageUpdateEvent generation",
+			in: &TaskMessageUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Message:    msg,
+				Generation: 9,
+			},
+			wantJSON:   `{"contextId":"c1","taskId":"t1","message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":"9"}`,
+			numberJSON: `{"contextId":"c1","taskId":"t1","message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":9}`,
+			newOut:     func() any { return &TaskMessageUpdateEvent{} },
+		},
+		{
+			name:       "SendMessageConfig IfGenerationMatch zero",
+			in:         &SendMessageConfig{IfGenerationMatch: &gen0},
+			wantJSON:   `{"ifGenerationMatch":"0"}`,
+			numberJSON: `{"ifGenerationMatch":0}`,
+			newOut:     func() any { return &SendMessageConfig{} },
+		},
+		{
+			name:       "GetTaskRequest CurrentGeneration and View",
+			in:         &GetTaskRequest{ID: "t1", CurrentGeneration: &gen5, View: TaskViewMetadata},
+			wantJSON:   `{"id":"t1","currentGeneration":"5","view":"TASK_VIEW_METADATA"}`,
+			numberJSON: `{"id":"t1","currentGeneration":5,"view":"TASK_VIEW_METADATA"}`,
+			newOut:     func() any { return &GetTaskRequest{} },
+		},
+		{
+			name:       "SubscribeToTaskRequest LastSeenGeneration",
+			in:         &SubscribeToTaskRequest{ID: "t1", LastSeenGeneration: &gen5},
+			wantJSON:   `{"id":"t1","lastSeenGeneration":"5"}`,
+			numberJSON: `{"id":"t1","lastSeenGeneration":5}`,
+			newOut:     func() any { return &SubscribeToTaskRequest{} },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotJSON := mustMarshal(t, tc.in)
+			if gotJSON != tc.wantJSON {
+				t.Fatalf("json.Marshal() = %s, want %s", gotJSON, tc.wantJSON)
+			}
+
+			for _, raw := range []string{tc.wantJSON, tc.numberJSON} {
+				out := tc.newOut()
+				mustUnmarshal(t, []byte(raw), out)
+				if diff := cmp.Diff(tc.in, out); diff != "" {
+					t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", raw, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestNewSubmittedTask_GenerationAndTimeline(t *testing.T) {
+	t.Parallel()
+
+	msg := NewMessage(MessageRoleUser, NewTextPart("hello"))
+	got := NewSubmittedTask(TaskInfo{TaskID: "t1", ContextID: "c1"}, msg)
+	want := &Task{
+		ID:         "t1",
+		ContextID:  "c1",
+		Status:     TaskStatus{State: TaskStateSubmitted},
+		History:    []*Message{msg},
+		Generation: 1,
+		Timeline:   []*TimelineEntry{{Message: msg, Generation: 1}},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("NewSubmittedTask() wrong result (-want +got) diff = %s", diff)
+	}
+	if reason := ErrorReason(ErrTaskGenerationMismatch); reason != "TASK_GENERATION_MISMATCH" {
+		t.Fatalf("ErrorReason(ErrTaskGenerationMismatch) = %v, want %v", reason, "TASK_GENERATION_MISMATCH")
+	}
+}

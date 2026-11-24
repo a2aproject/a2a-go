@@ -826,6 +826,8 @@ func TestRequestHandler_SendMessage_PushNotifications(t *testing.T) {
 	wantResult := newTaskWithStatus(taskSeed, a2a.TaskStateCompleted, "Done!")
 	wantResult.Artifacts = []*a2a.Artifact{artifactEvent.Artifact}
 	wantResult.History = []*a2a.Message{input.Message, statusUpdate.Status.Message}
+	wantResult.Generation = 1
+	wantResult.Timeline = []*a2a.TimelineEntry{{Message: input.Message, Generation: 1}}
 	wantPushCount := len(agentEvents)
 
 	store := testutil.NewTestTaskStore().WithTasks(t, taskSeed)
