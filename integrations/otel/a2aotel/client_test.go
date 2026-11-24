@@ -89,6 +89,7 @@ func TestClientPlugin_Spans(t *testing.T) {
 				ServiceParams:   a2aclient.ServiceParams{"a2a-version": {"1.0"}},
 				Card:            card,
 				Payload: &a2a.SendMessageRequest{
+					Tenant:  "billing",
 					Config:  &a2a.SendMessageConfig{ReturnImmediately: true},
 					Message: &a2a.Message{ID: "msg-1", ReferenceTasks: []a2a.TaskID{"task-0"}},
 				},
@@ -179,28 +180,6 @@ func TestClientPlugin_Spans(t *testing.T) {
 				Attrs: map[string]any{
 					"a2a.method.name": "ListTaskPushNotificationConfigs",
 					"a2a.task.id":     "task-1",
-				},
-			},
-		},
-		{
-			name: "tenant propagated in the context",
-			ctx: func(ctx context.Context) context.Context {
-				return a2a.AttachTenant(ctx, "propagated")
-			},
-			req: a2aclient.Request{
-				Method:  "GetTask",
-				Payload: &a2a.GetTaskRequest{ID: "task-1"},
-			},
-			results: []callResult{{Payload: &a2a.Task{ID: "task-1", ContextID: "ctx-1", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}}},
-			want: spanSummary{
-				Name: "GetTask",
-				Kind: trace.SpanKindClient,
-				Attrs: map[string]any{
-					"a2a.method.name":        "GetTask",
-					"a2a.tenant":             "propagated",
-					"a2a.task.id":            "task-1",
-					"a2a.task.state":         "TASK_STATE_WORKING",
-					"gen_ai.conversation.id": "ctx-1",
 				},
 			},
 		},
@@ -327,5 +306,90 @@ func TestClientPlugin_EndsSpanWhenConsumerStops(t *testing.T) {
 	}}
 	if diff := cmp.Diff(want, summarizeAll(telemetry.recorder.Ended())); diff != "" {
 		t.Fatalf("WrapCall() wrong spans (-want +got) diff = %s", diff)
+	}
+}
+
+type fakeGetTaskTransport struct {
+	a2aclient.Transport
+}
+
+func (fakeGetTaskTransport) GetTask(_ context.Context, _ a2aclient.ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+	return &a2a.Task{ID: req.ID, ContextID: "ctx-1", Status: a2a.TaskStatus{State: a2a.TaskStateWorking}}, nil
+}
+
+func TestClientPlugin_Tenant(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name               string
+		endpointTenant     string
+		requestTenant      string
+		contextTenant      string
+		disablePropagation bool
+		wantTenant         string
+	}{
+		{
+			name:          "explicit request tenant",
+			requestTenant: "explicit",
+			contextTenant: "propagated",
+			wantTenant:    "explicit",
+		},
+		{
+			name:           "endpoint tenant without card",
+			endpointTenant: "billing",
+			contextTenant:  "propagated",
+			wantTenant:     "billing",
+		},
+		{
+			name:          "context tenant propagated",
+			contextTenant: "propagated",
+			wantTenant:    "propagated",
+		},
+		{
+			name:               "context tenant propagation disabled",
+			contextTenant:      "propagated",
+			disablePropagation: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			telemetry := newTestTelemetry(t)
+			iface := a2a.NewAgentInterface("https://agent.example.com/a2a", a2a.TransportProtocolJSONRPC)
+			iface.Tenant = tc.endpointTenant
+
+			client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface},
+				a2aclient.WithConfig(a2aclient.Config{DisableTenantPropagation: tc.disablePropagation}),
+				a2aclient.WithTransport(a2a.TransportProtocolJSONRPC, a2aclient.TransportFactoryFn(func(context.Context, *a2a.AgentCard, *a2a.AgentInterface) (a2aclient.Transport, error) {
+					return fakeGetTaskTransport{}, nil
+				})),
+				a2aclient.WithPlugins(NewClientPlugin(telemetry.clientOptions()...)),
+			)
+			if err != nil {
+				t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+			}
+
+			ctx := t.Context()
+			if tc.contextTenant != "" {
+				ctx = a2a.AttachTenant(ctx, tc.contextTenant)
+			}
+			if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{ID: "task-1", Tenant: tc.requestTenant}); err != nil {
+				t.Fatalf("client.GetTask() error = %v, want nil", err)
+			}
+
+			spans := summarizeAll(telemetry.recorder.Ended())
+			if len(spans) != 1 {
+				t.Fatalf("client.GetTask() recorded %d spans, want 1", len(spans))
+			}
+			gotTenant, hasTenant := spans[0].Attrs["a2a.tenant"]
+			if tc.wantTenant == "" {
+				if hasTenant {
+					t.Fatalf("a2a.tenant = %v, want omitted", gotTenant)
+				}
+				return
+			}
+			if gotTenant != tc.wantTenant {
+				t.Fatalf("a2a.tenant = %v, want %q", gotTenant, tc.wantTenant)
+			}
+		})
 	}
 }

@@ -53,7 +53,7 @@ func (c *clientInstrumentation) wrapCall(next a2aclient.CallHandler) a2aclient.C
 			method := methodName(req.Method)
 			spanCtx, span := c.tracer.Start(ctx, method,
 				trace.WithSpanKind(trace.SpanKindClient),
-				trace.WithAttributes(clientRequestAttributes(ctx, method, req)...),
+				trace.WithAttributes(clientRequestAttributes(method, req)...),
 			)
 			observer := newCallObserver(req.Payload)
 			defer func() {
@@ -72,35 +72,16 @@ func (c *clientInstrumentation) wrapCall(next a2aclient.CallHandler) a2aclient.C
 	}
 }
 
-func clientRequestAttributes(ctx context.Context, method string, req a2aclient.Request) []attribute.KeyValue {
+func clientRequestAttributes(method string, req a2aclient.Request) []attribute.KeyValue {
 	attrs := requestAttributes(method, req.Payload)
 	if versions := req.ServiceParams.Get(a2a.SvcParamVersion); len(versions) > 0 && versions[0] != "" {
 		attrs = append(attrs, a2aProtocolVersionKey.String(versions[0]))
 	}
-	if tenant := clientTenant(ctx, req); tenant != "" {
+	if tenant := requestTenant(req.Payload); tenant != "" {
 		attrs = append(attrs, a2aTenantKey.String(tenant))
 	}
 	attrs = append(attrs, agentAttributes(req.Card)...)
 	return append(attrs, serverAddressAttributes(req.BaseURL)...)
-}
-
-// clientTenant resolves the tenant the client transport sends, in the same order: the request
-// field, the tenant of the selected agent interface, the tenant propagated in the context.
-func clientTenant(ctx context.Context, req a2aclient.Request) string {
-	if tenant := requestTenant(req.Payload); tenant != "" {
-		return tenant
-	}
-	if req.Card != nil {
-		for _, iface := range req.Card.SupportedInterfaces {
-			if iface != nil && iface.URL == req.BaseURL && iface.ProtocolBinding == req.ProtocolBinding && iface.Tenant != "" {
-				return iface.Tenant
-			}
-		}
-	}
-	if tenant, ok := a2a.TenantFrom(ctx); ok {
-		return tenant
-	}
-	return ""
 }
 
 var defaultPorts = map[string]int{"http": 80, "https": 443}

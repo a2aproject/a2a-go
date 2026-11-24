@@ -741,10 +741,8 @@ func TestJSONRPCTransport_Tenant(t *testing.T) {
 	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolJSONRPC)
 	iface.Tenant = "my-tenant"
 	transport := NewJSONRPCTransport(iface.URL, nil)
-	// Apply decorator manually as we are bypassing the factory
-	transport = &tenantTransportDecorator{base: transport, tenant: iface.Tenant}
 
-	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{Tenant: iface.Tenant})
 	if err != nil {
 		t.Fatalf("ListTasks failed: %v", err)
 	}
