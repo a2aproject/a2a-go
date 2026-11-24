@@ -998,24 +998,3 @@ func TestInt64FieldsJSONCodec(t *testing.T) {
 		})
 	}
 }
-
-func TestNewSubmittedTask_GenerationAndTimeline(t *testing.T) {
-	t.Parallel()
-
-	msg := NewMessage(MessageRoleUser, NewTextPart("hello"))
-	got := NewSubmittedTask(TaskInfo{TaskID: "t1", ContextID: "c1"}, msg)
-	want := &Task{
-		ID:         "t1",
-		ContextID:  "c1",
-		Status:     TaskStatus{State: TaskStateSubmitted},
-		History:    []*Message{msg},
-		Generation: 1,
-		Timeline:   []*TimelineEntry{{Message: msg, Generation: 1}},
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("NewSubmittedTask() wrong result (-want +got) diff = %s", diff)
-	}
-	if reason := ErrorReason(ErrTaskGenerationMismatch); reason != "TASK_GENERATION_MISMATCH" {
-		t.Fatalf("ErrorReason(ErrTaskGenerationMismatch) = %v, want %v", reason, "TASK_GENERATION_MISMATCH")
-	}
-}

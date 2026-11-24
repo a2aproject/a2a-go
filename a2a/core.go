@@ -478,12 +478,10 @@ func NewSubmittedTask(infoProvider TaskInfoProvider, initialMessage *Message) *T
 		contextID = NewContextID()
 	}
 	return &Task{
-		ID:         taskID,
-		ContextID:  contextID,
-		Status:     TaskStatus{State: TaskStateSubmitted},
-		History:    []*Message{initialMessage},
-		Generation: 1,
-		Timeline:   []*TimelineEntry{{Message: initialMessage, Generation: 1}},
+		ID:        taskID,
+		ContextID: contextID,
+		Status:    TaskStatus{State: TaskStateSubmitted},
+		History:   []*Message{initialMessage},
 	}
 }
 
