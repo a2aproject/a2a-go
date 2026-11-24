@@ -371,19 +371,10 @@ func (g *TaskGeneration) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 	if len(b) >= 2 && b[0] == '"' && b[len(b)-1] == '"' {
-		var s string
-		if err := json.Unmarshal(b, &s); err != nil {
-			return err
-		}
-		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return err
-		}
-		*g = TaskGeneration(n)
-		return nil
+		b = b[1 : len(b)-1]
 	}
-	var n int64
-	if err := json.Unmarshal(b, &n); err != nil {
+	n, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
 		return err
 	}
 	*g = TaskGeneration(n)
