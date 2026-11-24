@@ -18,6 +18,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -384,5 +387,48 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
+	}
+}
+
+func TestFromErrorTransportCode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{
+			name:     "JSON-RPC without ErrorInfo",
+			err:      FromJSONRPCError(&Error{Code: -32001, Message: "task not found"}),
+			wantCode: "-32001",
+		},
+		{
+			name: "plain HTTP 503",
+			err: FromHTTPError(&http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Status:     "503 Service Unavailable",
+				Header:     http.Header{"Content-Type": {"text/plain"}},
+				Body:       io.NopCloser(strings.NewReader("unavailable")),
+			}),
+			wantCode: "503",
+		},
+		{
+			name: "HTTP with JSON-RPC error",
+			err: FromHTTPError(&http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Status:     "401 Unauthorized",
+				Header:     http.Header{"Content-Type": {ContentJSON}},
+				Body:       io.NopCloser(strings.NewReader(`{"jsonrpc":"2.0","error":{"code":-31401,"message":"unauthenticated"}}`)),
+			}),
+			wantCode: "-31401",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var a2aErr *a2a.Error
+			if !errors.As(tc.err, &a2aErr) || a2aErr.TransportCode != tc.wantCode {
+				t.Fatalf("TransportCode = %q, want %q", a2aErr.TransportCode, tc.wantCode)
+			}
+		})
 	}
 }

@@ -58,8 +58,13 @@ func methodName(sdkMethod string) string {
 	return sdkMethod
 }
 
-// clientErrorType returns the A2A error reason if err is an A2A protocol error, or the Go type name of err otherwise.
+// clientErrorType returns the raw transport code when a transport error response carried no A2A
+// error reason, the A2A error reason for A2A protocol errors, or the Go type name of err otherwise.
 func clientErrorType(err error) string {
+	var a2aErr *a2a.Error
+	if errors.As(err, &a2aErr) && a2aErr.TransportCode != "" {
+		return a2aErr.TransportCode
+	}
 	if isProtocolError(err) {
 		return a2a.ErrorReason(err)
 	}

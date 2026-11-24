@@ -83,6 +83,11 @@ func TestClientErrorType(t *testing.T) {
 			want: "INTERNAL_ERROR",
 		},
 		{
+			name: "a2a error with transport code",
+			err:  &a2a.Error{Err: a2a.ErrInternalError, Message: "service down", TransportCode: "UNAVAILABLE"},
+			want: "UNAVAILABLE",
+		},
+		{
 			name: "transport error",
 			err:  &url.Error{Op: "Post", URL: "http://localhost", Err: errors.New("connection refused")},
 			want: "*url.Error",
