@@ -23,7 +23,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestTenantTransport_RequestReuse(t *testing.T) {
+type tenantCaptureInterceptor struct {
+	PassthroughInterceptor
+	tenants []string
+}
+
+func (i *tenantCaptureInterceptor) Before(ctx context.Context, req *Request) (context.Context, any, error) {
+	if r, ok := req.Payload.(*a2a.GetTaskRequest); ok {
+		i.tenants = append(i.tenants, r.Tenant)
+	}
+	return ctx, nil, nil
+}
+
+func TestClient_TenantRequestReuse(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -42,13 +54,17 @@ func TestTenantTransport_RequestReuse(t *testing.T) {
 			t.Parallel()
 
 			var got []string
-			transport := &tenantTransportDecorator{
-				base: &testTransport{GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			interceptor := &tenantCaptureInterceptor{}
+			client := &Client{
+				config: Config{DisableTenantPropagation: tc.disablePropagation},
+				endpoint: a2a.AgentInterface{
+					Tenant: tc.interfaceTenant,
+				},
+				interceptors: []CallInterceptor{interceptor},
+				transport: &testTransport{GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
 					got = append(got, req.Tenant)
 					return &a2a.Task{ID: req.ID}, nil
 				}},
-				tenant: tc.interfaceTenant,
-				config: &Config{DisableTenantPropagation: tc.disablePropagation},
 			}
 			wantRequest := &a2a.GetTaskRequest{ID: "task-1", Tenant: tc.requestTenant}
 			request := *wantRequest
@@ -57,26 +73,29 @@ func TestTenantTransport_RequestReuse(t *testing.T) {
 				a2a.AttachTenant(t.Context(), "second"),
 				t.Context(),
 			} {
-				if _, err := transport.GetTask(ctx, nil, &request); err != nil {
-					t.Fatalf("GetTask() error = %v, want nil", err)
+				if _, err := client.GetTask(ctx, &request); err != nil {
+					t.Fatalf("client.GetTask() error = %v, want nil", err)
 				}
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Fatalf("GetTask() tenants wrong result (-want +got) diff = %s", diff)
+				t.Fatalf("client.GetTask() transport tenants wrong result (-want +got) diff = %s", diff)
+			}
+			if diff := cmp.Diff(tc.want, interceptor.tenants); diff != "" {
+				t.Fatalf("client.GetTask() interceptor tenants wrong result (-want +got) diff = %s", diff)
 			}
 			if diff := cmp.Diff(wantRequest, &request); diff != "" {
-				t.Fatalf("GetTask() request changed (-want +got) diff = %s", diff)
+				t.Fatalf("client.GetTask() request changed (-want +got) diff = %s", diff)
 			}
 		})
 	}
 }
 
-func TestTenantTransport_StreamingRequestReuse(t *testing.T) {
+func TestClient_TenantStreamingRequestReuse(t *testing.T) {
 	t.Parallel()
 
 	var got []string
-	transport := &tenantTransportDecorator{
-		base: &testTransport{SendStreamingMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
+	client := &Client{
+		transport: &testTransport{SendStreamingMessageFn: func(ctx context.Context, params ServiceParams, req *a2a.SendMessageRequest) iter.Seq2[a2a.Event, error] {
 			return func(yield func(a2a.Event, error) bool) {
 				got = append(got, req.Tenant)
 				yield(a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewTextPart("ok")), nil)
@@ -84,19 +103,19 @@ func TestTenantTransport_StreamingRequestReuse(t *testing.T) {
 		}},
 	}
 	request := &a2a.SendMessageRequest{Message: a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("hello"))}
-	first := transport.SendStreamingMessage(a2a.AttachTenant(t.Context(), "first"), nil, request)
-	second := transport.SendStreamingMessage(a2a.AttachTenant(t.Context(), "second"), nil, request)
+	first := client.SendStreamingMessage(a2a.AttachTenant(t.Context(), "first"), request)
+	second := client.SendStreamingMessage(a2a.AttachTenant(t.Context(), "second"), request)
 	for _, stream := range []iter.Seq2[a2a.Event, error]{second, first} {
 		for _, err := range stream {
 			if err != nil {
-				t.Fatalf("SendStreamingMessage() error = %v, want nil", err)
+				t.Fatalf("client.SendStreamingMessage() error = %v, want nil", err)
 			}
 		}
 	}
 	if diff := cmp.Diff([]string{"second", "first"}, got); diff != "" {
-		t.Fatalf("SendStreamingMessage() tenants wrong result (-want +got) diff = %s", diff)
+		t.Fatalf("client.SendStreamingMessage() tenants wrong result (-want +got) diff = %s", diff)
 	}
 	if request.Tenant != "" {
-		t.Fatalf("SendStreamingMessage() request.Tenant = %q, want empty", request.Tenant)
+		t.Fatalf("client.SendStreamingMessage() request.Tenant = %q, want empty", request.Tenant)
 	}
 }

@@ -264,9 +264,14 @@ func TestFactory_TransportSelection(t *testing.T) {
 }
 
 func TestFactory_Tenant(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
+	var gotTenant string
 	factory := NewFactory(WithTransport(a2a.TransportProtocolJSONRPC, TransportFactoryFn(func(ctx context.Context, card *a2a.AgentCard, iface *a2a.AgentInterface) (Transport, error) {
-		return unimplementedTransport{}, nil
+		return &testTransport{GetTaskFn: func(ctx context.Context, params ServiceParams, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			gotTenant = req.Tenant
+			return &a2a.Task{ID: req.ID}, nil
+		}}, nil
 	})))
 	iface := a2a.NewAgentInterface("https://agent.com", a2a.TransportProtocolJSONRPC)
 	iface.Tenant = "my-tenant"
@@ -275,14 +280,10 @@ func TestFactory_Tenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateFromEndpoints() error = %v, want nil", err)
 	}
-	decorator, ok := client.transport.(*tenantTransportDecorator)
-	if !ok {
-		t.Fatalf("client.transport type = %T, want *tenantTransportDecorator", client.transport)
+	if _, err := client.GetTask(ctx, &a2a.GetTaskRequest{ID: "task-1"}); err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
 	}
-	if decorator.tenant != "my-tenant" {
-		t.Errorf("decorator.tenant = %q, want %q", decorator.tenant, "my-tenant")
-	}
-	if _, ok := decorator.base.(unimplementedTransport); !ok {
-		t.Errorf("decorator.base type = %T, want unimplementedTransport", decorator.base)
+	if gotTenant != "my-tenant" {
+		t.Fatalf("client.GetTask() tenant = %q, want %q", gotTenant, "my-tenant")
 	}
 }

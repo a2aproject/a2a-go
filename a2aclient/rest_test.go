@@ -584,12 +584,8 @@ func TestRESTTransport_Tenant(t *testing.T) {
 	}))
 	defer server.Close()
 	transport := newRESTTransport(t, server)
-	transport = &tenantTransportDecorator{
-		base:   transport,
-		tenant: "my-tenant",
-	}
 
-	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{})
+	_, err := transport.ListTasks(t.Context(), ServiceParams{}, &a2a.ListTasksRequest{Tenant: "my-tenant"})
 	if err != nil {
 		t.Fatalf("ListTasks failed: %v", err)
 	}

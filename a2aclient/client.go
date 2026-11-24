@@ -191,7 +191,64 @@ func (c *Client) newRequest(ctx context.Context, method string, payload any) Req
 		ProtocolBinding: c.endpoint.ProtocolBinding,
 		ServiceParams:   serviceParams,
 		Card:            c.card.Load(),
-		Payload:         payload,
+		Payload:         c.withTenant(ctx, payload),
+	}
+}
+
+func (c *Client) resolveTenant(ctx context.Context, current string) string {
+	if current != "" {
+		return current
+	}
+	if c.endpoint.Tenant != "" {
+		return c.endpoint.Tenant
+	}
+	if c.config.DisableTenantPropagation {
+		return ""
+	}
+	if tenant, ok := a2a.TenantFrom(ctx); ok {
+		return tenant
+	}
+	return ""
+}
+
+func setTenant[T any](c *Client, ctx context.Context, req *T, tenantField func(*T) *string) *T {
+	if req == nil {
+		return nil
+	}
+	current := *tenantField(req)
+	resolved := c.resolveTenant(ctx, current)
+	if resolved == current {
+		return req
+	}
+	reqCopy := *req
+	*tenantField(&reqCopy) = resolved
+	return &reqCopy
+}
+
+func (c *Client) withTenant(ctx context.Context, payload any) any {
+	switch req := payload.(type) {
+	case *a2a.GetTaskRequest:
+		return setTenant(c, ctx, req, func(r *a2a.GetTaskRequest) *string { return &r.Tenant })
+	case *a2a.ListTasksRequest:
+		return setTenant(c, ctx, req, func(r *a2a.ListTasksRequest) *string { return &r.Tenant })
+	case *a2a.CancelTaskRequest:
+		return setTenant(c, ctx, req, func(r *a2a.CancelTaskRequest) *string { return &r.Tenant })
+	case *a2a.SendMessageRequest:
+		return setTenant(c, ctx, req, func(r *a2a.SendMessageRequest) *string { return &r.Tenant })
+	case *a2a.SubscribeToTaskRequest:
+		return setTenant(c, ctx, req, func(r *a2a.SubscribeToTaskRequest) *string { return &r.Tenant })
+	case *a2a.GetTaskPushConfigRequest:
+		return setTenant(c, ctx, req, func(r *a2a.GetTaskPushConfigRequest) *string { return &r.Tenant })
+	case *a2a.ListTaskPushConfigRequest:
+		return setTenant(c, ctx, req, func(r *a2a.ListTaskPushConfigRequest) *string { return &r.Tenant })
+	case *a2a.PushConfig:
+		return setTenant(c, ctx, req, func(r *a2a.PushConfig) *string { return &r.Tenant })
+	case *a2a.DeleteTaskPushConfigRequest:
+		return setTenant(c, ctx, req, func(r *a2a.DeleteTaskPushConfigRequest) *string { return &r.Tenant })
+	case *a2a.GetExtendedAgentCardRequest:
+		return setTenant(c, ctx, req, func(r *a2a.GetExtendedAgentCardRequest) *string { return &r.Tenant })
+	default:
+		return payload
 	}
 }
 
