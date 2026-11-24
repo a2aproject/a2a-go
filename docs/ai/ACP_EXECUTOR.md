@@ -203,8 +203,9 @@ message. Measured with opencode and `google/gemini-flash-latest` through a2a-ser
 
 Text and data parts become text blocks, file URLs resource links. Raw files become `image` /
 `audio` blocks only when the agent advertises `promptCapabilities.image` / `audio`. With
-`embeddedContext`, text-like files (`text/*`, JSON, XML, YAML, scripts, `+json`/`+xml`
-suffixes; untyped or `application/octet-stream` files that sniff as UTF-8 text) are embedded
+`embeddedContext`, SVG files are embedded as UTF-8 `text/plain` source rather than image
+blocks, including when `image` is advertised. Other text-like files (`text/*`, JSON, XML, YAML,
+scripts, `+json`/`+xml` suffixes; untyped or `application/octet-stream` files that sniff as UTF-8 text) are embedded
 as text resources and PDFs as blob resources. Every other file fails the task before the
 prompt is sent, because opencode stores embedded resources in the session and replays them
 to the model on every later turn: a type the model rejects (e.g. Gemini and

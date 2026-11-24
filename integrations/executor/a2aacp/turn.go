@@ -364,7 +364,7 @@ func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps acp.PromptCapabilities) (ac
 	base := mediaType(mimeType)
 	refuse := fmt.Errorf("the agent does not accept %s attachments", mimeType)
 	switch {
-	case strings.HasPrefix(base, "image/") && caps.Image:
+	case strings.HasPrefix(base, "image/") && base != "image/svg+xml" && caps.Image:
 		return acp.ContentBlock{Type: "image", Data: encoded, MimeType: mimeType}, nil
 	case strings.HasPrefix(base, "audio/") && caps.Audio:
 		return acp.ContentBlock{Type: "audio", Data: encoded, MimeType: mimeType}, nil
@@ -382,6 +382,10 @@ func rawBlock(i int, p *a2a.Part, data a2a.Raw, caps acp.PromptCapabilities) (ac
 			return acp.ContentBlock{}, fmt.Errorf("the agent does not accept %s attachments which are not UTF-8", mimeType)
 		}
 		res.Text = string(data)
+		if base == "image/svg+xml" {
+			// Keep SVG as source text for agents backed by raster-only models.
+			res.MimeType = "text/plain"
+		}
 	case base == "application/pdf":
 		res.Blob = encoded
 	default:
