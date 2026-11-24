@@ -66,7 +66,12 @@ func (h *jsonrpcHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	var payload jsonrpc.ServerRequest
 	if err := utils.DecodeJSON(req.Body, &payload); err != nil {
-		h.writeJSONRPCError(ctx, rw, handleUnmarshalError(err), nil)
+		requestErr := a2a.ErrParseError
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			requestErr = a2a.ErrInvalidRequest
+		}
+		h.writeJSONRPCError(ctx, rw, requestErr, nil)
 		return
 	}
 
