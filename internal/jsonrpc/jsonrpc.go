@@ -23,6 +23,7 @@ import (
 	"maps"
 	"mime"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -123,9 +124,15 @@ func FromJSONRPCError(e *Error) error {
 
 	var nonErrorInfoDetails []*errordetails.Typed
 	firstStruct := true
+	hasA2AReason := false
 
 	for _, d := range typedDetails {
 		if d.TypeURL == errordetails.ErrorInfoType {
+			domain, _ := d.Value["domain"].(string)
+			reason, _ := d.Value["reason"].(string)
+			if domain == a2a.ProtocolDomain && reason != "" {
+				hasA2AReason = true
+			}
 			if rawMeta, ok := d.Value["metadata"]; ok {
 				m, ok := utils.ToStringMap(rawMeta)
 				if ok {
@@ -139,6 +146,9 @@ func FromJSONRPCError(e *Error) error {
 			}
 			nonErrorInfoDetails = append(nonErrorInfoDetails, d)
 		}
+	}
+	if !hasA2AReason {
+		result.TransportCode = strconv.Itoa(e.Code)
 	}
 	result.TypedDetails = append(result.TypedDetails, nonErrorInfoDetails...)
 	return result
@@ -154,6 +164,7 @@ const maxErrorBodyBytes = 1 << 20
 func FromHTTPError(resp *http.Response) error {
 	params := utils.ServiceParamsFromHeader(resp.Header)
 	statusErr := a2a.NewError(errorFromHTTPStatus(resp.StatusCode), fmt.Sprintf("unexpected HTTP status: %s", resp.Status))
+	statusErr.TransportCode = strconv.Itoa(resp.StatusCode)
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || mediaType != ContentJSON {
 		return utils.WithServiceParams(statusErr, params)

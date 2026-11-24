@@ -991,6 +991,33 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 	}
 }
 
+func TestFromRESTErrorTransportCode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		statusCode  int
+		contentType string
+		body        string
+		wantCode    string
+	}{
+		{name: "plain HTTP 503", statusCode: http.StatusServiceUnavailable, contentType: "text/plain", body: "unavailable", wantCode: "503"},
+		{name: "gateway JSON without A2A ErrorInfo", statusCode: http.StatusUnauthorized, contentType: ContentJSON, body: `{"error":{"code":401,"message":"denied"}}`, wantCode: "401"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			resp := &http.Response{
+				StatusCode: tc.statusCode,
+				Header:     http.Header{"Content-Type": {tc.contentType}},
+				Body:       io.NopCloser(strings.NewReader(tc.body)),
+			}
+			var a2aErr *a2a.Error
+			if got := FromRESTError(resp); !errors.As(got, &a2aErr) || a2aErr.TransportCode != tc.wantCode {
+				t.Fatalf("FromRESTError() TransportCode = %q, want %q", a2aErr.TransportCode, tc.wantCode)
+			}
+		})
+	}
+}
+
 func TestParseStreamResponse_UnknownPayload(t *testing.T) {
 	t.Parallel()
 

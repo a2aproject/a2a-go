@@ -125,6 +125,11 @@ type Error struct {
 	// with lowercase keys. It is nil when the error was not received from a server.
 	// Servers don't send it.
 	ServiceParams map[string][]string
+	// TransportCode holds the raw status or error code of a transport error response that
+	// did not carry an A2A ErrorInfo reason (for example "503" for HTTP, "UNAVAILABLE" for
+	// gRPC, or "-32001" for JSON-RPC). It is empty when the error carries an A2A error
+	// reason or was not received from a server. Servers don't send it.
+	TransportCode string
 }
 
 // ErrorInfo returns the ErrorInfo typed detail. If not present, it will be created.

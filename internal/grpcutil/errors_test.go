@@ -24,6 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -466,5 +467,34 @@ func TestFromGRPCErrorWithMetadata(t *testing.T) {
 	got = FromGRPCErrorWithMetadata(status.Error(codes.Internal, "boom"))
 	if !errors.As(got, &a2aErr) || a2aErr.ServiceParams != nil {
 		t.Fatalf("FromGRPCErrorWithMetadata() without metadata = %#v, want nil ServiceParams", got)
+	}
+}
+
+func TestFromGRPCErrorTransportCode(t *testing.T) {
+	t.Parallel()
+
+	withOtherDomain, err := status.New(codes.PermissionDenied, "denied").WithDetails(&errdetails.ErrorInfo{
+		Reason: "IAM_DENIED",
+		Domain: "googleapis.com",
+	})
+	if err != nil {
+		t.Fatalf("status.WithDetails() error = %v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{name: "without ErrorInfo", err: status.Error(codes.Unavailable, "down"), wantCode: "UNAVAILABLE"},
+		{name: "non-A2A ErrorInfo domain", err: withOtherDomain.Err(), wantCode: "PERMISSION_DENIED"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var a2aErr *a2a.Error
+			if got := FromGRPCError(tc.err); !errors.As(got, &a2aErr) || a2aErr.TransportCode != tc.wantCode {
+				t.Fatalf("FromGRPCError() TransportCode = %q, want %q", a2aErr.TransportCode, tc.wantCode)
+			}
+		})
 	}
 }

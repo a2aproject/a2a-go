@@ -25,6 +25,7 @@ import (
 	"maps"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,6 +243,10 @@ type ErrorBodyJSON struct {
 
 // ConvertErrorBody converts a parsed google.rpc.Status error body into an a2a error.
 func ConvertErrorBody(body *ErrorBodyJSON) error {
+	return convertErrorBody(body, 0)
+}
+
+func convertErrorBody(body *ErrorBodyJSON, httpStatus int) error {
 	var reason string
 	var typedDetails []*errordetails.Typed
 	errInfoMeta := make(map[string]string)
@@ -287,6 +292,13 @@ func ConvertErrorBody(body *ErrorBodyJSON) error {
 	}
 
 	out := a2a.NewError(baseErr, body.Message)
+	if reason == "" {
+		if code := httpStatus; code != 0 {
+			out.TransportCode = strconv.Itoa(code)
+		} else if body.Code != 0 {
+			out.TransportCode = strconv.Itoa(body.Code)
+		}
+	}
 	if len(errInfoMeta) > 0 {
 		out = out.WithErrorInfoMeta(errInfoMeta)
 	}
@@ -328,10 +340,13 @@ func fromRESTError(resp *http.Response) error {
 		}
 		err := utils.DecodeJSON(bytes.NewReader(body), &parsed)
 		if err == nil && parsed.Error != nil {
-			return ConvertErrorBody(parsed.Error)
+			return convertErrorBody(parsed.Error, resp.StatusCode)
 		}
 		if errors.Is(err, utils.ErrTrailingData) {
-			return &a2a.Error{Err: fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError)}
+			return &a2a.Error{
+				Err:           fmt.Errorf("failed to decode error response: %w: %w", err, a2a.ErrParseError),
+				TransportCode: strconv.Itoa(resp.StatusCode),
+			}
 		}
 	}
 	return fromHTTPStatus(resp.StatusCode, body, readErr)
@@ -365,7 +380,9 @@ func fromHTTPStatus(statusCode int, body []byte, readErr error) error {
 	if readErr != nil {
 		msg += fmt.Sprintf(" (failed to read response body: %v)", readErr)
 	}
-	return a2a.NewError(errorFromHTTPStatus(statusCode, a2a.ErrServerError), msg)
+	out := a2a.NewError(errorFromHTTPStatus(statusCode, a2a.ErrServerError), msg)
+	out.TransportCode = strconv.Itoa(statusCode)
+	return out
 }
 
 // streamResponse is the JSON shape of a REST SSE stream response.
