@@ -24,7 +24,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/errordetails"
 	"github.com/a2aproject/a2a-go/v2/internal/utils"
 	"github.com/a2aproject/a2a-go/v2/log"
-	"google.golang.org/genproto/googleapis/rpc/code"
+	rpccode "google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -228,7 +228,7 @@ func FromGRPCError(err error) error {
 
 	errOut := a2a.NewError(baseErr, s.Message())
 	if reason == "" {
-		errOut.TransportCode = code.Code(s.Code()).String()
+		errOut.TransportCode = rpccode.Code(s.Code()).String()
 	}
 	if len(errInfoMeta) > 0 {
 		errOut = errOut.WithErrorInfoMeta(errInfoMeta)
