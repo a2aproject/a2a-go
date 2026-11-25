@@ -49,6 +49,9 @@ type Signer struct {
 
 // NewSigner creates a Signer using the provided configuration.
 func NewSigner(config SignerConfig) (*Signer, error) {
+	if config.PrivateKey == nil {
+		return nil, fmt.Errorf("nil private key")
+	}
 	if config.Algorithm == "" {
 		alg, err := inferAlgorithm(config.PrivateKey)
 		if err != nil {
@@ -56,7 +59,7 @@ func NewSigner(config SignerConfig) (*Signer, error) {
 		}
 		config.Algorithm = alg
 	}
-	hash, err := algToHash(config.Algorithm)
+	hash, err := validateKeyAlgorithm(config.PrivateKey.Public(), config.Algorithm)
 	if err != nil {
 		return nil, err
 	}
