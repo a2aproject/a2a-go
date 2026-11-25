@@ -22,6 +22,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -456,5 +457,211 @@ func TestSignerSignRejectsInvalidUTF8(t *testing.T) {
 				t.Fatalf("Signer.Sign() error = %v, want %q", err, want)
 			}
 		})
+	}
+}
+
+func TestNewSigner_KeyAlgorithmValidation(t *testing.T) {
+	t.Parallel()
+
+	p256Key := mustGenerateECDSAKey(t, elliptic.P256())
+	p384Key := mustGenerateECDSAKey(t, elliptic.P384())
+	p521Key := mustGenerateECDSAKey(t, elliptic.P521())
+	rsaKey := mustGenerateRSAKey(t)
+	edKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+
+	tests := []struct {
+		name    string
+		key     crypto.Signer
+		alg     string
+		wantErr bool
+	}{
+		{name: "p256 inferred", key: p256Key},
+		{name: "p256 ES256", key: p256Key, alg: "ES256"},
+		{name: "p384 inferred", key: p384Key},
+		{name: "p384 ES384", key: p384Key, alg: "ES384"},
+		{name: "p521 inferred", key: p521Key},
+		{name: "p521 ES512", key: p521Key, alg: "ES512"},
+		{name: "rsa inferred", key: rsaKey},
+		{name: "rsa RS256", key: rsaKey, alg: "RS256"},
+		{name: "rsa RS384", key: rsaKey, alg: "RS384"},
+		{name: "rsa RS512", key: rsaKey, alg: "RS512"},
+		{name: "ed25519 inferred", key: edKey},
+		{name: "ed25519 EdDSA", key: edKey, alg: "EdDSA"},
+		{name: "nil key inferred", wantErr: true},
+		{name: "nil key explicit", alg: "ES256", wantErr: true},
+		{name: "p256 with ES384", key: p256Key, alg: "ES384", wantErr: true},
+		{name: "p256 with ES512", key: p256Key, alg: "ES512", wantErr: true},
+		{name: "p256 with RS256", key: p256Key, alg: "RS256", wantErr: true},
+		{name: "p256 with EdDSA", key: p256Key, alg: "EdDSA", wantErr: true},
+		{name: "p384 with ES256", key: p384Key, alg: "ES256", wantErr: true},
+		{name: "p521 with ES384", key: p521Key, alg: "ES384", wantErr: true},
+		{name: "rsa with ES256", key: rsaKey, alg: "ES256", wantErr: true},
+		{name: "rsa with EdDSA", key: rsaKey, alg: "EdDSA", wantErr: true},
+		{name: "ed25519 with RS256", key: edKey, alg: "RS256", wantErr: true},
+		{name: "ed25519 with ES256", key: edKey, alg: "ES256", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewSigner(SignerConfig{PrivateKey: tt.key, KeyID: "kid", Algorithm: tt.alg})
+			if tt.wantErr && err == nil {
+				t.Fatalf("NewSigner() error = nil, want non-nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("NewSigner() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestVerifier_KeyAlgorithmBinding(t *testing.T) {
+	t.Parallel()
+
+	raw := mustMarshalCard(t, makeTestCard())
+	p256Key := mustGenerateECDSAKey(t, elliptic.P256())
+	p384Key := mustGenerateECDSAKey(t, elliptic.P384())
+	p521Key := mustGenerateECDSAKey(t, elliptic.P521())
+	rsaKey := mustGenerateRSAKey(t)
+	edKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+
+	t.Run("valid round trips", func(t *testing.T) {
+		t.Parallel()
+		valid := []struct {
+			name string
+			key  crypto.Signer
+			alg  string
+		}{
+			{name: "ES256", key: p256Key, alg: "ES256"},
+			{name: "ES384", key: p384Key, alg: "ES384"},
+			{name: "ES512", key: p521Key, alg: "ES512"},
+			{name: "RS256", key: rsaKey, alg: "RS256"},
+			{name: "RS384", key: rsaKey, alg: "RS384"},
+			{name: "RS512", key: rsaKey, alg: "RS512"},
+			{name: "EdDSA", key: edKey, alg: "EdDSA"},
+		}
+		for _, tc := range valid {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				signer := mustNewSigner(t, SignerConfig{PrivateKey: tc.key, KeyID: "kid", Algorithm: tc.alg})
+				sig := mustSign(t, signer, raw)
+				if err := staticVerifier(tc.key.Public()).Verify(t.Context(), raw, sig); err != nil {
+					t.Fatalf("Verifier.Verify() error = %v, want nil", err)
+				}
+			})
+		}
+	})
+
+	t.Run("mismatched algorithm rejected", func(t *testing.T) {
+		t.Parallel()
+		mismatches := []struct {
+			name string
+			key  crypto.Signer
+			alg  string
+			hash crypto.Hash
+		}{
+			{name: "ed25519 with RS256", key: edKey, alg: "RS256", hash: 0},
+			{name: "ed25519 with ES256", key: edKey, alg: "ES256", hash: 0},
+			{name: "p384 with ES256", key: p384Key, alg: "ES256", hash: crypto.SHA256},
+			{name: "p256 with ES384", key: p256Key, alg: "ES384", hash: crypto.SHA384},
+			{name: "p256 with RS256", key: p256Key, alg: "RS256", hash: crypto.SHA256},
+			{name: "rsa with ES256", key: rsaKey, alg: "ES256", hash: crypto.SHA256},
+			{name: "rsa with ES384", key: rsaKey, alg: "ES384", hash: crypto.SHA384},
+		}
+		for _, tc := range mismatches {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				sig := mustSignRawWithHeader(t, tc.key, tc.alg, tc.hash, raw)
+				err := staticVerifier(tc.key.Public()).Verify(t.Context(), raw, sig)
+				if !errors.Is(err, ErrVerificationFailed) {
+					t.Fatalf("Verifier.Verify() error = %v, want %v", err, ErrVerificationFailed)
+				}
+			})
+		}
+	})
+
+	t.Run("malformed public keys rejected", func(t *testing.T) {
+		t.Parallel()
+		validEdSig := mustSign(t, mustNewSigner(t, SignerConfig{PrivateKey: edKey, KeyID: "kid", Algorithm: "EdDSA"}), raw)
+		validECSig := mustSign(t, mustNewSigner(t, SignerConfig{PrivateKey: p256Key, KeyID: "kid", Algorithm: "ES256"}), raw)
+		validRSASig := mustSign(t, mustNewSigner(t, SignerConfig{PrivateKey: rsaKey, KeyID: "kid", Algorithm: "RS256"}), raw)
+
+		cases := []struct {
+			name string
+			pub  crypto.PublicKey
+			sig  *a2a.AgentCardSignature
+		}{
+			{name: "empty ed25519 public key", pub: ed25519.PublicKey{}, sig: validEdSig},
+			{name: "nil ecdsa public key", pub: (*ecdsa.PublicKey)(nil), sig: validECSig},
+			{name: "nil rsa public key", pub: (*rsa.PublicKey)(nil), sig: validRSASig},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				err := staticVerifier(tc.pub).Verify(t.Context(), raw, tc.sig)
+				if !errors.Is(err, ErrVerificationFailed) {
+					t.Fatalf("Verifier.Verify() error = %v, want %v", err, ErrVerificationFailed)
+				}
+			})
+		}
+	})
+}
+
+func mustGenerateECDSAKey(t *testing.T, curve elliptic.Curve) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey() error = %v, want nil", err)
+	}
+	return key
+}
+
+func mustGenerateRSAKey(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey() error = %v, want nil", err)
+	}
+	return key
+}
+
+func mustSignRawWithHeader(t *testing.T, key crypto.Signer, alg string, hash crypto.Hash, raw json.RawMessage) *a2a.AgentCardSignature {
+	t.Helper()
+	payload, err := canonicalizeJSON(raw)
+	if err != nil {
+		t.Fatalf("canonicalizeJSON() error = %v, want nil", err)
+	}
+	protectedJSON, err := json.Marshal(map[string]any{
+		"alg": alg,
+		"kid": "kid",
+		"typ": "JOSE",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v, want nil", err)
+	}
+	protectedB64 := base64.RawURLEncoding.EncodeToString(protectedJSON)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
+	signingInput := []byte(protectedB64 + "." + payloadB64)
+
+	var sigBytes []byte
+	if hash == 0 {
+		sigBytes, err = key.Sign(rand.Reader, signingInput, crypto.Hash(0))
+	} else {
+		h := hash.New()
+		h.Write(signingInput)
+		sigBytes, err = key.Sign(rand.Reader, h.Sum(nil), hash)
+	}
+	if err != nil {
+		t.Fatalf("key.Sign() error = %v, want nil", err)
+	}
+	if pub, ok := key.Public().(*ecdsa.PublicKey); ok {
+		sigBytes, err = marshalECDSASignature(sigBytes, pub.Curve)
+		if err != nil {
+			t.Fatalf("marshalECDSASignature() error = %v, want nil", err)
+		}
+	}
+	return &a2a.AgentCardSignature{
+		Protected: protectedB64,
+		Signature: base64.RawURLEncoding.EncodeToString(sigBytes),
 	}
 }

@@ -96,7 +96,7 @@ func (v *Verifier) Verify(ctx context.Context, raw json.RawMessage, sig *a2a.Age
 		return fmt.Errorf("%w: invalid signature encoding: %v", ErrVerificationFailed, err)
 	}
 
-	hash, err := algToHash(alg)
+	hash, err := validateKeyAlgorithm(pubKey, alg)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrVerificationFailed, err)
 	}
