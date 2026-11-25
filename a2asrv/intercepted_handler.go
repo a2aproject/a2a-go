@@ -167,11 +167,13 @@ func interceptCalls(h *InterceptedHandler, next CallHandler) CallHandler {
 			ctx, req := ctx, req
 			for i, interceptor := range h.Interceptors {
 				localCtx, result, err := interceptor.Before(ctx, callCtx, &req)
+				if localCtx != nil {
+					ctx = localCtx
+				}
 				if err != nil || result != nil {
 					yield(interceptAfter(ctx, h.Interceptors[:i+1], callCtx, result, err))
 					return
 				}
-				ctx = localCtx
 			}
 			for payload, err := range next(ctx, callCtx, req) {
 				if !yield(interceptAfter(ctx, h.Interceptors, callCtx, payload, err)) {

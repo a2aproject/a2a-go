@@ -864,3 +864,107 @@ func TestInterceptedHandler_InterceptorChangesDoNotLeakIntoRetries(t *testing.T)
 		})
 	}
 }
+
+func TestInterceptedHandler_ShortCircuitPreservesContext(t *testing.T) {
+	t.Parallel()
+
+	type outerKey struct{}
+	type innerKey struct{}
+	wantErr := errors.New("rejected")
+	earlyTask := &a2a.Task{ID: "cached-task"}
+
+	testCases := []struct {
+		name         string
+		innerBefore  func(ctx context.Context) (context.Context, any, error)
+		wantOuterVal string
+		wantInnerVal string
+		wantErr      error
+	}{
+		{
+			name: "early result preserves derived context",
+			innerBefore: func(ctx context.Context) (context.Context, any, error) {
+				return context.WithValue(ctx, innerKey{}, "inner-val"), earlyTask, nil
+			},
+			wantOuterVal: "outer-val",
+			wantInnerVal: "inner-val",
+		},
+		{
+			name: "error rejection preserves derived context",
+			innerBefore: func(ctx context.Context) (context.Context, any, error) {
+				return context.WithValue(ctx, innerKey{}, "inner-val"), nil, wantErr
+			},
+			wantOuterVal: "outer-val",
+			wantInnerVal: "inner-val",
+			wantErr:      wantErr,
+		},
+		{
+			name: "nil context on error keeps prior context",
+			innerBefore: func(context.Context) (context.Context, any, error) {
+				return nil, nil, wantErr
+			},
+			wantOuterVal: "outer-val",
+			wantErr:      wantErr,
+		},
+	}
+
+	for _, tc := range testCases {
+		for _, streaming := range []bool{false, true} {
+			mode := "unary"
+			if streaming {
+				mode = "streaming"
+			}
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				var gotOuterAfter, gotInnerAfter [2]string
+				outer := &mockInterceptor{
+					beforeFn: func(ctx context.Context, _ *CallContext, _ *Request) (context.Context, any, error) {
+						return context.WithValue(ctx, outerKey{}, "outer-val"), nil, nil
+					},
+					afterFn: func(ctx context.Context, _ *CallContext, _ *Response) error {
+						gotOuterAfter[0], _ = ctx.Value(outerKey{}).(string)
+						gotOuterAfter[1], _ = ctx.Value(innerKey{}).(string)
+						return nil
+					},
+				}
+				inner := &mockInterceptor{
+					beforeFn: func(ctx context.Context, _ *CallContext, _ *Request) (context.Context, any, error) {
+						return tc.innerBefore(ctx)
+					},
+					afterFn: func(ctx context.Context, _ *CallContext, _ *Response) error {
+						gotInnerAfter[0], _ = ctx.Value(outerKey{}).(string)
+						gotInnerAfter[1], _ = ctx.Value(innerKey{}).(string)
+						return nil
+					},
+				}
+
+				delegate := &mockHandler{}
+				handler := &InterceptedHandler{
+					Handler:      delegate,
+					Interceptors: []CallInterceptor{outer, inner},
+				}
+
+				var err error
+				if streaming {
+					_, err = handleSingleItemSeq(handler.SendStreamingMessage(t.Context(), &a2a.SendMessageRequest{}))
+				} else {
+					_, err = handler.GetTask(t.Context(), &a2a.GetTaskRequest{ID: "task-1"})
+				}
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("handler call error = %v, want %v", err, tc.wantErr)
+				}
+				if delegate.lastCallContext != nil {
+					t.Fatalf("delegate handler was invoked on short-circuit")
+				}
+
+				want := [2]string{tc.wantOuterVal, tc.wantInnerVal}
+				if diff := cmp.Diff(want, gotInnerAfter); diff != "" {
+					t.Fatalf("inner After() context values wrong (-want +got) diff = %s", diff)
+				}
+				if diff := cmp.Diff(want, gotOuterAfter); diff != "" {
+					t.Fatalf("outer After() context values wrong (-want +got) diff = %s", diff)
+				}
+			})
+		}
+	}
+}
