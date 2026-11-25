@@ -393,33 +393,6 @@ const (
 	TaskViewMetadata TaskView = "TASK_VIEW_METADATA"
 )
 
-// String implements fmt.Stringer.
-func (tv TaskView) String() string {
-	if tv == TaskViewUnspecified {
-		return "TASK_VIEW_UNSPECIFIED"
-	}
-	return string(tv)
-}
-
-// MarshalJSON implements json.Marshaler.
-func (tv TaskView) MarshalJSON() ([]byte, error) {
-	return json.Marshal(tv.String())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (tv *TaskView) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	if s == "TASK_VIEW_UNSPECIFIED" {
-		*tv = TaskViewUnspecified
-		return nil
-	}
-	*tv = TaskView(s)
-	return nil
-}
-
 // TimelineEntry is a generation-ordered entry of Task.Timeline. Exactly one of Message or Status is set.
 // Both are nil for entry kinds unknown to this SDK version. Such entries are kept and skipped by consumers (v1.1).
 type TimelineEntry struct {

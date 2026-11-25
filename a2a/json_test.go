@@ -848,35 +848,6 @@ func TestTimestampJSONUnmarshal(t *testing.T) {
 	}
 }
 
-func TestTaskView_Codec(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		view  TaskView
-		label string
-	}{
-		{TaskViewUnspecified, "TASK_VIEW_UNSPECIFIED"},
-		{TaskViewFull, "TASK_VIEW_FULL"},
-		{TaskViewMetadata, "TASK_VIEW_METADATA"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.label, func(t *testing.T) {
-			t.Parallel()
-
-			wantJSON := `"` + tc.label + `"`
-			if got := mustMarshal(t, tc.view); got != wantJSON {
-				t.Fatalf("json.Marshal() = %v, want %v", got, wantJSON)
-			}
-			var got TaskView
-			mustUnmarshal(t, []byte(wantJSON), &got)
-			if got != tc.view {
-				t.Fatalf("json.Unmarshal() = %v, want %v", got, tc.view)
-			}
-		})
-	}
-}
-
 func TestInt64FieldsJSONCodec(t *testing.T) {
 	t.Parallel()
 
