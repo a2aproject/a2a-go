@@ -39,14 +39,16 @@ func TestProcessor_Process(t *testing.T) {
 	textPart := a2a.NewTextPart("is it safe?")
 
 	tests := []struct {
-		name        string
-		untagged    UntaggedPolicy
-		requestID   string
-		parts       []*a2a.Part
-		wantOutcome Outcome
-		wantInput   any
-		wantErrors  bool
-		wantContext []*a2a.Part
+		name           string
+		untagged       UntaggedPolicy
+		requestID      string
+		answerFrom     AnswerSource
+		parts          []*a2a.Part
+		wantOutcome    Outcome
+		wantInput      any
+		wantAnsweredBy AnswerSource
+		wantErrors     bool
+		wantContext    []*a2a.Part
 	}{
 		{
 			name:        "tagged valid input",
@@ -142,13 +144,93 @@ func TestProcessor_Process(t *testing.T) {
 			wantOutcome: OutcomeMissing,
 			wantContext: []*a2a.Part{a2a.NewDataPart(validInput)},
 		},
+		{
+			name:           "answer source recorded when not required",
+			requestID:      "req-1",
+			parts:          []*a2a.Part{mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourceAgent, validInput))},
+			wantOutcome:    OutcomeAccepted,
+			wantInput:      validInput,
+			wantAnsweredBy: AnswerSourceAgent,
+		},
+		{
+			name:           "person required and answered by person",
+			requestID:      "req-1",
+			answerFrom:     AnswerSourcePerson,
+			parts:          []*a2a.Part{mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, validInput))},
+			wantOutcome:    OutcomeAccepted,
+			wantInput:      validInput,
+			wantAnsweredBy: AnswerSourcePerson,
+		},
+		{
+			name:           "person required and answered by agent",
+			requestID:      "req-1",
+			answerFrom:     AnswerSourcePerson,
+			parts:          []*a2a.Part{textPart, mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourceAgent, validInput))},
+			wantOutcome:    OutcomeWrongAnswerSource,
+			wantAnsweredBy: AnswerSourceAgent,
+			wantContext:    []*a2a.Part{textPart},
+		},
+		{
+			name:           "person required and answered by policy",
+			requestID:      "req-1",
+			answerFrom:     AnswerSourcePerson,
+			parts:          []*a2a.Part{mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePolicy, validInput))},
+			wantOutcome:    OutcomeWrongAnswerSource,
+			wantAnsweredBy: AnswerSourcePolicy,
+		},
+		{
+			name:        "person required and answer source not stated",
+			requestID:   "req-1",
+			answerFrom:  AnswerSourcePerson,
+			parts:       []*a2a.Part{mustPart(t)(NewResponsePart("req-1", validInput))},
+			wantOutcome: OutcomeWrongAnswerSource,
+		},
+		{
+			name:        "person required and input not validated when the source is wrong",
+			requestID:   "req-1",
+			answerFrom:  AnswerSourcePerson,
+			parts:       []*a2a.Part{mustPart(t)(NewResponsePart("req-1", invalidInput))},
+			wantOutcome: OutcomeWrongAnswerSource,
+		},
+		{
+			name:        "person required and mismatched id",
+			requestID:   "req-2",
+			answerFrom:  AnswerSourcePerson,
+			parts:       []*a2a.Part{mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, validInput))},
+			wantOutcome: OutcomeIDMismatch,
+		},
+		{
+			name:       "person required and multiple tagged inputs",
+			requestID:  "req-1",
+			answerFrom: AnswerSourcePerson,
+			parts: []*a2a.Part{
+				mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, validInput)),
+				mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, validInput)),
+			},
+			wantOutcome: OutcomeMultipleInputs,
+		},
+		{
+			name:           "unknown required source is not satisfied by a person",
+			requestID:      "req-1",
+			answerFrom:     AnswerSource("notary"),
+			parts:          []*a2a.Part{mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, validInput))},
+			wantOutcome:    OutcomeWrongAnswerSource,
+			wantAnsweredBy: AnswerSourcePerson,
+		},
+		{
+			name:        "person required and untagged input",
+			answerFrom:  AnswerSourcePerson,
+			parts:       []*a2a.Part{a2a.NewDataPart(validInput)},
+			wantOutcome: OutcomeMissing,
+			wantContext: []*a2a.Part{a2a.NewDataPart(validInput)},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := &Request{ID: tc.requestID, Schema: newTestSchema()}
+			req := &Request{ID: tc.requestID, Schema: newTestSchema(), AnswerFrom: tc.answerFrom}
 			msg := jsonRoundTrip(t, a2a.NewMessage(a2a.MessageRoleUser, tc.parts...))
 			processor := &Processor{Untagged: tc.untagged}
 
@@ -162,6 +244,9 @@ func TestProcessor_Process(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantInput, got.Input); diff != "" {
 				t.Fatalf("Processor.Process() wrong input (-want +got) diff = %s", diff)
+			}
+			if got.AnsweredBy != tc.wantAnsweredBy {
+				t.Fatalf("Processor.Process() answered by = %q, want %q", got.AnsweredBy, tc.wantAnsweredBy)
 			}
 			if gotErrors := got.Errors != nil; gotErrors != tc.wantErrors {
 				t.Fatalf("Processor.Process() errors = %+v, want errors %v", got.Errors, tc.wantErrors)

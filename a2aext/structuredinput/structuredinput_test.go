@@ -160,6 +160,31 @@ func TestGetPartMetadata(t *testing.T) {
 			wantOK:   true,
 		},
 		{
+			name:     "structured input with answer source",
+			part:     mustPart(t)(NewResponsePartAnsweredBy("req-1", AnswerSourcePerson, "data")),
+			wantMeta: PartMetadata{Type: PartTypeStructuredInput, ID: "req-1", AnsweredBy: AnswerSourcePerson},
+			wantOK:   true,
+		},
+		{
+			name: "relayed input schema",
+			part: mustPart(t)((&Request{ID: "req-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "airline"}).Part()),
+			wantMeta: PartMetadata{
+				Type:       PartTypeInputSchema,
+				ID:         "req-1",
+				AnswerFrom: AnswerSourcePerson,
+				AskedBy:    "airline",
+			},
+			wantOK: true,
+		},
+		{
+			name: "answer source properties which are not strings",
+			part: &a2a.Part{Content: a2a.Data{Value: "hi"}, Metadata: map[string]any{URI: map[string]any{
+				"type": "structured_input", "answered_by": true, "answer_from": 1, "asked_by": []any{},
+			}}},
+			wantMeta: PartMetadata{Type: PartTypeStructuredInput},
+			wantOK:   true,
+		},
+		{
 			name: "untagged data part",
 			part: a2a.NewDataPart(map[string]any{"foo": "bar"}),
 		},

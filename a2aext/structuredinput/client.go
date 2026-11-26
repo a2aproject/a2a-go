@@ -21,11 +21,17 @@ import (
 // NewResponse creates an input-required response. The message consists of the
 // provided parts followed by the structured input part.
 func NewResponse(info a2a.TaskInfoProvider, req *Request, data any, parts ...*a2a.Part) (*a2a.Message, error) {
+	return NewResponseAnsweredBy(info, req, "", data, parts...)
+}
+
+// NewResponseAnsweredBy creates an input-required response which states who provided the input.
+// [AnswerSourcePerson] must be used only if a person gave or confirmed the input for this request.
+func NewResponseAnsweredBy(info a2a.TaskInfoProvider, req *Request, answeredBy AnswerSource, data any, parts ...*a2a.Part) (*a2a.Message, error) {
 	var id string
 	if req != nil {
 		id = req.ID
 	}
-	inputPart, err := NewResponsePart(id, data)
+	inputPart, err := NewResponsePartAnsweredBy(id, answeredBy, data)
 	if err != nil {
 		return nil, err
 	}

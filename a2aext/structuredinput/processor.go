@@ -52,6 +52,9 @@ const (
 	OutcomeIDMismatch
 	// OutcomeMultipleInputs means the request contained more than one structured input part.
 	OutcomeMultipleInputs
+	// OutcomeWrongAnswerSource means the input request requires an answer source and
+	// the structured input did not state that this source provided it.
+	OutcomeWrongAnswerSource
 )
 
 // String implements [fmt.Stringer].
@@ -67,6 +70,8 @@ func (o Outcome) String() string {
 		return "id mismatch"
 	case OutcomeMultipleInputs:
 		return "multiple inputs"
+	case OutcomeWrongAnswerSource:
+		return "wrong answer source"
 	default:
 		return fmt.Sprintf("Outcome(%d)", int(o))
 	}
@@ -80,6 +85,9 @@ type ProcessorResult struct {
 	Outcome Outcome
 	// Input is the structured input. It is set only if Outcome is [OutcomeAccepted].
 	Input any
+	// AnsweredBy is the source the client stated for the structured input. It is empty for untagged
+	// input and for clients which do not state a source. The value is a claim and is not verified.
+	AnsweredBy AnswerSource
 	// Errors are the validation errors which should be reported to the client.
 	Errors *ValidationOutput
 	// Context contains the request parts which were not interpreted as the structured input,
@@ -164,6 +172,11 @@ func (p *Processor) Process(ctx context.Context, req *Request, msg *a2a.Message)
 			result.Outcome = OutcomeIDMismatch
 			return result, nil
 		}
+		result.AnsweredBy = meta.AnsweredBy
+		if req.AnswerFrom != "" && meta.AnsweredBy != req.AnswerFrom {
+			result.Outcome = OutcomeWrongAnswerSource
+			return result, nil
+		}
 		output, err := p.validate(ctx, req, tagged[0].Data())
 		if err != nil {
 			return nil, err
@@ -221,6 +234,9 @@ func (p *Processor) processUntagged(ctx context.Context, result *ProcessorResult
 }
 
 func (p *Processor) acceptsUntagged(req *Request) bool {
+	if req.AnswerFrom != "" {
+		return false
+	}
 	switch p.Untagged {
 	case UntaggedAccept:
 		return true
