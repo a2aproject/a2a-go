@@ -29,7 +29,8 @@ type Agent interface {
 	// the agent's output, writes go to its input, and Close stops the agent.
 	// key is the agent key of [PoolConfig.Key], or "" without a pool. The
 	// agent must outlive ctx, which ends once the agent is initialized. Return
-	// an error wrapping [ErrNotOwner] if another node runs the agent of the key.
+	// an error wrapping [ErrNotOwner] if another node runs the agent of the key
+	// or [ErrAgentBusy] if an external capacity limit temporarily prevents startup.
 	Start(ctx context.Context, key string) (io.ReadWriteCloser, error)
 }
 
