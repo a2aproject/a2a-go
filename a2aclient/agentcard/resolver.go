@@ -87,6 +87,8 @@ type resolveRequest struct {
 // If the provided URL contains a non-root path, it is fetched directly as the complete agent card URL.
 // A file:// URL is supported to load the card from the local file system, in which case
 // the card is read directly from the referenced path and request headers are ignored.
+// Unless overridden via [WithRequestHeader], the request announces the SDK protocol
+// version in the A2A-Version header.
 func (r *Resolver) Resolve(ctx context.Context, baseURL string, opts ...ResolveOption) (*a2a.AgentCard, error) {
 	reqSpec := &resolveRequest{headers: make(map[string]string)}
 	for _, o := range opts {
@@ -154,6 +156,11 @@ func fetchCard(ctx context.Context, client *http.Client, reqURL string, headers 
 	}
 	for h, val := range headers {
 		req.Header.Add(h, val)
+	}
+	// Servers with v0.3 compatibility pick the card format based on this header and assume v0.3 when it is missing.
+	// A caller-provided A2A-Version header (via WithRequestHeader) takes precedence.
+	if len(req.Header.Values(a2a.SvcParamVersion)) == 0 {
+		req.Header.Set(a2a.SvcParamVersion, string(a2a.Version))
 	}
 
 	resp, err := client.Do(req)
