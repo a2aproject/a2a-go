@@ -56,12 +56,31 @@ const (
 	PartTypeStructuredInput PartType = "structured_input"
 )
 
+// AnswerSource names who provides the structured input for an input request.
+type AnswerSource string
+
+const (
+	// AnswerSourcePerson means a person gave or confirmed the input for the input request.
+	AnswerSourcePerson AnswerSource = "person"
+	// AnswerSourcePolicy means a rule configured by a person in advance produced the input.
+	AnswerSourcePolicy AnswerSource = "policy"
+	// AnswerSourceAgent means the client produced the input itself, for example with a model.
+	AnswerSourceAgent AnswerSource = "agent"
+)
+
 // PartMetadata is the extension metadata attached to structured input parts.
 type PartMetadata struct {
 	// Type is the role of the part.
 	Type PartType
 	// ID is the optional identifier of the input request.
 	ID string
+	// AnswerFrom is set on input schema parts when the agent requires the input from a specific source.
+	AnswerFrom AnswerSource
+	// AskedBy is set on input schema parts relayed by an intermediary and names the agent which issued the request.
+	AskedBy string
+	// AnsweredBy is set on structured input parts and states who provided the input.
+	// It is a claim made by the client and is not verified.
+	AnsweredBy AnswerSource
 }
 
 // NewExtension creates an agent card extension declaration which advertises
@@ -113,20 +132,22 @@ func GetPartMetadata(part *a2a.Part) (PartMetadata, bool) {
 		return PartMetadata{}, false
 	}
 	id, _ := raw["id"].(string)
-	return PartMetadata{Type: PartType(partType), ID: id}, true
+	answerFrom, _ := raw["answer_from"].(string)
+	askedBy, _ := raw["asked_by"].(string)
+	answeredBy, _ := raw["answered_by"].(string)
+	return PartMetadata{
+		Type:       PartType(partType),
+		ID:         id,
+		AnswerFrom: AnswerSource(answerFrom),
+		AskedBy:    askedBy,
+		AnsweredBy: AnswerSource(answeredBy),
+	}, true
 }
 
 // NewSchemaPart creates a part requesting input matching the provided schema.
 func NewSchemaPart(id string, schema *jsonschema.Schema) (*a2a.Part, error) {
-	if schema == nil {
-		return nil, fmt.Errorf("schema is required")
-	}
-	part, err := newPart(PartMetadata{Type: PartTypeInputSchema, ID: id}, schema)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input schema part: %w", err)
-	}
-	part.MediaType = SchemaMediaType
-	return part, nil
+	req := &Request{ID: id, Schema: schema}
+	return req.Part()
 }
 
 // NewValidationErrorPart creates a part reporting validation errors to the client.
@@ -143,7 +164,13 @@ func NewValidationErrorPart(output *ValidationOutput) (*a2a.Part, error) {
 
 // NewResponsePart creates a part carrying data provided in response to the input request with the provided ID.
 func NewResponsePart(id string, data any) (*a2a.Part, error) {
-	part, err := newPart(PartMetadata{Type: PartTypeStructuredInput, ID: id}, data)
+	return NewResponsePartAnsweredBy(id, "", data)
+}
+
+// NewResponsePartAnsweredBy creates a part carrying data provided by the given source in response
+// to the input request with the provided ID.
+func NewResponsePartAnsweredBy(id string, answeredBy AnswerSource, data any) (*a2a.Part, error) {
+	part, err := newPart(PartMetadata{Type: PartTypeStructuredInput, ID: id, AnsweredBy: answeredBy}, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create structured input part: %w", err)
 	}
@@ -160,6 +187,15 @@ func newPart(meta PartMetadata, value any) (*a2a.Part, error) {
 	partMeta := map[string]any{"type": string(meta.Type)}
 	if meta.ID != "" {
 		partMeta["id"] = meta.ID
+	}
+	if meta.AnswerFrom != "" {
+		partMeta["answer_from"] = string(meta.AnswerFrom)
+	}
+	if meta.AskedBy != "" {
+		partMeta["asked_by"] = meta.AskedBy
+	}
+	if meta.AnsweredBy != "" {
+		partMeta["answered_by"] = string(meta.AnsweredBy)
 	}
 	part := a2a.NewDataPart(data)
 	part.SetMeta(URI, partMeta)

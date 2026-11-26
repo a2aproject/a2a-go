@@ -77,5 +77,37 @@ Respond to an input request:
 		return err
 	}
 	result, err := client.SendMessage(ctx, &a2a.SendMessageRequest{Message: resp})
+
+# Answer source
+
+An agent can require that a person provides the input, for example to approve a deployment:
+
+	req := &structuredinput.Request{ID: "deploy-1", Schema: schema, AnswerFrom: structuredinput.AnswerSourcePerson}
+
+[Processor] then accepts only input which the client marked as provided by a person and reports
+[OutcomeWrongAnswerSource] otherwise. A client states the source using [NewResponseAnsweredBy]:
+
+	resp, err := structuredinput.NewResponseAnsweredBy(task, req, structuredinput.AnswerSourcePerson, approval)
+
+The source is a claim made by the client. The agent cannot verify it.
+
+# Intermediary
+
+An agent which receives an input request from an agent it called, and cannot reach a person itself,
+relays the request to its own client with [RelayRequest] instead of answering it:
+
+	received, err := structuredinput.PendingRequest(calledTask)
+	...
+	relayed, err := structuredinput.RelayRequest(received, "relay-1", "deploy")
+	...
+	event, err := structuredinput.NewRequestEvent(execCtx, relayed, parts...)
+
+When its client answers, it passes the accepted input and its source on with [RelayResponse]:
+
+	result, err := processor.Process(ctx, relayed, execCtx.Message)
+	...
+	answer, err := structuredinput.RelayResponse(calledTask, received, result)
+	...
+	_, err = calledAgent.SendMessage(ctx, &a2a.SendMessageRequest{Message: answer})
 */
 package structuredinput

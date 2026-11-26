@@ -30,11 +30,26 @@ type Request struct {
 	ID string
 	// Schema defines the expected structure of the input.
 	Schema *jsonschema.Schema
+	// AnswerFrom is optional. When set, only input which the client states was provided by this
+	// source is accepted. [AnswerSourcePerson] is the only value defined by the extension.
+	AnswerFrom AnswerSource
+	// AskedBy is optional. It is set on a request relayed by an intermediary and names
+	// the agent which issued the original request.
+	AskedBy string
 }
 
 // Part creates a part carrying the input request.
 func (r *Request) Part() (*a2a.Part, error) {
-	return NewSchemaPart(r.ID, r.Schema)
+	if r.Schema == nil {
+		return nil, fmt.Errorf("schema is required")
+	}
+	meta := PartMetadata{Type: PartTypeInputSchema, ID: r.ID, AnswerFrom: r.AnswerFrom, AskedBy: r.AskedBy}
+	part, err := newPart(meta, r.Schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create input schema part: %w", err)
+	}
+	part.MediaType = SchemaMediaType
+	return part, nil
 }
 
 // NewRequestEvent creates an input-required status update event with a message consisting
@@ -60,7 +75,7 @@ func ParseRequest(msg *a2a.Message) (*Request, error) {
 	if err := fromJSONValue(part.Data(), &schema); err != nil {
 		return nil, fmt.Errorf("invalid input schema: %w", err)
 	}
-	return &Request{ID: meta.ID, Schema: &schema}, nil
+	return &Request{ID: meta.ID, Schema: &schema, AnswerFrom: meta.AnswerFrom, AskedBy: meta.AskedBy}, nil
 }
 
 // PendingRequest returns the input request of a task in the input-required state.
