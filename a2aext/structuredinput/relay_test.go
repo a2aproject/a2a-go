@@ -34,17 +34,17 @@ func TestRelayRequest(t *testing.T) {
 	}{
 		{
 			name:     "person required",
-			received: &Request{ID: "charge-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
-			want:     &Request{ID: "relay-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "airline"},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
+			want:     &Request{ID: "relay-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "deploy"},
 		},
 		{
 			name:     "no answer source required",
-			received: &Request{ID: "charge-1", Schema: newTestSchema()},
-			want:     &Request{ID: "relay-1", Schema: newTestSchema(), AskedBy: "airline"},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema()},
+			want:     &Request{ID: "relay-1", Schema: newTestSchema(), AskedBy: "deploy"},
 		},
 		{
 			name:     "already relayed request keeps the original asker",
-			received: &Request{ID: "charge-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "payments"},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "payments"},
 			want:     &Request{ID: "relay-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "payments"},
 		},
 		{
@@ -57,7 +57,7 @@ func TestRelayRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			relayed, err := RelayRequest(tc.received, "relay-1", "airline")
+			relayed, err := RelayRequest(tc.received, "relay-1", "deploy")
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("RelayRequest() error = %v, want error %v", err, tc.wantErr)
 			}
@@ -66,7 +66,7 @@ func TestRelayRequest(t *testing.T) {
 			}
 
 			taskInfo := a2a.TaskInfo{TaskID: "task-1", ContextID: "ctx-1"}
-			event, err := NewRequestEvent(taskInfo, relayed, a2a.NewTextPart("approve the charge"))
+			event, err := NewRequestEvent(taskInfo, relayed, a2a.NewTextPart("approve the deployment"))
 			if err != nil {
 				t.Fatalf("NewRequestEvent() error = %v", err)
 			}
@@ -96,31 +96,31 @@ func TestRelayResponse(t *testing.T) {
 	}{
 		{
 			name:     "answer from a person",
-			received: &Request{ID: "charge-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
 			answer:   &ProcessorResult{Outcome: OutcomeAccepted, Input: input, AnsweredBy: AnswerSourcePerson},
-			want:     PartMetadata{Type: PartTypeStructuredInput, ID: "charge-1", AnsweredBy: AnswerSourcePerson},
+			want:     PartMetadata{Type: PartTypeStructuredInput, ID: "deploy-1", AnsweredBy: AnswerSourcePerson},
 		},
 		{
 			name:     "answer from a policy when no source is required",
-			received: &Request{ID: "charge-1", Schema: newTestSchema()},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema()},
 			answer:   &ProcessorResult{Outcome: OutcomeAccepted, Input: input, AnsweredBy: AnswerSourcePolicy},
-			want:     PartMetadata{Type: PartTypeStructuredInput, ID: "charge-1", AnsweredBy: AnswerSourcePolicy},
+			want:     PartMetadata{Type: PartTypeStructuredInput, ID: "deploy-1", AnsweredBy: AnswerSourcePolicy},
 		},
 		{
 			name:     "person required and answer from an agent",
-			received: &Request{ID: "charge-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
 			answer:   &ProcessorResult{Outcome: OutcomeAccepted, Input: input, AnsweredBy: AnswerSourceAgent},
 			wantErr:  true,
 		},
 		{
 			name:     "person required and source not stated",
-			received: &Request{ID: "charge-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson},
 			answer:   &ProcessorResult{Outcome: OutcomeAccepted, Input: input},
 			wantErr:  true,
 		},
 		{
 			name:     "answer not accepted",
-			received: &Request{ID: "charge-1", Schema: newTestSchema()},
+			received: &Request{ID: "deploy-1", Schema: newTestSchema()},
 			answer:   &ProcessorResult{Outcome: OutcomeInvalid},
 			wantErr:  true,
 		},

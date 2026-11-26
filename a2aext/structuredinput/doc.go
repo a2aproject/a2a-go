@@ -80,9 +80,9 @@ Respond to an input request:
 
 # Answer source
 
-An agent can require that a person provides the input, for example to approve a payment:
+An agent can require that a person provides the input, for example to approve a deployment:
 
-	req := &structuredinput.Request{ID: "charge-1", Schema: schema, AnswerFrom: structuredinput.AnswerSourcePerson}
+	req := &structuredinput.Request{ID: "deploy-1", Schema: schema, AnswerFrom: structuredinput.AnswerSourcePerson}
 
 [Processor] then accepts only input which the client marked as provided by a person and reports
 [OutcomeWrongAnswerSource] otherwise. A client states the source using [NewResponseAnsweredBy]:
@@ -98,7 +98,7 @@ relays the request to its own client with [RelayRequest] instead of answering it
 
 	received, err := structuredinput.PendingRequest(calledTask)
 	...
-	relayed, err := structuredinput.RelayRequest(received, "relay-1", "airline")
+	relayed, err := structuredinput.RelayRequest(received, "relay-1", "deploy")
 	...
 	event, err := structuredinput.NewRequestEvent(execCtx, relayed, parts...)
 

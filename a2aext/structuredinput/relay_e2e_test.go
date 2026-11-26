@@ -33,7 +33,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-func chargeSchema() *jsonschema.Schema {
+func approvalSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
@@ -61,7 +61,7 @@ func (l *answerLog) all() []*a2a.Message {
 	return slices.Clone(l.answers)
 }
 
-func airlineExecutor(received *answerLog) a2asrv.AgentExecutor {
+func deployExecutor(received *answerLog) a2asrv.AgentExecutor {
 	return testexecutor.FromFunction(func(ctx context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
 			if ec.StoredTask == nil {
@@ -69,11 +69,11 @@ func airlineExecutor(received *answerLog) a2asrv.AgentExecutor {
 					return
 				}
 				req := &structuredinput.Request{
-					ID:         "charge-1",
-					Schema:     chargeSchema(),
+					ID:         "deploy-1",
+					Schema:     approvalSchema(),
 					AnswerFrom: structuredinput.AnswerSourcePerson,
 				}
-				yield(structuredinput.NewRequestEvent(ec, req, a2a.NewTextPart("Approve the charge of 240 dollars?")))
+				yield(structuredinput.NewRequestEvent(ec, req, a2a.NewTextPart("Approve the deployment to production?")))
 				return
 			}
 
@@ -90,7 +90,7 @@ func airlineExecutor(received *answerLog) a2asrv.AgentExecutor {
 				return
 			}
 			if !result.Accepted() {
-				yield(result.NewRetryEvent(ec, a2a.NewTextPart("Approve the charge of 240 dollars?")))
+				yield(result.NewRetryEvent(ec, a2a.NewTextPart("Approve the deployment to production?")))
 				return
 			}
 			var got approval
@@ -98,24 +98,24 @@ func airlineExecutor(received *answerLog) a2asrv.AgentExecutor {
 				yield(nil, err)
 				return
 			}
-			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("charged, approved by "+got.ApproverID))
+			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("deployed, approved by "+got.ApproverID))
 			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, msg), nil)
 		}
 	})
 }
 
-func travelExecutor(airline *a2aclient.Client) a2asrv.AgentExecutor {
+func codingExecutor(deploy *a2aclient.Client) a2asrv.AgentExecutor {
 	var mu sync.Mutex
-	airlineTasks := map[a2a.TaskID]*a2a.Task{}
+	deployTasks := map[a2a.TaskID]*a2a.Task{}
 
-	callAirline := func(ctx context.Context, msg *a2a.Message) (*a2a.Task, error) {
-		result, err := airline.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
+	callDeploy := func(ctx context.Context, msg *a2a.Message) (*a2a.Task, error) {
+		result, err := deploy.SendMessage(ctx, &a2a.SendMessageRequest{Message: msg})
 		if err != nil {
 			return nil, err
 		}
 		task, ok := result.(*a2a.Task)
 		if !ok {
-			return nil, fmt.Errorf("airline returned %T, want *a2a.Task", result)
+			return nil, fmt.Errorf("deployment agent returned %T, want *a2a.Task", result)
 		}
 		return task, nil
 	}
@@ -126,25 +126,25 @@ func travelExecutor(airline *a2aclient.Client) a2asrv.AgentExecutor {
 				if !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
 					return
 				}
-				airlineTask, err := callAirline(ctx, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("book the flight")))
+				deployTask, err := callDeploy(ctx, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("deploy the release")))
 				if err != nil {
 					yield(nil, err)
 					return
 				}
-				received, err := structuredinput.PendingRequest(airlineTask)
+				received, err := structuredinput.PendingRequest(deployTask)
 				if err != nil || received == nil {
-					yield(nil, fmt.Errorf("airline has no pending input request: %w", err))
+					yield(nil, fmt.Errorf("deployment agent has no pending input request: %w", err))
 					return
 				}
-				relayed, err := structuredinput.RelayRequest(received, "relay-1", "airline")
+				relayed, err := structuredinput.RelayRequest(received, "relay-1", "deploy")
 				if err != nil {
 					yield(nil, err)
 					return
 				}
 				mu.Lock()
-				airlineTasks[ec.TaskID] = airlineTask
+				deployTasks[ec.TaskID] = deployTask
 				mu.Unlock()
-				yield(structuredinput.NewRequestEvent(ec, relayed, a2a.NewTextPart("The airline asks: Approve the charge of 240 dollars?")))
+				yield(structuredinput.NewRequestEvent(ec, relayed, a2a.NewTextPart("The deployment agent asks: Approve the deployment to production?")))
 				return
 			}
 
@@ -160,33 +160,33 @@ func travelExecutor(airline *a2aclient.Client) a2asrv.AgentExecutor {
 				return
 			}
 			if !result.Accepted() {
-				yield(result.NewRetryEvent(ec, a2a.NewTextPart("The airline needs an answer from a person.")))
+				yield(result.NewRetryEvent(ec, a2a.NewTextPart("The deployment agent needs an answer from a person.")))
 				return
 			}
 
 			mu.Lock()
-			airlineTask := airlineTasks[ec.TaskID]
+			deployTask := deployTasks[ec.TaskID]
 			mu.Unlock()
-			received, err := structuredinput.PendingRequest(airlineTask)
+			received, err := structuredinput.PendingRequest(deployTask)
 			if err != nil || received == nil {
-				yield(nil, fmt.Errorf("airline has no pending input request: %w", err))
+				yield(nil, fmt.Errorf("deployment agent has no pending input request: %w", err))
 				return
 			}
-			answer, err := structuredinput.RelayResponse(airlineTask, received, result)
+			answer, err := structuredinput.RelayResponse(deployTask, received, result)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
-			airlineTask, err = callAirline(ctx, answer)
+			deployTask, err = callDeploy(ctx, answer)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
-			if airlineTask.Status.State != a2a.TaskStateCompleted {
-				yield(nil, fmt.Errorf("airline task state = %v, want %v", airlineTask.Status.State, a2a.TaskStateCompleted))
+			if deployTask.Status.State != a2a.TaskStateCompleted {
+				yield(nil, fmt.Errorf("deployment agent task state = %v, want %v", deployTask.Status.State, a2a.TaskStateCompleted))
 				return
 			}
-			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart(airlineTask.Status.Message.Parts[0].Text()))
+			msg := a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart(deployTask.Status.Message.Parts[0].Text()))
 			yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted, msg), nil)
 		}
 	})
@@ -227,8 +227,8 @@ func sendForTask(t *testing.T, client *a2aclient.Client, msg *a2a.Message) *a2a.
 func TestPersonAnswerNotAcceptedFromAgent(t *testing.T) {
 	t.Parallel()
 
-	airline := startAgent(t, airlineExecutor(&answerLog{}))
-	answer := approval{Status: "approved", ApproverID: "travel-agent"}
+	deploy := startAgent(t, deployExecutor(&answerLog{}))
+	answer := approval{Status: "approved", ApproverID: "coding-agent"}
 
 	tests := []struct {
 		name       string
@@ -243,7 +243,7 @@ func TestPersonAnswerNotAcceptedFromAgent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			task := sendForTask(t, airline, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("book the flight")))
+			task := sendForTask(t, deploy, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("deploy the release")))
 			req, err := structuredinput.PendingRequest(task)
 			if err != nil || req == nil {
 				t.Fatalf("PendingRequest() = (%v, %v), want input request", req, err)
@@ -253,7 +253,7 @@ func TestPersonAnswerNotAcceptedFromAgent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewResponseAnsweredBy() error = %v", err)
 			}
-			task = sendForTask(t, airline, msg)
+			task = sendForTask(t, deploy, msg)
 
 			if task.Status.State != a2a.TaskStateInputRequired {
 				t.Fatalf("client.SendMessage() state = %v, want %v", task.Status.State, a2a.TaskStateInputRequired)
@@ -269,24 +269,24 @@ func TestPersonAnswerNotAcceptedFromAgent(t *testing.T) {
 func TestRelayThroughIntermediary(t *testing.T) {
 	t.Parallel()
 
-	airlineReceived := &answerLog{}
-	airline := startAgent(t, airlineExecutor(airlineReceived))
-	travel := startAgent(t, travelExecutor(airline))
+	deployReceived := &answerLog{}
+	deploy := startAgent(t, deployExecutor(deployReceived))
+	coding := startAgent(t, codingExecutor(deploy))
 
-	task := sendForTask(t, travel, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("book a flight to Lisbon")))
+	task := sendForTask(t, coding, a2a.NewMessage(a2a.MessageRoleUser, a2a.NewTextPart("release version 2.4")))
 	req, err := structuredinput.PendingRequest(task)
 	if err != nil || req == nil {
 		t.Fatalf("PendingRequest() = (%v, %v), want input request", req, err)
 	}
-	if req.ID != "relay-1" || req.AnswerFrom != structuredinput.AnswerSourcePerson || req.AskedBy != "airline" {
-		t.Fatalf("PendingRequest() = %+v, want request relay-1 for a person asked by airline", req)
+	if req.ID != "relay-1" || req.AnswerFrom != structuredinput.AnswerSourcePerson || req.AskedBy != "deploy" {
+		t.Fatalf("PendingRequest() = %+v, want request relay-1 for a person asked by deploy", req)
 	}
 
 	msg, err := structuredinput.NewResponseAnsweredBy(task, req, structuredinput.AnswerSourceAgent, approval{Status: "approved", ApproverID: "assistant"})
 	if err != nil {
 		t.Fatalf("NewResponseAnsweredBy() error = %v", err)
 	}
-	task = sendForTask(t, travel, msg)
+	task = sendForTask(t, coding, msg)
 	if task.Status.State != a2a.TaskStateInputRequired {
 		t.Fatalf("client.SendMessage() state = %v, want %v", task.Status.State, a2a.TaskStateInputRequired)
 	}
@@ -294,8 +294,8 @@ func TestRelayThroughIntermediary(t *testing.T) {
 	if err != nil || req == nil || req.ID != "relay-1" || req.AnswerFrom != structuredinput.AnswerSourcePerson {
 		t.Fatalf("PendingRequest() = (%+v, %v), want repeated request relay-1 for a person", req, err)
 	}
-	if got := airlineReceived.all(); len(got) != 0 {
-		t.Fatalf("airline received %d answers, want 0 before a person answered", len(got))
+	if got := deployReceived.all(); len(got) != 0 {
+		t.Fatalf("deployment agent received %d answers, want 0 before a person answered", len(got))
 	}
 
 	personAnswer := approval{Status: "approved", ApproverID: "alice"}
@@ -303,17 +303,17 @@ func TestRelayThroughIntermediary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewResponseAnsweredBy() error = %v", err)
 	}
-	task = sendForTask(t, travel, msg)
+	task = sendForTask(t, coding, msg)
 	if task.Status.State != a2a.TaskStateCompleted {
 		t.Fatalf("client.SendMessage() state = %v, want %v", task.Status.State, a2a.TaskStateCompleted)
 	}
-	if got := task.Status.Message.Parts[0].Text(); got != "charged, approved by alice" {
-		t.Fatalf("client.SendMessage() status text = %q, want %q", got, "charged, approved by alice")
+	if got := task.Status.Message.Parts[0].Text(); got != "deployed, approved by alice" {
+		t.Fatalf("client.SendMessage() status text = %q, want %q", got, "deployed, approved by alice")
 	}
 
-	answers := airlineReceived.all()
+	answers := deployReceived.all()
 	if len(answers) != 1 || len(answers[0].Parts) != 1 {
-		t.Fatalf("airline received %d answers, want 1 answer with 1 part", len(answers))
+		t.Fatalf("deployment agent received %d answers, want 1 answer with 1 part", len(answers))
 	}
 	gotMeta, ok := structuredinput.GetPartMetadata(answers[0].Parts[0])
 	if !ok {
@@ -321,7 +321,7 @@ func TestRelayThroughIntermediary(t *testing.T) {
 	}
 	wantMeta := structuredinput.PartMetadata{
 		Type:       structuredinput.PartTypeStructuredInput,
-		ID:         "charge-1",
+		ID:         "deploy-1",
 		AnsweredBy: structuredinput.AnswerSourcePerson,
 	}
 	if diff := cmp.Diff(wantMeta, gotMeta); diff != "" {
@@ -329,6 +329,6 @@ func TestRelayThroughIntermediary(t *testing.T) {
 	}
 	wantData := map[string]any{"status": "approved", "approver_id": "alice"}
 	if diff := cmp.Diff(any(wantData), answers[0].Parts[0].Data()); diff != "" {
-		t.Fatalf("airline received wrong input (-want +got) diff = %s", diff)
+		t.Fatalf("deployment agent received wrong input (-want +got) diff = %s", diff)
 	}
 }

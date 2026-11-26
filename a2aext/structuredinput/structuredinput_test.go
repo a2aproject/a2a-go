@@ -167,12 +167,12 @@ func TestGetPartMetadata(t *testing.T) {
 		},
 		{
 			name: "relayed input schema",
-			part: mustPart(t)((&Request{ID: "req-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "airline"}).Part()),
+			part: mustPart(t)((&Request{ID: "req-1", Schema: newTestSchema(), AnswerFrom: AnswerSourcePerson, AskedBy: "deploy"}).Part()),
 			wantMeta: PartMetadata{
 				Type:       PartTypeInputSchema,
 				ID:         "req-1",
 				AnswerFrom: AnswerSourcePerson,
-				AskedBy:    "airline",
+				AskedBy:    "deploy",
 			},
 			wantOK: true,
 		},
