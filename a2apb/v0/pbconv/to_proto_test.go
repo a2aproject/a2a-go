@@ -1311,6 +1311,7 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 				State:     a2apb.TaskState_TASK_STATE_COMPLETED,
 				Timestamp: pNow,
 			},
+			Final: true,
 		},
 	}
 	a2aArtifactEvent := &a2a.TaskArtifactUpdateEvent{
@@ -1400,6 +1401,38 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 			}
 			if !tt.wantErr && !proto.Equal(got, tt.want) {
 				t.Errorf("toProtoStreamResponse() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToProtoStreamResponse_StatusUpdateFinal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		state a2a.TaskState
+		want  bool
+	}{
+		{state: a2a.TaskStateSubmitted, want: false},
+		{state: a2a.TaskStateWorking, want: false},
+		{state: a2a.TaskStateInputRequired, want: true},
+		{state: a2a.TaskStateCompleted, want: true},
+		{state: a2a.TaskStateCanceled, want: true},
+		{state: a2a.TaskStateFailed, want: true},
+		{state: a2a.TaskStateRejected, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state.String(), func(t *testing.T) {
+			t.Parallel()
+
+			task := &a2a.Task{ID: "test-task", ContextID: "test-ctx"}
+			got, err := ToProtoStreamResponse(a2a.NewStatusUpdateEvent(task, tt.state, nil))
+			if err != nil {
+				t.Fatalf("ToProtoStreamResponse() error = %v, want nil", err)
+			}
+			if final := got.GetStatusUpdate().GetFinal(); final != tt.want {
+				t.Fatalf("ToProtoStreamResponse() final = %v, want %v", final, tt.want)
 			}
 		})
 	}

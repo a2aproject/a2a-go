@@ -822,6 +822,7 @@ func TestGrpcHandler_TaskSubscription(t *testing.T) {
 							TaskId:    string(taskID),
 							ContextId: "resubscribe-context",
 							Status:    &a2apb.TaskStatus{State: a2apb.TaskState_TASK_STATE_COMPLETED},
+							Final:     true,
 						},
 					},
 				},

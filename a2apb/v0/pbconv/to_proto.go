@@ -23,6 +23,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2apb"
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2acompat/a2av0"
+	"github.com/a2aproject/a2a-go/v2/a2aevent"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -222,6 +223,7 @@ func ToProtoStreamResponse(event a2a.Event) (*a2apb.StreamResponse, error) {
 		}
 		resp.Payload = &a2apb.StreamResponse_StatusUpdate{StatusUpdate: &a2apb.TaskStatusUpdateEvent{
 			ContextId: e.ContextID,
+			Final:     a2aevent.IsFinal(e),
 			Status:    pStatus,
 			TaskId:    string(e.TaskID),
 			Metadata:  metadata,
