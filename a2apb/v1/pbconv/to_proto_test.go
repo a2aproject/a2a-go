@@ -1491,3 +1491,55 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 		})
 	}
 }
+
+func roundTrip[T, P any](t *testing.T, in T, toProto func(T) (P, error), fromProto func(P) (T, error)) {
+	t.Helper()
+	p, err := toProto(in)
+	if err != nil {
+		t.Fatalf("toProto(%T) error = %v", in, err)
+	}
+	got, err := fromProto(p)
+	if err != nil {
+		t.Fatalf("fromProto(%T) error = %v", p, err)
+	}
+	if diff := cmp.Diff(in, got); diff != "" {
+		t.Fatalf("fromProto(toProto(%T)) wrong result (-want +got) diff = %s", in, diff)
+	}
+}
+
+func TestProtoRoundTrip_GenerationTimelineTimestampsAndView(t *testing.T) {
+	t.Parallel()
+
+	msg := &a2a.Message{ID: "m1", Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("hi")}}
+	status := a2a.TaskStatus{State: a2a.TaskStateWorking}
+	gen := new(a2a.TaskGeneration(7))
+	ts := &a2a.Timestamp{Time: time.Date(2026, 10, 1, 8, 30, 0, 123000000, time.UTC)}
+	artifact := &a2a.Artifact{ID: "a1", Parts: a2a.ContentParts{a2a.NewTextPart("out")}, StartGeneration: 2, EndGeneration: 3, UpdatedAt: ts}
+
+	roundTrip(t, &a2a.Task{
+		ID:         "t1",
+		ContextID:  "c1",
+		Status:     status,
+		Artifacts:  []*a2a.Artifact{artifact},
+		History:    []*a2a.Message{msg},
+		Generation: 4,
+		UpdatedAt:  ts,
+		CreatedAt:  ts,
+		Timeline: []*a2a.TimelineEntry{
+			{Message: msg, Generation: 1, Timestamp: ts},
+			{Status: &status, Generation: 2, Timestamp: ts},
+			{Generation: 4},
+		},
+	}, ToProtoTask, FromProtoTask)
+	for _, event := range []a2a.Event{
+		&a2a.TaskStatusUpdateEvent{TaskID: "t1", ContextID: "c1", Status: status, Generation: 5, Timestamp: ts},
+		&a2a.TaskArtifactUpdateEvent{TaskID: "t1", ContextID: "c1", Artifact: artifact, Generation: 6},
+		&a2a.TaskMessageUpdateEvent{TaskID: "t1", ContextID: "c1", Message: msg, Generation: 7, Timestamp: ts},
+	} {
+		roundTrip(t, event, ToProtoStreamResponse, FromProtoStreamResponse)
+	}
+	roundTrip(t, &a2a.SendMessageRequest{Message: msg, Config: &a2a.SendMessageConfig{IfGenerationMatch: gen, TaskView: a2a.TaskViewSummary}}, ToProtoSendMessageRequest, FromProtoSendMessageRequest)
+	roundTrip(t, &a2a.GetTaskRequest{ID: "t1", CurrentGeneration: gen, View: a2a.TaskViewSummary}, ToProtoGetTaskRequest, FromProtoGetTaskRequest)
+	roundTrip(t, &a2a.ListTasksRequest{View: a2a.TaskViewFull}, ToProtoListTasksRequest, FromProtoListTasksRequest)
+	roundTrip(t, &a2a.SubscribeToTaskRequest{ID: "t1", LastSeenGeneration: gen}, ToProtoSubscribeToTaskRequest, FromProtoSubscribeToTaskRequest)
+}

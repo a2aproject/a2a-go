@@ -38,6 +38,7 @@ var callerErrors = []error{
 	a2a.ErrVersionNotSupported,
 	a2a.ErrUnauthenticated,
 	a2a.ErrUnauthorized,
+	a2a.ErrTaskGenerationMismatch,
 	context.Canceled,
 	context.DeadlineExceeded,
 }

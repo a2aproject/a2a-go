@@ -22,6 +22,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2apb/v1"
 	structpb "google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func fromProtoMap(meta *structpb.Struct) map[string]any {
@@ -161,6 +162,8 @@ func fromProtoSendMessageConfig(conf *a2apb.SendMessageConfiguration) (*a2a.Send
 		AcceptedOutputModes: conf.GetAcceptedOutputModes(),
 		ReturnImmediately:   conf.GetReturnImmediately(),
 		PushConfig:          pConf,
+		IfGenerationMatch:   fromProtoGeneration(conf.IfGenerationMatch),
+		TaskView:            fromProtoTaskView(conf.GetTaskView()),
 	}
 
 	// TODO: consider the approach after resolving https://github.com/a2aproject/A2A/issues/1072
@@ -184,8 +187,10 @@ func FromProtoGetTaskRequest(req *a2apb.GetTaskRequest) (*a2a.GetTaskRequest, er
 	}
 
 	request := &a2a.GetTaskRequest{
-		Tenant: req.GetTenant(),
-		ID:     taskID,
+		Tenant:            req.GetTenant(),
+		ID:                taskID,
+		CurrentGeneration: fromProtoGeneration(req.CurrentGeneration),
+		View:              fromProtoTaskView(req.GetView()),
 	}
 	if req.HistoryLength != nil && *req.HistoryLength >= 0 {
 		historyLength := int(*req.HistoryLength)
@@ -225,8 +230,9 @@ func FromProtoSubscribeToTaskRequest(req *a2apb.SubscribeToTaskRequest) (*a2a.Su
 	}
 
 	request := &a2a.SubscribeToTaskRequest{
-		Tenant: req.GetTenant(),
-		ID:     taskID,
+		Tenant:             req.GetTenant(),
+		ID:                 taskID,
+		LastSeenGeneration: fromProtoGeneration(req.LastSeenGeneration),
 	}
 	return request, nil
 }
@@ -256,6 +262,7 @@ func FromProtoListTasksRequest(req *a2apb.ListTasksRequest) (*a2a.ListTasksReque
 		PageToken:            req.GetPageToken(),
 		StatusTimestampAfter: lastUpdatedAfter,
 		IncludeArtifacts:     req.GetIncludeArtifacts(),
+		View:                 fromProtoTaskView(req.GetView()),
 	}
 
 	if req.HistoryLength != nil {
@@ -379,10 +386,12 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 		}
 		taskID := a2a.TaskID(p.StatusUpdate.GetTaskId())
 		return &a2a.TaskStatusUpdateEvent{
-			ContextID: p.StatusUpdate.GetContextId(),
-			Status:    status,
-			TaskID:    taskID,
-			Metadata:  fromProtoMap(p.StatusUpdate.GetMetadata()),
+			ContextID:  p.StatusUpdate.GetContextId(),
+			Status:     status,
+			TaskID:     taskID,
+			Metadata:   fromProtoMap(p.StatusUpdate.GetMetadata()),
+			Generation: a2a.TaskGeneration(p.StatusUpdate.GetGeneration()),
+			Timestamp:  fromProtoTimestamp(p.StatusUpdate.GetTimestamp()),
 		}, nil
 	case *a2apb.StreamResponse_ArtifactUpdate:
 		artifact, err := fromProtoArtifact(p.ArtifactUpdate.GetArtifact())
@@ -391,12 +400,26 @@ func FromProtoStreamResponse(resp *a2apb.StreamResponse) (a2a.Event, error) {
 		}
 		taskID := a2a.TaskID(p.ArtifactUpdate.GetTaskId())
 		return &a2a.TaskArtifactUpdateEvent{
-			Append:    p.ArtifactUpdate.GetAppend(),
-			Artifact:  artifact,
-			ContextID: p.ArtifactUpdate.GetContextId(),
-			LastChunk: p.ArtifactUpdate.GetLastChunk(),
-			TaskID:    taskID,
-			Metadata:  fromProtoMap(p.ArtifactUpdate.GetMetadata()),
+			Append:     p.ArtifactUpdate.GetAppend(),
+			Artifact:   artifact,
+			ContextID:  p.ArtifactUpdate.GetContextId(),
+			LastChunk:  p.ArtifactUpdate.GetLastChunk(),
+			TaskID:     taskID,
+			Metadata:   fromProtoMap(p.ArtifactUpdate.GetMetadata()),
+			Generation: a2a.TaskGeneration(p.ArtifactUpdate.GetGeneration()),
+		}, nil
+	case *a2apb.StreamResponse_MessageUpdate:
+		msg, err := FromProtoMessage(p.MessageUpdate.GetMessage())
+		if err != nil {
+			return nil, err
+		}
+		return &a2a.TaskMessageUpdateEvent{
+			ContextID:  p.MessageUpdate.GetContextId(),
+			TaskID:     a2a.TaskID(p.MessageUpdate.GetTaskId()),
+			Message:    msg,
+			Metadata:   fromProtoMap(p.MessageUpdate.GetMetadata()),
+			Generation: a2a.TaskGeneration(p.MessageUpdate.GetGeneration()),
+			Timestamp:  fromProtoTimestamp(p.MessageUpdate.GetTimestamp()),
 		}, nil
 	default:
 		if resp.Payload == nil && len(resp.ProtoReflect().GetUnknown()) == 0 {
@@ -439,6 +462,53 @@ func fromProtoTaskState(state a2apb.TaskState) a2a.TaskState {
 	return a2a.TaskStateUnspecified
 }
 
+func fromProtoTaskView(view a2apb.TaskView) a2a.TaskView {
+	if view == a2apb.TaskView_TASK_VIEW_UNSPECIFIED {
+		return a2a.TaskViewUnspecified
+	}
+	return a2a.TaskView(a2apb.TaskView_name[int32(view)])
+}
+
+func fromProtoTimestamp(t *timestamppb.Timestamp) *a2a.Timestamp {
+	if t == nil {
+		return nil
+	}
+	return &a2a.Timestamp{Time: t.AsTime()}
+}
+
+func fromProtoGeneration(g *int64) *a2a.TaskGeneration {
+	if g == nil {
+		return nil
+	}
+	return new(a2a.TaskGeneration(*g))
+}
+
+func fromProtoTimeline(pEntries []*a2apb.TimelineEntry) ([]*a2a.TimelineEntry, error) {
+	if len(pEntries) == 0 {
+		return nil, nil
+	}
+	result := make([]*a2a.TimelineEntry, len(pEntries))
+	for i, pEntry := range pEntries {
+		entry := &a2a.TimelineEntry{Generation: a2a.TaskGeneration(pEntry.GetGeneration()), Timestamp: fromProtoTimestamp(pEntry.GetTimestamp())}
+		switch e := pEntry.GetEntry().(type) {
+		case *a2apb.TimelineEntry_Message:
+			msg, err := FromProtoMessage(e.Message)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert timeline message: %w", err)
+			}
+			entry.Message = msg
+		case *a2apb.TimelineEntry_Status:
+			status, err := fromProtoTaskStatus(e.Status)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert timeline status: %w", err)
+			}
+			entry.Status = &status
+		}
+		result[i] = entry
+	}
+	return result, nil
+}
+
 func fromProtoTaskStatus(pStatus *a2apb.TaskStatus) (a2a.TaskStatus, error) {
 	if pStatus == nil {
 		return a2a.TaskStatus{}, fmt.Errorf("invalid status")
@@ -477,12 +547,15 @@ func fromProtoArtifact(pArtifact *a2apb.Artifact) (*a2a.Artifact, error) {
 	}
 
 	return &a2a.Artifact{
-		ID:          id,
-		Name:        pArtifact.GetName(),
-		Description: pArtifact.GetDescription(),
-		Parts:       contentParts,
-		Extensions:  pArtifact.GetExtensions(),
-		Metadata:    fromProtoMap(pArtifact.GetMetadata()),
+		ID:              id,
+		Name:            pArtifact.GetName(),
+		Description:     pArtifact.GetDescription(),
+		Parts:           contentParts,
+		Extensions:      pArtifact.GetExtensions(),
+		Metadata:        fromProtoMap(pArtifact.GetMetadata()),
+		StartGeneration: a2a.TaskGeneration(pArtifact.GetStartGeneration()),
+		EndGeneration:   a2a.TaskGeneration(pArtifact.GetEndGeneration()),
+		UpdatedAt:       fromProtoTimestamp(pArtifact.GetUpdatedAt()),
 	}, nil
 }
 
@@ -523,13 +596,22 @@ func FromProtoTask(pTask *a2apb.Task) (*a2a.Task, error) {
 		return nil, fmt.Errorf("failed to convert history: %w", err)
 	}
 
+	timeline, err := fromProtoTimeline(pTask.GetTimeline())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert timeline: %w", err)
+	}
+
 	result := &a2a.Task{
-		ID:        id,
-		ContextID: pTask.GetContextId(),
-		Status:    status,
-		Artifacts: artifacts,
-		History:   history,
-		Metadata:  fromProtoMap(pTask.GetMetadata()),
+		ID:         id,
+		ContextID:  pTask.GetContextId(),
+		Status:     status,
+		Artifacts:  artifacts,
+		History:    history,
+		Metadata:   fromProtoMap(pTask.GetMetadata()),
+		Generation: a2a.TaskGeneration(pTask.GetGeneration()),
+		Timeline:   timeline,
+		UpdatedAt:  fromProtoTimestamp(pTask.GetUpdatedAt()),
+		CreatedAt:  fromProtoTimestamp(pTask.GetCreatedAt()),
 	}
 
 	return result, nil

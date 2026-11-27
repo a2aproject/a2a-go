@@ -210,6 +210,12 @@ func (t *RESTTransport) GetTask(ctx context.Context, params ServiceParams, req *
 	if req.HistoryLength != nil {
 		q.Add(rest.QueryHistoryLength, strconv.Itoa(*req.HistoryLength))
 	}
+	if req.CurrentGeneration != nil {
+		q.Add(rest.QueryCurrentGeneration, strconv.FormatInt(int64(*req.CurrentGeneration), 10))
+	}
+	if req.View != a2a.TaskViewUnspecified {
+		q.Add(rest.QueryView, string(req.View))
+	}
 	if encoded := q.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
@@ -252,6 +258,9 @@ func (t *RESTTransport) ListTasks(ctx context.Context, params ServiceParams, req
 	}
 	if req.IncludeArtifacts {
 		query.Add(rest.QueryIncludeArtifacts, "true")
+	}
+	if req.View != a2a.TaskViewUnspecified {
+		query.Add(rest.QueryView, string(req.View))
 	}
 
 	if encoded := query.Encode(); encoded != "" {
@@ -328,6 +337,9 @@ func (t *RESTTransport) SendMessage(ctx context.Context, params ServiceParams, r
 // SubscribeToTask implements [a2a.Transport].
 func (t *RESTTransport) SubscribeToTask(ctx context.Context, params ServiceParams, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
 	path := rest.MakeSubscribeTaskPath(url.PathEscape(string(req.ID)))
+	if req.LastSeenGeneration != nil {
+		path += "?" + url.Values{rest.QueryLastSeenGeneration: {strconv.FormatInt(int64(*req.LastSeenGeneration), 10)}}.Encode()
+	}
 	return t.doStreamingRequest(ctx, &restRequest{
 		method:  "POST",
 		params:  params,

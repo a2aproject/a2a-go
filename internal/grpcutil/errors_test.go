@@ -242,6 +242,11 @@ func TestGRPCErrorRoundTrip(t *testing.T) {
 			wantCode:   codes.PermissionDenied,
 		},
 		{
+			name:       "TaskGenerationMismatch",
+			inputError: a2a.NewError(a2a.ErrTaskGenerationMismatch, "task generation mismatch"),
+			wantCode:   codes.Aborted,
+		},
+		{
 			name:       "InternalError",
 			inputError: a2a.NewError(a2a.ErrInternalError, "internal error"),
 			wantCode:   codes.Internal,

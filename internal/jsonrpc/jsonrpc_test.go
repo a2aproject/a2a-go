@@ -258,6 +258,12 @@ func TestJSONRPCError_RoundTrip(t *testing.T) {
 			want:       errorWithErrorInfo(t, "unauthorized", a2a.ErrUnauthorized, "UNAUTHORIZED"),
 		},
 		{
+			name:       "TaskGenerationMismatch",
+			inputError: a2a.NewError(a2a.ErrTaskGenerationMismatch, "task generation mismatch"),
+			wantCode:   -32010,
+			want:       errorWithErrorInfo(t, "task generation mismatch", a2a.ErrTaskGenerationMismatch, "TASK_GENERATION_MISMATCH"),
+		},
+		{
 			name:       "InternalError",
 			inputError: a2a.NewError(a2a.ErrInternalError, "internal error"),
 			wantCode:   -32603,

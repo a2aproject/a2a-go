@@ -345,6 +345,13 @@ func TestRESTError_RoundTrip(t *testing.T) {
 			want:           errorWithErrorInfo(t, "unauthorized", a2a.ErrUnauthorized, "UNAUTHORIZED"),
 		},
 		{
+			name:           "TaskGenerationMismatch",
+			inputError:     a2a.NewError(a2a.ErrTaskGenerationMismatch, "task generation mismatch"),
+			wantHTTPStatus: http.StatusConflict,
+			wantGRPCStatus: "ABORTED",
+			want:           errorWithErrorInfo(t, "task generation mismatch", a2a.ErrTaskGenerationMismatch, "TASK_GENERATION_MISMATCH"),
+		},
+		{
 			name:           "InternalError",
 			inputError:     a2a.NewError(a2a.ErrInternalError, "internal error"),
 			wantHTTPStatus: http.StatusInternalServerError,
@@ -900,6 +907,17 @@ func TestParseStreamResponse(t *testing.T) {
 		}
 		if _, ok := event.(*a2a.TaskArtifactUpdateEvent); !ok {
 			t.Fatalf("got event type %T, want *a2a.TaskArtifactUpdateEvent", event)
+		}
+	})
+
+	t.Run("message update event", func(t *testing.T) {
+		data := []byte(`{"messageUpdate":{"taskId":"task-123","contextId":"ctx-123","message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hi"}]}}}`)
+		event, err := ParseStreamResponse(t.Context(), data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		if _, ok := event.(*a2a.TaskMessageUpdateEvent); !ok {
+			t.Fatalf("got event type %T, want *a2a.TaskMessageUpdateEvent", event)
 		}
 	})
 

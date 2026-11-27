@@ -84,6 +84,7 @@ var codeToError = map[int]error{
 	-32007: a2a.ErrExtendedCardNotConfigured,
 	-32008: a2a.ErrExtensionSupportRequired,
 	-32009: a2a.ErrVersionNotSupported,
+	-32010: a2a.ErrTaskGenerationMismatch,
 	-31401: a2a.ErrUnauthenticated,
 	-31403: a2a.ErrUnauthorized,
 }
