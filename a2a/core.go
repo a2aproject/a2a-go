@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
@@ -370,10 +371,7 @@ func (g *TaskGeneration) UnmarshalJSON(b []byte) error {
 	if string(b) == "null" {
 		return nil
 	}
-	if len(b) >= 2 && b[0] == '"' && b[len(b)-1] == '"' {
-		b = b[1 : len(b)-1]
-	}
-	n, err := strconv.ParseInt(string(b), 10, 64)
+	n, err := strconv.ParseInt(strings.Trim(string(b), `"`), 10, 64)
 	if err != nil {
 		return err
 	}
