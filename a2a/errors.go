@@ -78,6 +78,10 @@ var (
 
 	// ErrUnauthorized indicates that the caller does not have permission to execute the specified operation.
 	ErrUnauthorized = errors.New("permission denied")
+
+	// ErrTaskGenerationMismatch indicates that a conditional write failed because the task's
+	// current generation did not match the expected value.
+	ErrTaskGenerationMismatch = errors.New("task generation mismatch")
 )
 
 // ErrorReason returns the reason string for an error.
@@ -108,6 +112,7 @@ var errorReason = map[error]string{
 	ErrVersionNotSupported:          "VERSION_NOT_SUPPORTED",
 	ErrUnauthenticated:              "UNAUTHENTICATED",
 	ErrUnauthorized:                 "UNAUTHORIZED",
+	ErrTaskGenerationMismatch:       "TASK_GENERATION_MISMATCH",
 }
 
 // Error provides control over the message and details returned to clients.

@@ -18,6 +18,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/internal/eventjson"
@@ -85,6 +86,7 @@ func (*Message) isEvent()                 {}
 func (*Task) isEvent()                    {}
 func (*TaskStatusUpdateEvent) isEvent()   {}
 func (*TaskArtifactUpdateEvent) isEvent() {}
+func (*TaskMessageUpdateEvent) isEvent()  {}
 
 // StreamResponse is a wrapper around Event that can be sent over a streaming connection.
 // with a single field matching the event type name.
@@ -98,6 +100,7 @@ type event struct {
 	Task           *Task                    `json:"task,omitempty"`
 	StatusUpdate   *TaskStatusUpdateEvent   `json:"statusUpdate,omitempty"`
 	ArtifactUpdate *TaskArtifactUpdateEvent `json:"artifactUpdate,omitempty"`
+	MessageUpdate  *TaskMessageUpdateEvent  `json:"messageUpdate,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -112,6 +115,8 @@ func (sr StreamResponse) MarshalJSON() ([]byte, error) {
 		wrapper.StatusUpdate = v
 	case *TaskArtifactUpdateEvent:
 		wrapper.ArtifactUpdate = v
+	case *TaskMessageUpdateEvent:
+		wrapper.MessageUpdate = v
 	default:
 		return nil, fmt.Errorf("unknown event type: %T", v)
 	}
@@ -139,6 +144,10 @@ func (sr *StreamResponse) UnmarshalJSON(data []byte) error {
 	}
 	if wrapper.ArtifactUpdate != nil {
 		sr.Event = wrapper.ArtifactUpdate
+		n++
+	}
+	if wrapper.MessageUpdate != nil {
+		sr.Event = wrapper.MessageUpdate
 		n++
 	}
 	if n == 0 {
@@ -347,6 +356,60 @@ func (ts TaskState) Terminal() bool {
 		ts == TaskStateRejected
 }
 
+// TaskGeneration is a monotonically increasing counter incremented on each task mutation.
+// It encodes as a ProtoJSON decimal string and decodes from both strings and numbers.
+type TaskGeneration int64
+
+// MarshalJSON implements json.Marshaler.
+func (g TaskGeneration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strconv.FormatInt(int64(g), 10))
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (g *TaskGeneration) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	if len(b) >= 2 && b[0] == '"' && b[len(b)-1] == '"' {
+		b = b[1 : len(b)-1]
+	}
+	n, err := strconv.ParseInt(string(b), 10, 64)
+	if err != nil {
+		return err
+	}
+	*g = TaskGeneration(n)
+	return nil
+}
+
+// TaskView defines which Task fields are returned to a client.
+type TaskView string
+
+const (
+	// TaskViewUnspecified represents a missing TaskView value; the request's default applies.
+	TaskViewUnspecified TaskView = ""
+	// TaskViewFull returns all fields of the task.
+	TaskViewFull TaskView = "TASK_VIEW_FULL"
+	// TaskViewSummary returns all fields except artifacts, history, and timeline.
+	// Fields added to Task in future versions may also be left out.
+	TaskViewSummary TaskView = "TASK_VIEW_SUMMARY"
+)
+
+// TimelineEntry is a generation-ordered entry of Task.Timeline. Exactly one of Message or Status is set.
+// Both are nil for entry kinds unknown to this SDK version. Such entries are kept and skipped by consumers (v1.1).
+type TimelineEntry struct {
+	// Message is a client message appended to the task.
+	Message *Message `json:"message,omitempty" yaml:"message,omitempty" mapstructure:"message,omitempty"`
+
+	// Status is a task status transition recorded on the timeline.
+	Status *TaskStatus `json:"status,omitempty" yaml:"status,omitempty" mapstructure:"status,omitempty"`
+
+	// Generation is the task generation after this entry was appended.
+	Generation TaskGeneration `json:"generation,omitempty" yaml:"generation,omitempty" mapstructure:"generation,omitempty"`
+
+	// Timestamp is the time when this entry was recorded.
+	Timestamp *Timestamp `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
+}
+
 var _ Event = (*Task)(nil)
 
 // Task represents a single, stateful operation or conversation between a client and an agent.
@@ -362,6 +425,8 @@ type Task struct {
 	ContextID string `json:"contextId" yaml:"contextId" mapstructure:"contextId"`
 
 	// History is an array of messages exchanged during the task, representing the conversation history.
+	//
+	// Deprecated: Use Timeline instead.
 	History []*Message `json:"history,omitempty" yaml:"history,omitempty" mapstructure:"history,omitempty"`
 
 	// Metadata is an optional metadata for extensions. The key is an extension-specific identifier.
@@ -369,6 +434,18 @@ type Task struct {
 
 	// Status is the current status of the task, including its state and a descriptive message.
 	Status TaskStatus `json:"status" yaml:"status" mapstructure:"status"`
+
+	// Generation is a monotonically increasing counter incremented on each task mutation.
+	Generation TaskGeneration `json:"generation,omitempty" yaml:"generation,omitempty" mapstructure:"generation,omitempty"`
+
+	// Timeline is a generation-ordered log of client messages and task status transitions.
+	Timeline []*TimelineEntry `json:"timeline,omitempty" yaml:"timeline,omitempty" mapstructure:"timeline,omitempty"`
+
+	// UpdatedAt is the time of the task's most recent mutation.
+	UpdatedAt *Timestamp `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty" mapstructure:"updatedAt,omitempty"`
+
+	// CreatedAt is the time when the task was created. It never changes afterwards.
+	CreatedAt *Timestamp `json:"createdAt,omitempty" yaml:"createdAt,omitempty" mapstructure:"createdAt,omitempty"`
 }
 
 // NewSubmittedTask is a utility for creating a Task in submitted state from the initial Message.
@@ -400,6 +477,8 @@ type TaskStatus struct {
 	State TaskState `json:"state" yaml:"state" mapstructure:"state"`
 
 	// Timestamp is a datetime indicating when this status was recorded.
+	//
+	// Deprecated: Use TimelineEntry.Timestamp, TaskStatusUpdateEvent.Timestamp or Task.UpdatedAt instead.
 	Timestamp *time.Time `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
 }
 
@@ -421,6 +500,20 @@ type jsonTimestamp time.Time
 // MarshalJSON implements json.Marshaler.
 func (t jsonTimestamp) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Time(t).UTC().Format(timestampLayout))
+}
+
+// Timestamp is a point in time written to JSON as ISO 8601 in UTC with millisecond precision,
+// as the spec requires.
+type Timestamp struct{ time.Time }
+
+// MarshalJSON implements json.Marshaler.
+func (t Timestamp) MarshalJSON() ([]byte, error) {
+	return jsonTimestamp(t.Time).MarshalJSON()
+}
+
+// Equal reports whether t and o represent the same time instant.
+func (t Timestamp) Equal(o Timestamp) bool {
+	return t.Time.Equal(o.Time)
 }
 
 // Meta implements MetadataCarrier.
@@ -465,6 +558,15 @@ type Artifact struct {
 
 	// Parts is an array of content parts that make up the artifact.
 	Parts ContentParts `json:"parts" yaml:"parts" mapstructure:"parts"`
+
+	// StartGeneration is the task generation at which this artifact first appeared.
+	StartGeneration TaskGeneration `json:"startGeneration,omitempty" yaml:"startGeneration,omitempty" mapstructure:"startGeneration,omitempty"`
+
+	// EndGeneration is the task generation at which this artifact was completed; unset while streaming.
+	EndGeneration TaskGeneration `json:"endGeneration,omitempty" yaml:"endGeneration,omitempty" mapstructure:"endGeneration,omitempty"`
+
+	// UpdatedAt is the time when this artifact was last created or updated.
+	UpdatedAt *Timestamp `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty" mapstructure:"updatedAt,omitempty"`
 }
 
 // Meta implements MetadataCarrier.
@@ -500,6 +602,9 @@ type TaskArtifactUpdateEvent struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+
+	// Generation is the task generation after this artifact update was applied.
+	Generation TaskGeneration `json:"generation,omitempty" yaml:"generation,omitempty" mapstructure:"generation,omitempty"`
 }
 
 // Meta implements MetadataCarrier.
@@ -560,6 +665,12 @@ type TaskStatusUpdateEvent struct {
 
 	// Metadata is an optional metadata for extensions.
 	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+
+	// Generation is the task generation after this status update was applied.
+	Generation TaskGeneration `json:"generation,omitempty" yaml:"generation,omitempty" mapstructure:"generation,omitempty"`
+
+	// Timestamp is the time when this status update was applied.
+	Timestamp *Timestamp `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
 }
 
 // NewStatusUpdateEvent creates a TaskStatusUpdateEvent that references the provided Task.
@@ -591,6 +702,54 @@ func (e *TaskStatusUpdateEvent) SetMeta(k string, v any) {
 
 // TaskInfo implements TaskInfoProvider.
 func (e *TaskStatusUpdateEvent) TaskInfo() TaskInfo {
+	return TaskInfo{TaskID: e.TaskID, ContextID: e.ContextID}
+}
+
+var _ Event = (*TaskMessageUpdateEvent)(nil)
+
+// TaskMessageUpdateEvent notifies subscribers that a client message was appended to the task.
+type TaskMessageUpdateEvent struct {
+	// ContextID is the context ID associated with the task. Required to be non-empty.
+	ContextID string `json:"contextId" yaml:"contextId" mapstructure:"contextId"`
+
+	// TaskID is the ID of the task the message was appended to.
+	TaskID TaskID `json:"taskId" yaml:"taskId" mapstructure:"taskId"`
+
+	// Message is the message appended to the task.
+	Message *Message `json:"message" yaml:"message" mapstructure:"message"`
+
+	// Metadata is an optional metadata for extensions.
+	Metadata map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty" mapstructure:"metadata,omitempty"`
+
+	// Generation is the task generation after this message was appended.
+	Generation TaskGeneration `json:"generation,omitempty" yaml:"generation,omitempty" mapstructure:"generation,omitempty"`
+
+	// Timestamp is the time when the message was appended.
+	Timestamp *Timestamp `json:"timestamp,omitempty" yaml:"timestamp,omitempty" mapstructure:"timestamp,omitempty"`
+}
+
+// NewMessageUpdateEvent creates a TaskMessageUpdateEvent that references the provided Task.
+func NewMessageUpdateEvent(info TaskInfoProvider, msg *Message) *TaskMessageUpdateEvent {
+	taskInfo := info.TaskInfo()
+	return &TaskMessageUpdateEvent{
+		ContextID: taskInfo.ContextID,
+		TaskID:    taskInfo.TaskID,
+		Message:   msg,
+	}
+}
+
+// Meta implements MetadataCarrier.
+func (e *TaskMessageUpdateEvent) Meta() map[string]any {
+	return e.Metadata
+}
+
+// SetMeta implements MetadataCarrier.
+func (e *TaskMessageUpdateEvent) SetMeta(k string, v any) {
+	setMeta(&e.Metadata, k, v)
+}
+
+// TaskInfo implements TaskInfoProvider.
+func (e *TaskMessageUpdateEvent) TaskInfo() TaskInfo {
 	return TaskInfo{TaskID: e.TaskID, ContextID: e.ContextID}
 }
 
@@ -819,10 +978,18 @@ type SendMessageConfig struct {
 	ReturnImmediately bool `json:"returnImmediately,omitempty" yaml:"returnImmediately,omitempty" mapstructure:"returnImmediately,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
+	//
+	// Deprecated: Use TaskView instead.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
 	// PushConfig is configuration for the agent to send push notifications for updates after the initial response.
 	PushConfig *PushConfig `json:"taskPushNotificationConfig,omitempty" yaml:"taskPushNotificationConfig,omitempty" mapstructure:"taskPushNotificationConfig,omitempty"`
+
+	// IfGenerationMatch requires the task's current generation to equal this value for the request to succeed.
+	IfGenerationMatch *TaskGeneration `json:"ifGenerationMatch,omitempty" yaml:"ifGenerationMatch,omitempty" mapstructure:"ifGenerationMatch,omitempty"`
+
+	// TaskView controls which task fields to return when the response includes a Task. Defaults to TaskViewFull.
+	TaskView TaskView `json:"taskView,omitempty" yaml:"taskView,omitempty" mapstructure:"taskView,omitempty"`
 }
 
 // SendMessageRequest defines the request to send a message to an agent. This can be used
@@ -872,7 +1039,15 @@ type GetTaskRequest struct {
 	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve.
+	//
+	// Deprecated: Use View instead.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
+
+	// CurrentGeneration enables long-polling until the task's generation exceeds this value.
+	CurrentGeneration *TaskGeneration `json:"currentGeneration,omitempty" yaml:"currentGeneration,omitempty" mapstructure:"currentGeneration,omitempty"`
+
+	// View controls which task fields to return. Defaults to TaskViewFull.
+	View TaskView `json:"view,omitempty" yaml:"view,omitempty" mapstructure:"view,omitempty"`
 }
 
 // GetExtendedAgentCardRequest defines the parameters for a request to get an extended agent card.
@@ -900,13 +1075,23 @@ type ListTasksRequest struct {
 	PageToken string `json:"pageToken,omitempty" yaml:"pageToken,omitempty" mapstructure:"pageToken,omitempty"`
 
 	// HistoryLength is the number of most recent messages from the task's history to retrieve in the response.
+	//
+	// Deprecated: Use View instead.
 	HistoryLength *int `json:"historyLength,omitempty" yaml:"historyLength,omitempty" mapstructure:"historyLength,omitempty"`
 
 	// StatusTimestampAfter is the time to list tasks updated after.
+	//
+	// Deprecated: It filters on TaskStatus.Timestamp, which is deprecated.
 	StatusTimestampAfter *time.Time `json:"statusTimestampAfter,omitempty" yaml:"statusTimestampAfter,omitempty" mapstructure:"statusTimestampAfter,omitempty"`
 
-	// IncludeArtifacts is whether to include artifacts in the response.
+	// IncludeArtifacts is whether to include artifacts in the response. Ignored when View is set.
+	//
+	// Deprecated: Use View instead.
 	IncludeArtifacts bool `json:"includeArtifacts,omitempty" yaml:"includeArtifacts,omitempty" mapstructure:"includeArtifacts,omitempty"`
+
+	// View controls which task fields to return. If unset, IncludeArtifacts and HistoryLength apply
+	// and Timeline is not returned.
+	View TaskView `json:"view,omitempty" yaml:"view,omitempty" mapstructure:"view,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler. StatusTimestampAfter is written in the
@@ -964,6 +1149,9 @@ type SubscribeToTaskRequest struct {
 
 	// ID is the ID of the task to subscribe to.
 	ID TaskID `json:"id" yaml:"id" mapstructure:"id"`
+
+	// LastSeenGeneration is a hint to resume streaming after this generation.
+	LastSeenGeneration *TaskGeneration `json:"lastSeenGeneration,omitempty" yaml:"lastSeenGeneration,omitempty" mapstructure:"lastSeenGeneration,omitempty"`
 }
 
 func jsonKeys(data []byte) []string {

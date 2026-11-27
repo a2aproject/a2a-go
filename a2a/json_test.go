@@ -782,6 +782,31 @@ func TestTimestampJSONMarshal(t *testing.T) {
 			in:   ListTasksRequest{ContextID: "ctx-1"},
 			want: `{"contextId":"ctx-1"}`,
 		},
+		{
+			name: "task created and updated",
+			in:   &Task{ID: "task-1", ContextID: "ctx-1", Status: TaskStatus{State: TaskStateWorking}, UpdatedAt: &Timestamp{Time: nanos}, CreatedAt: &Timestamp{Time: wholeSecond}},
+			want: `{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"},"updatedAt":"2026-10-01T06:10:55.114Z","createdAt":"2026-10-01T08:30:00.000Z"}`,
+		},
+		{
+			name: "timeline entry inside task",
+			in:   &Task{ID: "task-1", ContextID: "ctx-1", Status: TaskStatus{State: TaskStateWorking}, Timeline: []*TimelineEntry{{Generation: 1, Timestamp: &Timestamp{Time: nanos}}}},
+			want: `{"id":"task-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"},"timeline":[{"generation":"1","timestamp":"2026-10-01T06:10:55.114Z"}]}`,
+		},
+		{
+			name: "artifact",
+			in:   &Artifact{ID: "a1", Parts: ContentParts{NewTextPart("out")}, UpdatedAt: &Timestamp{Time: nanos}},
+			want: `{"artifactId":"a1","parts":[{"text":"out"}],"updatedAt":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "status update event",
+			in:   &TaskStatusUpdateEvent{TaskID: "t1", ContextID: "c1", Status: TaskStatus{State: TaskStateWorking, Timestamp: &nanos}, Timestamp: &Timestamp{Time: nanos}},
+			want: `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING","timestamp":"2026-10-01T06:10:55.114Z"},"taskId":"t1","timestamp":"2026-10-01T06:10:55.114Z"}`,
+		},
+		{
+			name: "message update event",
+			in:   &TaskMessageUpdateEvent{TaskID: "t1", ContextID: "c1", Message: &Message{ID: "m1", Role: MessageRoleUser, Parts: ContentParts{NewTextPart("hi")}}, Timestamp: &Timestamp{Time: nanos}},
+			want: `{"contextId":"c1","taskId":"t1","message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"timestamp":"2026-10-01T06:10:55.114Z"}`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -843,6 +868,149 @@ func TestTimestampJSONUnmarshal(t *testing.T) {
 			mustUnmarshal(t, []byte(tc.json), &got)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
+			}
+		})
+	}
+}
+
+func TestTimestampTypeJSONUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 10, 1, 8, 30, 0, 123456789, time.UTC)
+	raw := `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"taskId":"t1","timestamp":"2026-10-01T08:30:00.123456789Z"}`
+	want := &TaskStatusUpdateEvent{TaskID: "t1", ContextID: "c1", Status: TaskStatus{State: TaskStateWorking}, Timestamp: &Timestamp{Time: ts}}
+
+	got := &TaskStatusUpdateEvent{}
+	mustUnmarshal(t, []byte(raw), got)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("Unmarshal() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
+func TestInt64FieldsJSONCodec(t *testing.T) {
+	t.Parallel()
+
+	gen0 := TaskGeneration(0)
+	gen5 := TaskGeneration(5)
+	msg := &Message{ID: "m1", Role: MessageRoleUser, Parts: ContentParts{NewTextPart("hi")}}
+
+	tests := []struct {
+		name       string
+		in         any
+		wantJSON   string
+		numberJSON string
+		newOut     func() any
+	}{
+		{
+			name: "Task with generation and timeline",
+			in: &Task{
+				ID:         "t1",
+				ContextID:  "c1",
+				Status:     TaskStatus{State: TaskStateWorking},
+				Generation: 5,
+				Timeline: []*TimelineEntry{
+					{Message: msg, Generation: 1},
+					{Status: &TaskStatus{State: TaskStateWorking}, Generation: 2},
+					{Generation: 3},
+				},
+			},
+			wantJSON:   `{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"generation":"5","timeline":[{"message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":"1"},{"status":{"state":"TASK_STATE_WORKING"},"generation":"2"},{"generation":"3"}]}`,
+			numberJSON: `{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"generation":5,"timeline":[{"message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":1},{"status":{"state":"TASK_STATE_WORKING"},"generation":2},{"futureEntry":{},"generation":3}]}`,
+			newOut:     func() any { return &Task{} },
+		},
+		{
+			name: "Artifact start and end generation",
+			in: &Artifact{
+				ID:              "a1",
+				Parts:           ContentParts{NewTextPart("out")},
+				StartGeneration: 2,
+				EndGeneration:   4,
+			},
+			wantJSON:   `{"artifactId":"a1","parts":[{"text":"out"}],"startGeneration":"2","endGeneration":"4"}`,
+			numberJSON: `{"artifactId":"a1","parts":[{"text":"out"}],"startGeneration":2,"endGeneration":4}`,
+			newOut:     func() any { return &Artifact{} },
+		},
+		{
+			name: "TaskStatusUpdateEvent generation",
+			in: &TaskStatusUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Status:     TaskStatus{State: TaskStateWorking},
+				Generation: 7,
+			},
+			wantJSON:   `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"taskId":"t1","generation":"7"}`,
+			numberJSON: `{"contextId":"c1","status":{"state":"TASK_STATE_WORKING"},"taskId":"t1","generation":7}`,
+			newOut:     func() any { return &TaskStatusUpdateEvent{} },
+		},
+		{
+			name: "TaskArtifactUpdateEvent generation",
+			in: &TaskArtifactUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Artifact:   &Artifact{ID: "a1", Parts: ContentParts{NewTextPart("out")}},
+				Generation: 8,
+			},
+			wantJSON:   `{"artifact":{"artifactId":"a1","parts":[{"text":"out"}]},"contextId":"c1","taskId":"t1","generation":"8"}`,
+			numberJSON: `{"artifact":{"artifactId":"a1","parts":[{"text":"out"}]},"contextId":"c1","taskId":"t1","generation":8}`,
+			newOut:     func() any { return &TaskArtifactUpdateEvent{} },
+		},
+		{
+			name: "TaskMessageUpdateEvent generation",
+			in: &TaskMessageUpdateEvent{
+				TaskID:     "t1",
+				ContextID:  "c1",
+				Message:    msg,
+				Generation: 9,
+			},
+			wantJSON:   `{"contextId":"c1","taskId":"t1","message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":"9"}`,
+			numberJSON: `{"contextId":"c1","taskId":"t1","message":{"messageId":"m1","parts":[{"text":"hi"}],"role":"ROLE_USER"},"generation":9}`,
+			newOut:     func() any { return &TaskMessageUpdateEvent{} },
+		},
+		{
+			name:       "SendMessageConfig IfGenerationMatch zero",
+			in:         &SendMessageConfig{IfGenerationMatch: &gen0},
+			wantJSON:   `{"ifGenerationMatch":"0"}`,
+			numberJSON: `{"ifGenerationMatch":0}`,
+			newOut:     func() any { return &SendMessageConfig{} },
+		},
+		{
+			name:       "GetTaskRequest CurrentGeneration and View",
+			in:         &GetTaskRequest{ID: "t1", CurrentGeneration: &gen5, View: TaskViewSummary},
+			wantJSON:   `{"id":"t1","currentGeneration":"5","view":"TASK_VIEW_SUMMARY"}`,
+			numberJSON: `{"id":"t1","currentGeneration":5,"view":"TASK_VIEW_SUMMARY"}`,
+			newOut:     func() any { return &GetTaskRequest{} },
+		},
+		{
+			name:       "SendMessageConfig IfGenerationMatch and TaskView",
+			in:         &SendMessageConfig{IfGenerationMatch: &gen5, TaskView: TaskViewSummary},
+			wantJSON:   `{"ifGenerationMatch":"5","taskView":"TASK_VIEW_SUMMARY"}`,
+			numberJSON: `{"ifGenerationMatch":5,"taskView":"TASK_VIEW_SUMMARY"}`,
+			newOut:     func() any { return &SendMessageConfig{} },
+		},
+		{
+			name:       "SubscribeToTaskRequest LastSeenGeneration",
+			in:         &SubscribeToTaskRequest{ID: "t1", LastSeenGeneration: &gen5},
+			wantJSON:   `{"id":"t1","lastSeenGeneration":"5"}`,
+			numberJSON: `{"id":"t1","lastSeenGeneration":5}`,
+			newOut:     func() any { return &SubscribeToTaskRequest{} },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotJSON := mustMarshal(t, tc.in)
+			if gotJSON != tc.wantJSON {
+				t.Fatalf("json.Marshal() = %s, want %s", gotJSON, tc.wantJSON)
+			}
+
+			for _, raw := range []string{tc.wantJSON, tc.numberJSON} {
+				out := tc.newOut()
+				mustUnmarshal(t, []byte(raw), out)
+				if diff := cmp.Diff(tc.in, out); diff != "" {
+					t.Fatalf("json.Unmarshal(%s) wrong result (-want +got) diff = %s", raw, diff)
+				}
 			}
 		})
 	}
