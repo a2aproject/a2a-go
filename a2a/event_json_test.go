@@ -77,6 +77,16 @@ func TestEventMarshalJSON(t *testing.T) {
 			wantSubstrings: []string{`"artifactUpdate":`, `"taskId":"task-123"`},
 		},
 		{
+			name: "TaskMessageUpdateEvent",
+			event: &TaskMessageUpdateEvent{
+				TaskID:     "task-123",
+				ContextID:  "ctx-123",
+				Message:    &Message{ID: "msg-123", Role: MessageRoleUser, Parts: ContentParts{NewTextPart("hi")}},
+				Generation: 3,
+			},
+			wantSubstrings: []string{`"messageUpdate":`, `"taskId":"task-123"`, `"generation":"3"`},
+		},
+		{
 			name: "WithMetadata",
 			event: &TaskArtifactUpdateEvent{
 				TaskID:    "task-123",
@@ -196,6 +206,26 @@ func TestUnmarshalEventJSON(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:     "TaskMessageUpdateEvent",
+			json:     `{"messageUpdate":{"taskId":"task-123","contextId":"ctx-123","message":{"messageId":"msg-123","role":"ROLE_USER","parts":[{"text":"hi"}]},"generation":"4"}}`,
+			wantType: "*a2a.TaskMessageUpdateEvent",
+			checkFunc: func(t *testing.T, event Event) {
+				msgUpdate, ok := event.(*TaskMessageUpdateEvent)
+				if !ok {
+					t.Fatalf("Expected *TaskMessageUpdateEvent, got %T", event)
+				}
+				if msgUpdate.TaskID != "task-123" {
+					t.Fatalf("msgUpdate.TaskID = %v, want %v", msgUpdate.TaskID, "task-123")
+				}
+				if msgUpdate.Message.ID != "msg-123" {
+					t.Fatalf("msgUpdate.Message.ID = %v, want %v", msgUpdate.Message.ID, "msg-123")
+				}
+				if msgUpdate.Generation != 4 {
+					t.Fatalf("msgUpdate.Generation = %v, want %v", msgUpdate.Generation, 4)
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -310,6 +340,15 @@ func TestEventMarshalUnmarshalRoundtrip(t *testing.T) {
 					ID:    "art-123",
 					Parts: ContentParts{NewTextPart("result")},
 				},
+			},
+		},
+		{
+			name: "TaskMessageUpdateEvent",
+			event: &TaskMessageUpdateEvent{
+				TaskID:     "task-123",
+				ContextID:  "ctx-123",
+				Message:    &Message{ID: "msg-123", Role: MessageRoleUser, Parts: ContentParts{NewTextPart("hi")}},
+				Generation: 2,
 			},
 		},
 	}
