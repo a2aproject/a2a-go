@@ -836,6 +836,63 @@ func TestREST_ListTasks_ClientRoundtrip(t *testing.T) {
 	}
 }
 
+func TestREST_GenerationAndView_ClientRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	var gotGet *a2a.GetTaskRequest
+	var gotList *a2a.ListTasksRequest
+	var gotSub *a2a.SubscribeToTaskRequest
+	task := &a2a.Task{ID: "task-1", ContextID: "ctx-1", Status: a2a.TaskStatus{State: a2a.TaskStateCompleted}}
+	mock := &mockRequestHandler{
+		getTaskFunc: func(ctx context.Context, req *a2a.GetTaskRequest) (*a2a.Task, error) {
+			gotGet = req
+			return task, nil
+		},
+		listTasksFunc: func(ctx context.Context, req *a2a.ListTasksRequest) (*a2a.ListTasksResponse, error) {
+			gotList = req
+			return &a2a.ListTasksResponse{}, nil
+		},
+		subscribeToTaskFunc: func(ctx context.Context, req *a2a.SubscribeToTaskRequest) iter.Seq2[a2a.Event, error] {
+			gotSub = req
+			return func(yield func(a2a.Event, error) bool) { yield(task, nil) }
+		},
+	}
+	server := httptest.NewServer(NewRESTHandler(mock))
+	t.Cleanup(server.Close)
+
+	iface := a2a.NewAgentInterface(server.URL, a2a.TransportProtocolHTTPJSON)
+	client, err := a2aclient.NewFromEndpoints(t.Context(), []*a2a.AgentInterface{iface})
+	if err != nil {
+		t.Fatalf("a2aclient.NewFromEndpoints() error = %v, want nil", err)
+	}
+
+	getReq := &a2a.GetTaskRequest{ID: "task-1", CurrentGeneration: new(a2a.TaskGeneration(5)), View: a2a.TaskViewSummary}
+	if _, err := client.GetTask(t.Context(), getReq); err != nil {
+		t.Fatalf("client.GetTask() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(getReq, gotGet); diff != "" {
+		t.Fatalf("GetTask() wrong result (-want +got) diff = %s", diff)
+	}
+
+	listReq := &a2a.ListTasksRequest{View: a2a.TaskViewFull}
+	if _, err := client.ListTasks(t.Context(), listReq); err != nil {
+		t.Fatalf("client.ListTasks() error = %v, want nil", err)
+	}
+	if diff := cmp.Diff(listReq, gotList); diff != "" {
+		t.Fatalf("ListTasks() wrong result (-want +got) diff = %s", diff)
+	}
+
+	subReq := &a2a.SubscribeToTaskRequest{ID: "task-1", LastSeenGeneration: new(a2a.TaskGeneration(0))}
+	for _, err := range client.SubscribeToTask(t.Context(), subReq) {
+		if err != nil {
+			t.Fatalf("client.SubscribeToTask() error = %v, want nil", err)
+		}
+	}
+	if diff := cmp.Diff(subReq, gotSub); diff != "" {
+		t.Fatalf("SubscribeToTask() wrong result (-want +got) diff = %s", diff)
+	}
+}
+
 func TestREST_CancelTask_Success(t *testing.T) {
 	t.Parallel()
 

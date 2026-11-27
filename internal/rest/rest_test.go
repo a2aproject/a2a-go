@@ -345,6 +345,13 @@ func TestRESTError_RoundTrip(t *testing.T) {
 			want:           errorWithErrorInfo(t, "unauthorized", a2a.ErrUnauthorized, "UNAUTHORIZED"),
 		},
 		{
+			name:           "TaskGenerationMismatch",
+			inputError:     a2a.NewError(a2a.ErrTaskGenerationMismatch, "task generation mismatch"),
+			wantHTTPStatus: http.StatusConflict,
+			wantGRPCStatus: "ABORTED",
+			want:           errorWithErrorInfo(t, "task generation mismatch", a2a.ErrTaskGenerationMismatch, "TASK_GENERATION_MISMATCH"),
+		},
+		{
 			name:           "InternalError",
 			inputError:     a2a.NewError(a2a.ErrInternalError, "internal error"),
 			wantHTTPStatus: http.StatusInternalServerError,
@@ -988,6 +995,25 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
+	}
+}
+
+func TestParseStreamResponse_MessageUpdate(t *testing.T) {
+	t.Parallel()
+
+	data := `{"messageUpdate":{"taskId":"t1","contextId":"c1","message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hi"}]},"generation":"3"}}`
+	got, err := ParseStreamResponse(t.Context(), []byte(data))
+	if err != nil {
+		t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+	}
+	want := &a2a.TaskMessageUpdateEvent{
+		TaskID:     "t1",
+		ContextID:  "c1",
+		Message:    &a2a.Message{ID: "m1", Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("hi")}},
+		Generation: 3,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ParseStreamResponse() wrong result (-want +got) diff = %s", diff)
 	}
 }
 

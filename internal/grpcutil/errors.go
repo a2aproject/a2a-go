@@ -45,6 +45,7 @@ var errorMappings = []struct {
 	{codes.Internal, a2a.ErrInternalError},
 	{codes.Unauthenticated, a2a.ErrUnauthenticated},
 	{codes.PermissionDenied, a2a.ErrUnauthorized},
+	{codes.Aborted, a2a.ErrTaskGenerationMismatch},
 	{codes.Canceled, context.Canceled},
 	{codes.DeadlineExceeded, context.DeadlineExceeded},
 

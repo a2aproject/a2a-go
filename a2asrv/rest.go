@@ -180,9 +180,17 @@ func (h *restHandler) handleGetTask(taskID string, rw http.ResponseWriter, req *
 		return
 	}
 
+	currentGeneration, err := parseGenerationOpt(req.URL.Query(), rest.QueryCurrentGeneration)
+	if err != nil {
+		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
+		return
+	}
+
 	params := &a2a.GetTaskRequest{
-		ID:            a2a.TaskID(taskID),
-		HistoryLength: historyLength,
+		ID:                a2a.TaskID(taskID),
+		HistoryLength:     historyLength,
+		CurrentGeneration: currentGeneration,
+		View:              a2a.TaskView(req.URL.Query().Get(rest.QueryView)),
 	}
 	fillTenant(ctx, &params.Tenant)
 
@@ -233,6 +241,7 @@ func (h *restHandler) handleListTasks(rw http.ResponseWriter, req *http.Request)
 		HistoryLength:        historyLength,
 		StatusTimestampAfter: statusTimestampAfter,
 		IncludeArtifacts:     includeArtifacts,
+		View:                 a2a.TaskView(query.Get(rest.QueryView)),
 	}
 	fillTenant(ctx, &request.Tenant)
 
@@ -284,7 +293,12 @@ func (h *restHandler) handleSubscribeToTask(taskID string, rw http.ResponseWrite
 		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(""))
 		return
 	}
-	subReq := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID)}
+	lastSeenGeneration, err := parseGenerationOpt(req.URL.Query(), rest.QueryLastSeenGeneration)
+	if err != nil {
+		writeRESTError(ctx, rw, a2a.ErrInvalidRequest, a2a.TaskID(taskID))
+		return
+	}
+	subReq := &a2a.SubscribeToTaskRequest{ID: a2a.TaskID(taskID), LastSeenGeneration: lastSeenGeneration}
 	fillTenant(ctx, &subReq.Tenant)
 	h.handleStreamingRequest(h.handler.SubscribeToTask(ctx, subReq), rw, req)
 }
@@ -614,6 +628,18 @@ func parseIntOpt(query url.Values, key string) (*int, error) {
 		return nil, fmt.Errorf("invalid %s: %w", key, err)
 	}
 	return &v, nil
+}
+
+func parseGenerationOpt(query url.Values, key string) (*a2a.TaskGeneration, error) {
+	val := query.Get(key)
+	if val == "" {
+		return nil, nil
+	}
+	v, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	return new(a2a.TaskGeneration(v)), nil
 }
 
 func parseTimeOpt(query url.Values, key string) (*time.Time, error) {

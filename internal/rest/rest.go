@@ -50,6 +50,9 @@ const (
 	QueryHistoryLength        = "historyLength"
 	QueryStatusTimestampAfter = "statusTimestampAfter"
 	QueryIncludeArtifacts     = "includeArtifacts"
+	QueryCurrentGeneration    = "currentGeneration"
+	QueryView                 = "view"
+	QueryLastSeenGeneration   = "lastSeenGeneration"
 )
 
 // timestampLayout is the timestamp pattern of the spec, YYYY-MM-DDTHH:mm:ss.sssZ.
@@ -227,6 +230,7 @@ var errorMappings = []struct {
 	{a2a.ErrVersionNotSupported, http.StatusBadRequest, "FAILED_PRECONDITION"},
 	{a2a.ErrUnauthenticated, http.StatusUnauthorized, "UNAUTHENTICATED"},
 	{a2a.ErrUnauthorized, http.StatusForbidden, "PERMISSION_DENIED"},
+	{a2a.ErrTaskGenerationMismatch, http.StatusConflict, "ABORTED"},
 
 	{context.Canceled, 499, "CANCELLED"},
 	{context.DeadlineExceeded, http.StatusGatewayTimeout, "DEADLINE_EXCEEDED"},
@@ -374,6 +378,7 @@ type streamResponse struct {
 	Task           *a2a.Task                    `json:"task,omitempty"`
 	StatusUpdate   *a2a.TaskStatusUpdateEvent   `json:"statusUpdate,omitempty"`
 	ArtifactUpdate *a2a.TaskArtifactUpdateEvent `json:"artifactUpdate,omitempty"`
+	MessageUpdate  *a2a.TaskMessageUpdateEvent  `json:"messageUpdate,omitempty"`
 	Error          *ErrorBodyJSON               `json:"error,omitempty"`
 }
 
@@ -402,6 +407,10 @@ func ParseStreamResponse(ctx context.Context, data []byte) (a2a.Event, error) {
 	}
 	if wrapper.ArtifactUpdate != nil {
 		event = wrapper.ArtifactUpdate
+		n++
+	}
+	if wrapper.MessageUpdate != nil {
+		event = wrapper.MessageUpdate
 		n++
 	}
 	if wrapper.Error != nil {

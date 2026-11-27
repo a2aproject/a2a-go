@@ -1491,3 +1491,110 @@ func TestToProto_toProtoStreamResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestProtoRoundTrip_GenerationTimelineTimestampsAndView(t *testing.T) {
+	t.Parallel()
+
+	msg := &a2a.Message{ID: "m1", Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("hi")}}
+	status := a2a.TaskStatus{State: a2a.TaskStateWorking}
+	gen := new(a2a.TaskGeneration(7))
+	ts := &a2a.Timestamp{Time: time.Date(2026, 10, 1, 8, 30, 0, 123000000, time.UTC)}
+
+	task := &a2a.Task{
+		ID:         "t1",
+		ContextID:  "c1",
+		Status:     status,
+		Artifacts:  []*a2a.Artifact{{ID: "a1", Parts: a2a.ContentParts{a2a.NewTextPart("out")}, StartGeneration: 2, EndGeneration: 3, UpdatedAt: ts}},
+		History:    []*a2a.Message{msg},
+		Generation: 4,
+		UpdatedAt:  ts,
+		CreatedAt:  ts,
+		Timeline: []*a2a.TimelineEntry{
+			{Message: msg, Generation: 1, Timestamp: ts},
+			{Status: &status, Generation: 2, Timestamp: ts},
+			{Generation: 4},
+		},
+	}
+	pTask, err := ToProtoTask(task)
+	if err != nil {
+		t.Fatalf("ToProtoTask() error = %v", err)
+	}
+	gotTask, err := FromProtoTask(pTask)
+	if err != nil {
+		t.Fatalf("FromProtoTask() error = %v", err)
+	}
+	if diff := cmp.Diff(task, gotTask); diff != "" {
+		t.Fatalf("FromProtoTask(ToProtoTask()) wrong result (-want +got) diff = %s", diff)
+	}
+
+	events := []a2a.Event{
+		&a2a.TaskStatusUpdateEvent{TaskID: "t1", ContextID: "c1", Status: status, Generation: 5, Timestamp: ts},
+		&a2a.TaskArtifactUpdateEvent{TaskID: "t1", ContextID: "c1", Artifact: task.Artifacts[0], Generation: 6},
+		&a2a.TaskMessageUpdateEvent{TaskID: "t1", ContextID: "c1", Message: msg, Generation: 7, Timestamp: ts},
+	}
+	for _, event := range events {
+		pEvent, err := ToProtoStreamResponse(event)
+		if err != nil {
+			t.Fatalf("ToProtoStreamResponse(%T) error = %v", event, err)
+		}
+		got, err := FromProtoStreamResponse(pEvent)
+		if err != nil {
+			t.Fatalf("FromProtoStreamResponse(%T) error = %v", event, err)
+		}
+		if diff := cmp.Diff(event, got); diff != "" {
+			t.Fatalf("FromProtoStreamResponse(ToProtoStreamResponse(%T)) wrong result (-want +got) diff = %s", event, diff)
+		}
+	}
+
+	sendReq := &a2a.SendMessageRequest{Message: msg, Config: &a2a.SendMessageConfig{IfGenerationMatch: gen, TaskView: a2a.TaskViewSummary}}
+	pSendReq, err := ToProtoSendMessageRequest(sendReq)
+	if err != nil {
+		t.Fatalf("ToProtoSendMessageRequest() error = %v", err)
+	}
+	gotSendReq, err := FromProtoSendMessageRequest(pSendReq)
+	if err != nil {
+		t.Fatalf("FromProtoSendMessageRequest() error = %v", err)
+	}
+	if diff := cmp.Diff(sendReq, gotSendReq); diff != "" {
+		t.Fatalf("FromProtoSendMessageRequest(ToProtoSendMessageRequest()) wrong result (-want +got) diff = %s", diff)
+	}
+
+	getReq := &a2a.GetTaskRequest{ID: "t1", CurrentGeneration: gen, View: a2a.TaskViewSummary}
+	pGetReq, err := ToProtoGetTaskRequest(getReq)
+	if err != nil {
+		t.Fatalf("ToProtoGetTaskRequest() error = %v", err)
+	}
+	gotGetReq, err := FromProtoGetTaskRequest(pGetReq)
+	if err != nil {
+		t.Fatalf("FromProtoGetTaskRequest() error = %v", err)
+	}
+	if diff := cmp.Diff(getReq, gotGetReq); diff != "" {
+		t.Fatalf("FromProtoGetTaskRequest(ToProtoGetTaskRequest()) wrong result (-want +got) diff = %s", diff)
+	}
+
+	listReq := &a2a.ListTasksRequest{View: a2a.TaskViewFull}
+	pListReq, err := ToProtoListTasksRequest(listReq)
+	if err != nil {
+		t.Fatalf("ToProtoListTasksRequest() error = %v", err)
+	}
+	gotListReq, err := FromProtoListTasksRequest(pListReq)
+	if err != nil {
+		t.Fatalf("FromProtoListTasksRequest() error = %v", err)
+	}
+	if diff := cmp.Diff(listReq, gotListReq); diff != "" {
+		t.Fatalf("FromProtoListTasksRequest(ToProtoListTasksRequest()) wrong result (-want +got) diff = %s", diff)
+	}
+
+	subReq := &a2a.SubscribeToTaskRequest{ID: "t1", LastSeenGeneration: gen}
+	pSubReq, err := ToProtoSubscribeToTaskRequest(subReq)
+	if err != nil {
+		t.Fatalf("ToProtoSubscribeToTaskRequest() error = %v", err)
+	}
+	gotSubReq, err := FromProtoSubscribeToTaskRequest(pSubReq)
+	if err != nil {
+		t.Fatalf("FromProtoSubscribeToTaskRequest() error = %v", err)
+	}
+	if diff := cmp.Diff(subReq, gotSubReq); diff != "" {
+		t.Fatalf("FromProtoSubscribeToTaskRequest(ToProtoSubscribeToTaskRequest()) wrong result (-want +got) diff = %s", diff)
+	}
+}
