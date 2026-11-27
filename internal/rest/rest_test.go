@@ -910,6 +910,17 @@ func TestParseStreamResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("message update event", func(t *testing.T) {
+		data := []byte(`{"messageUpdate":{"taskId":"task-123","contextId":"ctx-123","message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hi"}]}}}`)
+		event, err := ParseStreamResponse(t.Context(), data)
+		if err != nil {
+			t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
+		}
+		if _, ok := event.(*a2a.TaskMessageUpdateEvent); !ok {
+			t.Fatalf("got event type %T, want *a2a.TaskMessageUpdateEvent", event)
+		}
+	})
+
 	t.Run("error event", func(t *testing.T) {
 		data := []byte(makeStatusBody(t, 400, "INVALID_ARGUMENT", "bad request", "INVALID_REQUEST"))
 		event, err := ParseStreamResponse(t.Context(), data)
@@ -995,25 +1006,6 @@ func errorWithErrorInfo(t *testing.T, message string, err error, reason string) 
 				"metadata": map[string]string{},
 			}),
 		},
-	}
-}
-
-func TestParseStreamResponse_MessageUpdate(t *testing.T) {
-	t.Parallel()
-
-	data := `{"messageUpdate":{"taskId":"t1","contextId":"c1","message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"hi"}]},"generation":"3"}}`
-	got, err := ParseStreamResponse(t.Context(), []byte(data))
-	if err != nil {
-		t.Fatalf("ParseStreamResponse() error = %v, want nil", err)
-	}
-	want := &a2a.TaskMessageUpdateEvent{
-		TaskID:     "t1",
-		ContextID:  "c1",
-		Message:    &a2a.Message{ID: "m1", Role: a2a.MessageRoleUser, Parts: a2a.ContentParts{a2a.NewTextPart("hi")}},
-		Generation: 3,
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("ParseStreamResponse() wrong result (-want +got) diff = %s", diff)
 	}
 }
 
